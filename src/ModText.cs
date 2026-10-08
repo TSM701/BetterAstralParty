@@ -86,7 +86,7 @@ internal static class ModText
         ["안정판의 새 버전을 확인합니다.\n클릭하면 베타 포함으로 전환합니다."] = "Checks stable releases.\nClick to include beta releases.",
         ["클릭: 안정판 ↔ 베타 포함\n파일을 자동으로 교체하지 않습니다."] = "Click: Stable ↔ Include Beta\nFiles are not replaced automatically.",
         ["새 버전과 변경 사항을 확인합니다.\n비공개 릴리스에는 인증이 필요합니다."] = "Checks versions and release notes.\nPrivate releases require authentication.",
-        ["확인한 새 버전의 GitHub 페이지를 엽니다.\n다운로드와 설치는 직접 진행합니다."] = "Opens the verified GitHub release page.\nDownload and install it yourself.",
+        ["선택한 채널의 GitHub 릴리스 목록을 엽니다.\n다운로드와 설치는 직접 진행합니다."] = "Opens GitHub releases for the selected channel.\nDownload and install it yourself.",
         ["자동 선택은 게임 메뉴 언어에 맞춰\n모드 설명 언어를 설정합니다.\n게임 자체 언어는 변경하지 않습니다."] = "Auto follows the game menu language.\nOnly mod text is affected.",
         ["모드 설명을 한국어로 표시합니다.\n게임 자체 언어는 변경하지 않습니다."] = "Displays mod text in Korean.\nGame language stays unchanged.",
         ["모드 설명을 영어로 표시합니다.\n게임 자체 언어는 변경하지 않습니다."] = "Displays mod text in English.\nGame language stays unchanged.",

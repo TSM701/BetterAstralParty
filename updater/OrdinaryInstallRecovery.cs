@@ -26,6 +26,11 @@ namespace BetterAstralParty.Updating {
             if(Path.GetFullPath(absolute)!=absolute || !absolute.StartsWith(f.Root+"\\",StringComparison.OrdinalIgnoreCase))throw Bad();
             var relative=absolute.Substring(f.Root.Length+1).Replace('\\','/');if(f.Full(relative)!=absolute)throw Bad();return relative;
         }
+        private static string BackupLeaf(string journalRoot,string backupDir) {
+            var leaf=Path.GetFileName(backupDir);
+            if(!Regex.IsMatch(leaf,@"\A[0-9a-f]{32}\z") || backupDir!=Path.Combine(journalRoot,leaf))throw Bad();
+            return leaf;
+        }
         private static void Parents(WindowsFileFence f,string relative) {
             var parts=relative.Split('/');var parent="";
             for(var i=0;i<parts.Length-1;i++) {
@@ -39,13 +44,16 @@ namespace BetterAstralParty.Updating {
             var local=Environment.GetEnvironmentVariable("LOCALAPPDATA");if(string.IsNullOrEmpty(local))throw Bad();
             var rootKey=UpdateTrust.Hash(Encoding.UTF8.GetBytes(canonical.ToLowerInvariant()));
             if(journalRoot!=Path.GetFullPath(Path.Combine(local,"BetterAstralParty","Backups",rootKey)))throw Bad();
-            using(var game=new WindowsFileFence(canonical))using(var backups=new WindowsFileFence(journalRoot))using(var journal=backups.OpenFile("pending.json",true)) {
+            using(var mapped=new WindowsFileFence.OrdinaryJournal(journalRoot))
+            using(var game=new WindowsFileFence(canonical))using(var backups=new WindowsFileFence(Path.GetDirectoryName(mapped.PhysicalPath)!))using(var journal=backups.OpenFile("pending.json",true)) {
+                if(!mapped.Identity.Same(journal.Identity) || Path.GetFileName(mapped.PhysicalPath)!="pending.json")throw Bad();
+                mapped.Recheck(backups.Full("pending.json"));
                 if(game.RootIdentity.Text!=expectedRootIdentity)throw Bad();
                 if(game.Root.Equals(backups.Root,StringComparison.OrdinalIgnoreCase) || game.Root.StartsWith(backups.Root+"\\",StringComparison.OrdinalIgnoreCase) || backups.Root.StartsWith(game.Root+"\\",StringComparison.OrdinalIgnoreCase))throw Bad();
                 if(journal.Hash()!=expectedJournalHash)throw Bad();
                 var state=new InstallReceipt.Json(UpdateTicket.Read(journal,1024*1024),1024*1024,300,1024).Parse() as Dictionary<string,object?>;
                 if(state==null || state.Count!=3 || Text(state,"GameRoot")!=game.Root)throw Bad();
-                var backupDir=Text(state,"BackupDir");var backupLeaf=Relative(backups,backupDir);
+                var backupDir=Text(state,"BackupDir");var backupLeaf=BackupLeaf(journalRoot,backupDir);
                 if(!Regex.IsMatch(backupLeaf,@"\A[0-9a-f]{32}\z"))throw Bad();backups.DirectoryIdentity(backupLeaf);
                 object? rowsValue;if(!state.TryGetValue("Entries",out rowsValue))throw Bad();var rows=rowsValue as List<object?>;
                 if(rows==null || rows.Count<1 || rows.Count>300)throw Bad();
@@ -65,7 +73,7 @@ namespace BetterAstralParty.Updating {
                         var absolute=Text(row,"Target");var relative=Relative(game,absolute);
                         if(!allowed.Contains(relative) || !seen.Add(relative))throw Bad();
                         var backup=backupLeaf+"/"+i.ToString(CultureInfo.InvariantCulture)+".bin";
-                        if(Text(row,"Backup")!=backups.Full(backup))throw Bad();
+                        if(Text(row,"Backup")!=Path.Combine(backupDir,i.ToString(CultureInfo.InvariantCulture)+".bin"))throw Bad();
                         var e=new Entry {Relative=relative,Existed=(bool)row["Existed"]!};
                         e.Target=Maybe(game,relative,true);if(e.Target!=null)leases.Add(e.Target);
                         e.Backup=Maybe(backups,backup);if(e.Backup!=null)leases.Add(e.Backup);
@@ -108,8 +116,9 @@ namespace BetterAstralParty.Updating {
                     foreach(var e in entries)if(!e.Remove) {
                         var target=e.Target??throw Bad();target.Recheck();if(!completeOnly && e.Existed && target.Hash()!=e.Hash)throw Bad();
                     }
-                    game.Recheck();backups.Recheck();if(journal.Hash()!=expectedJournalHash)throw Bad();
+                    game.Recheck();backups.Recheck();mapped.Recheck(backups.Full("pending.json"));if(journal.Hash()!=expectedJournalHash)throw Bad();
                     journal.RenameTo(backups,backupLeaf+(completeOnly?"/completed.json":"/restored.json"));journal.Flush();
+                    mapped.Recheck(backups.Full(backupLeaf+(completeOnly?"/completed.json":"/restored.json")));
                     boundary?.Invoke("ordinary-after-journal-retire");
                 } finally {
                     // A preflight failure may clean up only its still-exclusively-held empty reservations.

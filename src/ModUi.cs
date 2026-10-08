@@ -542,7 +542,7 @@ internal static class ModUi
         if (option != null) title = MenuLayout.OptionLabel(action, option);
         body = Compatibility.Reason(action) ?? body;
         Labels["HelpTitle"].Set("text", action is "UpdateAuth" or "UpdateSignOut" ? ModText.SessionTitle(action) : ModText.Text(title));
-        Labels["HelpBody"].Set("text", action is "UpdateAuth" or "UpdateSignOut" ? ModText.SessionDetails(Plugin.UpdateSession?.Status ?? ReleaseSessionStatus.NotConfigured) : action is "UpdateCheck" or "UpdateDownload"
+        Labels["HelpBody"].Set("text", action is "UpdateAuth" or "UpdateSignOut" ? ModText.SessionDetails(Plugin.UpdateSession?.Status ?? ReleaseSessionStatus.NotConfigured) : action == "UpdateCheck"
             ? ModText.UpdateDetails(Plugin.Updates.Result, Plugin.Version) : action is "AutoDownload" or "AfterExit" or "UpdateGet" or "UpdateCancel"
                 ? ModText.AutomaticDetails(Plugin.Automatic.Status, Plugin.Automatic.RecoveryStage, Plugin.Automatic.Fault, Plugin.Updates.Channel) : ModText.Text(body));
         var label = Labels["HelpBody"];
@@ -747,9 +747,8 @@ internal static class ModUi
                 Plugin.Updates.Check(DateTimeOffset.UtcNow);
                 Refresh(); _helpAction = null; SetHelp(action); return;
             case "UpdateDownload":
-                if (Plugin.Updates.TryDownloadPage(out var page))
-                    try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(page!.AbsoluteUri) { UseShellExecute = true }); }
-                    catch { Plugin.Updates.DownloadFailed(); }
+                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Plugin.Updates.RepositoryPage.AbsoluteUri) { UseShellExecute = true }); }
+                catch { Plugin.Updates.DownloadFailed(); }
                 Refresh(); _helpAction = null; SetHelp(action); return;
             case "AutoDownload": Plugin.AutoDownload.Value = !Plugin.AutoDownload.Value; break;
             case "AfterExit": Plugin.ApplyAfterExit.Value = !Plugin.ApplyAfterExit.Value; break;
@@ -800,7 +799,7 @@ internal static class ModUi
             }
             if (action is "UpdateChannel" or "UpdateCheck" or "UpdateDownload")
             {
-                var available = Plugin.Updates.TryDownloadPage(out _);
+                var available = action == "UpdateDownload" || Plugin.Updates.TryDownloadPage(out _);
                 var state = action == "UpdateChannel" ? ModText.Text(Plugin.Updates.Channel == ReleaseChannel.Beta ? "베타 포함" : "안정판")
                     : action == "UpdateCheck" ? ModText.UpdateStatus(Plugin.Updates.Result.Status) : "";
                 ToggleBackgrounds[action].Set("grayed", action != "UpdateChannel" && !available);

@@ -237,7 +237,7 @@ namespace BetterAstralParty.Updating
                 || platform != PlatformId || releaseId != context.ReleaseId || assetId != context.AssetId || tag != context.ReleaseTag
                 || assetName != "BetterAstralParty-" + version.Tag + "-update.zip")
                 throw new UpdateValidationException(UpdateFailure.WrongTarget);
-            if (channel == "Stable" && (version.Major == 0 || version.IsPrerelease)) throw new UpdateValidationException(UpdateFailure.WrongTarget);
+            if (channel == "Stable" && (version.Major == 0 || version.IsPrerelease && !(localInstall && version.IsLocalPrerelease))) throw new UpdateValidationException(UpdateFailure.WrongTarget);
             if (context.Transition != null && (protocol != 2 || !context.Transition.MatchesTarget(context)))
                 throw new UpdateValidationException(UpdateFailure.WrongTarget);
             if (context.Transition != null && (context.Transition.DescriptorHash != Hash(snapshot) || context.Transition.ZipHash != zipHash))

@@ -26,7 +26,7 @@ PvP 방·경기가 감지되면 전투 추천·카드 정렬·추가 정보 표�
 
 ### 설치와 실행
 
-1. GitHub Releases에서 `BetterAstralParty-1.0.0.zip`처럼 버전명이 붙은 전체 설치 ZIP을 받으세요. `-update.zip`과 Source code ZIP은 최초 설치용이 아닙니다.
+1. GitHub Releases에서 `BetterAstralParty-1.0.1.zip`처럼 버전명이 붙은 전체 설치 ZIP을 받으세요. `-update.zip`과 Source code ZIP은 최초 설치용이 아닙니다.
 2. 원래 Steam 항목으로 INT(Global)를 한 번 실행해 게임 업데이트와 데이터 다운로드를 마친 뒤 종료하세요.
 3. 쓰기 가능한 별도 폴더에 ZIP 전체를 압축 해제하고, 동봉된 파일과 폴더를 함께 유지하세요. 게임 폴더 위에 직접 덮어쓰거나 ZIP 내부에서 실행하지 마세요.
 4. Steam에 로그인한 상태에서 압축을 푼 폴더의 `Install.cmd`를 실행하세요. PowerShell에서는 `.\Install.cmd`를 실행합니다. 경로를 묻는 경우 Steam의 설치된 파일 → 찾아보기로 확인한 `Astral Party` 폴더 또는 `8vJXnINT` 하위 폴더를 선택하세요.
@@ -44,6 +44,7 @@ Steam 항목 등록·수정 때문에 종료 안내가 나오면 대상 목록�
 
 ### 업데이트
 
+- 안정판은 로그인 없이 확인합니다. 업데이트 채널을 바꾸면 해당 채널의 결과를 갱신하며, 다운로드 페이지는 선택한 채널의 GitHub 릴리스 목록을 엽니다.
 - 자동 업데이트: 모드 설정에서 자동 다운로드와 종료 후 적용을 켜세요. 적용 대기가 완료되면 게임과 모드 실행기를 정상 종료하고, 적용 후 직접 다시 실행하세요.
 - 수동 업데이트: 게임과 모드 실행기를 종료한 뒤 새 전체 패키지의 `Install.cmd`를 실행하세요. 기존 설정은 유지합니다. 설치된 버전보다 낮은 버전으로 덮어쓰는 것은 차단합니다.
 - 비공개 Beta 인증: 모드 설정의 업데이트 인증을 선택하고, Windows 보안 입력 창에 저장소 읽기 권한이 있는 PAT을 입력하세요. 인증은 현재 Windows 사용자의 자격 증명 관리자에 저장돼 재실행 후에도 유지됩니다. 업데이트 로그아웃을 선택하면 삭제하며, 만료·철회된 토큰은 재인증하세요. 브라우저 로그인과 모드의 업데이트 인증은 별개입니다.
@@ -93,7 +94,7 @@ When a PvP room or match is detected, mod conveniences such as combat recommenda
 
 ### Install and play
 
-1. Download the complete installation ZIP from GitHub Releases, named by version, such as `BetterAstralParty-1.0.0.zip`. Neither `-update.zip` nor Source code ZIPs are first-install packages.
+1. Download the complete installation ZIP from GitHub Releases, named by version, such as `BetterAstralParty-1.0.1.zip`. Neither `-update.zip` nor Source code ZIPs are first-install packages.
 2. Launch INT(Global) through the original Steam entry, finish game/data updates, then close it.
 3. Extract the entire ZIP to a separate writable folder and keep all bundled files and folders together. Do not overwrite the game folder directly or run inside the ZIP.
 4. While signed in to Steam, run `Install.cmd` from the extracted folder. In PowerShell, run `.\Install.cmd`. If prompted, select the `Astral Party` folder or its `8vJXnINT` child, as shown by Steam's Installed Files → Browse.
@@ -111,6 +112,7 @@ Use your own Steam screenshot and overlay hotkeys.
 
 ### Updates
 
+- Stable checks do not require login. Switching channels refreshes that channel's result; Download Page opens its GitHub releases listing.
 - Automatic updates: enable Auto Download and Apply After Exit in mod settings. Once the update is queued, close the game and mod launcher normally, then restart the game yourself after it finishes.
 - Manual updates: close the game and mod launcher, then run `Install.cmd` from the new complete package. Existing settings are preserved. In-place downgrades are blocked.
 - Private Beta authentication: select Connect Updates in mod settings and enter a PAT with repository read access in the secure Windows prompt. Windows Credential Manager saves it for the current Windows user across restarts. Sign Out of Updates deletes it; sign in again if the token expires or is revoked. Browser login and the mod's update authentication are separate.

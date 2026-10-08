@@ -189,6 +189,40 @@ namespace BetterAstralParty.Updating
                 throw new ApplySafetyException(ApplyFailure.UnsafePath);
             return Absolute(path.Substring(4));
         }
+        // A packaged host can merge directory views while redirecting only their child files.
+        internal sealed class OrdinaryJournal : IDisposable
+        {
+            private readonly List<Pin> _namespacePins=new List<Pin>();
+            private readonly SafeFileHandle _handle;
+            internal readonly WindowsFileIdentity Identity;
+            internal readonly string PhysicalPath;
+            internal OrdinaryJournal(string logicalRoot)
+            {
+                var root=Absolute(logicalRoot);var current=root.Substring(0,3);
+                try {
+                    PinNamespace(current);
+                    foreach(var component in root.Substring(3).Split('\\')) {current=Path.Combine(current,component);PinNamespace(current);}
+                    _handle=Open(Path.Combine(root,"pending.json"),0,7,3,0);
+                    try {Identity=WindowsFileFence.Identity(ReadInfo(_handle,false));PhysicalPath=Final(_handle);Recheck(PhysicalPath);}
+                    catch {_handle.Dispose();throw;}
+                } catch {foreach(var pin in _namespacePins)pin.Dispose();throw;}
+            }
+            private void PinNamespace(string path)
+            {
+                var handle=Open(path,0x80|0x20000,1,3,BackupSemantics);
+                try {_namespacePins.Add(new Pin(Final(handle),handle,WindowsFileFence.Identity(ReadInfo(handle,true))));}
+                catch {handle.Dispose();throw;}
+            }
+            internal void Recheck(string path)
+            {
+                foreach(var pin in _namespacePins)
+                    if(!pin.Identity.Same(WindowsFileFence.Identity(ReadInfo(pin.Handle,true))) || Final(pin.Handle)!=pin.Path)
+                        throw new ApplySafetyException(ApplyFailure.IdentityChanged);
+                if(!Identity.Same(WindowsFileFence.Identity(ReadInfo(_handle,false))) || Final(_handle)!=path)
+                    throw new ApplySafetyException(ApplyFailure.IdentityChanged);
+            }
+            public void Dispose() {_handle.Dispose();foreach(var pin in _namespacePins)pin.Dispose();}
+        }
         private void PinPath(string path)
         {
             var drive = path.Substring(0, 3); AddPin(drive);

@@ -79,11 +79,15 @@ internal sealed class ReleaseUpdates : IDisposable
     private Dictionary<string, Page> _pages = new(StringComparer.Ordinal);
     private Pending? _pending;
     private ReleaseUpdateResult? _lastSuccess;
-    private DateTimeOffset _lastStarted = DateTimeOffset.MinValue, _retryAt = DateTimeOffset.MinValue;
+    private readonly Dictionary<ReleaseChannel, DateTimeOffset> _lastStarted = new();
+    private readonly Dictionary<ReleaseChannel, (string Identity, Scan Scan)> _channelCache = new();
+    private DateTimeOffset _retryAt = DateTimeOffset.MinValue;
+    private long _serverRetryTicks;
     private int _generation;
     private bool _disposed;
     private bool _menuWasAvailable, _autoDue = true;
     private bool _transitionScan;
+    private bool _channelRefresh;
     private readonly HashSet<string> _notifiedVersions = new(StringComparer.Ordinal);
     internal ReleaseChannel Channel { get; private set; }
     internal ReleaseUpdateResult Result { get; private set; } = new(ReleaseUpdateStatus.NotConfigured);
@@ -129,6 +133,7 @@ internal sealed class ReleaseUpdates : IDisposable
     {
         if (_disposed) return;
         if (_ownedClient == null) throw new InvalidOperationException("A production transport is required");
+        _channelCache.Remove(ReleaseChannel.Beta); // Signing out while Stable is selected must retire hidden Beta metadata too.
         if (_feed is { RequiresAuthentication: false }) { _authentication = authentication; return; }
         Configure(_ownedClient, authentication);
     }
@@ -138,7 +143,7 @@ internal sealed class ReleaseUpdates : IDisposable
         if (_disposed) return;
         if (_ownedClient != null && !ReferenceEquals(client, _ownedClient))
             throw new InvalidOperationException("The production transport cannot be replaced");
-        Clear(); _client = client; _authentication = authentication;
+        Clear(); _channelCache.Clear(); _client = client; _authentication = authentication;
         var previousIdentity = _identity;
         _identity = AuthIdentity;
         if (previousIdentity != _identity) _notifiedVersions.Clear();
@@ -156,11 +161,19 @@ internal sealed class ReleaseUpdates : IDisposable
     }
     internal void SetChannel(ReleaseChannel channel)
     {
+        if (_disposed) return;
         if (Channel == channel) return;
         Channel = channel; Clear();
         if (_feed != null) { _feed = ReleaseFeedPolicy.For(channel.ToString()); _repository = _feed.Repository;
             _endpoint = new Uri("https://api.github.com/repos/" + _repository + "/releases?per_page=100"); _identity = AuthIdentity; }
-        Set(ReadyState());
+        _channelRefresh = true;
+        if (_channelCache.TryGetValue(channel, out var cached) && cached.Identity == _identity)
+        {
+            _pages = new(cached.Scan.Pages!, StringComparer.Ordinal);
+            _lastSuccess = cached.Scan.Result with { Release = cached.Scan.Result.Release is { } release ? release with { Generation = _generation } : null };
+        }
+        SyncBackoff();
+        Set(_retryAt != DateTimeOffset.MinValue ? ReadyState() : _lastSuccess ?? ReadyState());
     }
     internal void CheckTransition(DateTimeOffset now)
     {
@@ -171,15 +184,14 @@ internal sealed class ReleaseUpdates : IDisposable
     {
         var identity = AuthIdentity;
         if (identity == _identity) return;
-        Clear(); _identity = identity; _notifiedVersions.Clear();
+        Clear(); _channelCache.Clear(); _identity = identity; _notifiedVersions.Clear();
         Set(ReadyState());
     }
     private void Clear()
     {
-        StopPending(); _pages.Clear(); _lastSuccess = null;
-        NotificationVersion = null; _autoDue = true; _transitionScan = false;
-        // Conservatively share cooldown/server backoff across channels, providers and accounts
-        // in this repository client. Cache invalidation must not bypass secondary/IP limits.
+        StopPending(); _pages = new(StringComparer.Ordinal); _lastSuccess = null;
+        NotificationVersion = null; _autoDue = true; _transitionScan = _channelRefresh = false;
+        // Per-channel cooldown survives account/provider changes; server/IP backoff remains shared.
     }
     private void StopPending()
     {
@@ -197,7 +209,7 @@ internal sealed class ReleaseUpdates : IDisposable
     internal void Cancel()
     {
         if (_pending == null) return;
-        StopPending(); Set(Failure(ReleaseUpdateStatus.Cancelled));
+        StopPending(); _channelCache.Remove(Channel); Set(Failure(ReleaseUpdateStatus.Cancelled));
     }
     internal void Tick(DateTimeOffset now, bool menuAvailable)
     {
@@ -208,7 +220,7 @@ internal sealed class ReleaseUpdates : IDisposable
         // A queued manual check must not be lost to the six-hour freshness cache.
         var deferred = Result.RetryAt != null;
         _autoDue = false;
-        Check(now, manual: deferred); // Home ready/re-entry or a new auth/channel context; never waits.
+        Check(now, manual: deferred || _channelRefresh); // Channel refresh must not be swallowed by home freshness.
     }
     internal void AcknowledgeNotification()
     {
@@ -217,22 +229,24 @@ internal sealed class ReleaseUpdates : IDisposable
     }
     internal void FrameFailed()
     {
-        StopPending(); _autoDue = false; NotificationVersion = null;
+        StopPending(); _channelCache.Remove(Channel); _autoDue = false; NotificationVersion = null;
         Set(Failure(ReleaseUpdateStatus.Failed));
     }
     internal void Check(DateTimeOffset now, bool manual = true)
     {
         if (_disposed) return;
         SyncIdentity();
+        SyncBackoff();
         if (!Configured) { Set(new(ReleaseUpdateStatus.NotConfigured)); return; }
         if (_pending != null) return;
         if (!manual && _lastSuccess?.CheckedAt is { } checkedAt && now < checkedAt.AddHours(6)) return;
-        var cooldown = _lastStarted.AddSeconds(60);
+        var cooldown = _lastStarted.GetValueOrDefault(Channel, DateTimeOffset.MinValue).AddSeconds(60);
         var due = _retryAt > cooldown ? _retryAt : cooldown;
         if (now < due)
         {
             _autoDue = true;
-            Set(Failure(now < _retryAt ? ReleaseUpdateStatus.RateLimited : ReleaseUpdateStatus.RetryWaiting, due));
+            Set(_channelRefresh && now >= _retryAt && _lastSuccess != null ? _lastSuccess
+                : Failure(now < _retryAt ? ReleaseUpdateStatus.RateLimited : ReleaseUpdateStatus.RetryWaiting, due));
             return;
         }
         var cancellation = new CancellationTokenSource(_timeout);
@@ -241,7 +255,8 @@ internal sealed class ReleaseUpdates : IDisposable
         var client = _client!; var authentication = _feed is { RequiresAuthentication: false } ? null : _authentication;
         var feed = _feed; var repository = _repository; var endpoint = _endpoint; var generation = _generation; var transitionScan = _transitionScan;
         var channel = Channel; var identity = _identity;
-        _lastStarted = now; _autoDue = false; _transitionScan = false;
+        _channelCache.Remove(Channel); // An interrupted newer scan must not resurrect an older success as current.
+        _lastStarted[Channel] = now; _autoDue = false; _transitionScan = _channelRefresh = false;
         _pending = new(Task.Run(() => ReadAsync(client, authentication, pages, channel, repository, endpoint, feed, generation, transitionScan, now, token)),
             cancellation, _generation, identity);
         Set(new(ReleaseUpdateStatus.Checking));
@@ -249,6 +264,7 @@ internal sealed class ReleaseUpdates : IDisposable
     internal void Poll()
     {
         if (_disposed) return;
+        SyncBackoff();
         SyncIdentity();
         var pending = _pending;
         if (pending == null || !pending.Task.IsCompleted) return;
@@ -261,7 +277,9 @@ internal sealed class ReleaseUpdates : IDisposable
         var result = scan.Result;
         if (scan.Pages != null)
         {
-            _pages = scan.Pages; _lastSuccess = result; _retryAt = DateTimeOffset.MinValue; Set(result);
+            _pages = scan.Pages; _lastSuccess = result; _retryAt = DateTimeOffset.MinValue; SyncBackoff(); Set(result);
+            if (result.Release?.TransitionCandidate != true) _channelCache[Channel] = (_identity, scan);
+            else _channelCache.Remove(Channel);
             if (result.Release is { } release)
             {
                 var versionKey = (release.Version.StartsWith('v') ? release.Version[1..] : release.Version).Split('+')[0];
@@ -271,15 +289,34 @@ internal sealed class ReleaseUpdates : IDisposable
         }
         else
         {
+            _channelCache.Remove(Channel);
             if (result.Status is ReleaseUpdateStatus.NotConfigured or ReleaseUpdateStatus.AuthenticationRequired or ReleaseUpdateStatus.AccessUnavailable)
             { _pages.Clear(); _lastSuccess = null; NotificationVersion = null; }
-            _retryAt = result.RetryAt ?? DateTimeOffset.MinValue;
+            _retryAt = result.RetryAt ?? DateTimeOffset.MinValue; SyncBackoff();
             Set(Failure(result.Status, result.RetryAt));
         }
     }
     private ReleaseUpdateResult Failure(ReleaseUpdateStatus status, DateTimeOffset? retryAt = null) =>
         _lastSuccess == null ? new(status, RetryAt: retryAt)
             : new(ReleaseUpdateStatus.Stale, _lastSuccess.Release, _lastSuccess.CheckedAt, status, retryAt);
+
+    private void SyncBackoff()
+    {
+        var ticks = Interlocked.Read(ref _serverRetryTicks);
+        if (ticks > _retryAt.UtcDateTime.Ticks) _retryAt = new DateTimeOffset(ticks, TimeSpan.Zero);
+    }
+    private void RememberBackoff(DateTimeOffset? retryAt)
+    {
+        if (retryAt == null) return;
+        var ticks = retryAt.Value.UtcDateTime.Ticks;
+        var previous = Interlocked.Read(ref _serverRetryTicks);
+        while (ticks > previous)
+        {
+            var actual = Interlocked.CompareExchange(ref _serverRetryTicks, ticks, previous);
+            if (actual == previous) break;
+            previous = actual;
+        }
+    }
 
     private async Task<Scan> ReadAsync(HttpClient client, IReleaseAuthentication? authentication,
         Dictionary<string, Page> cached, ReleaseChannel channel, string repository, Uri endpoint, ReleaseFeed? feed, int generation, bool transitionScan, DateTimeOffset now, CancellationToken token)
@@ -319,7 +356,7 @@ internal sealed class ReleaseUpdates : IDisposable
             DiagnosticHub.Stage(DiagnosticFeature.ReleaseCheck, DiagnosticPhase.ReleaseMetadata, DiagnosticOutcome.Completed, diagnosticOperation);
             return new(new(release == null ? ReleaseUpdateStatus.UpToDate : ReleaseUpdateStatus.Available, release, now), pages);
         }
-        catch (CheckFailure failure) { DiagnosticHub.Failure(DiagnosticFeature.ReleaseCheck, DiagnosticPhase.ReleaseMetadata, DiagnosticHub.CodeForStatus(failure.Status.ToString()), failure, operation: diagnosticOperation); return new(new(failure.Status, RetryAt: failure.RetryAt)); }
+        catch (CheckFailure failure) { RememberBackoff(failure.RetryAt); DiagnosticHub.Failure(DiagnosticFeature.ReleaseCheck, DiagnosticPhase.ReleaseMetadata, DiagnosticHub.CodeForStatus(failure.Status.ToString()), failure, operation: diagnosticOperation); return new(new(failure.Status, RetryAt: failure.RetryAt)); }
         catch (OperationCanceledException ex) {
             if (token.IsCancellationRequested) DiagnosticHub.Stage(DiagnosticFeature.ReleaseCheck, DiagnosticPhase.ReleaseMetadata, DiagnosticOutcome.Cancelled, diagnosticOperation);
             else DiagnosticHub.Failure(DiagnosticFeature.ReleaseCheck, DiagnosticPhase.ReleaseMetadata, DiagnosticCode.Unknown, ex, operation: diagnosticOperation);
@@ -487,6 +524,7 @@ internal sealed class ReleaseUpdates : IDisposable
         if (!TryVersion(releaseTag, out _) || tag != null && releaseTag != tag) return false;
         uri = parsed; return true;
     }
+    internal Uri RepositoryPage => new("https://github.com/" + ReleaseFeedPolicy.For(Channel.ToString()).Repository + "/releases");
     internal bool TryDownloadPage(out Uri? page)
     {
         SyncIdentity(); page = null;
@@ -497,7 +535,7 @@ internal sealed class ReleaseUpdates : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        Clear(); _notifiedVersions.Clear(); _disposed = true;
+        Clear(); _channelCache.Clear(); _notifiedVersions.Clear(); _disposed = true;
         _authentication = null; _identity = ""; _client = null;
         _ownedClient?.Dispose(); _ownedClient = null;
         Set(new(ReleaseUpdateStatus.NotConfigured));
