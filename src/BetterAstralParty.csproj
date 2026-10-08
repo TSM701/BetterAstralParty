@@ -1,0 +1,105 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>BetterAstralParty</AssemblyName>
+    <RootNamespace>BetterAstralParty</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GameRoot Condition="'$(GameRoot)' == ''">$(MSBuildThisFileDirectory)..\..\8vJXnINT</GameRoot>
+    <BepInExRoot Condition="'$(BepInExRoot)' == ''">$(MSBuildThisFileDirectory)..\.deps\bepinex</BepInExRoot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\diagnostics\DiagnosticBundle.cs" Link="Diagnostics\DiagnosticBundle.cs" />
+    <Compile Include="..\diagnostics\MinimalDiagnosticProjection.cs" Link="Diagnostics\MinimalDiagnosticProjection.cs" />
+    <!-- Matching focus is deferred to a later minor release; keep its source and fixtures. -->
+    <Compile Remove="MatchFocusState.cs;WindowsMatchFocus.cs;SettingsTraceProbe.cs" />
+    <Compile Include="..\updater\ReleaseFeedPolicy.cs" Link="Updating\ReleaseFeedPolicy.cs" />
+    <Compile Include="..\updater\ReceiptChannelState.cs" Link="Updating\ReceiptChannelState.cs" />
+    <Compile Include="..\updater\ChannelTransitionIntent.cs" Link="Updating\ChannelTransitionIntent.cs" />
+    <Compile Include="..\updater\UpdateTransaction.cs" Link="Updating\UpdateTransaction.cs" />
+    <Compile Include="..\updater\UpdateCompatibility.cs" Link="Updating\UpdateCompatibility.cs" />
+    <Compile Include="..\updater\UpdateLaunchGate.cs" Link="Updating\UpdateLaunchGate.cs" />
+    <Compile Include="..\updater\UpdateVersion.cs" Link="Updating\UpdateVersion.cs" />
+    <Compile Include="..\updater\UpdateTrust.cs" Link="Updating\UpdateTrust.cs" />
+    <Compile Include="..\updater\ProductionUpdateKeys.cs" Link="Updating\ProductionUpdateKeys.cs" />
+    <Compile Include="..\updater\HelperDelivery.cs" Link="Updating\HelperDelivery.cs" />
+    <Compile Include="..\updater\UpdatePackage.cs" Link="Updating\UpdatePackage.cs" />
+    <Compile Include="..\updater\WindowsFileFence.cs" Link="Updating\WindowsFileFence.cs" />
+    <Compile Include="..\updater\WindowsPrivateSecurity.cs" Link="Updating\WindowsPrivateSecurity.cs" />
+    <Compile Include="..\updater\WindowsProcessGuard.cs" Link="Updating\WindowsProcessGuard.cs" />
+    <Compile Include="..\updater\UpdateStaging.cs" Link="Updating\UpdateStaging.cs" />
+    <Compile Include="..\updater\InstalledPluginMetadata.cs" Link="Updating\InstalledPluginMetadata.cs" />
+    <Compile Include="..\updater\InstallReceipt.cs" Link="Updating\InstallReceipt.cs" />
+    <Compile Include="..\updater\UpdateTicket.cs" Link="Updating\UpdateTicket.cs" />
+    <Compile Include="..\updater\UpdateCancelSignal.cs" Link="Updating\UpdateCancelSignal.cs" />
+    <Compile Include="..\updater\UpdateRecoveryPolicy.cs" Link="Updating\UpdateRecoveryPolicy.cs" />
+    <Compile Include="..\updater\WholeInstallBridge.cs" Link="Updating\WholeInstallBridge.cs" />
+    <Compile Include="..\updater\UpdateRecovery.cs" Link="Updating\UpdateRecovery.cs" />
+    <Compile Include="..\updater\UpdateFaults.cs" Link="Updating\UpdateFaults.cs" />
+    <Reference Include="SemanticVersioning">
+      <HintPath>$(BepInExRoot)\BepInEx\core\SemanticVersioning.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextCoreFontEngineModule">
+      <HintPath>$(GameRoot)\BepInEx\interop\UnityEngine.TextCoreFontEngineModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(GameRoot)\BepInEx\interop\Unity.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="AK.Wwise.Unity.API">
+      <HintPath>$(GameRoot)\BepInEx\interop\AK.Wwise.Unity.API.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameRoot)\BepInEx\interop\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="AppConfig">
+      <HintPath>$(GameRoot)\BepInEx\interop\AppConfig.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BepInEx.Core">
+      <HintPath>$(BepInExRoot)\BepInEx\core\BepInEx.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BepInEx.Unity.IL2CPP">
+      <HintPath>$(BepInExRoot)\BepInEx\core\BepInEx.Unity.IL2CPP.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(BepInExRoot)\BepInEx\core\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>$(BepInExRoot)\BepInEx\core\Il2CppInterop.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>$(GameRoot)\BepInEx\interop\Il2Cppmscorlib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameRoot)\BepInEx\interop\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GameRoot)\BepInEx\interop\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(GameRoot)\BepInEx\interop\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(GameRoot)\BepInEx\interop\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(GameRoot)\BepInEx\interop\UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>
