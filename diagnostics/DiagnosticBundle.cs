@@ -70,7 +70,7 @@ namespace BetterAstralParty.Diagnostics
         public const int MaxOutputFileBytes = 512 * 1024, MaxOutputBytes = 4 * 1024 * 1024;
         public const int MaxFiles = 24, MaxDirectoryEntries = 512, MaxRecentPerDirectory = 8, RecentDays = 7;
         private static readonly UTF8Encoding Utf8 = new UTF8Encoding(false, true);
-        private static readonly Regex Names = Pattern(@"\A(?:Launch-[0-9a-f]{32}|BetterAstralParty-InstallError-[0-9]{8}-[0-9]{6}-[0-9a-f]{8})\.log\z");
+        private static readonly Regex Names = Pattern(@"\A(?:(?:Launch|Bootstrap)-[0-9a-f]{32}|BetterAstralParty-InstallError-[0-9]{8}-[0-9]{6}-[0-9a-f]{8})\.log\z");
         private static readonly Regex Secret = Pattern(@"(?i)(?:\b(?:authorization|proxy-authorization|bearer|basic|cookie|set-cookie|password|passwd|pwd|credential|(?:client[ _-]?)?secret|signature|private[ _-]?key|access[ _-]?key|api[ _-]?key|(?:access|refresh|id|auth)[ _-]?token|token|session[ _-]?id|steam[ _-]?id|user[ _-]?id|account(?:[ _-]?(?:id|name))?|username|nickname|display[ _-]?name|player[ _-]?name|email|chat|ip[ _-]?address)\b|토큰|비밀번호|암호|닉네임|계정|사용자명|인증[ _-]?헤더|비밀[ _-]?키|서명[ _-]?키|gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|-----BEGIN.*(?:PRIVATE|OPENSSH|PGP).*(?:KEY|BLOCK))");
         private static readonly Regex Private = Pattern(@"(?i)(?:[a-z]:[\\/]|\\\\|(?:https?|wss?|ftp)://|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b(?:[0-9a-f]{1,4}:){4,}[0-9a-f:]+\b|\b[0-9a-f:]*::[0-9a-f:]+\b|\b[0-9]{17}\b|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|(?:^|[\s\""'=])/(?:home|Users|tmp|var|mnt|media|opt|data)/|\b[A-Za-z0-9_+/=-]{32,}\b)");
         private static readonly Regex Boundary = Pattern(@"\A(?:\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}|\[(?:Info|Warning|Error|Debug|Fatal|Message)[ :\]])");
@@ -86,15 +86,17 @@ namespace BetterAstralParty.Diagnostics
             "Sources: last 7 days; mod current/previous and combat mismatch logs, game compatibility/launch errors,\r\n" +
             "fixed minimal-v1 runtime/helper current/previous JSONL: stages, failures/sites, hooks, health and rotation.\r\n" +
             "고정 minimal-v1 runtime/helper 현재·이전 JSONL의 단계·오류 위치·hook·writer 관측·회전도 포함합니다.\r\n" +
-            "strict projections of up to 8 recent install/launcher errors per log folder.\r\n" +
+            "Redacted full text of up to 8 recent install/bootstrap/launcher errors per log folder,\r\n" +
+            "and game compatibility/launch errors: messages, DLL names, HRESULT and stacks.\r\n" +
             "BepInEx LogOutput and Unity Player/Player-prev: file metadata only, never contents.\r\n" +
             "수집: 최근 7일 모드/계산 불일치/호환성/실행 오류/BepInEx/Unity 로그,\r\n" +
-            "로컬 및 임시 로그 폴더별 최근 설치·런처 오류 최대 8개의 허용 항목 요약.\r\n" +
+            "설치·초기 실행·런처·호환성 오류는 민감정보를 가린 본문을 포함합니다.\r\n" +
+            "DLL 이름·오류 코드·단계·stack을 남기며, 로컬·임시 폴더별 최근 오류 최대 8개입니다.\r\n" +
             "BepInEx·Unity 로그는 존재·크기·수정 시각만 포함하며 내용을 읽지 않습니다.\r\n" +
             "Fixed paths and typed fields only; card/hand/chat payload, unknown text, full configs, credential stores,\r\n" +
-            "updater state, dumps and arbitrary files are excluded. Original exception messages/stacks are excluded.\r\n" +
+            "updater state, dumps and arbitrary files are excluded. General runtime logs remain typed projections.\r\n" +
             "고정 경로와 허용 필드만 요약합니다. 카드·손패·채팅·알 수 없는 텍스트·전체 설정·인증 저장소·\r\n" +
-            "업데이트 상태·덤프·임의 파일·원문 예외 메시지와 stack은 제외합니다.\r\n" +
+            "업데이트 상태·덤프·임의 파일은 제외합니다. 일반 게임 진단은 허용 필드만 요약합니다.\r\n" +
             "Legacy errors retain fixed feature/subfeature/error-class/site codes. Unsupported values become Unknown.\r\n" +
             "Only up to 16 exact owned stack anchors are mapped; missing/async/native sites may remain Unknown.\r\n" +
             "기존 오류의 고정 기능·분류·위치 코드를 남깁니다. 미등록 값과 확인하지 못한 위치는 Unknown입니다.\r\n" +
@@ -105,9 +107,10 @@ namespace BetterAstralParty.Diagnostics
             "Missing, old, locked, linked, invalid text and limited files are recorded in summary.json.\r\n" +
             "누락·오래됨·잠김·링크·잘못된 텍스트·제한 사유는 summary.json에 기록합니다.\r\n" +
             "Recognized records are reserialized from numeric/bool/enum/version/error-type allowlists.\r\n" +
-            "Sensitive lines/continuations, unknown fields and long/unfinished lines are omitted and counted.\r\n" +
+            "Error text replaces private paths/identifiers and sensitive lines/continuations; limits are counted.\r\n" +
+            "Other sources omit unknown fields and long/unfinished lines.\r\n" +
             "허용된 수치·bool·enum·버전·오류 타입만 새로 기록합니다. 민감한 줄·이어지는 내용·알 수 없는\r\n" +
-            "필드·긴 줄·미완성 마지막 줄은 제외하고 개수를 기록합니다.\r\n" +
+            "필드는 제외합니다. 오류 본문은 개인 경로·식별자·민감한 내용을 가리고 제한을 기록합니다.\r\n" +
             "This is not complete anonymisation. Inspect before sharing. No automatic upload.\r\n" +
             "완전한 익명화를 보장하지 않습니다. 공유 전 내용을 확인하세요.\r\n" +
             "Folder identity is checked and pinned through shell dispatch; Explorer may resolve the path after return.\r\n" +
@@ -131,7 +134,7 @@ namespace BetterAstralParty.Diagnostics
 
         private sealed class Row
         {
-            internal string Source = "", Status = "", Entry = "", Modified = "";
+            internal string Source = "", Status = "", Entry = "", Modified = "", Content = "typed-projection";
             internal long Input;
             internal int Output, Redacted, Dropped, Projected, RejectedCandidates;
             internal long ReadBytes;
@@ -363,6 +366,11 @@ namespace BetterAstralParty.Diagnostics
                         int accepted, dropped; bool truncated; Dictionary<string, int> reasons;
                         clean = MinimalDiagnosticProjection.ProjectText(text, Math.Min(MaxOutputFileBytes, MaxOutputBytes - totalOutput), identities, out accepted, out dropped, out truncated, out reasons);
                         row.Projected = accepted; row.Dropped = dropped; row.Truncated = truncated; row.Rejections = reasons;
+                    }
+                    else if (id == "game/compatibility" || id == "game/launch-error" || Names.IsMatch(relative))
+                    {
+                        row.Content = "redacted-error-text";
+                        clean = SanitizeError(text, row, Math.Min(MaxOutputFileBytes, MaxOutputBytes - totalOutput));
                     }
                     else clean = Sanitize(text, row, Math.Min(MaxOutputFileBytes, MaxOutputBytes - totalOutput));
                     if (clean.Length == 0) { row.Status = row.Truncated ? "output-limit" : "metadata-only-no-allowed-records"; return; }
@@ -610,6 +618,49 @@ namespace BetterAstralParty.Diagnostics
             if (pending != null && !row.Truncated) AppendRecord(result, pending.Render(), row, max, ref count);
             return Utf8.GetBytes(result.ToString());
         }
+        private static readonly Regex ErrorBoundary = Pattern(@"\A(?:BetterAstralParty |BAP-[A-Z-]+|(?:Code|Time|Run|Version|Stage|PowerShell|Package|Game|ErrorType|ErrorId|HResult|Message|Location|Stack|Exception|Allowed|Issues|Warnings):|\s*(?:at (?:System|Microsoft|BetterAstralParty)\.|System\.[A-Za-z.]+Exception\b|--- End of))");
+        private static readonly Regex ErrorPath = Pattern(@"(?i)(?:[a-z]:[\\/]|\\\\|%USERPROFILE%[\\/]|/(?:home|Users|tmp|var|mnt|media|opt|data)/)(?:[^\r\n""'<>|]*?\.(?:dll|exe|ps1|cs|cmd|json|hash|log|vdf)(?=[:\s""'<>|,;)]|$)|[^\r\n""'<>|]*)");
+        private static readonly Regex ErrorSecret = Pattern(@"(?i)(?:\b(?:authorization|proxy-authorization|cookie|set-cookie|password|passwd|pwd|credential|(?:client[ _-]?)?secret|signature|private[ _-]?key|access[ _-]?key|api[ _-]?key|(?:access|refresh|id|auth)[ _-]?token|token|session[ _-]?id|steam[ _-]?id|user[ _-]?id|account(?:[ _-]?(?:id|name))?|username|nickname|display[ _-]?name|player[ _-]?name|email|chat|ip[ _-]?address|토큰|비밀번호|암호|닉네임|계정|사용자명)\b\s*[""']?\s*[:=]|\b(?:bearer|basic)\s+\S+|gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|-----BEGIN.*(?:PRIVATE|OPENSSH|PGP).*(?:KEY|BLOCK))");
+        private static readonly Regex ErrorPrivate = Pattern(@"(?i)(?:(?:https?|wss?|ftp)://[^\s""'<>]*|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b(?:[0-9a-f]{1,4}:){4,}[0-9a-f:]+\b|\b[0-9a-f:]*::[0-9a-f:]+\b|\b[0-9]{17}\b|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|\b[A-Za-z0-9_+/=-]{64,}\b|(?<=Run: )[0-9a-f]{32}\b)");
+        private static string ErrorPathAlias(Match match)
+        {
+            // Preserve code filenames, not directories or arbitrary personal filenames.
+            var leaf = Regex.Match(match.Value, @"(?:^|[\\/])(?<file>[A-Za-z0-9_.-]+\.(?:dll|exe|ps1|cs|cmd)|catalog_[A-Za-z0-9_.-]+\.(?:json|hash)|shortcuts\.vdf|BetterAstralParty-(?:Compatibility|LaunchError)\.log)\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(200));
+            return "[path]" + (leaf.Success ? "/" + leaf.Groups["file"].Value : "");
+        }
+        private static byte[] SanitizeError(string text, Row row, int max)
+        {
+            var result = new StringBuilder(); int count = 0; bool continuation = false, keyBlock = false;
+            using (var reader = new StringReader(text))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    if (line.Length > 16384) { row.Redacted++; row.Dropped++; row.Truncated = true; continuation = true; continue; }
+                    line = Ansi.Replace(line.Normalize(NormalizationForm.FormKC), "");
+                    if (ErrorBoundary.IsMatch(line)) continuation = false;
+                    if (line.IndexOf("-----BEGIN", StringComparison.OrdinalIgnoreCase) >= 0 && ErrorSecret.IsMatch(line)) keyBlock = true;
+                    if (keyBlock || ErrorSecret.IsMatch(line) || continuation)
+                    {
+                        row.Redacted++;
+                        if (!AppendRecord(result, "[redacted]", row, max, ref count)) break;
+                        if (line.IndexOf("-----END", StringComparison.OrdinalIgnoreCase) >= 0) keyBlock = false;
+                        continuation = true; continue;
+                    }
+                    string paths = Regex.IsMatch(line, @"\A(?:Package|Game):", RegexOptions.CultureInvariant)
+                        ? line.Substring(0, line.IndexOf(':') + 1) + " [path]" : ErrorPath.Replace(line, ErrorPathAlias);
+                    string clean = ErrorPrivate.Replace(paths, delegate(Match value) {
+                        string prefix = paths.Substring(0, value.Index);
+                        if (Regex.IsMatch(value.Value, @"\A[0-9]+(?:\.[0-9]+){3}\z") && Regex.IsMatch(prefix, @"(?i)(?:\bVersion\s*[:=]\s*|\bPowerShell:\s*)\z")) return value.Value;
+                        if (Regex.IsMatch(value.Value, @"\A[0-9A-Fa-f]{64}\z") && Regex.IsMatch(prefix, @"(?i)\b(?:SHA256|Expected(?:Sha256)?|Actual(?:Sha256)?)\s*[:=]\s*\z")) return value.Value;
+                        return "[redacted]";
+                    });
+                    if (clean != line) row.Redacted++;
+                    if (!AppendRecord(result, clean, row, max, ref count)) break;
+                }
+            }
+            return Utf8.GetBytes(result.ToString());
+        }
         private static void Add(ZipArchive zip, string name, byte[] bytes)
         {
             using (var stream = zip.CreateEntry(name, CompressionLevel.Optimal).Open()) stream.Write(bytes, 0, bytes.Length);
@@ -622,7 +673,7 @@ namespace BetterAstralParty.Diagnostics
         {
             string host = Regex.IsMatch(hostVersion ?? "", @"\A[0-9]{1,5}(?:\.[0-9]{1,5}){1,3}\z") ? hostVersion : "unknown";
             string plugin = Version.IsMatch(runningPluginVersion ?? "") ? runningPluginVersion : "unknown";
-            var json = new StringBuilder("{\n\"schema\":1,\"collectorVersion\":\"2\",\"createdUtc\":").Append(Quote(now.ToString("O", CultureInfo.InvariantCulture)));
+            var json = new StringBuilder("{\n\"schema\":1,\"collectorVersion\":\"3\",\"createdUtc\":").Append(Quote(now.ToString("O", CultureInfo.InvariantCulture)));
             json.Append(",\"environment\":{\"osVersion\":").Append(Quote(Environment.OSVersion.Version.ToString()))
                 .Append(",\"runtimeVersion\":").Append(Quote(Environment.Version.ToString())).Append(",\"hostVersion\":").Append(Quote(host))
                 .Append(",\"os64Bit\":").Append(Environment.Is64BitOperatingSystem ? "true" : "false")
@@ -643,7 +694,7 @@ namespace BetterAstralParty.Diagnostics
             {
                 var row = rows[i]; if (i > 0) json.Append(',');
                 json.Append("\n{\"source\":").Append(Quote(row.Source)).Append(",\"status\":").Append(Quote(row.Status))
-                    .Append(",\"zipEntry\":").Append(Quote(row.Entry)).Append(",\"modifiedUtc\":").Append(Quote(row.Modified))
+                    .Append(",\"zipEntry\":").Append(Quote(row.Entry)).Append(",\"contentKind\":").Append(Quote(row.Content)).Append(",\"modifiedUtc\":").Append(Quote(row.Modified))
                     .Append(",\"inputBytes\":").Append(row.Input.ToString(CultureInfo.InvariantCulture)).Append(",\"outputBytes\":").Append(row.Output.ToString(CultureInfo.InvariantCulture))
                     .Append(",\"readBytes\":").Append(row.ReadBytes.ToString(CultureInfo.InvariantCulture)).Append(",\"rejectedCandidates\":").Append(row.RejectedCandidates.ToString(CultureInfo.InvariantCulture))
                     .Append(",\"redactedLines\":").Append(row.Redacted.ToString(CultureInfo.InvariantCulture)).Append(",\"truncated\":").Append(row.Truncated ? "true" : "false")
