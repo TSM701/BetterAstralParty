@@ -10,7 +10,7 @@ internal readonly record struct EncounterInput(int MapType, int Hp, int Attack, 
 internal readonly record struct EncounterAdvice(bool? Attack, double EnemyKoMin, double EnemyKoMax,
     double SelfKoMin, double SelfKoMax)
 {
-    internal string Quick => $"상대 KO {CombatAdvisor.ProbabilityRange(EnemyKoMin, EnemyKoMax)}%\n내 KO {CombatAdvisor.ProbabilityRange(SelfKoMin, SelfKoMax)}%";
+    internal string Quick => $"상대 KO {CombatAdvisor.Probability(EnemyKoMax)}%\n내 KO {CombatAdvisor.Probability(SelfKoMin)}%";
 }
 
 internal static class EncounterAdvisor
@@ -24,9 +24,8 @@ internal static class EncounterAdvisor
                 input.Defense, input.Defense))) return null;
 
         double enemyMin = 1, enemyMax = 0, selfMin = 1, selfMax = 0;
-        bool? consensus = null;
-        var first = true;
-        var disagrees = false;
+        double bestKoGain = double.NegativeInfinity, bestDamageGain = double.NegativeInfinity;
+        const double epsilon = 0.000001;
         var outgoingOptions = new[] {
             CardAdvisor.BeforeRoll(input.EnemyHp, input.Attack, input.EnemyDefense, false, input.EnemyModifiers),
             CardAdvisor.BeforeRoll(input.EnemyHp, input.Attack, input.EnemyDefense, true, input.EnemyModifiers) };
@@ -48,14 +47,17 @@ internal static class EncounterAdvisor
             enemyMax = Math.Max(enemyMax, outgoing.KnockoutChance);
             selfMin = Math.Min(selfMin, selfKo);
             selfMax = Math.Max(selfMax, selfKo);
-            const double epsilon = 0.000001;
             var koGain = outgoing.KnockoutChance - selfKo;
             var damageGain = outgoing.ExpectedDamage - selfDamage;
-            bool? attack = Math.Abs(koGain) > epsilon ? koGain > 0
-                : Math.Abs(damageGain) > epsilon ? damageGain > 0 : null;
-            if (first) { consensus = attack; first = false; }
-            else if (consensus != attack) disagrees = true;
+            // Choose one achievable pair, not separately combined best-case statistics.
+            if (koGain > bestKoGain + epsilon
+                || Math.Abs(koGain - bestKoGain) <= epsilon && damageGain > bestDamageGain + epsilon)
+            {
+                bestKoGain = koGain;
+                bestDamageGain = damageGain;
+            }
         }
-        return new(disagrees ? null : consensus, enemyMin, enemyMax, selfMin, selfMax);
+        var attack = bestKoGain > epsilon || Math.Abs(bestKoGain) <= epsilon && bestDamageGain > epsilon;
+        return new(attack, enemyMin, enemyMax, selfMin, selfMax);
     }
 }

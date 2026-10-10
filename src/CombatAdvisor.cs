@@ -177,22 +177,15 @@ public static class CombatAdvisor
             ? 0 : defend.ExpectedDamage.CompareTo(dodge.ExpectedDamage);
     }
 
-    // Unknown stat/card scenarios are bounds, not equiprobable outcomes. Round bounds
-    // outwards; a tiny nonzero risk must never turn into a displayed guaranteed 0/100%.
-    internal static string ProbabilityRange(double min, double max)
+    // Callers select the endpoint favorable to the local side, not an average of
+    // unknown scenarios. Tiny nonzero odds must not become guaranteed 0/100%.
+    internal static string Probability(double chance)
     {
         const double epsilon = 1e-9;
-        string Number(double value) => value.ToString("0.##",
-            System.Globalization.CultureInfo.InvariantCulture);
-        if (Math.Abs(min - max) < epsilon)
-        {
-            var percent = min * 100;
-            if (percent > epsilon && percent < 0.01) return "<0.01";
-            if (percent < 100 - epsilon && percent > 99.99) return ">99.99";
-            return Number(Math.Round(percent, 2));
-        }
-        return Number(Math.Floor(min * 10000 + epsilon) / 100) + "~"
-            + Number(Math.Ceiling(max * 10000 - epsilon) / 100);
+        var percent = chance * 100;
+        if (percent > epsilon && percent < 0.01) return "<0.01";
+        if (percent < 100 - epsilon && percent > 99.99) return ">99.99";
+        return Math.Round(percent, 2).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static void Validate(CombatInput input)

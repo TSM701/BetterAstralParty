@@ -151,12 +151,27 @@ internal static class GameUi
         return null;
     }
 
-    internal static IReadOnlyList<RuntimeObject> PointerPath(bool refresh = false)
+    internal static IReadOnlyList<RuntimeObject> PointerPath(bool refresh = false, bool hitTest = false)
     {
-        if (!refresh && _hitFrame == Time.frameCount) return HitPath;
+        if (!refresh && !hitTest && _hitFrame == Time.frameCount) return HitPath;
         _hitFrame = Time.frameCount;
         HitPath.Clear();
-        for (var hit = _root?.Get("touchTarget"); hit != null && HitPath.Count < 64; hit = hit.Get("parent"))
+        RuntimeObject? hit;
+        if (_root != null && (hitTest || refresh && (Input.GetMouseButtonDown(0) || Input.GetMouseButtonUp(0)
+            || Input.GetMouseButtonDown(1) || Input.GetMouseButtonDown(2))))
+        {
+            // Stage.touchTarget is cached for the frame, even after owned hit surfaces change.
+            var stage = RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "Stage"), "get_inst")!;
+            var mouse = Input.mousePosition;
+            try
+            {
+                var display = stage.Call("HitTest", new Vector2(mouse.x, Screen.height - mouse.y), true);
+                hit = _root.Call("DisplayObjectToGObject", display);
+            }
+            finally { RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "HitTestContext"), "ClearRaycastHitCache"); }
+        }
+        else hit = _root?.Get("touchTarget");
+        for (; hit != null && HitPath.Count < 64; hit = hit.Get("parent"))
             HitPath.Add(hit);
         return HitPath;
     }

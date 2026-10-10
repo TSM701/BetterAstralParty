@@ -85,7 +85,7 @@ internal static class ModText
         ["베타와 안정판의 새 버전을 확인합니다.\n클릭하면 안정판으로 전환합니다."] = "Checks beta and stable releases.\nClick to switch to stable only.",
         ["안정판의 새 버전을 확인합니다.\n클릭하면 베타 포함으로 전환합니다."] = "Checks stable releases.\nClick to include beta releases.",
         ["클릭: 안정판 ↔ 베타 포함\n파일을 자동으로 교체하지 않습니다."] = "Click: Stable ↔ Include Beta\nFiles are not replaced automatically.",
-        ["새 버전과 변경 사항을 확인합니다.\n비공개 릴리스에는 인증이 필요합니다."] = "Checks versions and release notes.\nPrivate releases require authentication.",
+        ["새 버전 확인 상태를 표시합니다.\n변경 사항은 업데이트 알림에서 확인합니다.\n비공개 릴리스에는 인증이 필요합니다."] = "Shows the update check status.\nRelease notes appear in the update notification.\nPrivate releases require authentication.",
         ["선택한 채널의 GitHub 릴리스 목록을 엽니다.\n다운로드와 설치는 직접 진행합니다."] = "Opens GitHub releases for the selected channel.\nDownload and install it yourself.",
         ["자동 선택은 게임 메뉴 언어에 맞춰\n모드 설명 언어를 설정합니다.\n게임 자체 언어는 변경하지 않습니다."] = "Auto follows the game menu language.\nOnly mod text is affected.",
         ["모드 설명을 한국어로 표시합니다.\n게임 자체 언어는 변경하지 않습니다."] = "Displays mod text in Korean.\nGame language stays unchanged.",
@@ -105,7 +105,7 @@ internal static class ModText
         ["공격·관전 시 KO 최소 조건,\n방어 시 생존 최소 조건을 표시합니다.\n가장 유리한 결과 기준이며\n성공을 보장하는 숫자는 아닙니다."] = "Shows KO conditions for attacks\nand spectating; survival for defense.\nUses best-case outcomes,\nnot a guarantee of success.",
         ["카드·칩 핑의 추가 상세 팝업을\n표시하지 않습니다.\n기본 핑 말풍선은 유지합니다."] = "Hides extra card/chip ping details.\nNative ping bubbles remain.",
         ["모드의 전투 정보와 반격 표시를\n표시하지 않습니다.\n슈슈 쉴드 설정은 별도로 적용합니다."] = "Hides mod battle info and counters.\nShushu Shield remains independent.",
-        ["모드의 필드 이름·HP·버프 표시를\n표시하지 않습니다."] = "Hides mod field names, HP\nand public effect icons.",
+        ["플레이어 필드 인디케이터를\n표시하지 않습니다."] = "Hides the player field indicator.",
         ["선택형 상세 진단 기록을 끕니다.\n기본 오류 기록은 유지합니다."] = "Disables optional detailed diagnostics.\nBasic error reporting remains.",
         ["다른 창으로 전환해도\n모드가 게임 소리를 끄지 않습니다."] = "The mod does not mute the game\nwhen switching to another window.",
         ["게임 창이 비활성 상태여도\n입력 대기 알림을 보내지 않습니다."] = "Does not send input-wait alerts\nwhile the game is unfocused.",
@@ -133,7 +133,14 @@ internal static class ModText
         ["클릭 펼치기"] = "Click",
         ["기본 → 클릭 펼치기 → 호버 펼치기\n클릭 방식은 묶음을 눌러 가로로 펼칩니다.\n접힌 묶음은 반투명하게 표시합니다."] = "Native > Click > Hover\nClick a pile to open a horizontal row.\nFolded piles are translucent.",
         ["전투 정보 표시"] = "Battle Info",
-        ["필드 버프 표시"] = "Field Indicators",
+        ["플레이어 필드 인디케이터"] = "Player Field Indicator",
+        ["필드 휠 줌"] = "Field Wheel Zoom",
+        ["매칭 성사 시 창 포커스"] = "Focus on Match Found",
+        ["필드 카메라에 휠 줌을\n적용하지 않습니다."] = "Does not apply wheel zoom\nto the field camera.",
+        ["PvE 매칭 성사·로비 방 시작에도\n게임 창으로 전환하지 않습니다."] = "Does not focus the game on a PvE match\nor when a lobby game starts.",
+        ["휠 위로 확대, 아래로 전체 필드까지 축소합니다.\n자유 시점과 배율은 턴이 바뀌어도 유지합니다.\n자유 시점 카메라 종료를 누르면\n기본 배율과 캐릭터 추적으로 돌아갑니다."] = "Scroll up to zoom in, down to fit the whole field.\nFree view and zoom persist across turns.\nExit Free Camera restores the default zoom\nand character tracking.",
+        ["자유 시점 카메라 종료"] = "Exit Free Camera",
+        ["PvE 매칭 성사·로비 방 시작 시\n창을 잠깐 최상위로 올려 전환 후 복원합니다.\nWindows가 전환을 막으면\n작업표시줄을 깜빡입니다."] = "On a PvE match or lobby game start,\nbriefly focus the game, then restore its state.\nFlashes the taskbar if Windows\ndoes not allow the switch.",
         ["캐릭터 이름"] = "Character Names",
         ["충돌 진단 로그"] = "Diagnostic Log",
         ["진단 폴더 열기"] = "Open Diagnostics Folder",
@@ -157,7 +164,7 @@ internal static class ModText
         ["HP 아래 손패 장수·공개 효과와\n플레이어·몬스터 반격을 표시합니다.\n효과 설명은 아이콘 호버로 봅니다."] = "Shows public cards/effects and\nplayer/monster counters.\nHover effects for details.",
         ["슈슈 쉴드 표시"] = "Shushu Shield",
         ["전투 중 캐릭터에 쉴드 효과를 표시하고\n방어자일 때 방어 버튼·카드를 잠급니다.\nOFF: 표시와 잠금 모두 해제.\n전투 정보 표시와 별도 설정입니다."] = "Shows shields on combat actors;\nlocks Defend and defense cards\nwhile shielded. OFF restores all.\nIndependent of Battle Info.",
-        ["필드 플레이어 이름·HP를 표시합니다.\n공개 버프가 있으면 아이콘도 표시하며\n클릭하면 효과 설명을 봅니다."] = "Shows player names and HP.\nClick public effect icons\nfor details.",
+        ["필드의 플레이어 이름·HP와\n공개 효과 아이콘을 표시합니다.\n클릭하면 효과 설명을 봅니다."] = "Shows field player names, HP\nand public effect icons.\nClick for effect details.",
         ["ON: 본명 / OFF: 이명\n계정 닉네임은 바꾸지 않습니다."] = "ON: names / OFF: titles.\nPlayer nicknames stay unchanged.",
         ["오류·성능·공개 전투 계산을 기록합니다.\n계산 불일치는 별도 보존합니다.\n문제를 확인할 때만 켜 주세요."] = "Logs errors, performance\nand public combat calculations.\nKeeps mismatch reports.\nEnable only for diagnosis.",
         ["다른 창으로 전환하면 소리를 끕니다.\n게임으로 돌아오면 복원합니다.\n저장된 볼륨은 바꾸지 않습니다."] = "Mutes when focus is lost.\nRestores audio on return.\nSaved volume stays unchanged.",
@@ -308,9 +315,12 @@ internal static class ModText
                 Korean ? "업데이트 설정에서 실패 또는 복구 상태를 확인하세요." : "Check Update Settings for failure or recovery status.",
             _ => Korean ? "업데이트 설정에서 자세한 내용을 확인하세요." : "Open Update Settings for details."
         };
+        // Display release text literally, never through translation or markup parsing.
         return Text("현재 버전") + ": " + current + "\n" + Text("새 버전") + ": " + release.Version
             + "\n\n" + Text("현재 업데이트 상태") + ": " + status
-            + (check == ReleaseUpdateStatus.Available ? "" : "\n" + UpdateStatus(check)) + "\n\n" + guidance;
+            + (check == ReleaseUpdateStatus.Available ? "" : "\n" + UpdateStatus(check)) + "\n\n" + guidance
+            + "\n\n" + Text("변경 사항") + ":\n"
+            + (release.Notes.Length == 0 ? Text("변경 사항 없음") : ReleaseUpdates.PlainText(release.Notes, ReleaseUpdates.MaxNotes));
     }
 
     internal static string UpdateDetails(ReleaseUpdateResult result, string current)
@@ -321,7 +331,6 @@ internal static class ModText
         if (result.RetryAt is { } retryAt) body += "\n" + Text("다음 확인") + ": " + retryAt.UtcDateTime.ToString("u", System.Globalization.CultureInfo.InvariantCulture);
         if (result.Release is not { } release) return body;
         body += "\n" + Text("새 버전") + ": " + release.Version;
-        // Release text is displayed literally, never passed through translation/markup parsing.
-        return body + "\n" + Text("변경 사항") + ":\n" + (release.Notes.Length == 0 ? Text("변경 사항 없음") : ReleaseUpdates.PlainText(release.Notes, 700));
+        return body;
     }
 }

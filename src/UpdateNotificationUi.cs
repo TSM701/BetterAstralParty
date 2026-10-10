@@ -10,12 +10,13 @@ internal static class UpdateNotificationUi
     private static readonly UpdateNotificationState State = new();
     private static readonly UpdateNotificationInput InputState = new();
     private static readonly Dictionary<IntPtr, (RuntimeObject Button, UpdateNoticeAction Action)> Controls = new();
-    private static RuntimeObject? _panel, _frame, _body;
+    private static RuntimeObject? _panel, _frame, _view, _content, _body, _scrollTrack, _scrollThumb;
+    private static (float Height, float Y, bool Visible)? _scrollMarker;
     private static UpdateNotificationTarget? _target;
     private static IntPtr _parent, _hovered;
     private static int _openedFrame, _consumedFrame = -1;
     private static int _contextGeneration;
-    private static int _languageRevision = -1, _automaticRevision = -1, _releaseRevision = -1;
+    private static int _languageRevision = -1, _fontRevision = -1, _automaticRevision = -1, _releaseRevision = -1;
     private static float _openedAt;
     internal static bool ConsumedInput => _consumedFrame == Time.frameCount;
 
@@ -49,8 +50,9 @@ internal static class UpdateNotificationUi
         if (_target == null) return;
         if (State.Active == null && GameUi.Visible(_panel) && _panel!.Get<float>("alpha") > 0)
             State.Shown(_target.Key);
-        if (_languageRevision != ModText.Revision || _automaticRevision != Plugin.Automatic.Revision
+        if (_languageRevision != ModText.Revision || _fontRevision != ModFont.Revision || _automaticRevision != Plugin.Automatic.Revision
             || _releaseRevision != Plugin.Updates.Revision) Refresh();
+        UpdateScrollMarker();
         if (!Application.isFocused) { InputState.Reset(); return; }
         HandleInput();
     }
@@ -75,15 +77,50 @@ internal static class UpdateNotificationUi
         ModFont.Track(heading);
         var close = _frame.Call("GetChild", "closeButton")!;
         Controls.Add(close.Pointer, (close, UpdateNoticeAction.Close));
-        _body = NativeUi.Label(_panel, "", 110, 110, 840, 300, 30);
+        var scrollTemplate = NativeUi.Create("Common", "Com_BuffInfo")
+            ?? throw new InvalidOperationException("Native update notice scroll list unavailable");
+        try
+        {
+            _view = scrollTemplate.Call("GetChild", "list_Buff")!;
+            _view.Get("relations")!.Call("ClearAll");
+            _panel.Call("AddChild", _view);
+        }
+        finally { GameUi.Dispose(scrollTemplate); }
+        _view.Call("RemoveChildren", 0, -1, true);
+        _view.Call("SetXY", 110f, 110f);
+        _view.Call("SetSize", 840f, 300f);
+        _view.Set("autoResizeItem", false);
+        _view.Set("layout", 0);
+        _view.SetField("selectionMode", 3);
+        _view.SetField("scrollItemToViewOnClick", false);
+        _view.Set("touchable", true);
+        _view.Set("opaque", true);
+        var scroll = _view.Get("scrollPane")!;
+        scroll.Set("mouseWheelEnabled", true);
+        scroll.Set("bouncebackEffect", false);
+        scroll.Set("scrollStep", 48f);
+        var contentWidth = scroll.Get<float>("viewWidth");
+        if (!float.IsFinite(contentWidth) || contentWidth <= 0)
+            throw new InvalidOperationException("Native update notice scroll width unavailable");
+        _content = NativeUi.Component(_view, contentWidth, 300);
+        _body = NativeUi.Label(_content, "", 0, 0, contentWidth, 300, 30);
         _body.Set("touchable", false);
         _body.Set("UBBEnabled", false);
         _body.Set("singleLine", false);
-        _body.Set("autoSize", 3);
+        _body.Set("autoSize", 2);
+        GameUi.StyleText(_body, 30, align: 0);
+        // This native list hides its scrollbar; reuse the settings position indicator.
+        _scrollTrack = new NativeUi.Surface(_panel, 12, 300, fixedOpacity: true,
+            fill: new Color(0.75f, 0.75f, 0.75f)).Graph;
+        _scrollThumb = new NativeUi.Surface(_panel, 12, 24, fixedOpacity: true,
+            fill: new Color(1f, 0.8f, 0f)).Graph;
+        _scrollTrack.Call("SetXY", 958f, 110f);
+        _scrollMarker = null;
         AddButton(UpdateNoticeAction.Close, "Button_ReturnRounded", 168);
         AddButton(UpdateNoticeAction.Settings, "Button_ConfirmRounded", 610);
-        _languageRevision = _automaticRevision = _releaseRevision = -1;
+        _languageRevision = _fontRevision = _automaticRevision = _releaseRevision = -1;
         Refresh();
+        scroll.Call("ScrollTop", false);
         _panel.Set("visible", true);
     }
 
@@ -107,11 +144,14 @@ internal static class UpdateNotificationUi
         _body!.Set("text", ModText.UpdateNotificationDetails(_target!.Release, Plugin.Version,
             Plugin.Automatic.Status, Plugin.Updates.Result.Status, Plugin.Automatic.Snapshot.Matches(_target.Release)));
         ModFont.Track(_body);
+        _content!.Call("SetSize", _body.Get<float>("width"), Math.Max(300f, _body.Get<float>("textHeight")));
+        _view!.Call("EnsureBoundsCorrect");
         foreach (var (button, action) in Controls.Values)
         {
             if (button.Pointer == _frame.Call("GetChild", "closeButton")!.Pointer) continue;
             NativeUi.StyleTitle(button, ModText.Text(action == UpdateNoticeAction.Settings ? "업데이트 설정" : "닫기"));
         }
+        _fontRevision = ModFont.Revision;
     }
 
     private static void Layout(RuntimeObject root)
@@ -125,6 +165,21 @@ internal static class UpdateNotificationUi
         _panel.Call("SetXY", (width - MenuLayout.Width * scale) / 2,
             (height - MenuLayout.Height * scale) / 2 + (1 - reveal) * 24);
         _panel.Set("alpha", reveal);
+    }
+
+    private static void UpdateScrollMarker()
+    {
+        var scroll = _view!.Get("scrollPane")!;
+        var view = scroll.Get<float>("viewHeight");
+        var content = scroll.Get<float>("contentHeight");
+        var (height, y) = MenuLayout.ScrollMarker(view, content, scroll.Get<float>("scrollingPosY"));
+        var visible = content > view;
+        if (_scrollMarker == (height, y, visible)) return;
+        _scrollMarker = (height, y, visible);
+        _scrollTrack!.Set("visible", visible);
+        _scrollThumb!.Set("visible", visible);
+        _scrollThumb.Call("SetSize", 12f, height);
+        _scrollThumb.Call("SetXY", 958f, 110f + y);
     }
 
     private static void HandleInput()
@@ -155,7 +210,8 @@ internal static class UpdateNotificationUi
     {
         State.Close(); InputState.Reset();
         var panel = _panel;
-        _frame = _body = null; _target = null;
+        _frame = _view = _content = _body = _scrollTrack = _scrollThumb = null; _target = null;
+        _scrollMarker = null;
         _parent = _hovered = IntPtr.Zero; Controls.Clear();
         if (panel == null) return;
         Exception? failure = null;

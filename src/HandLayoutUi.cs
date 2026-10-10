@@ -226,10 +226,10 @@ internal static class HandLayoutUi
         var pointer = root.Call("GlobalToLocal", mouse)!.Value<Vector2>();
         if (clickMode)
         {
-            // Native target selection/cancel (including effect cards) owns these clicks.
+            // Monster cancel can leave an empty CardWindow on stage; only its actual hit owns the click.
             var usingCard = (Input.GetMouseButtonDown(0) || Input.GetMouseButtonUp(0))
-                && GameUi.Find(root, "CardWindow", maxDepth: 1) != null;
-            PollPileClick(path, pointer, unit, inputLocked || pending > 0 || usingCard);
+                && path.Any(item => item.TypeName == "CardWindow");
+            PollPileClick(path, pointer, unit, inputLocked || pending > 0 || usingCard || FieldCameraReturnUi.ConsumedInput);
         }
         var hoverLocked = inputLocked || (!clickMode && Input.GetMouseButton(0));
         if (hoverLocked) { _expanded = null; _focused = IntPtr.Zero; }
@@ -324,7 +324,7 @@ internal static class HandLayoutUi
         // Native ZoomCard runs only for world presses. Fresh hit testing avoids arming on
         // card/pile/target UI input; both grouped modes share this presentation correction.
         if ((Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1) || Input.GetMouseButtonDown(2))
-            && root.Get("touchTarget") == null)
+            && !FieldCameraReturnUi.ConsumedInput && root.Get("touchTarget") == null)
             HandClickBinding.Arm(RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "Stage"), "get_inst")!,
                 ready.Select(e => e.Card));
         // Native drop checks and artwork use this same object; leave its visibility alone.
@@ -340,11 +340,13 @@ internal static class HandLayoutUi
 
     private static void PollPileClick(IReadOnlyList<RuntimeObject> path, Vector2 pointer, float unit, bool locked)
     {
-        if (locked || !Application.isFocused) { _pressedPile = null; _outsidePress = false; return; }
         HandGroup? hit = null;
         foreach (var pair in PileTargets)
             if (pair.Value.Get<bool>("visible") && path.Any(p => p.Pointer == pair.Value.Pointer)) { hit = pair.Key; break; }
         var overCard = path.Any(p => p.TypeName == "UIHandCard_Button_Card");
+        if (Plugin.Diagnostics.IsRecording && (Input.GetMouseButtonDown(0) || Input.GetMouseButtonUp(0)))
+            Plugin.Diagnostics.Write($"hand.click phase={(Input.GetMouseButtonDown(0) ? "down" : "up")}; locked={locked}; focused={Application.isFocused}; pileHit={hit.HasValue}; overCard={overCard}; topType={path.FirstOrDefault()?.TypeName ?? "none"}");
+        if (locked || !Application.isFocused) { _pressedPile = null; _outsidePress = false; return; }
         if (Input.GetMouseButtonDown(0))
         { _pressedPile = hit; _outsidePress = hit == null && !overCard; _pilePressAt = pointer; }
         if ((pointer - _pilePressAt).sqrMagnitude > 64 * unit * unit)

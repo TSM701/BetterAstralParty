@@ -36,8 +36,8 @@ internal static class ModUi
     private static readonly Action[] PvpCleanup = {
         UpdateNotificationUi.Clear,
         GameUi.Stop, CardPreviewUi.Reset, BattleStatusUi.Clear, EncounterCounterUi.Clear, ShushuShieldUi.Clear,
-        CharacterGuideUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, () => FieldBuffUi.Clear("pvp-safety"),
-        CharacterNameUi.RestoreAll, InputAttention.Stop, PingFocusGuard.Reset,
+        CharacterGuideUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, FieldZoomUi.Clear, () => FieldBuffUi.Clear("pvp-safety"),
+        CharacterNameUi.RestoreAll, InputAttention.Stop, PingFocusGuard.Reset, AutoThanksUi.Clear,
         () => Plugin.Diagnostics.EndCombat(),
         () => { ClosePanel(true); GameUi.Dispose(_modal); _modal = null; }
     };
@@ -66,6 +66,8 @@ internal static class ModUi
         catch (Exception ex) { Compatibility.Block(UpdateNotificationUi.Feature, ex, UpdateNotificationUi.Clear); }
         try { ShushuShieldUi.PollLoads(); }
         catch (Exception ex) { Compatibility.Block(ShushuShieldUi.Feature, ex, ShushuShieldUi.Clear); }
+        // Match success precedes the field gate; the observer independently requires verified PvE.
+        MatchFocus.Tick();
         var pauseGameplay = PvpSafety.Poll();
         DiagnosticHub.Gate(DiagnosticFeature.CoreUi, pauseGameplay ? PvpSafety.Suspended ? DiagnosticCode.PvpExcluded : DiagnosticCode.StartupWaiting : !Compatibility.Allowed("CoreUi") ? DiagnosticCode.CompatibilityBlocked : DiagnosticCode.None);
         Plugin.Diagnostics.State("pvpSafety", pauseGameplay ? (PvpSafety.Suspended ? "suspended" : "initializing") : "active");
@@ -100,10 +102,11 @@ internal static class ModUi
         long handBytes = 0;
         try
         {
-            if (!Compatibility.Allowed("CoreUi")) { DiagnosticHub.Gate(DiagnosticFeature.CoreUi, DiagnosticCode.CompatibilityBlocked); return; }
+            if (!Compatibility.Allowed("CoreUi")) { FieldZoomUi.Tick(); DiagnosticHub.Gate(DiagnosticFeature.CoreUi, DiagnosticCode.CompatibilityBlocked); return; }
             Plugin.Catalogs?.Poll(DateTime.UtcNow);
             ModText.Select(Plugin.Language.Value);
             GameUi.Tick();
+            AutoThanksUi.Tick();
             CharacterGuideUi.Tick();
             ModFont.Tick();
             if (_languageRevision != ModText.Revision)
@@ -122,12 +125,13 @@ internal static class ModUi
                 }
             }
             UpdateNotificationUi.Tick();
+            FieldZoomUi.Tick();
             if (measure) gameEnd = System.Diagnostics.Stopwatch.GetTimestamp();
+            CardTargetButtonsUi.Tick();
             CardPreviewUi.Tick();
             var handStarted = measure ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
             var handAllocated = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
             HandLayoutUi.Tick();
-            CardTargetButtonsUi.Tick();
             if (measure)
             {
                 handMs = (System.Diagnostics.Stopwatch.GetTimestamp() - handStarted) * 1000d / System.Diagnostics.Stopwatch.Frequency;
@@ -205,7 +209,7 @@ internal static class ModUi
     internal static void FailUi(Exception ex) => Compatibility.Block("CoreUi", ex,
         UpdateNotificationUi.Clear,
         GameUi.Stop, CardPreviewUi.Reset, BattleStatusUi.Clear, EncounterCounterUi.Clear, ShushuShieldUi.Clear,
-        CharacterGuideUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear,
+        CharacterGuideUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, FieldZoomUi.Clear,
         () => FieldBuffUi.Clear("compatibility"), CharacterNameUi.RestoreAll,
         () => { ClosePanel(true); GameUi.Dispose(_modal); _modal = null; });
 
@@ -251,6 +255,8 @@ internal static class ModUi
         helpArea.Set("touchable", false);
         _ = new NativeUi.Surface(helpArea, 360, 200, fixedOpacity: true);
         Labels["HelpTitle"] = NativeUi.Label(helpArea, "", 18, 22, 324, 44, 27);
+        Labels["HelpTitle"].Set("singleLine", true);
+        Labels["HelpTitle"].Set("autoSize", 3);
         _helpViewport = NativeUi.Component(helpArea, 324, 116);
         _helpViewport.Call("SetXY", 18f, 68f);
         _helpViewport.Set("touchable", false);
@@ -299,23 +305,24 @@ internal static class ModUi
             fixedOpacity: true, fill: new Color(1f, 0.8f, 0f)).Graph;
         _scrollTrack.Call("SetXY", MenuLayout.SettingsX + 505, MenuLayout.SettingsY);
         _scrollMarker = null;
-        AddStepper("Scale", ModText.Text("표시 크기"), 390);
-        AddStepper("Opacity", ModText.Text("배경 불투명도"), 455);
+        AddStepper("Scale", ModText.Text("표시 크기"), MenuLayout.ToggleY(5));
+        AddStepper("Opacity", ModText.Text("배경 불투명도"), MenuLayout.ToggleY(6));
         AddToggle("Language", 440, 125);
         AddToggle("Diagnostics", 440, 190);
         AddToggle("MuteUnfocused", 440, 255);
         AddToggle("InputAttention", 440, 320);
-        AddToggle("UpdateChannel", 440, MenuLayout.ToggleY(6));
-        AddToggle("UpdateCheck", 440, MenuLayout.ToggleY(7));
-        AddToggle("UpdateDownload", 440, MenuLayout.ToggleY(8));
-        AddToggle("AutoDownload", 440, MenuLayout.ToggleY(9));
-        AddToggle("AfterExit", 440, MenuLayout.ToggleY(10));
-        AddToggle("UpdateGet", 440, MenuLayout.ToggleY(11));
-        AddToggle("UpdateCancel", 440, MenuLayout.ToggleY(12));
-        AddToggle("UpdateAuth", 440, MenuLayout.ToggleY(13));
-        AddToggle("UpdateSignOut", 440, MenuLayout.ToggleY(14));
-        AddToggle("DiagnosticsOpen", 440, MenuLayout.ToggleY(15));
-        AddToggle("DiagnosticsCollect", 440, MenuLayout.ToggleY(16));
+        AddToggle("MatchFocus", 440, MenuLayout.ToggleY(4));
+        AddToggle("UpdateChannel", 440, MenuLayout.ToggleY(7));
+        AddToggle("UpdateCheck", 440, MenuLayout.ToggleY(8));
+        AddToggle("UpdateDownload", 440, MenuLayout.ToggleY(9));
+        AddToggle("AutoDownload", 440, MenuLayout.ToggleY(10));
+        AddToggle("AfterExit", 440, MenuLayout.ToggleY(11));
+        AddToggle("UpdateGet", 440, MenuLayout.ToggleY(12));
+        AddToggle("UpdateCancel", 440, MenuLayout.ToggleY(13));
+        AddToggle("UpdateAuth", 440, MenuLayout.ToggleY(14));
+        AddToggle("UpdateSignOut", 440, MenuLayout.ToggleY(15));
+        AddToggle("DiagnosticsOpen", 440, MenuLayout.ToggleY(16));
+        AddToggle("DiagnosticsCollect", 440, MenuLayout.ToggleY(17));
         AddToggle("Enabled", 440, MenuLayout.ToggleY(0));
         AddToggle("Details", 440, MenuLayout.ToggleY(1));
         AddToggle("KoMinimum", 440, MenuLayout.ToggleY(2));
@@ -325,12 +332,15 @@ internal static class ModUi
         AddToggle("FieldBuffs", 440, MenuLayout.ToggleY(6));
         AddToggle("Names", 440, MenuLayout.ToggleY(7));
         AddToggle("HandLayout", 440, MenuLayout.ToggleY(8));
+        AddToggle("FieldZoom", 440, MenuLayout.ToggleY(9));
         foreach (var (button, action) in Controls.Values)
             if (!MenuLayout.FixedControl(action)) MoveIntoSettings(button);
         foreach (var key in new[] { "Scale", "ScaleValue", "Opacity", "OpacityValue" })
             MoveIntoSettings(Labels[key]);
         Button("Close", "Button_ReturnRounded", ModText.Text("돌아가기"), 410, MenuLayout.FooterY, 235);
         Labels["Saved"] = NativeUi.Label(_sheet, "", 675, MenuLayout.FooterY + 7, 315, 30, 18);
+        Labels["Saved"].Set("autoSize", 3);
+        Labels["Saved"].Set("singleLine", true);
         Refresh();
         Plugin.Logger.LogInfo("[원본 모드 메뉴] 고정 크기 토글·호버 기능 안내 생성됨");
     }
@@ -514,9 +524,11 @@ internal static class ModUi
         "BattleStatus" => Plugin.BattleStatus.Value,
         "ShushuShield" => Plugin.ShushuShield.Value,
         "FieldBuffs" => Plugin.FieldBuffs.Value,
+        "FieldZoom" => Plugin.FieldZoom.Value,
         "Names" => Plugin.UseRealNames.Value,
         "Diagnostics" => Plugin.DiagnosticLogging.Value,
         "MuteUnfocused" => Plugin.MuteUnfocused.Value,
+        "MatchFocus" => Plugin.MatchFocus.Value,
         "InputAttention" => InputAttentionState.Normalize(Plugin.InputAttention.Value) != "Off",
         "AutoDownload" => Plugin.Automatic.AutoDownload,
         "AfterExit" => Plugin.Automatic.ApplyAfterExit,
@@ -762,8 +774,10 @@ internal static class ModUi
             case "BattleStatus": Plugin.BattleStatus.Value = !Plugin.BattleStatus.Value; break;
             case "ShushuShield": Plugin.ShushuShield.Value = !Plugin.ShushuShield.Value; if (!Plugin.ShushuShield.Value) ShushuShieldUi.Clear(); break;
             case "FieldBuffs": Plugin.FieldBuffs.Value = !Plugin.FieldBuffs.Value; break;
+            case "FieldZoom": Plugin.FieldZoom.Value = !Plugin.FieldZoom.Value; if (!Plugin.FieldZoom.Value) FieldZoomUi.Clear(); break;
             case "Diagnostics": Plugin.DiagnosticLogging.Value = !Plugin.DiagnosticLogging.Value; break;
             case "MuteUnfocused": Plugin.MuteUnfocused.Value = !Plugin.MuteUnfocused.Value; break;
+            case "MatchFocus": Plugin.MatchFocus.Value = !Plugin.MatchFocus.Value; break;
             case "ScaleMinus": Plugin.UiScale.Value = Math.Max(0.75f, Plugin.UiScale.Value - 0.05f); break;
             case "ScalePlus": Plugin.UiScale.Value = Math.Min(1.5f, Plugin.UiScale.Value + 0.05f); break;
             case "OpacityMinus": Plugin.Opacity.Value = Math.Max(0f, MathF.Round(Plugin.Opacity.Value - 0.05f, 2)); break;

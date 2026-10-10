@@ -10,10 +10,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Reference Include="Cinemachine">
+      <HintPath>$(GameRoot)\BepInEx\interop\Cinemachine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Compile Include="..\diagnostics\DiagnosticBundle.cs" Link="Diagnostics\DiagnosticBundle.cs" />
     <Compile Include="..\diagnostics\MinimalDiagnosticProjection.cs" Link="Diagnostics\MinimalDiagnosticProjection.cs" />
-    <!-- Matching focus is deferred to a later minor release; keep its source and fixtures. -->
-    <Compile Remove="MatchFocusState.cs;WindowsMatchFocus.cs;SettingsTraceProbe.cs" />
+    <!-- Development-only trace helper never ships in the plugin. -->
+    <Compile Remove="SettingsTraceProbe.cs" />
     <Compile Include="..\updater\ReleaseFeedPolicy.cs" Link="Updating\ReleaseFeedPolicy.cs" />
     <Compile Include="..\updater\ReceiptChannelState.cs" Link="Updating\ReceiptChannelState.cs" />
     <Compile Include="..\updater\ChannelTransitionIntent.cs" Link="Updating\ChannelTransitionIntent.cs" />

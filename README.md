@@ -11,10 +11,13 @@ Astral Party 국제판 INT(Global)의 PvE 정보 표시와 판단을 돕는 한�
 ### 주요 기능
 
 - 공개 정보를 사용하는 PvE 전투 추천과 카드 평가
-- KO·생존 최소 조건과 최종 피해 표시
-- 필드 플레이어 이름·HP 및 필드·전투의 공개 버프 표시
+- KO·생존 최소 조건, 전투 확률과 최종 피해 표시
+- 플레이어·몬스터 필드 인디케이터와 공개 버프·반격 표시
 - 카드·칩 핑 상세 팝업과 손패 정렬 옵션
+- 게임 기본 감사합니다 추천을 추천마다 한 번 자동 전송
 - 인게임 모드 설정, 캐릭터 이름 옵션, 창 비활성화 시 음소거
+- PvE 매칭 성사 또는 직접 만든 PvE 방의 게임 시작 시 창 포커스
+- PvE 필드 휠 확대·축소와 턴 전환에도 유지되는 자유 시점, 자유 시점 카메라 종료 버튼
 - 별도의 Astral Party - Mod Steam 항목
 
 PvP 방·경기가 감지되면 전투 추천·카드 정렬·추가 정보 표시·비활성 창 음소거 등 모드 편의 기능이 일시 중지됩니다. PvP에서 나오면 저장된 설정대로 다시 작동하며, 업데이트와 진단 처리는 PvP에서도 계속됩니다.
@@ -26,7 +29,7 @@ PvP 방·경기가 감지되면 전투 추천·카드 정렬·추가 정보 표�
 
 ### 설치와 실행
 
-1. GitHub Releases에서 `BetterAstralParty-1.0.1.zip`처럼 버전명이 붙은 전체 설치 ZIP을 받으세요. `-update.zip`과 Source code ZIP은 최초 설치용이 아닙니다.
+1. GitHub Releases에서 `BetterAstralParty-1.1.0.zip` 전체 설치 ZIP을 받으세요. `-update.zip`과 Source code ZIP은 최초 설치용이 아닙니다.
 2. 원래 Steam 항목으로 INT(Global)를 한 번 실행해 게임 업데이트와 데이터 다운로드를 마친 뒤 종료하세요.
 3. 쓰기 가능한 별도 폴더에 ZIP 전체를 압축 해제하고, 동봉된 파일과 폴더를 함께 유지하세요. 게임 폴더 위에 직접 덮어쓰거나 ZIP 내부에서 실행하지 마세요.
 4. Steam에 로그인한 상태에서 압축을 푼 폴더의 `Install.cmd`를 실행하세요. PowerShell에서는 `.\Install.cmd`를 실행합니다. 경로를 묻는 경우 Steam의 설치된 파일 → 찾아보기로 확인한 `Astral Party` 폴더 또는 `8vJXnINT` 하위 폴더를 선택하세요.
@@ -39,6 +42,10 @@ Steam 항목 등록·수정 때문에 종료 안내가 나오면 대상 목록�
 ### 설정
 
 메인메뉴의 모드 설정에서 기능과 표시 옵션을 조절합니다. 일반 설정 → 언어에서 자동, 한국어, English를 선택하세요. 자동은 게임 메뉴 언어를 따르며 게임 원본 설명과 플레이어 이름은 그대로 표시합니다.
+
+필드 휠 줌을 켜면 휠을 위로 굴려 확대하고 아래로 굴려 축소합니다. 자유 시점에서 드래그로 이동할 수 있으며, 턴 바의 핀 오른쪽에 있는 자유 시점 카메라 종료 버튼을 누르면 기본 배율과 캐릭터 시점으로 돌아갑니다.
+
+축소하면 플레이어·몬스터 인디케이터가 반투명해지고, 더 멀리 축소하면 숨겨집니다. 다시 확대하면 표시됩니다.
 
 스크린샷과 오버레이는 본인의 Steam 단축키를 사용하세요.
 
@@ -79,10 +86,13 @@ A Korean/English quality-of-life mod for Astral Party INT(Global), focused on Pv
 ### Features
 
 - PvE combat recommendations and card evaluation using public information
-- Minimum KO/survival conditions and observed final damage
-- Field player names/HP and public buff displays in the field and combat
+- Minimum KO/survival conditions, combat probabilities and observed final damage
+- Player/monster field indicators with public buffs and counterattack markers
 - Detail popups for card and chip pings, and hand-layout options
+- Automatically send each native Thanks quick-chat recommendation once
 - In-game settings, character-name options and mute on focus loss
+- Focus the game when a PvE match is found or a manually created PvE room starts
+- PvE field wheel zoom and free view across turns, with an Exit Free Camera button
 - A separate Astral Party - Mod Steam entry
 
 When a PvP room or match is detected, mod conveniences such as combat recommendations, hand layouts, additional information displays and focus muting pause. They resume with your saved settings after leaving PvP; updates and diagnostics continue even during PvP.
@@ -94,7 +104,7 @@ When a PvP room or match is detected, mod conveniences such as combat recommenda
 
 ### Install and play
 
-1. Download the complete installation ZIP from GitHub Releases, named by version, such as `BetterAstralParty-1.0.1.zip`. Neither `-update.zip` nor Source code ZIPs are first-install packages.
+1. Download the complete `BetterAstralParty-1.1.0.zip` installation package from GitHub Releases. Neither `-update.zip` nor Source code ZIPs are first-install packages.
 2. Launch INT(Global) through the original Steam entry, finish game/data updates, then close it.
 3. Extract the entire ZIP to a separate writable folder and keep all bundled files and folders together. Do not overwrite the game folder directly or run inside the ZIP.
 4. While signed in to Steam, run `Install.cmd` from the extracted folder. In PowerShell, run `.\Install.cmd`. If prompted, select the `Astral Party` folder or its `8vJXnINT` child, as shown by Steam's Installed Files → Browse.
@@ -107,6 +117,10 @@ For vanilla, select INT(Global) from the original Steam entry or run `AstralPart
 ### Settings
 
 Open Mod Settings from the main menu to configure features and display options. Select Auto, 한국어 or English under General → Language. Auto follows the game menu language; native game descriptions and player names remain unchanged.
+
+With Field Wheel Zoom enabled, scroll up to zoom in and down to zoom out. Drag to move in free view. Select Exit Free Camera to the right of the turn-bar pin to restore the default zoom and character view.
+
+Player and monster indicators become translucent when zoomed out and hide farther out. Zoom back in to show them again.
 
 Use your own Steam screenshot and overlay hotkeys.
 

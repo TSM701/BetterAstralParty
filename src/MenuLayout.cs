@@ -50,7 +50,7 @@ internal static class MenuLayout
         top + buttonHeight + height + 4 <= bottom ? top + buttonHeight + 4 : Math.Max(8, top - height - 4);
     internal static string OptionHelp(string action, string value) =>
         StateHelp(action, value is not ("Native" or "Off"), value);
-    internal static bool GeneralControl(string action) => action is "Language" or "Diagnostics" or "DiagnosticsOpen" or "DiagnosticsCollect" or "MuteUnfocused" or "InputAttention"
+    internal static bool GeneralControl(string action) => action is "Language" or "Diagnostics" or "DiagnosticsOpen" or "DiagnosticsCollect" or "MuteUnfocused" or "InputAttention" or "MatchFocus"
         or "UpdateAuth" or "UpdateSignOut"
         or "UpdateChannel" or "UpdateCheck" or "UpdateDownload" or "AutoDownload" or "AfterExit" or "UpdateGet" or "UpdateCancel"
         or "ScaleMinus" or "ScalePlus" or "OpacityMinus" or "OpacityPlus";
@@ -68,7 +68,9 @@ internal static class MenuLayout
         "KoMinimum" when !enabled => "KO·생존 최소 조건 인디케이터를\n표시하지 않습니다.",
         "CardPopups" when !enabled => "카드·칩 핑의 추가 상세 팝업을\n표시하지 않습니다.\n기본 핑 말풍선은 유지합니다.",
         "BattleStatus" when !enabled => "모드의 전투 정보와 반격 표시를\n표시하지 않습니다.\n슈슈 쉴드 설정은 별도로 적용합니다.",
-        "FieldBuffs" when !enabled => "모드의 필드 이름·HP·버프 표시를\n표시하지 않습니다.",
+        "FieldBuffs" when !enabled => "플레이어 필드 인디케이터를\n표시하지 않습니다.",
+        "FieldZoom" when !enabled => "필드 카메라에 휠 줌을\n적용하지 않습니다.",
+        "MatchFocus" when !enabled => "PvE 매칭 성사·로비 방 시작에도\n게임 창으로 전환하지 않습니다.",
         "Diagnostics" when !enabled => "선택형 상세 진단 기록을 끕니다.\n기본 오류 기록은 유지합니다.",
         "MuteUnfocused" when !enabled => "다른 창으로 전환해도\n모드가 게임 소리를 끄지 않습니다.",
         _ => Help(action).Body
@@ -86,7 +88,9 @@ internal static class MenuLayout
         "HandLayout" => ("손패 기능별 정렬", "기본 → 클릭 펼치기 → 호버 펼치기\n클릭 방식은 묶음을 눌러 가로로 펼칩니다.\n접힌 묶음은 반투명하게 표시합니다."),
         "BattleStatus" => ("전투 정보 표시", "HP 아래 손패 장수·공개 효과와\n플레이어·몬스터 반격을 표시합니다.\n효과 설명은 아이콘 호버로 봅니다."),
         "ShushuShield" => ("슈슈 쉴드 표시", "전투 중 캐릭터에 쉴드 효과를 표시하고\n방어자일 때 방어 버튼·카드를 잠급니다.\nOFF: 표시와 잠금 모두 해제.\n전투 정보 표시와 별도 설정입니다."),
-        "FieldBuffs" => ("필드 버프 표시", "필드 플레이어 이름·HP를 표시합니다.\n공개 버프가 있으면 아이콘도 표시하며\n클릭하면 효과 설명을 봅니다."),
+        "FieldBuffs" => ("플레이어 필드 인디케이터", "필드의 플레이어 이름·HP와\n공개 효과 아이콘을 표시합니다.\n클릭하면 효과 설명을 봅니다."),
+        "FieldZoom" => ("필드 휠 줌", "휠 위로 확대, 아래로 전체 필드까지 축소합니다.\n자유 시점과 배율은 턴이 바뀌어도 유지합니다.\n자유 시점 카메라 종료를 누르면\n기본 배율과 캐릭터 추적으로 돌아갑니다."),
+        "MatchFocus" => ("매칭 성사 시 창 포커스", "PvE 매칭 성사·로비 방 시작 시\n창을 잠깐 최상위로 올려 전환 후 복원합니다.\nWindows가 전환을 막으면\n작업표시줄을 깜빡입니다."),
         "Names" => ("캐릭터 이름", "ON: 본명 / OFF: 이명\n계정 닉네임은 바꾸지 않습니다."),
         "Diagnostics" => ("충돌 진단 로그", "오류·성능·공개 전투 계산을 기록합니다.\n계산 불일치는 별도 보존합니다.\n문제를 확인할 때만 켜 주세요."),
         "DiagnosticsOpen" => ("진단 폴더 열기", "만든 진단 ZIP이 모이는 폴더를 엽니다.\nZIP 안에서 처리된 로그를 볼 수 있습니다."),
@@ -94,7 +98,7 @@ internal static class MenuLayout
         "MuteUnfocused" => ("창 비활성화 시 음소거", "다른 창으로 전환하면 소리를 끕니다.\n게임으로 돌아오면 복원합니다.\n저장된 볼륨은 바꾸지 않습니다."),
         "InputAttention" => ("입력 대기 알림", "비활성 창에서 내 입력 대기를 알립니다.\n클릭: 작업표시줄 → Windows 알림 → OFF\nWindows 알림 설정에 따라 표시됩니다."),
         "UpdateChannel" => ("업데이트 채널", "클릭: 안정판 ↔ 베타 포함\n파일을 자동으로 교체하지 않습니다."),
-        "UpdateCheck" => ("업데이트 확인", "새 버전과 변경 사항을 확인합니다.\n비공개 릴리스에는 인증이 필요합니다."),
+        "UpdateCheck" => ("업데이트 확인", "새 버전 확인 상태를 표시합니다.\n변경 사항은 업데이트 알림에서 확인합니다.\n비공개 릴리스에는 인증이 필요합니다."),
         "UpdateDownload" => ("다운로드 페이지", "선택한 채널의 GitHub 릴리스 목록을 엽니다.\n다운로드와 설치는 직접 진행합니다."),
         "AutoDownload" => ("자동 다운로드", "기본 OFF. 검증할 새 버전을 자동으로 받습니다."),
         "AfterExit" => ("종료 후 적용", "기본 OFF. 게임과 런처 종료 후 검증한 업데이트를 적용합니다."),

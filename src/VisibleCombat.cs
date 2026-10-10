@@ -72,9 +72,9 @@ public static class VisibleCombatAdvisor
         return new(defTitle + $"\n평균 피해 {Range(defLow, defHigh)}",
             dodgeTitle + (input.DodgeAvailable ? $"\n평균 피해 {Range(dodgeLow, dodgeHigh)}" : ""))
         {
-            DefendQuick = $"예상 피해 {Range(defLow, defHigh)}\n전투불능 {CombatAdvisor.ProbabilityRange(defKoLow, defKoHigh)}%",
+            DefendQuick = $"예상 피해 {Range(defLow, defHigh)}\n전투불능 {CombatAdvisor.Probability(defKoLow)}%",
             DodgeQuick = input.DodgeAvailable
-                ? $"예상 피해 {Range(dodgeLow, dodgeHigh)}\n전투불능 {CombatAdvisor.ProbabilityRange(dodgeKoLow, dodgeKoHigh)}%" : "회피 불가",
+                ? $"예상 피해 {Range(dodgeLow, dodgeHigh)}\n전투불능 {CombatAdvisor.Probability(dodgeKoLow)}%" : "회피 불가",
             Recommendation = recommendation,
             Summary = "방어자 기준 · " + (!input.DodgeAvailable && !input.Modifiers.ShushuShield ? "회피 불가"
                 : recommendation == RecommendedAction.Defend ? "방어 추천" : "회피 추천")

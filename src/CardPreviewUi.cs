@@ -65,7 +65,8 @@ internal static class CardPreviewUi
             _allowed = VisibleCombatAdvisor.IsPve(room?.Field("info")?.Get<int>("MapType") ?? 0);
         }
         if (!_allowed || ModUi.IsOpen || !Application.isFocused) { Reset(); return; }
-        if (scan) UpdatePingTargets(root);
+        // Pooled messages can change text/geometry before the next discovery scan.
+        if (scan || Input.GetMouseButtonDown(0) || Input.GetMouseButtonUp(0)) UpdatePingTargets(root);
 
         RuntimeObject? ping = null;
         var insidePopup = false;
@@ -73,7 +74,7 @@ internal static class CardPreviewUi
         var mouseUp = Input.GetMouseButtonUp(0);
         if (mouseDown || mouseUp)
         {
-            foreach (var current in GameUi.PointerPath())
+            foreach (var current in GameUi.PointerPath(refresh: true))
             {
                 if (current.Pointer == _popup?.Pointer) { insidePopup = true; break; }
                 if (current.TypeName == "UIExpression_Com_ChatItem") ping = current;

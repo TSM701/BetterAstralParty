@@ -8,13 +8,25 @@ internal static class FieldBuffUi
     private static readonly Dictionary<IntPtr, Plate> Plates = new();
     private static readonly HashSet<IntPtr> Seen = new();
     private static readonly List<IntPtr> Stale = new();
+    private static readonly Dictionary<IntPtr, CounterBadge> Counters = new();
+    private static readonly HashSet<IntPtr> CounterSeen = new(), CounterOwners = new();
     private static IntPtr _logicClass, _plateClass, _parent;
     private static float _scanAt;
     private static IntPtr _pressed;
+    private static Vector2 _pressAt;
+    private static bool _cancelled;
     private static RuntimeObject? _popupList, _popupScroll;
     private static bool _popupTouchable, _popupWheel;
     internal static int ActivePlateCount => Plates.Count;
     internal static int EffectCount { get; private set; }
+
+    private sealed class CounterBadge(RuntimeObject icon, IntPtr owner)
+    {
+        internal readonly RuntimeObject Icon = icon;
+        internal readonly IntPtr Owner = owner;
+        internal bool? Shown;
+        internal (float X, float Y)? Position;
+    }
 
     private sealed class Plate
     {
@@ -122,7 +134,8 @@ internal static class FieldBuffUi
             if (!Plugin.FieldBuffs.Value) { Clear("setting-off"); return; }
             if (GameUi.HomeAvailable) RuntimeObject.RequireClasses("FieldBuffs", ("GameLogic", "GameLogicManager"), ("UI", "UICom_AttrInfo"));
             if (ModUi.IsOpen) { Clear("settings-open"); return; }
-            if (GameUi.Root == null) return;
+            if (GameUi.Root == null) { Clear("root-unavailable"); return; }
+            if (FieldIndicatorOpacity.Hidden) { _pressed = IntPtr.Zero; return; }
             if (Time.unscaledTime >= _scanAt)
             {
                 _scanAt = Time.unscaledTime + 0.2f;
@@ -132,17 +145,27 @@ internal static class FieldBuffUi
             Plugin.Diagnostics.State("field.focus", Application.isFocused.ToString());
             if (!Application.isFocused) { _pressed = IntPtr.Zero; return; }
             // Same click-to-open public buff description as the monster plate.
-            if (Plates.Count == 0 || (!Input.GetMouseButtonDown(0) && !Input.GetMouseButtonUp(0))) return;
+            if (Plates.Count == 0) { _pressed = IntPtr.Zero; return; }
+            if (_pressed == IntPtr.Zero && !Input.GetMouseButtonDown(0)) return;
             RuntimeObject? hit = null;
-            foreach (var item in GameUi.PointerPath())
-                if (Plates.TryGetValue(item.Pointer, out _)) { hit = item; break; }
-            if (Input.GetMouseButtonDown(0)) _pressed = hit?.Pointer ?? IntPtr.Zero;
+            if (Input.GetMouseButtonDown(0) || Input.GetMouseButtonUp(0))
+                foreach (var item in GameUi.PointerPath())
+                    if (Plates.TryGetValue(item.Pointer, out _)) { hit = item; break; }
+            var mouse = Input.mousePosition;
+            var pointer = new Vector2(mouse.x, mouse.y);
+            if (Input.GetMouseButtonDown(0))
+            { _pressed = hit?.Pointer ?? IntPtr.Zero; _pressAt = pointer; _cancelled = false; }
+            if (_pressed == IntPtr.Zero) return;
+            var sensitivity = RuntimeObject.StaticField(RuntimeObject.FindClass("FairyGUI", "UIConfig"), "clickDragSensitivity")!.Value<int>();
+            // Returning to the same icon after a drag must not become a click.
+            if ((pointer - _pressAt).sqrMagnitude > sensitivity * (float)sensitivity) _cancelled = true;
             if (Input.GetMouseButtonUp(0))
             {
-                if (hit != null && hit.Pointer == _pressed && GameUi.Visible(hit.Field("graph_ShowBuff")))
+                if (!_cancelled && hit != null && hit.Pointer == _pressed && GameUi.Visible(hit.Field("graph_ShowBuff")))
                     hit.Call("OpenBuffInfo", (object?)null);
                 _pressed = IntPtr.Zero;
             }
+            else if (!Input.GetMouseButton(0)) _pressed = IntPtr.Zero;
         }
         catch (Exception ex)
         {
@@ -210,17 +233,75 @@ internal static class FieldBuffUi
             Plates.Remove(key);
             Plugin.Diagnostics.Write("field removed: player-not-seen");
         }
+        RefreshCounters(battleUi!);
+    }
+
+    private static void RefreshCounters(RuntimeObject battleUi)
+    {
+        CounterSeen.Clear(); CounterOwners.Clear();
+        // Prefer the hero HP/buff clone; do not draw the same owner's badge again on its native state plate.
+        foreach (var plate in Plates.Values) RefreshCounter(plate.Ui);
+        foreach (var name in new[] { "com_AttrInfos", "com_PlayerAttrInfos" })
+        {
+            var parent = battleUi.Field(name);
+            if (!GameUi.Visible(parent)) continue;
+            for (var i = 0; i < parent!.Get<int>("numChildren"); i++)
+            {
+                var ui = parent.Call("GetChildAt", i)!;
+                if (!Plates.ContainsKey(ui.Pointer) && ui.TypeName is "UICom_AttrInfo" or "UICom_PlayerAttrInfo")
+                    RefreshCounter(ui);
+            }
+        }
+        Stale.Clear();
+        foreach (var key in Counters.Keys) if (!CounterSeen.Contains(key)) Stale.Add(key);
+        foreach (var key in Stale) { GameUi.Dispose(Counters[key].Icon); Counters.Remove(key); }
+    }
+
+    private static void RefreshCounter(RuntimeObject ui)
+    {
+        if (ui.Get<bool>("isDisposed") || !ui.Get<bool>("onStage")) return;
+        var player = ui.Get("PlayerData"); // Local, already-synchronised owner lookup; no player-info window/RPC.
+        if (player == null) return;
+        CounterSeen.Add(ui.Pointer);
+        Counters.TryGetValue(ui.Pointer, out var badge);
+        if (badge != null && (badge.Owner != player.Pointer || badge.Icon.Get<bool>("isDisposed")))
+        { GameUi.Dispose(badge.Icon); Counters.Remove(ui.Pointer); badge = null; }
+        var shown = GameUi.Visible(ui) && player.Get("Property")?.Field("Counter")?.Get<bool>("Value") == true
+            && CounterOwners.Add(player.Pointer);
+        if (badge == null && !shown) return;
+        var attr = ui.TypeName == "UICom_AttrInfo";
+        var anchor = ui.Field(attr ? "txt_Name" : "loader_State")!;
+        var x = attr ? ui.Field("graph_Guide")!.Get<float>("xMin") + 8 : anchor.Get<float>("xMin") + anchor.Get<float>("width") + 6;
+        var y = anchor.Get<float>("yMin") + (anchor.Get<float>("height") - 36) / 2;
+        if (!float.IsFinite(x + y)) shown = false;
+        if (badge == null)
+        {
+            if (!shown) return;
+            var icon = NativeUi.Icon(ui, "Com_Icon_Counter", x, y, 36)
+                ?? throw new InvalidOperationException("필드 반격 아이콘 준비 대기");
+            badge = new CounterBadge(icon, player.Pointer); Counters.Add(ui.Pointer, badge);
+            badge.Position = (x, y);
+        }
+        if (shown && badge.Position != (x, y))
+        {
+            NativeUi.Position(badge.Icon, x, y, 36 / Math.Max(badge.Icon.Get<float>("width"), badge.Icon.Get<float>("height")));
+            badge.Position = (x, y);
+        }
+        if (badge.Shown != shown) { badge.Icon.Set("visible", shown); badge.Shown = shown; }
     }
 
     internal static void Clear(string reason)
     {
         RestoreBuffPopup();
+        foreach (var badge in Counters.Values) GameUi.Dispose(badge.Icon);
+        Counters.Clear(); CounterSeen.Clear(); CounterOwners.Clear();
         Plugin.Diagnostics.State("field.gate", reason);
         if (Plates.Count > 0) Plugin.Diagnostics.Write($"field clear: {reason}; count={Plates.Count}");
         foreach (var plate in Plates.Values) GameUi.Dispose(plate.Ui);
         Plates.Clear(); Seen.Clear(); Stale.Clear();
         EffectCount = 0;
         _parent = _pressed = IntPtr.Zero;
+        _cancelled = false;
     }
 
     private static void UpdateBuffPopup()

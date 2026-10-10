@@ -82,7 +82,7 @@ internal static class CardDiceUi
             for (var index = 0; index < Rows.Count; index++)
             {
                 var row = Rows[index];
-                var content = CardDiceLayout.Content(pair, thresholdDie, index, survival, unconditional);
+                var content = CardDiceLayout.Content(pair, thresholdDie, index, survival, unconditional, input.Modifiers.DefenseDice);
                 // Number font follows the live dice; symbols use normal UI typography/fallback.
                 NativeUi.CopyTextFormat(row.Number, attackPoint.Field("txt_Point")!);
                 var color = index == 0 ? Color.red : Color.cyan;
@@ -102,7 +102,7 @@ internal static class CardDiceUi
                 // Never hide the disc or its parent on an unavailable threshold.
             }
             if (Plugin.Diagnostics.IsRecording)
-                Plugin.Diagnostics.State("koMinimum.content", $"role={role}; revealed={fixedDie}; preview={hover}; rows={Rows.Count}; metadataOnly=True");
+                Plugin.Diagnostics.State("koMinimum.content", $"role={role}; revealed={fixedDie}; preview={hover}; rows={Rows.Count}; supported={pair != null}; reason={(unsupported ? "card-effect" : pair == null ? "public-input" : "none")}; status={status}; metadataOnly=True");
 
         }
         var scaleUi = Math.Max(0.1f, Math.Min(Plugin.UiScale.Value, ui.Get<float>("height") / 1080f));

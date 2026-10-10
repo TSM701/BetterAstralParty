@@ -30,10 +30,12 @@ public static class CardAdvisor
             || parameters.Length is < 2 or > 3 || cost is < 0 or > 20) return null;
         // Native TutorialLogic.CalFightCardValue: first two values are additive min/max.
         // EffectType does NOT describe extra parameters. Card 10008's native catalogue
-        // defines the third parameter as counter prevention; 10009/10010 use other meanings.
+        // defines the third parameter as counter prevention; 10009 grants a later card.
+        // 10010 changes final ATK, so its extra effect cannot be discarded.
         // Keep this verified semantic mapping; values themselves always come from live data.
         var counter = parameters.Length == 3 && id == 10008 && effectType == 1 && parameters[2] is 0 or 1;
-        if (parameters.Length == 3 && !counter) return null;
+        var grantsCard = parameters.Length == 3 && id == 10009 && effectType == 1 && parameters[2] == 10010;
+        if (parameters.Length == 3 && !counter && !grantsCard) return null;
         var min = parameters[0]; var max = parameters[1];
         return min >= 0 && max >= min && max <= 100
             ? new CardBonus(effectType == 1, min, max, cost) { PreventCounter = counter && parameters[2] == 1 } : null;
@@ -126,7 +128,7 @@ public static class CardAdvisor
             : koMin > epsilon || koMin >= -epsilon && damageMin > epsilon ? "효과 있음*" : "조건부 이득*";
         // Keep paired gains for card evaluation, but show only the resulting KO chance.
         var details = card.Attack
-            ? $"{CombatAdvisor.ProbabilityRange(afterKoMin, afterKoMax)}%" : "";
+            ? $"{CombatAdvisor.Probability(afterKoMax)}%" : "";
         return new CardImpact(title, details, damageMin, damageMax, koMin, koMax)
         {
             PreventedSelfKoMax = counterMax,

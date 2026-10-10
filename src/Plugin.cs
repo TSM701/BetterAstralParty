@@ -11,7 +11,7 @@ public sealed class Plugin : BasePlugin
 {
     public const string Guid = "kr.betterastralparty.mod";
     public const string Name = "BetterAstralParty";
-    public const string Version = "1.0.1";
+        public const string Version = "1.1.0";
     public const int InstallBundleProtocol = 1;
     public const string UpdateProtocol = "2";
     public const string SettingsSchema = "1";
@@ -26,8 +26,10 @@ public sealed class Plugin : BasePlugin
     internal static ConfigEntry<bool> BattleStatus { get; private set; } = null!;
     internal static ConfigEntry<bool> ShushuShield { get; private set; } = null!;
     internal static ConfigEntry<bool> FieldBuffs { get; private set; } = null!;
+    internal static ConfigEntry<bool> FieldZoom { get; private set; } = null!;
     internal static ConfigEntry<bool> DiagnosticLogging { get; private set; } = null!;
     internal static ConfigEntry<bool> MuteUnfocused { get; private set; } = null!;
+    internal static ConfigEntry<bool> MatchFocus { get; private set; } = null!;
     internal static ConfigEntry<string> InputAttention { get; private set; } = null!;
     internal static DiagnosticLog Diagnostics { get; private set; } = null!;
     internal static ConfigEntry<float> UiScale { get; private set; } = null!;
@@ -99,6 +101,8 @@ public sealed class Plugin : BasePlugin
         BattleStatus = Config.Bind("화면", "전투 공개 상태", true, "PvE HP 아래 공개 손패 장수·효과와 플레이어·몬스터의 반격 가능 여부를 표시합니다. / Public hand counts, effects and player/monster counter indicators in PvE.");
         ShushuShield = Config.Bind("화면", "슈슈 쉴드 표시", BattleStatus.Value, "캐릭터의 슈슈 쉴드 효과 및 로컬 방어 버튼·방어 카드 잠금. OFF 시 모두 해제합니다. 전투 정보 표시와 독립적입니다. / Shushu shield effects on characters and local Defend/defense-card locks. OFF restores all; independent of Battle Info.");
         FieldBuffs = Config.Bind("화면", "필드 버프 표시", true, "PvE 필드 플레이어의 이름·체력을 항상 표시하고 공개 버프가 있으면 아이콘을 함께 표시합니다. 클릭하면 원본 효과 설명을 엽니다. 전투 정보 표시와 독립적이며 추가 서버 요청은 없습니다.");
+        FieldZoom = Config.Bind("화면", "필드 휠 줌", true,
+            "PvE 필드에서 휠로 확대·축소하고 자유 시점을 유지합니다. 자유 시점 카메라 종료를 누르면 기본 배율과 캐릭터 추적으로 돌아갑니다. / Wheel zoom keeps a free view on PvE fields. Exit Free Camera restores native zoom and follow. Default ON.");
         UiScale = Config.Bind("화면", "UI 배율", 1.0f, new ConfigDescription("추천 패널 크기입니다.", new AcceptableValueRange<float>(0.75f, 1.5f)));
         // New fill-only setting starts at 100%; do not carry over the old whole-panel opacity.
         Opacity = Config.Bind("화면", "배경 불투명도", 1f, new ConfigDescription("전투 패널 바탕만 0~100%로 조절합니다. 글자·아이콘·테두리 및 설정창·암막에는 적용하지 않습니다.", new AcceptableValueRange<float>(0f, 1f)));
@@ -143,6 +147,8 @@ public sealed class Plugin : BasePlugin
         // Keep the saved key so upgrades preserve each user's existing choice.
         MuteUnfocused = Config.Bind("환경", "비활성 창 음소거", true,
             "창 비활성화 시 음소거: 게임 창이 포커스를 잃으면 소리를 끄고 돌아오면 복원합니다. 저장된 게임 볼륨은 변경하지 않습니다. 기본 ON.");
+        MatchFocus = Config.Bind("환경", "매칭 성사 시 창 포커스", true,
+            "PvE 매칭 성사 또는 로비 방 시작 시 잠깐 최상위로 올려 게임 창으로 전환한 뒤 기존 창 상태로 복원합니다. Windows가 전환을 허용하지 않으면 작업표시줄로 알립니다. / On a PvE match or lobby game start, briefly raise the game topmost, request focus, then restore its previous window state; flash the taskbar if Windows declines. Default ON.");
         InputAttention = Config.Bind("환경", "입력 대기 알림", "Taskbar",
             "비활성 창의 PvE 입력 대기 알림: Taskbar(작업표시줄), Windows(Windows 알림), Off. / Unfocused PvE input alerts: Taskbar, Windows or Off. Default Taskbar.");
         // Same key: migrate 0.18's serialized true/false without losing an OFF preference.
@@ -248,7 +254,7 @@ public sealed class Plugin : BasePlugin
         MinimalDiagnostics?.Settings(new DiagnosticSettings(flags, language, channel, hand,
             (int)Math.Round(UiScale.Value * 100), (int)Math.Round(Opacity.Value * 100)));
          Diagnostics.State("settings",
-        FormattableString.Invariant($"advice={Enabled.Value}; details={ShowDetails.Value}; koMinimum={KoMinimum.Value}; names={UseRealNames.Value}; cardPopups={CardPopups.Value}; battleStatus={BattleStatus.Value}; shushuShield={ShushuShield.Value}; fieldBuffs={FieldBuffs.Value}; muteUnfocused={MuteUnfocused.Value}; inputAttention={InputAttention.Value}; scale={UiScale.Value:F2}; opacity={Opacity.Value:F2}"));
+        FormattableString.Invariant($"advice={Enabled.Value}; details={ShowDetails.Value}; koMinimum={KoMinimum.Value}; names={UseRealNames.Value}; cardPopups={CardPopups.Value}; battleStatus={BattleStatus.Value}; shushuShield={ShushuShield.Value}; fieldBuffs={FieldBuffs.Value}; fieldZoom={FieldZoom.Value}; matchFocus={MatchFocus.Value}; muteUnfocused={MuteUnfocused.Value}; inputAttention={InputAttention.Value}; scale={UiScale.Value:F2}; opacity={Opacity.Value:F2}"));
     }
 
     private static ReleaseUpdateResult? _diagnosticRelease;

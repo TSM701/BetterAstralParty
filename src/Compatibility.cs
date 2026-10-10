@@ -9,7 +9,7 @@ internal static class Compatibility
     {
         if (Blocked.TryGetValue(feature, out var reason)) return ModText.Text(reason);
         if (feature is "Details" or "KoMinimum") return Reason("Enabled");
-        if (feature is not ("MuteUnfocused" or "Diagnostics" or "Notices")
+        if (feature is not ("MuteUnfocused" or "MatchFocus" or "Diagnostics" or "Notices")
             && Blocked.TryGetValue("CoreUi", out reason)) return reason;
         return null;
     }
