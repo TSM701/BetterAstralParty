@@ -2,8 +2,9 @@
 function Resolve-IntGameDirectory([string]$Path) {
     if ([string]::IsNullOrWhiteSpace($Path)) { return }
     $Path = $Path.Trim().Trim('"').Replace('/', '\')
-    foreach ($candidate in @($Path, (Join-Path $Path '8vJXnINT'))) {
-        if (Test-Path -LiteralPath (Join-Path $candidate 'AstralParty_INT.exe') -PathType Leaf) {
+    # Discovery must tolerate disconnected drives recorded by Steam.
+    foreach ($candidate in @($Path, [IO.Path]::Combine($Path, '8vJXnINT'))) {
+        if (Test-Path -LiteralPath ([IO.Path]::Combine($candidate, 'AstralParty_INT.exe')) -PathType Leaf) {
             return [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $candidate).ProviderPath).TrimEnd('\')
         }
     }
@@ -11,7 +12,7 @@ function Resolve-IntGameDirectory([string]$Path) {
 
 function Find-IntGameDirectories([string]$SteamRoot, [string]$PackageRoot) {
     $libraries = @($SteamRoot)
-    $libraryFile = Join-Path $SteamRoot 'steamapps/libraryfolders.vdf'
+    $libraryFile = [IO.Path]::Combine($SteamRoot, 'steamapps/libraryfolders.vdf')
     if (Test-Path -LiteralPath $libraryFile -PathType Leaf) {
         $libraries += [regex]::Matches((Get-Content -LiteralPath $libraryFile -Raw), '"path"\s+"([^"]+)"') |
             ForEach-Object { $_.Groups[1].Value.Replace('\\', '\') }
@@ -21,6 +22,7 @@ function Find-IntGameDirectories([string]$SteamRoot, [string]$PackageRoot) {
         Resolve-IntGameDirectory (Split-Path -Parent $PackageRoot)
         foreach ($library in $libraries) {
             $library = $library.Replace('/', '\')
+            if (!(Test-Path -LiteralPath $library -PathType Container)) { continue }
             Resolve-IntGameDirectory (Join-Path $library 'steamapps/common/Astral Party')
             $manifest = Join-Path $library 'steamapps/appmanifest_2622000.acf'
             if (Test-Path -LiteralPath $manifest -PathType Leaf) {
