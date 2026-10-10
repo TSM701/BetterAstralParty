@@ -7,6 +7,9 @@
 $ErrorActionPreference = 'Stop'
 
 function Resolve-SteamAccount([string]$SteamRoot, [uint32]$RequestedId, [uint32]$ActiveId, [string]$AutoLoginUser) {
+    if ([string]::IsNullOrWhiteSpace($SteamRoot) -or !(Test-Path -LiteralPath $SteamRoot -PathType Container)) {
+        throw 'Steam 설치 경로를 찾을 수 없습니다. Steam을 실행해 경로를 갱신한 뒤 다시 시도하세요. / Steam installation directory unavailable. Start Steam to refresh its path, then retry. No files changed.'
+    }
     # Resolve a shortcut destination, NOT an authentication/session assertion.
     function Has-Profile([uint32]$Id) {
         return $Id -ne 0 -and (Test-Path -LiteralPath (Join-Path $SteamRoot "userdata/$Id/config") -PathType Container)
