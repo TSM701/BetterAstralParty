@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net6.0</TargetFramework><LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems><CheckEolTargetFramework>false</CheckEolTargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="RuntimeFixture.cs" />
+    <Compile Include="../../src/CardUi.cs;../../src/CardAdvisor.cs;../../src/CombatAdvisor.cs;../../src/VisibleCombat.cs" />
+    <Compile Include="$(ReferencePath)" Link="ReferenceCardUi.cs" />
+  </ItemGroup>
+</Project>

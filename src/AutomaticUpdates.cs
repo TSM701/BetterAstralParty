@@ -91,7 +91,7 @@ internal sealed class AutomaticUpdates : IDisposable {
                 _diagnosticAttempt=next;_diagnosticAttemptTarget=DiagnosticIdentity.SafeVersion(job.DiagnosticTargetVersion);}
         }catch{}
     }
-    private string Identity { get { if (_downloads.Feed is { RequiresAuthentication: false } feed) return "anonymous|" + feed.Identity;
+    private string Identity { get { if (_downloads.Feed is { RequiresAuthentication: false } feed) return feed.AnonymousIdentity;
         try { return _authentication?.CacheIdentity is { Length: > 0 and <= 256 } value ? value : ""; } catch { return ""; } } }
     private void Retire(bool clearRequest = false, bool fault = false) {
         var waits = new List<Task>(); if (_cancel != null) waits.Add(_cancel);

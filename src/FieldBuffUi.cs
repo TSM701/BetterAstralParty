@@ -10,6 +10,7 @@ internal static class FieldBuffUi
     private static readonly List<IntPtr> Stale = new();
     private static readonly Dictionary<IntPtr, CounterBadge> Counters = new();
     private static readonly HashSet<IntPtr> CounterSeen = new(), CounterOwners = new();
+    private static readonly string[] CounterParents = { "com_AttrInfos", "com_PlayerAttrInfos" };
     private static IntPtr _logicClass, _plateClass, _parent;
     private static float _scanAt;
     private static IntPtr _pressed;
@@ -241,7 +242,7 @@ internal static class FieldBuffUi
         CounterSeen.Clear(); CounterOwners.Clear();
         // Prefer the hero HP/buff clone; do not draw the same owner's badge again on its native state plate.
         foreach (var plate in Plates.Values) RefreshCounter(plate.Ui);
-        foreach (var name in new[] { "com_AttrInfos", "com_PlayerAttrInfos" })
+        foreach (var name in CounterParents)
         {
             var parent = battleUi.Field(name);
             if (!GameUi.Visible(parent)) continue;

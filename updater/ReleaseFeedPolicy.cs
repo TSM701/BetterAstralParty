@@ -11,7 +11,8 @@ namespace BetterAstralParty.Updating
         internal readonly long RepositoryId;
         internal bool RequiresAuthentication { get { return Channel == "Beta"; } }
         internal bool Configured { get { return RepositoryId > 0; } }
-        internal string Identity { get { return Repository + "|" + RepositoryId.ToString(CultureInfo.InvariantCulture) + "|" + Channel; } }
+        internal string Identity { get; }
+        internal string AnonymousIdentity { get; }
         internal string Purpose { get { return "release/" + Channel; } }
         internal ReleaseFeed(string repository, long repositoryId, string channel)
         {
@@ -19,6 +20,8 @@ namespace BetterAstralParty.Updating
                 || repository != (channel == "Stable" ? ReleaseFeedPolicy.StableRepository : ReleaseFeedPolicy.BetaRepository))
                 throw new ArgumentException("Invalid release feed");
             Repository = repository; RepositoryId = repositoryId; Channel = channel;
+            Identity = Repository + "|" + RepositoryId.ToString(CultureInfo.InvariantCulture) + "|" + Channel;
+            AnonymousIdentity = "anonymous|" + Identity;
         }
     }
     internal static class ReleaseFeedPolicy

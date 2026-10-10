@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="*.cs" />
+    <Compile Include="..\src\ReleaseUpdates.cs" Link="ReleaseUpdates.cs" />
+    <Compile Include="..\src\ReleaseHttpClient.cs" Link="ReleaseHttpClient.cs" />
+    <Compile Include="..\src\ReleaseFeedTransport.cs" Link="ReleaseFeedTransport.cs" />
+    <Compile Include="..\src\AutomaticUpdateSnapshot.cs" Link="AutomaticUpdateSnapshot.cs" />
+    <Compile Include="..\src\Observability\*.cs" Link="Observability\%(Filename)%(Extension)" />
+    <Compile Include="..\diagnostics\MinimalDiagnosticProjection.cs" Link="MinimalDiagnosticProjection.cs" />
+    <Compile Include="..\src\AutomaticUpdates.cs" Link="AutomaticUpdates.cs" />
+    <Compile Include="..\src\PrivateReleaseSession.cs" Link="PrivateReleaseSession.cs" />
+    <Compile Include="..\src\WindowsReleaseCredentialInput.cs" Link="WindowsReleaseCredentialInput.cs" />
+    <Compile Include="..\src\WindowsReleaseCredentialStore.cs" Link="WindowsReleaseCredentialStore.cs" />
+    <Compile Include="..\src\UpdateSafety.cs" Link="UpdateSafety.cs" />
+    <Compile Include="..\updater\*.cs" Exclude="..\updater\UpdateHelperProgram.cs" />
+    <Compile Include="..\src\UpdateDownload.cs" Link="UpdateDownload.cs" />
+    <Reference Include="SemanticVersioning">
+      <HintPath>..\.deps\bepinex\BepInEx\core\SemanticVersioning.dll</HintPath>
+    </Reference>
+    <Compile Include="..\src\HandLayout.cs" Link="HandLayout.cs" />
+    <Compile Include="..\src\ModText.cs" Link="ModText.cs" />
+    <Compile Include="..\src\Compatibility.cs" Link="Compatibility.cs" />
+    <Compile Include="..\src\CatalogGuard.cs" Link="CatalogGuard.cs" />
+    <Compile Include="..\src\FocusAudio.cs" Link="FocusAudio.cs" />
+    <Compile Include="..\src\InputAttentionState.cs" Link="InputAttentionState.cs" />
+    <Compile Include="..\src\WindowsInputNotification.cs" Link="WindowsInputNotification.cs" />
+    <Compile Include="..\src\DiagnosticLog.cs" Link="DiagnosticLog.cs" />
+    <Compile Include="..\src\CombatAdvisor.cs" Link="CombatAdvisor.cs" />
+    <Compile Include="..\src\PublicCombatEffects.cs" Link="PublicCombatEffects.cs" />
+    <Compile Include="..\src\VisibleCombat.cs" Link="VisibleCombat.cs" />
+    <Compile Include="..\src\MenuLayout.cs" Link="MenuLayout.cs" />
+    <Compile Include="..\src\CardAdvisor.cs" Link="CardAdvisor.cs" />
+    <Compile Include="..\src\CardKoMinimum.cs" Link="CardKoMinimum.cs" />
+    <Compile Include="..\src\CardDiceLayout.cs" Link="CardDiceLayout.cs" />
+    <Compile Include="..\src\EncounterAdvisor.cs" Link="EncounterAdvisor.cs" />
+    <Compile Include="..\src\AdviceText.cs" Link="AdviceText.cs" />
+    <Compile Include="..\src\CharacterNames.cs" Link="CharacterNames.cs" />
+    <Compile Include="..\src\FieldNameText.cs" Link="FieldNameText.cs" />
+    <Compile Include="..\src\CardPreviewLayout.cs" Link="CardPreviewLayout.cs" />
+    <Compile Include="..\src\BattleStatusLayout.cs" Link="BattleStatusLayout.cs" />
+  </ItemGroup>
+</Project>

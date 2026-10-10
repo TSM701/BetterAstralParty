@@ -29,7 +29,7 @@ PvP 방·경기가 감지되면 전투 추천·카드 정렬·추가 정보 표�
 
 ### 설치와 실행
 
-1. GitHub Releases에서 `BetterAstralParty-1.1.1.zip` 전체 설치 ZIP을 받으세요. `-update.zip`과 Source code ZIP은 최초 설치용이 아닙니다.
+1. GitHub Releases에서 `BetterAstralParty-1.1.2.zip` 전체 설치 ZIP을 받으세요. `-update.zip`과 Source code ZIP은 최초 설치용이 아닙니다.
 2. 원래 Steam 항목으로 INT(Global)를 한 번 실행해 게임 업데이트와 데이터 다운로드를 마친 뒤 종료하세요.
 3. 쓰기 가능한 별도 폴더에 ZIP 전체를 압축 해제하고, 동봉된 파일과 폴더를 함께 유지하세요. 게임 폴더 위에 직접 덮어쓰거나 ZIP 내부에서 실행하지 마세요.
 4. Steam에 로그인한 상태에서 압축을 푼 폴더의 `Install.cmd`를 실행하세요. PowerShell에서는 `.\Install.cmd`를 실행합니다. 경로를 묻는 경우 Steam의 설치된 파일 → 찾아보기로 확인한 `Astral Party` 폴더 또는 `8vJXnINT` 하위 폴더를 선택하세요.
@@ -43,7 +43,9 @@ Steam 항목 등록·수정 때문에 종료 안내가 나오면 대상 목록�
 
 메인메뉴의 모드 설정에서 기능과 표시 옵션을 조절합니다. 일반 설정 → 언어에서 자동, 한국어, English를 선택하세요. 자동은 게임 메뉴 언어를 따르며 게임 원본 설명과 플레이어 이름은 그대로 표시합니다.
 
-필드 휠 줌을 켜면 휠을 위로 굴려 확대하고 아래로 굴려 축소합니다. 자유 시점에서 드래그로 이동할 수 있으며, 턴 바의 핀 오른쪽에 있는 자유 시점 카메라 종료 버튼을 누르면 기본 배율과 캐릭터 시점으로 돌아갑니다.
+필드 휠 줌을 켜면 휠을 위로 굴려 확대하고 아래로 굴려 축소합니다. 자유 시점에서 WASD와 드래그로 이동할 수 있으며, 턴 바의 핀 오른쪽에 있는 자유 시점 카메라 종료 버튼을 누르면 기본 배율과 캐릭터 시점으로 돌아갑니다.
+
+손패 정렬의 호버 펼치기에서는 오른쪽의 강조된 카드 제출 영역으로 카드를 드래그하세요. 안내 화살표도 오른쪽을 가리킵니다.
 
 축소하면 플레이어·몬스터 인디케이터가 반투명해지고, 더 멀리 축소하면 숨겨집니다. 다시 확대하면 표시됩니다.
 
@@ -105,7 +107,7 @@ When a PvP room or match is detected, mod conveniences such as combat recommenda
 
 ### Install and play
 
-1. Download the complete `BetterAstralParty-1.1.1.zip` installation package from GitHub Releases. Neither `-update.zip` nor Source code ZIPs are first-install packages.
+1. Download the complete `BetterAstralParty-1.1.2.zip` installation package from GitHub Releases. Neither `-update.zip` nor Source code ZIPs are first-install packages.
 2. Launch INT(Global) through the original Steam entry, finish game/data updates, then close it.
 3. Extract the entire ZIP to a separate writable folder and keep all bundled files and folders together. Do not overwrite the game folder directly or run inside the ZIP.
 4. While signed in to Steam, run `Install.cmd` from the extracted folder. In PowerShell, run `.\Install.cmd`. If prompted, select the `Astral Party` folder or its `8vJXnINT` child, as shown by Steam's Installed Files → Browse.
@@ -119,7 +121,9 @@ For vanilla, select INT(Global) from the original Steam entry or run `AstralPart
 
 Open Mod Settings from the main menu to configure features and display options. Select Auto, 한국어 or English under General → Language. Auto follows the game menu language; native game descriptions and player names remain unchanged.
 
-With Field Wheel Zoom enabled, scroll up to zoom in and down to zoom out. Drag to move in free view. Select Exit Free Camera to the right of the turn-bar pin to restore the default zoom and character view.
+With Field Wheel Zoom enabled, scroll up to zoom in and down to zoom out. Use WASD or drag to move in free view. Select Exit Free Camera to the right of the turn-bar pin to restore the default zoom and character view.
+
+With hover-expand hand layout, drag cards into the highlighted submission area on the right. The guide arrow points right as well.
 
 Player and monster indicators become translucent when zoomed out and hide farther out. Zoom back in to show them again.
 

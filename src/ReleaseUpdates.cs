@@ -156,7 +156,7 @@ internal sealed class ReleaseUpdates : IDisposable
         : new(ReleaseUpdateStatus.NotChecked);
     private string AuthIdentity
     {
-        get { if (_feed is { RequiresAuthentication: false }) return "anonymous|" + _feed.Identity;
+        get { if (_feed is { RequiresAuthentication: false }) return _feed.AnonymousIdentity;
             try { var value = _authentication?.CacheIdentity ?? ""; return value.Length <= 256 ? value : ""; } catch { return ""; } }
     }
     internal void SetChannel(ReleaseChannel channel)

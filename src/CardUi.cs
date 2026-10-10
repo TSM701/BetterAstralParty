@@ -51,8 +51,9 @@ internal static class CardUi
             var config = card.Get("_config")!;
             var parameters = config.Get("Params")!;
             var length = parameters.Get<int>("Count");
-            var values = length is >= 2 and <= 3 ? Enumerable.Range(0, length)
-                .Select(index => parameters.Call("get_Item", index)!.Value<int>()).ToArray() : Array.Empty<int>();
+            var values = length is >= 2 and <= 3 ? new int[length] : Array.Empty<int>();
+            for (var index = 0; index < values.Length; index++)
+                values[index] = parameters.Call("get_Item", index)!.Value<int>();
             var bonus = CardAdvisor.FromConfig(config.Get<int>("Id"), config.Get<int>("EffectType"),
                 config.Get<int>("CardType"), values, config.Get("BuffIds")!.Get<int>("Count"),
                 config.Get("CardIds")!.Get<int>("Count"), cost);
@@ -62,7 +63,9 @@ internal static class CardUi
 
         var hit = Plugin.KoMinimum.Value
             ? GameUi.PointerPath().FirstOrDefault(item => item.TypeName == "UIHandCard_Button_Card") : null;
-        var hovered = candidates.FirstOrDefault(item => item.Card.Pointer == hit?.Pointer);
+        var hovered = default((RuntimeObject Card, RuntimeObject Face, CardBonus? Bonus, bool Usable));
+        foreach (var candidate in candidates)
+            if (candidate.Card.Pointer == hit?.Pointer) { hovered = candidate; break; }
         if (Plugin.KoMinimum.Value)
         {
             var preview = hovered.Card != null && hovered.Usable && ready.Get<bool>("touchable");
@@ -91,8 +94,11 @@ internal static class CardUi
 
                 }
             }
-            var cheaper = item.Bonus is { } current && candidates.Any(other => other.Usable
-                && other.Bonus is { } otherBonus && CardAdvisor.Dominates(otherBonus, current));
+            var cheaper = false;
+            if (item.Bonus is { } current)
+                foreach (var other in candidates)
+                    if (other.Usable && other.Bonus is { } otherBonus && CardAdvisor.Dominates(otherBonus, current))
+                    { cheaper = true; break; }
             var title = !item.Usable ? "사용 불가" : result == null ? "판단 보류*"
                 : cheaper ? "더 싼 카드 우선*" : result.Value.Title;
             // Static native-style capsule: no entrance, hover motion, or recommendation thumb on cards.

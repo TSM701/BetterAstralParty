@@ -49,20 +49,15 @@ internal static class FieldZoomUi
         var player = manager?.Call("GetCurPlayerCamera")?.Field("vCamera");
         var cameraObject = scene.Get("mainCamera");
         var held = FieldFreeCamera.Holding;
-        var hosted = status is 2 or 3;
         // FightWindow opens before the battle platform; yield only when the field renderer stops.
         var blocked = status is not (0 or 1 or 2 or 3) || !Alive(cameraObject)
             || !new Camera(cameraObject!.Pointer).enabled || !new Camera(cameraObject.Pointer).gameObject.activeInHierarchy
             || logic?.Get("battle")?.Field<bool>("clientFinishReady") != true;
         var owned = FieldFreeCamera.Update(scene, brain!, free, player, blocked);
-        var inputAllowed = !hosted && Application.isFocused && !ModUi.IsOpen && Input.touchCount == 0
-            && !root.Get<bool>("hasModalWindow") && !root.Get<bool>("modalWaiting") && !root.Get<bool>("hasAnyPopup")
-            && RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "GObject"), "get_draggingObject") == null
-            && !HasInputWindow();
         FieldCameraReturnUi.Tick(FieldFreeCamera.Holding && !blocked);
         var wheel = Input.mouseScrollDelta.y;
         var wheelAllowed = wheel == 0 && _pendingWheel == 0 && Same(_target, _applied)
-            || WheelInputAllowed(root) && !FieldCameraReturnUi.ConsumedInput
+            || FieldInputAllowed(root) && !FieldCameraReturnUi.ConsumedInput
                 && !Input.GetMouseButton(0) && !Input.GetMouseButton(1) && !Input.GetMouseButton(2);
         if (!wheelAllowed) { _pendingWheel = 0; WheelState("input-owned"); }
         if (owned && !Compatibility.Allowed("FieldCameraReturn")) { Clear(); return; }
@@ -121,6 +116,7 @@ internal static class FieldZoomUi
             // A native/external change becomes the new baseline; never restore across it.
             _original = _applied = _target = offset; _owned = false; _zoomOutLimit = 0;
         }
+        var inputAllowed = FieldInputAllowed(root, pan: true);
         var onUi = inputAllowed && Input.GetMouseButton(0)
             && RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "Stage"), "get_isTouchOnUI")!.Value<bool>();
         var indicator = onUi && Input.GetMouseButtonDown(0)
@@ -195,7 +191,7 @@ internal static class FieldZoomUi
         if (Input.mouseScrollDelta.y != 0 || _pendingWheel != 0) Plugin.Diagnostics.State("fieldZoom.wheel", reason);
     }
 
-    private static bool WheelInputAllowed(RuntimeObject root)
+    private static bool FieldInputAllowed(RuntimeObject root, bool pan = false)
     {
         if (!Application.isFocused || ModUi.IsOpen || Input.touchCount != 0 || root.Get<bool>("modalWaiting")
             || RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "GObject"), "get_draggingObject") != null
@@ -203,14 +199,17 @@ internal static class FieldZoomUi
             || GameUi.Find(root, "SettingWindow", maxDepth: 1) != null
             || GameUi.Find(root, "SettingInBattleWindow", maxDepth: 1) != null
             || GameUi.Find(root, "SinglePlayerSettingInBattleWindow", maxDepth: 1) != null
-            || GameUi.Find(root, "SettingListWindow", maxDepth: 1) != null) return false;
-        // Reserve the wheel for native consumers, not every field UI hit or window.
+            || GameUi.Find(root, "SettingListWindow", maxDepth: 1) != null
+            || root.Get("focus")?.Get("asTextInput")?.Get<bool>("focused") == true) return false;
+        // A stationary pointer does not own WASD; focused text input above does.
+        if (pan && !Input.GetMouseButton(0)) return true;
+        // Reserve actual native scrolling, not every field UI hit or window.
         foreach (var item in GameUi.PointerPath(refresh: true, hitTest: true))
         {
             var pane = item.Get("asCom")?.Get("scrollPane");
-            if (pane != null && pane.Get<bool>("touchEffect") && pane.Get<bool>("mouseWheelEnabled")) return false;
+            if (pane != null && pane.Get<bool>("touchEffect") && (pan || pane.Get<bool>("mouseWheelEnabled"))) return false;
             var input = item.Get("asTextInput");
-            if (input?.Get<bool>("focused") == true && input.Get<bool>("mouseWheelEnabled")) return false;
+            if (input?.Get<bool>("focused") == true && (pan || input.Get<bool>("mouseWheelEnabled"))) return false;
         }
         return true;
     }
@@ -233,28 +232,6 @@ internal static class FieldZoomUi
                 && GameUi.Visible(item)) return true;
         }
         return false;
-    }
-
-    private static bool HasInputWindow()
-    {
-        var windows = RuntimeObject.StaticField(RuntimeObject.FindClass("UI", "UIManager"), "_inst")?.Field("propUpWindows");
-        var count = windows?.Get<int>("Count") ?? -1;
-        if (count is < 0 or > 64) return true;
-        if (count == 0) return false;
-        var iterator = windows!.Call("GetEnumerator")!;
-        try
-        {
-            for (var i = 0; i < count; i++)
-            {
-                if (iterator.Call("MoveNext")?.Value<bool>() != true) return true;
-                var window = iterator.Get("Current");
-                // Passive PvE HUD windows are not interactive shop/selection input surfaces.
-                if (window == null || window.TypeName is not
-                    ("ExpressionWindow" or "ExpressionListWindow" or "OperateTimeWindow" or "TipsWindow") && GameUi.Visible(window)) return true;
-            }
-            return iterator.Call("MoveNext")!.Value<bool>();
-        }
-        finally { iterator.Call("Dispose"); }
     }
 
     private static bool RefreshRenderers()

@@ -25,6 +25,7 @@ internal static class HandLayoutUi
         internal Vector2 Center;
         internal bool CenterLocked;
         internal bool AlphaOwned;
+        internal float? GuideRotation;
     }
     private static readonly Dictionary<IntPtr, Entry> Entries = new();
     private static readonly Dictionary<HandGroup, RuntimeObject> Captions = new();
@@ -43,6 +44,9 @@ internal static class HandLayoutUi
     private static readonly Stack<List<RuntimeObject>> MotionPool = new();
     private static readonly string[] EffectFields = { "effectOutline", "effectOutline_Suggest_Bottom", "effectTempCard" };
     private static RuntimeObject? _ui, _container, _hotZone;
+    private static NativeUi.Surface? _dropHighlight;
+    private static RuntimeObject? _dropHint;
+    private static (Vector2 Size, float Unit, bool Korean)? _dropHintLayout;
     private static Vector2 _hotPosition, _hotSize;
     private static float _scanAt, _diagnosticAt;
     private static IntPtr _tween, _tweenManager, _gobject, _logic, _pool;
@@ -113,6 +117,10 @@ internal static class HandLayoutUi
             Report("parent-hidden-or-animating");
             return;
         }
+        var width = root.Get<float>("width"); var height = root.Get<float>("height");
+        var unit = Math.Min(width / 1920f, height / 1080f);
+        // Hover's destination stays current during a native drag, including a resize.
+        if (!clickMode) UpdateDropZone(root, width, height, unit, false, 0);
         var dragging = RuntimeObject.StaticCall(_gobject, "get_draggingObject");
         if (CardPointerBusy(dragging))
         {
@@ -141,7 +149,7 @@ internal static class HandLayoutUi
             var guid = data.Field<int>("Guid");
             if (Entries.TryGetValue(card.Pointer, out var old) && old.Guid != guid)
             {
-                RestoreZoom(old);
+                SetGuideDirection(old, false); RestoreZoom(old);
                 Entries.Remove(card.Pointer); // Recycled object is now owned by a new native lifecycle.
             }
             if (!Entries.TryGetValue(card.Pointer, out var entry))
@@ -152,6 +160,7 @@ internal static class HandLayoutUi
                     Scale = new(card.Get<float>("scaleX"), card.Get<float>("scaleY")),
                     Id = config.Get<int>("Id"), Group = HandLayout.Classify(config.Get<int>("Id"), config.Get<int>("CardType")) };
             }
+            SetGuideDirection(entry, !clickMode);
             var resting = card.Field<Vector2>("CustomPosition");
             var displayReset = DisplayZoomReset(entry, resting);
             if (!displayReset && (!entry.Owned || resting != entry.Applied))
@@ -190,7 +199,7 @@ internal static class HandLayoutUi
         RemovedCards.Clear();
         foreach (var key in Entries.Keys) if (!live.Contains(key)) RemovedCards.Add(key);
         foreach (var key in RemovedCards)
-        { RestoreZoom(Entries[key]); Entries.Remove(key); }
+        { SetGuideDirection(Entries[key], false); RestoreZoom(Entries[key]); Entries.Remove(key); }
         // Keep temporarily hovered/animated cards in their slots; neighbouring piles must not jump.
         var cards = FrameCards; cards.Clear();
         foreach (var entry in Entries.Values) { entry.FrameOrder = cards.Count; cards.Add(entry); }
@@ -218,8 +227,6 @@ internal static class HandLayoutUi
         foreach (var group in PileTargets.Keys) if (!groups.Contains(group)) RemovedGroups.Add(group);
         foreach (var group in RemovedGroups)
         { GameUi.Dispose(PileTargets[group]); PileTargets.Remove(group); }
-        var width = root.Get<float>("width"); var height = root.Get<float>("height");
-        var unit = Math.Min(width / 1920f, height / 1080f);
         var path = GameUi.PointerPath(refresh: true);
         var hovered = path.FirstOrDefault(item => Entries.ContainsKey(item.Pointer));
         var mouse = RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "Stage"), "get_inst")!.Get<Vector2>("touchPosition");
@@ -327,6 +334,11 @@ internal static class HandLayoutUi
             && !FieldCameraReturnUi.ConsumedInput && root.Get("touchTarget") == null)
             HandClickBinding.Arm(RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "Stage"), "get_inst")!,
                 ready.Select(e => e.Card));
+        if (clickMode) UpdateDropZone(root, width, height, unit, true, clickDropBottom);
+    }
+
+    private static void UpdateDropZone(RuntimeObject root, float width, float height, float unit, bool clickMode, float clickDropBottom)
+    {
         // Native drop checks and artwork use this same object; leave its visibility alone.
         var parent = _hotZone!.Get("parent")!;
         var start = ToLocal(parent, root, width * (clickMode ? .25f : .79f), height * (clickMode ? .08f : .12f));
@@ -336,6 +348,55 @@ internal static class HandLayoutUi
         var dropSize = dropEnd - start;
         if (_hotZone.Get<float>("width") != dropSize.x || _hotZone.Get<float>("height") != dropSize.y)
             _hotZone.Call("SetSize", dropSize.x, dropSize.y);
+        if (!clickMode) UpdateDropHint(dropSize, unit);
+    }
+
+    private static void UpdateDropHint(Vector2 size, float unit)
+    {
+        if (_dropHighlight == null)
+        {
+            // Children inherit the native drag controller's visibility/fade; they never own input.
+            _dropHighlight = new NativeUi.Surface(_hotZone!, size.x, size.y, fixedOpacity: true,
+                fill: new Color(1f, .83f, .14f, .18f));
+            _dropHighlight.Graph.Get("shape")!.Call("DrawRoundRect", 4f,
+                new Color(1f, .83f, .14f, 1f), new Color(1f, .83f, .14f, .18f), 18f, 18f, 18f, 18f);
+            _dropHint = NativeUi.Label(_hotZone!, "", 0, 0, 1, 1, 26);
+            _dropHint.Set("touchable", false);
+        }
+        var layout = (size, unit, ModText.Korean);
+        if (_dropHintLayout == layout) return;
+        _dropHighlight.Resize(size.x, size.y);
+        _dropHint!.Call("SetXY", 12 * unit, 18 * unit);
+        _dropHint.Call("SetSize", Math.Max(1, size.x - 24 * unit), 72 * unit);
+        _dropHint.Set("text", HandLayout.DropHint(ModText.Korean));
+        GameUi.StyleText(_dropHint, Math.Max(12, (int)(26 * unit)));
+        _dropHintLayout = layout;
+    }
+
+    private static void SetGuideDirection(Entry entry, bool hover)
+    {
+        if (hover && entry.GuideRotation != null || !hover && entry.GuideRotation == null) return;
+        if (entry.Card.Get<bool>("isDisposed")) { entry.GuideRotation = null; return; }
+        var guide = entry.Card.Field("effectGuide")!;
+        if (guide.Get<bool>("isDisposed")) { entry.GuideRotation = null; return; }
+        var rotation = guide.Get<float>("rotation");
+        if (hover && entry.GuideRotation == null)
+        {
+            // Effect 22 points up; FairyGUI +90 is clockwise. SetNativeObject keeps this angle on late loads.
+            entry.GuideRotation = rotation;
+            guide.Set("rotation", rotation + HandLayout.GuideRightRotation);
+        }
+        else if (!hover && entry.GuideRotation is { } original)
+        {
+            if (rotation == original + HandLayout.GuideRightRotation) guide.Set("rotation", original);
+            entry.GuideRotation = null;
+        }
+    }
+
+    private static void ClearDropHint()
+    {
+        GameUi.Dispose(_dropHint); _dropHint = null;
+        GameUi.Dispose(_dropHighlight?.Graph); _dropHighlight = null; _dropHintLayout = null;
     }
 
     private static void PollPileClick(IReadOnlyList<RuntimeObject> path, Vector2 pointer, float unit, bool locked)
@@ -593,6 +654,7 @@ internal static class HandLayoutUi
 
     private static void Restore(Entry e, List<RuntimeObject>? motions)
     {
+        SetGuideDirection(e, false);
         RestoreZoom(e);
         var card = e.Card;
         if (!e.Owned || card.Get<bool>("isDisposed") || card.Field<bool>("IsRelease")
@@ -687,6 +749,7 @@ internal static class HandLayoutUi
         foreach (var target in PileTargets.Values) GameUi.Dispose(target);
         PileTargets.Clear(); _pressedPile = null; _outsidePress = false;
         CaptionLayout.Clear();
+        ClearDropHint();
         if (_hotZone != null && !_hotZone.Get<bool>("isDisposed"))
         {
             _hotZone.Call("SetXY", _hotPosition.x, _hotPosition.y);

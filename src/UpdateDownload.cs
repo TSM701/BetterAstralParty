@@ -130,7 +130,7 @@ internal sealed class UpdateDownloads : IDisposable
     }
     private static string Identity(IReleaseAuthentication? authentication, ReleaseFeed? feed)
     {
-        if (feed is { RequiresAuthentication: false }) return "anonymous|" + feed.Identity;
+        if (feed is { RequiresAuthentication: false }) return feed.AnonymousIdentity;
         try { var value = authentication?.CacheIdentity ?? ""; return value.Length <= 256 ? value : ""; }
         catch { return ""; }
     }
