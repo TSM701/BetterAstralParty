@@ -2,36 +2,63 @@ name: "버그 제보 / Bug report"
 description: "설치 또는 모드 동작 문제를 알려주세요. / Report installation or mod behavior problems."
 title: "[Bug] "
 body:
+  - type: markdown
+    attributes:
+      value: |
+        아래 1~5 항목을 순서대로 작성해주세요. 확인할 수 없는 항목은 아는 범위만 적어주세요.
+        계산 문제는 먼저 모드 설정에서 진단을 켠 뒤 문제를 재현하고 진단 ZIP을 만들어주세요.
+
+        Complete steps 1–5 below in order, using the information you have.
+        For calculation issues, enable diagnostics in mod settings, reproduce the issue, then create the diagnostics ZIP.
   - type: input
     id: version
     attributes:
-      label: "모드 버전 / Mod version"
+      label: "1. 모드 버전 / Mod version"
       description: "모드 설정에 표시된 버전 또는 받은 ZIP의 버전을 적어주세요. / Enter the version shown in mod settings or the downloaded ZIP."
-      placeholder: "예: 1.1.0 / e.g. 1.1.0"
+      placeholder: "예: 1.1.1 / e.g. 1.1.1"
     validations:
       required: true
   - type: textarea
     id: problem
     attributes:
-      label: "발생한 문제 / What happened"
+      label: "2. 발생한 문제 / What happened"
       description: "실제 증상과 기대했던 동작을 적어주세요. / Describe what happened and what you expected."
+      placeholder: |
+        실제 동작 / Actual behavior:
+        기대한 동작 / Expected behavior:
     validations:
       required: true
   - type: textarea
     id: reproduction
     attributes:
-      label: "재현 방법 / Steps to reproduce"
-      description: "발생 순서와 상황을 적어주세요. 모르면 비워도 됩니다. / Describe the steps and situation; leave blank if unknown."
+      label: "3. 재현 순서 / Steps to reproduce"
+      description: "문제가 생길 때까지 한 행동을 순서대로 적어주세요. 모르면 발생 당시 상황만 적어도 됩니다. / List your actions in order; if unsure, describe the situation when it happened."
+      placeholder: |
+        1. 게임 또는 Install.cmd 실행 / Launch the game or Install.cmd
+        2. 선택한 메뉴·기능 / Menu or feature selected
+        3. 문제가 발생한 시점 / When the issue appeared
+    validations:
+      required: false
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: "4. 스크린샷 / Screenshots"
+      description: "문제 화면을 드래그하거나 붙여넣어 첨부해주세요. 오류가 있다면 DLL 이름과 오류 코드가 보이게 찍어주세요. / Drag or paste screenshots here. Keep DLL names and error codes visible."
     validations:
       required: false
   - type: textarea
     id: diagnostics
     attributes:
-      label: "진단 자료 / Diagnostics and screenshots"
+      label: "5. 진단 로그 ZIP / Diagnostics ZIP"
       description: |
-        Create-Diagnostics.cmd로 만든 ZIP 또는 오류 화면을 첨부해주세요. DLL 이름과 오류 코드는 남겨주세요.
-        공개 제보입니다. 첨부 전에 토큰·개인정보를 가려주세요.
-        Attach the ZIP from Create-Diagnostics.cmd or an error screenshot. Keep DLL names and error codes visible.
-        This report is public. Remove tokens and personal information before attaching files.
+        1. 동봉된 Create-Diagnostics.cmd 또는 게임 내 F8(모드 설정) → 일반 설정 → 진단 ZIP 만들기를 실행하세요.
+        2. 생성된 ZIP 내용을 확인하고 토큰·개인정보를 가려주세요. 설치·실행 오류는 Open-Logs.cmd로 로그를 확인할 수 있습니다.
+        3. ZIP을 이 칸에 드래그해 첨부하세요. 생성에 실패했다면 오류 문구나 Open-Logs.cmd에서 확인한 로그를 첨부해주세요.
+
+        English:
+
+        1. Run the bundled Create-Diagnostics.cmd or use F8 → General → Create Diagnostics ZIP in game.
+        2. Review the ZIP and remove tokens or personal information. Use Open-Logs.cmd to inspect installation or launch errors.
+        3. Drag the ZIP into this field. If creation fails, attach the error message or the relevant log opened with Open-Logs.cmd.
     validations:
       required: false
