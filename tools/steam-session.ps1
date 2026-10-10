@@ -10,6 +10,7 @@ function Get-BapSteamTargets([string]$SteamRoot) {
     $gameDirs = @{}
     foreach ($library in ($libraries | Sort-Object -Unique)) {
         if (![IO.Path]::IsPathRooted($library)) { throw 'Invalid Steam library path; nothing stopped.' }
+        if (!(Test-Path -LiteralPath $library -PathType Container)) { continue }
         foreach ($manifest in Get-ChildItem -LiteralPath (Join-Path $library 'steamapps') -Filter 'appmanifest_*.acf' -ErrorAction SilentlyContinue) {
             $dir = [regex]::Matches([IO.File]::ReadAllText($manifest.FullName), '"installdir"\s+"([^"]+)"')
             if ($dir.Count -ne 1 -or $dir[0].Groups[1].Value -match '[\\/:]|^\.{1,2}$') { throw 'Invalid Steam app directory; nothing stopped.' }
