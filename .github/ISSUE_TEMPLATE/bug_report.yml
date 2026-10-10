@@ -1,0 +1,37 @@
+name: "버그 제보 / Bug report"
+description: "설치 또는 모드 동작 문제를 알려주세요. / Report installation or mod behavior problems."
+title: "[Bug] "
+body:
+  - type: input
+    id: version
+    attributes:
+      label: "모드 버전 / Mod version"
+      description: "모드 설정에 표시된 버전 또는 받은 ZIP의 버전을 적어주세요. / Enter the version shown in mod settings or the downloaded ZIP."
+      placeholder: "예: 1.1.0 / e.g. 1.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: "발생한 문제 / What happened"
+      description: "실제 증상과 기대했던 동작을 적어주세요. / Describe what happened and what you expected."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: "재현 방법 / Steps to reproduce"
+      description: "발생 순서와 상황을 적어주세요. 모르면 비워도 됩니다. / Describe the steps and situation; leave blank if unknown."
+    validations:
+      required: false
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: "진단 자료 / Diagnostics and screenshots"
+      description: |
+        Create-Diagnostics.cmd로 만든 ZIP 또는 오류 화면을 첨부해주세요. DLL 이름과 오류 코드는 남겨주세요.
+        공개 제보입니다. 첨부 전에 토큰·개인정보를 가려주세요.
+        Attach the ZIP from Create-Diagnostics.cmd or an error screenshot. Keep DLL names and error codes visible.
+        This report is public. Remove tokens and personal information before attaching files.
+    validations:
+      required: false
