@@ -1,0 +1,32 @@
+name: "기능 요청 / Feature request"
+description: "추가하거나 개선할 기능을 제안해주세요. / Suggest a new or improved feature."
+title: "[Feature] "
+body:
+  - type: textarea
+    id: desired_function
+    attributes:
+      label: "원하는 기능 / Requested feature"
+      description: "추가하거나 바꾸고 싶은 동작을 적어주세요. / Describe the behavior you want to add or change."
+    validations:
+      required: true
+  - type: textarea
+    id: use_case
+    attributes:
+      label: "사용 상황 / Use case"
+      description: "언제, 왜 이 기능이 필요한지 적어주세요. / Explain when and why this feature would be useful."
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: "예시 / Example"
+      description: "원하는 모습의 이미지나 참고 링크가 있으면 첨부해주세요. / Add an example image or reference link if available."
+    validations:
+      required: false
+  - type: textarea
+    id: alternative
+    attributes:
+      label: "다른 방법 / Alternatives"
+      description: "다른 해결 방법을 생각해봤다면 적어주세요. / Describe other solutions you have considered, if any."
+    validations:
+      required: false
