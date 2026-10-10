@@ -49,7 +49,7 @@ try {
             $GameRoot = Read-Host
         }
     }
-    Say '최근 로그의 허용 항목을 로컬 ZIP으로 요약합니다. 카드·손패·채팅·원문 오류·덤프·전체 설정은 제외합니다.' 'Creating a local ZIP of typed diagnostic summaries. Card/hand/chat payload, raw errors, dumps and full settings are excluded.'
+    Say '최근 설치·초기 실행·런처·호환성 오류 본문과 게임 진단 요약을 ZIP에 포함합니다. 토큰·개인 경로는 가리며 카드·손패·채팅·덤프·전체 설정은 제외합니다.' 'Including recent install/bootstrap/launcher/compatibility error text and game diagnostic summaries. Tokens and private paths are redacted; card/hand/chat payload, dumps and full settings are excluded.'
     $bundle = [BetterAstralParty.Diagnostics.DiagnosticBundle]::Collect($GameRoot,
         (Join-Path $local 'BetterAstralParty/Logs'), (Join-Path $temp 'BetterAstralParty'),
         (Join-Path $profile 'AppData/LocalLow/feimo/AstralParty_INT'), $primaryHub, $fallbackHub,
