@@ -29,7 +29,7 @@ PvP 방·경기가 감지되면 전투 추천·카드 정렬·추가 정보 표�
 
 ### 설치와 실행
 
-1. GitHub Releases에서 `BetterAstralParty-1.1.0.zip` 전체 설치 ZIP을 받으세요. `-update.zip`과 Source code ZIP은 최초 설치용이 아닙니다.
+1. GitHub Releases에서 `BetterAstralParty-1.1.1.zip` 전체 설치 ZIP을 받으세요. `-update.zip`과 Source code ZIP은 최초 설치용이 아닙니다.
 2. 원래 Steam 항목으로 INT(Global)를 한 번 실행해 게임 업데이트와 데이터 다운로드를 마친 뒤 종료하세요.
 3. 쓰기 가능한 별도 폴더에 ZIP 전체를 압축 해제하고, 동봉된 파일과 폴더를 함께 유지하세요. 게임 폴더 위에 직접 덮어쓰거나 ZIP 내부에서 실행하지 마세요.
 4. Steam에 로그인한 상태에서 압축을 푼 폴더의 `Install.cmd`를 실행하세요. PowerShell에서는 `.\Install.cmd`를 실행합니다. 경로를 묻는 경우 Steam의 설치된 파일 → 찾아보기로 확인한 `Astral Party` 폴더 또는 `8vJXnINT` 하위 폴더를 선택하세요.
@@ -70,6 +70,7 @@ Steam 항목 등록·수정 때문에 종료 안내가 나오면 대상 목록�
 - 설치·실행 오류는 `Open-Logs.cmd`로 로그를 확인하세요. 호환성 검사 오류가 나면 오류 문구를 함께 제보하세요.
 - 계산 문제는 모드 설정에서 진단을 켠 뒤 재현하세요.
 - 진단 ZIP은 패키지의 `Create-Diagnostics.cmd` 또는 게임의 F8 → 일반 설정 → 진단 ZIP 만들기로 생성하세요. 기본 저장 위치는 `%LOCALAPPDATA%/BetterAstralParty/Diagnostics`입니다.
+- 최근 설치·초기 실행·런처·호환성 오류의 상세 본문도 포함합니다. 토큰·개인 경로를 가리며, 용량 제한이나 누락 사유는 ZIP의 `summary.json`에 기록합니다.
 
 모드 버전, 재현 순서, 스크린샷과 관련 로그 또는 진단 ZIP을 함께 전달하세요. 공유 전 개인정보와 사용자 지정 경로를 확인하세요.
 
@@ -104,7 +105,7 @@ When a PvP room or match is detected, mod conveniences such as combat recommenda
 
 ### Install and play
 
-1. Download the complete `BetterAstralParty-1.1.0.zip` installation package from GitHub Releases. Neither `-update.zip` nor Source code ZIPs are first-install packages.
+1. Download the complete `BetterAstralParty-1.1.1.zip` installation package from GitHub Releases. Neither `-update.zip` nor Source code ZIPs are first-install packages.
 2. Launch INT(Global) through the original Steam entry, finish game/data updates, then close it.
 3. Extract the entire ZIP to a separate writable folder and keep all bundled files and folders together. Do not overwrite the game folder directly or run inside the ZIP.
 4. While signed in to Steam, run `Install.cmd` from the extracted folder. In PowerShell, run `.\Install.cmd`. If prompted, select the `Astral Party` folder or its `8vJXnINT` child, as shown by Steam's Installed Files → Browse.
@@ -145,6 +146,7 @@ After complete removal, run `Install.cmd` from a complete package to reinstall. 
 - Installation or launch errors: open logs with `Open-Logs.cmd`. Include the error message when reporting a compatibility-check failure.
 - Calculation issues: enable diagnostics in mod settings, then reproduce the issue.
 - Create a diagnostics ZIP using the package's `Create-Diagnostics.cmd` or F8 → General → Create Diagnostics ZIP in game. The default output folder is `%LOCALAPPDATA%/BetterAstralParty/Diagnostics`.
+- Recent installation, bootstrap, launcher and compatibility errors include detailed text with tokens and private paths redacted. Size limits and missing evidence are listed in the ZIP's `summary.json`.
 
 Include the mod version, reproduction steps, screenshots and relevant logs or diagnostics ZIP. Review personal information and custom paths before sharing.
 
