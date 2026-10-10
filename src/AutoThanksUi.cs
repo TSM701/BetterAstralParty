@@ -28,13 +28,17 @@ internal static class AutoThanksUi
                 || cts.Get<bool>("IsCancellationRequested")) return;
             var episode = (window.Pointer, cts.Pointer, cts.Field<int>("id"));
             if (_episode == episode) return;
-            // Temporary focus/UI locks must not reset the recommendation's once-only latch.
+            // Temporary UI locks must not reset the recommendation's once-only latch.
             // Native recommendations may coexist with other popups/modals; their own button/CTS/listener owns availability.
-            if (!Application.isFocused || ModUi.IsOpen || Input.touchCount > 0
-                || root.Get<bool>("modalWaiting")
-                || RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "GObject"), "get_draggingObject") != null) return;
-            for (var i = 0; i < 3; i++)
-                if (Input.GetMouseButton(i) || Input.GetMouseButtonDown(i) || Input.GetMouseButtonUp(i)) return;
+            if (ModUi.IsOpen || root.Get<bool>("modalWaiting")) return;
+            // Background input can remain latched after Alt+Tab; manual-click guards only apply in the focused game.
+            if (Application.isFocused)
+            {
+                if (Input.touchCount > 0
+                    || RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "GObject"), "get_draggingObject") != null) return;
+                for (var i = 0; i < 3; i++)
+                    if (Input.GetMouseButton(i) || Input.GetMouseButtonDown(i) || Input.GetMouseButtonUp(i)) return;
+            }
             if (room?.Call("IsPVE")?.Value<bool>() != true || room.Call("GetSelfInfo") == null
                 || logic?.Get("watch")?.Call("PlayerIsWatcher")?.Value<bool>() != false
                 || logic.Get("replay")?.Get("Session")?.Get<bool>("CanSendC2S") != true) return;
