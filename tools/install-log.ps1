@@ -11,11 +11,14 @@
         "Package: $PackageRoot"
         "Game: $GameRoot"
         "ErrorType: $($Failure.Exception.GetType().FullName)"
+        "HResult: $('0x{0:X8}' -f $Failure.Exception.HResult)"
         "ErrorId: $($Failure.FullyQualifiedErrorId)"
         "Message: $($Failure.Exception.Message)"
         "Location: $($Failure.InvocationInfo.ScriptName):$($Failure.InvocationInfo.ScriptLineNumber)"
         "Stack: $($Failure.ScriptStackTrace)"
+        "Exception: $($Failure.Exception.ToString())"
     ) -join [Environment]::NewLine
+    $text += [Environment]::NewLine
     if ($env:USERPROFILE) {
         $text = [regex]::Replace($text, [regex]::Escape($env:USERPROFILE), '%USERPROFILE%', 'IgnoreCase')
         $text = [regex]::Replace($text, [regex]::Escape($env:USERPROFILE.Replace('\', '/')), '%USERPROFILE%', 'IgnoreCase')
