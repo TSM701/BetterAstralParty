@@ -6,7 +6,7 @@
 
 Astral Party 국제판 INT(Global)의 PvE 정보 표시와 판단을 돕는 한국어·영어 지원 편의성 모드입니다.
 
-[1.3.0 프리 릴리즈 다운로드](https://github.com/TSM701/BetterAstralParty/releases/tag/1.3.0)
+[다운로드](https://github.com/TSM701/BetterAstralParty/releases/tag/1.3.0)
 
 ### 주요 기능
 
@@ -174,7 +174,7 @@ BetterAstralParty 자체 코드는 MIT 라이선스로 제공합니다. 외부 �
 
 A Korean/English quality-of-life mod for Astral Party INT(Global), focused on PvE information and decision support.
 
-[Download the 1.3.0 pre-release](https://github.com/TSM701/BetterAstralParty/releases/tag/1.3.0)
+[Download](https://github.com/TSM701/BetterAstralParty/releases/tag/1.3.0)
 
 ### Features
 
