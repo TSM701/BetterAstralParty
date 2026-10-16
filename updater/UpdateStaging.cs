@@ -53,7 +53,7 @@ namespace BetterAstralParty.Updating
         internal static bool ValidStamp(object stamp) { return ReferenceEquals(stamp, Stamp); }
         private static string Name(string directory)
         {
-            if (!Regex.IsMatch(directory, @"\Abap-v3-stage-[0-9a-f]{32}\z")) throw new ApplySafetyException(ApplyFailure.UnsafePath);
+            if (!Regex.IsMatch(directory, @"\A" + UpdateWorkPath.OptionalRootPattern + @"bap-v4-stage-[0-9a-f]{32}\z")) throw new ApplySafetyException(ApplyFailure.UnsafePath);
             return directory;
         }
         private static void Write(WindowsFileFence fence, string path, Stream input, CancellationToken cancellation)
@@ -80,8 +80,8 @@ namespace BetterAstralParty.Updating
             var verified = trust.VerifyDescriptor(descriptor, keyId, signature, context, cancellation);
             var payload = UpdatePackage.VerifyPayload(zipBytes, verified, cancellation);
             cancellation.ThrowIfCancellationRequested();
-            var directory = "bap-v3-stage-" + Guid.NewGuid().ToString("N");
-            var identity = fence.CreatePrivateDirectory(directory);
+            var directory = UpdateWorkPath.New("stage");
+            var identity = UpdateWorkPath.Create(fence, directory);
             using (var input = new MemoryStream(descriptor, false)) Write(fence, directory + "/descriptor.bin", input, cancellation);
             using (var input = new MemoryStream(signature, false)) Write(fence, directory + "/signature.bin", input, cancellation);
             using (var input = new MemoryStream(Encoding.ASCII.GetBytes(verified.KeyId), false)) Write(fence, directory + "/key-id.bin", input, cancellation);

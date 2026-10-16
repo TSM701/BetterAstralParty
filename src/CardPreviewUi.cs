@@ -14,7 +14,7 @@ internal static class CardPreviewUi
     private static RuntimeObject? _relicLoad;
     private static bool _relicBound;
     private static (int Id, bool Relic, Vector2 Anchor)? _pending;
-    private static IntPtr _helperClass, _commonClass, _logicClass, _configClass, _messageClass, _relicMessageClass, _settingsClass;
+    private static IntPtr _helperClass, _commonClass, _logicClass, _configClass, _relicMessageClass, _settingsClass;
     private static IntPtr _room, _table, _relicTable, _pressed;
     private static NativeUi.Surface? _relicBackground;
     private static string _pressedText = "";
@@ -184,7 +184,6 @@ internal static class CardPreviewUi
             _configClass = RuntimeObject.FindClass("", "StaticConfigure");
             _helperClass = RuntimeObject.FindClass("UI", "UIHelper");
             _commonClass = RuntimeObject.FindClass("UI", "CommonUIManager");
-            _messageClass = RuntimeObject.FindClass("GameLogic", "BattleCardMessage");
             _relicMessageClass = RuntimeObject.FindClass("GameLogic", "BattleRelicMessage");
             _settingsClass = RuntimeObject.FindClass("Core", "GameSettings");
         }
@@ -192,13 +191,32 @@ internal static class CardPreviewUi
         if (table == null || table.Get<int>("Count") == 0) return false;
         var relicTable = RuntimeObject.StaticCall(_configClass, "get_Relic")?.Get("InfoDict");
         var language = RuntimeObject.StaticField(_settingsClass, "languageType")!.Value<int>();
+        IndexCardPings(table);
         if (_table == table.Pointer && _relicTable == (relicTable?.Pointer ?? IntPtr.Zero) && _language == language) return true;
-        Index(Pings, table, _messageClass, "GetCardMsg");
         RelicPings.Clear();
         if (relicTable != null) Index(RelicPings, relicTable, _relicMessageClass, "GetRelicMsg");
         _table = table.Pointer; _relicTable = relicTable?.Pointer ?? IntPtr.Zero; _language = language;
         Plugin.Logger.LogInfo($"[핑 확대] 카드 {Pings.Count}개·칩 {RelicPings.Count}개 연결됨");
         return true;
+    }
+
+    private static void IndexCardPings(RuntimeObject table)
+    {
+        Pings.Clear();
+        var messages = _pingWindow?.Field("_messages");
+        if (messages == null) return;
+        var count = messages.Get<int>("Count");
+        if (count < 0 || count > 64) throw new InvalidOperationException("Public ping history bound");
+        for (var i = 0; i < count; i++)
+        {
+            var message = messages.Call("get_Item", i);
+            if (message?.TypeName != "BattleCardMessage") continue;
+            // Read only the displayed chat history, never a sender's hand or card count.
+            var payload = message.Field("SendMsg")?.String() ?? "";
+            if (CardPreviewLayout.TryCardMessage(payload, message.Field<int>("MsgType"), out var id)
+                && table.Call("ContainsKey", id)!.Value<bool>())
+                CardPreviewLayout.AddUnique(Pings, message.Field("shortInfo")?.String() ?? "", id);
+        }
     }
 
     private static void Index(Dictionary<string, int> index, RuntimeObject table, IntPtr messageClass, string method)
@@ -215,10 +233,10 @@ internal static class CardPreviewUi
         }
     }
 
-    private static string Local(RuntimeObject config, string field, int stringType = 9)
+    private static string Local(RuntimeObject config, string field, string stringType = "Card")
     {
         var id = config.Get<int>(field);
-        return id <= 0 ? "" : RuntimeObject.StaticCall(_helperClass, "GetLocal", id, stringType)?.String() ?? "";
+        return id <= 0 ? "" : RuntimeObject.StaticCall(_helperClass, "GetLocal", id, RuntimeObject.EnumValue("UI", "UIStringType", stringType))?.String() ?? "";
     }
 
     private static void Show(RuntimeObject root, int id, bool relic, Vector2 anchor)
@@ -266,8 +284,8 @@ internal static class CardPreviewUi
     {
         var title = _card!.Field("txt_tltle")!;
         var description = _card.Field("txt_Desc")!;
-        title.Set("text", Local(config, "NameID", 46));
-        description.Set("text", Local(config, "DescID", 46));
+        title.Set("text", Local(config, "NameID", "Relic"));
+        description.Set("text", Local(config, "DescID", "Relic"));
         NativeUi.InheritText(title, dark: true);
         NativeUi.InheritText(description, dark: true); // Native light text; retain inline emphasis colours.
         _card.Field("loader_Icon")!.Set("url", config.Get("Icon")!.String());

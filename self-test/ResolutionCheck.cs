@@ -24,6 +24,30 @@ static class ResolutionCheck
                 var marker=MenuLayout.ScrollMarker(MenuLayout.SettingsHeight,content,(content-MenuLayout.SettingsHeight)*fraction);
                 Check(marker.Y>=0 && marker.Height>=24 && marker.Y+marker.Height<=MenuLayout.SettingsHeight+.01f,"scroll bounds");
             }
+            var categorized = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var general in new[] { false, true })
+            {
+                var bottom = 0f;
+                for (var index = 0; index < MenuLayout.Sections.Length; index++)
+                {
+                    var section = MenuLayout.Sections[index];
+                    if (section.General != general) continue;
+                    Check(section.Actions.Length > 0 && MenuLayout.SectionY(index) >= bottom, "settings categories do not overlap previous controls");
+                    bottom = MenuLayout.SectionY(index) + MenuLayout.SectionHeight;
+                    foreach (var action in section.Actions)
+                    {
+                        Check(categorized.Add(action), "settings control has exactly one category");
+                        Check(MenuLayout.SettingY(action) >= bottom, "category heading and settings rows do not overlap");
+                        bottom = MenuLayout.SettingY(action) + MenuLayout.ToggleHeight;
+                    }
+                }
+                var content = MenuLayout.ContentHeight(bottom);
+                Check(bottom - (content - MenuLayout.SettingsHeight) <= MenuLayout.SettingsHeight, "last categorized setting is reachable above the fixed footer");
+            }
+            Check(MenuLayout.SettingY("ScaleMinus") == MenuLayout.SettingY("ScalePlus")
+                && MenuLayout.SettingY("ScaleValue") == MenuLayout.SettingY("Scale"), "scale stepper retains one categorized row");
+            Check(MenuLayout.SettingY("OpacityMinus") == MenuLayout.SettingY("OpacityPlus")
+                && MenuLayout.SettingY("OpacityValue") == MenuLayout.SettingY("Opacity"), "opacity stepper retains one categorized row");
             foreach(var desired in new[] { .75f,1f,1.5f })
             {
                 // CardDiceUi caps the configured scale by logical root height.

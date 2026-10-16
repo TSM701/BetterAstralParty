@@ -97,7 +97,7 @@ internal static class RemainingHpUi
             // A failure in optional KO rendering must not disable the independent damage view/log.
             try { if (!dodge) CardDiceUi.ShowFinal(parent, a, _hp, _prediction, _modifiers, _die); }
             catch (Exception ex) { Plugin.Diagnostics.Error("CardDiceUi.Final", ex); }
-            if (!Plugin.Enabled.Value) return; // Retain public final evidence for the independent KO view.
+            if (!Plugin.FinalDamage.Value) return; // Retain public final evidence for the independent KO view.
             Ensure(root);
             RefreshArtwork(a);
             _point!.Call("GetTransition", "MaxPoint")!.Call("Stop", false, false);
@@ -206,7 +206,8 @@ internal static class RemainingHpUi
         try
         {
             var root = GameUi.Root;
-            if (GameUi.HomeAvailable || !Plugin.Enabled.Value || root == null
+            if (!Plugin.FinalDamage.Value) { ClearDisplay(); return; }
+            if (GameUi.HomeAvailable || root == null
                 || _point?.Get<bool>("isDisposed") != false) { Clear(); return; }
             var elapsed = Time.unscaledTime - _shownAt;
             if (elapsed >= AdviceText.DamageLifetime)
@@ -251,20 +252,21 @@ internal static class RemainingHpUi
         _step = _hp = _die = 0; _modifiers = default; _prediction = -1;
     }
 
-    internal static void Clear()
+    internal static void ClearDisplay()
     {
         GameUi.Dispose(_point); _point = null;
         _pointContext = IntPtr.Zero;
         _layout = null; _alpha = -1;
         _showing = _animated = false;
-        ResetCapture();
     }
+
+    internal static void Clear() { ClearDisplay(); ResetCapture(); }
 
     // Only the pending final-number window needs frame-rate polling. The main
     // scene scan and advice calculations keep their existing 0.2s cadence.
     internal static void PollFinalPoints()
     {
-        if (_failed || _prediction >= 0 || _step != 5 || (!Plugin.Enabled.Value && !Plugin.KoMinimum.Value)) return;
+        if (_failed || _prediction >= 0 || _step != 5 || (!Plugin.FinalDamage.Value && !Plugin.KoMinimum.Value)) return;
         try
         {
             if (!GameUi.Visible(_parent) || !GameUi.Visible(_attack) || !GameUi.Visible(_defense)

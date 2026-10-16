@@ -55,6 +55,7 @@ internal static class CharacterNameUi
         if (_table == table.Pointer && _language == language) return true;
         RestoreAll();
         var pairs = new List<(string Epithet, string Name)>();
+        var stringType = RuntimeObject.EnumValue("UI", "UIStringType", "Character");
         // Protobuf's IDictionary enumerator is a reference object, unlike its boxed struct enumerator.
         var items = table.Call("System.Collections.IDictionary.GetEnumerator")!;
         while (items.Call("MoveNext")!.Value<bool>())
@@ -63,8 +64,8 @@ internal static class CharacterNameUi
             var nameId = config.Get<int>("NameID");
             var nickId = config.Get<int>("NickID");
             if (nameId <= 0 || nickId <= 0) continue;
-            var name = RuntimeObject.StaticCall(_helperClass, "GetLocal", nameId, 10)?.String() ?? "";
-            var nick = RuntimeObject.StaticCall(_helperClass, "GetLocal", nickId, 10)?.String() ?? "";
+            var name = RuntimeObject.StaticCall(_helperClass, "GetLocal", nameId, stringType)?.String() ?? "";
+            var nick = RuntimeObject.StaticCall(_helperClass, "GetLocal", nickId, stringType)?.String() ?? "";
             pairs.Add((nick, name));
         }
         _names = CharacterNames.BuildMap(pairs);

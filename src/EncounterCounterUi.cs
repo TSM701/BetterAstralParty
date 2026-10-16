@@ -10,7 +10,7 @@ internal static class EncounterCounterUi
 
     internal static void Tick()
     {
-        if (!Compatibility.Allowed("BattleStatus")) return;
+        if (!Compatibility.Allowed(BattleStatusUi.CounterFeature)) return;
         try
         {
             if (!Plugin.BattleStatus.Value || ModUi.IsOpen || !Application.isFocused) { Clear(); return; }
@@ -47,7 +47,7 @@ internal static class EncounterCounterUi
         }
         catch (Exception ex)
         {
-            Compatibility.Block("BattleStatus", ex, Clear, BattleStatusUi.Clear);
+            Compatibility.Block(BattleStatusUi.CounterFeature, ex, Clear, BattleStatusUi.ClearCounter);
         }
     }
 

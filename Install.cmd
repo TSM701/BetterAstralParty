@@ -1,27 +1,45 @@
 @echo off
 setlocal DisableDelayedExpansion
-if exist "%~dp0package-manifest.json" goto packaged
-chcp 65001 >nul
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\development-maintenance.ps1" -Operation Install %*
-set "BAP_EXIT=%errorlevel%"
-pause
-exit /b %BAP_EXIT%
-:packaged
+set "BAP_ENTRYROOT=%~dp0"
+set "BAP_MAINTENANCE_CWD=%CD%"
+"%SystemRoot%\System32\chcp.com" 65001 >nul
+set "BAP_PREVIEW=0"
+:arguments
+if "%~1"=="" goto bootstrap
+if /i "%~1"=="-WhatIf" set "BAP_PREVIEW=1"
+if /i "%~1"=="--WhatIf" set "BAP_PREVIEW=1"
+if /i "%~1"=="-CheckOnly" set "BAP_PREVIEW=1"
+if /i "%~1"=="--CheckOnly" set "BAP_PREVIEW=1"
+shift /1
+goto arguments
+:bootstrap
+if "%BAP_PREVIEW%"=="1" goto native
 set "BAP_BOOTLOG=%LOCALAPPDATA%\BetterAstralParty\Logs"
 if not exist "%BAP_BOOTLOG%" mkdir "%BAP_BOOTLOG%" 2>nul
 if not exist "%BAP_BOOTLOG%" set "BAP_BOOTLOG=%TEMP%\BetterAstralParty"
 if not exist "%BAP_BOOTLOG%" mkdir "%BAP_BOOTLOG%" 2>nul
 set "BAP_BOOTLOG=%BAP_BOOTLOG%\Bootstrap-%RANDOM%-%RANDOM%.log"
->"%BAP_BOOTLOG%" echo BAP-BOOTSTRAP-START: If this is the last line, capture the console error.
+>"%BAP_BOOTLOG%" echo BAP-BOOTSTRAP-START: Precompiled native installer.
 if not exist "%BAP_BOOTLOG%" (
     if not exist "%TEMP%\BetterAstralParty" mkdir "%TEMP%\BetterAstralParty" 2>nul
     set "BAP_BOOTLOG=%TEMP%\BetterAstralParty\Bootstrap-%RANDOM%-%RANDOM%.log"
 )
 if not exist "%BAP_BOOTLOG%" >"%BAP_BOOTLOG%" echo BAP-BOOTSTRAP-START: Capture console errors if detailed logs are unavailable.
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\install-bootstrap.ps1" %*
+:native
+if not exist "\\?\%BAP_ENTRYROOT%artifacts\BetterAstralParty-Launcher.exe" goto missing
+pushd "%BAP_ENTRYROOT%artifacts"
+if errorlevel 1 goto missing
+if exist "\\?\%BAP_ENTRYROOT%package-manifest.json" goto packaged
+"BetterAstralParty-Launcher.exe" --development --install %*
+goto result
+:packaged
+"BetterAstralParty-Launcher.exe" --install %*
+:result
 set "BAP_EXIT=%errorlevel%"
+popd
+if "%BAP_PREVIEW%"=="1" goto preview
 if not "%BAP_EXIT%"=="0" (
-    >>"%BAP_BOOTLOG%" echo BAP-BOOTSTRAP-FAILED: PowerShell or installer did not complete. See the console and detailed logs.
+    >>"%BAP_BOOTLOG%" echo BAP-BOOTSTRAP-FAILED: Native installer did not complete. See the console and detailed logs.
     echo Bootstrap log: "%BAP_BOOTLOG%"
     echo Installation was not completed. See the error above.
     pause
@@ -30,3 +48,16 @@ if not "%BAP_EXIT%"=="0" (
 >>"%BAP_BOOTLOG%" echo BAP-BOOTSTRAP-OK
 pause
 exit /b 0
+:missing
+if "%BAP_PREVIEW%"=="1" (
+    echo Native installer missing. No maintenance executed.
+    exit /b 1
+)
+>>"%BAP_BOOTLOG%" echo BAP-PACKAGE-INCOMPLETE: artifacts\BetterAstralParty-Launcher.exe missing.
+echo Native installer missing. Extract the complete official ZIP again.
+echo Bootstrap log: "%BAP_BOOTLOG%"
+pause
+exit /b 1
+:preview
+pause
+exit /b %BAP_EXIT%

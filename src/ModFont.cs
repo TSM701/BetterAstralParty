@@ -60,11 +60,11 @@ internal static class ModFont
             if (isTmp && tmp == null) return;
             var asset = tmp?.Pointer ?? font.Pointer;
             var textField = label.Field("_textField")!;
-            _ = textField.Get<float>("textWidth"); // Forces native parsing only when text changed.
+            // Read native layout results without laying out a new, not-yet-sized label.
             var text = textField.Get("parsedText")?.String() ?? "";
             if (entry.Text == text && entry.Asset == asset) return;
             bool Has(char c) => tmp != null
-                ? new TMP_FontAsset(tmp.Pointer).HasCharacter(c, false, true)
+                ? new TMP_FontAsset(tmp.Pointer).HasCharacter(c, false, false)
                 : font.TypeName == "DynamicFont"
                     ? new Font(font.Get("nativeFont")!.Pointer).HasCharacter(c)
                     : true; // Preserve other native renderers; do not guess glyph coverage.

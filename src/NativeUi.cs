@@ -179,18 +179,45 @@ internal static class NativeUi
                 image.Call("SetXY", 80f, 80f);
             }
             ghost.Set("visible", false);
+            icon.Set("visible", true);
             var numberId = point.Field("txt_Point")!.Get("id")!.String();
             var ghostId = point.Field("txt_max")!.Get("id")!.String();
-            var items = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<Il2CppSystem.Object>(
-                transition.Field("_items")!.Pointer);
+            var source = transition.Field("_items") ?? throw new InvalidOperationException("Missing private counter transition array");
+            var arrayClass = Il2CppInterop.Runtime.IL2CPP.il2cpp_object_get_class(source.Pointer);
+            if (arrayClass == IntPtr.Zero || Il2CppInterop.Runtime.IL2CPP.il2cpp_class_get_rank(arrayClass) != 1)
+                throw new InvalidOperationException("Invalid private counter transition array rank");
+            var element = Il2CppInterop.Runtime.IL2CPP.il2cpp_class_get_element_class(arrayClass);
+            if (element == IntPtr.Zero || element != RuntimeObject.FindClass("FairyGUI", "TransitionItem"))
+                throw new InvalidOperationException("Invalid private counter transition array type");
+            var items = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<Il2CppSystem.Object>(source.Pointer);
+            if (items.Length is < 0 or > 256) throw new InvalidOperationException("Invalid private counter transition item count");
+            var soundType = RuntimeObject.EnumValue("FairyGUI", "TransitionActionType", "Sound");
+            var sounds = new List<Il2CppSystem.Object>();
             for (var i = 0; i < items.Length; i++)
             {
                 var item = new RuntimeObject(items[i].Pointer);
+                if (item.Field("type")!.Value<int>() == soundType)
+                {
+                    // The current native player reads sound, not TValue_Sound.volume.
+                    if (!Plugin.CounterSound.Value) item.Field("value")!.SetField("sound", 0);
+                    sounds.Add(items[i]);
+                }
                 var target = item.Field("targetId")!.String();
                 if (target == numberId || target == ghostId)
                     item.SetField("targetId", (target == numberId ? icon : ghost).Get("id")!.String());
             }
-            // Keep native timing, shake, fading afterimage and sound 510 unchanged.
+            if (!Plugin.CounterAnimation.Value)
+            {
+                // Never substitute Object[] or unknown action types for native TransitionItem[].
+                var pointer = Il2CppInterop.Runtime.IL2CPP.il2cpp_array_new(element, (ulong)sounds.Count);
+                if (pointer == IntPtr.Zero) throw new InvalidOperationException("Counter transition allocation failed");
+                var filtered = new Il2CppSystem.Array(pointer);
+                // Native SetValue checks the element type and performs the managed reference write.
+                for (var i = 0; i < sounds.Count; i++) filtered.SetValue(sounds[i], i);
+                transition.SetField("_items", new RuntimeObject(pointer));
+                GC.KeepAlive(filtered);
+            }
+            // Defaults retain native timing, shake, fading afterimage and sound unchanged.
             parent.Call("AddChild", point);
             return point;
         }

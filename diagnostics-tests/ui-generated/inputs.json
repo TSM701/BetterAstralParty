@@ -1,0 +1,18 @@
+{
+  "sourceHashes": {
+    "src/ModUi.cs": "DFD50BC4F131CE3D5C9C9130E53CA5B78F903CF816C8984BF473257E4C73E1C1",
+    "src/ModText.cs": "E2994682B3E03F2C0FFA229A81F060CC5B3250BDA652CAA7280C5DE74810D98E",
+    "src/MenuLayout.cs": "C85E13DB9B245B00CB45DC133B44577E9CFAE5302AE9D2B95D737B40C16595C6",
+    "src/DiagnosticActions.cs": "69B65A6C8489E8E3CA5A48C518060E5F1E2DA941FE3AB54984B1FF0DB81A769E",
+    "diagnostics/DiagnosticBundle.cs": "E5BEEC1C67A0585876AC03B5D6358F19EAD9AE9FC1C426805BCA60A889F3E904",
+    "diagnostics/MinimalDiagnosticProjection.cs": "6AAEB17DA10BDDFE5F37DF0925DD3CB957D418A2CFB02BEA0BDA384ACF78AA51"
+  },
+  "methodsUnchanged": [
+    "HandleInput",
+    "Apply",
+    "ApplyCore"
+  ],
+  "refreshScope": "actual diagnostic branch only",
+  "nativeRenderTested": false,
+  "shellDispatched": false
+}

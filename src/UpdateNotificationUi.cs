@@ -91,14 +91,14 @@ internal static class UpdateNotificationUi
 
     internal static void Tick()
     {
-        if (!Compatibility.Allowed(Feature)) { Clear(); return; }
-        try { TickCore(); }
+        try { if (!Compatibility.Allowed(Feature)) { Clear(); return; } TickCore(); }
         catch (Exception ex) { Compatibility.Block(Feature, ex, Clear); }
     }
 
     private static void TickCore()
     {
         PollTransition();
+        if (!Plugin.UpdateNotifications.Value && _pendingTransition == null && _transition == null && _failedTransition == null) { Clear(); return; }
         var home = GameUi.NotificationHome();
         if (!home.Eligible) { Clear(); return; }
         if (_pendingTransition != null) return; // Ordinary notices must not replace an in-flight explicit review.

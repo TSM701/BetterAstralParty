@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);BAP_PROCESS_QUERY_FIXTURE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ApplyBoundaryFixture.cs" />
+    <Compile Include="UpdaterFixtureScope.cs" />
+    <Compile Include="..\updater\*.cs" Exclude="..\updater\UpdateHelperProgram.cs" />
+    <Compile Include="..\src\Observability\*.cs" />
+    <Compile Include="..\diagnostics\MinimalDiagnosticProjection.cs" />
+  </ItemGroup>
+</Project>

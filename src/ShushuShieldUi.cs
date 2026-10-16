@@ -7,6 +7,7 @@ internal static class ShushuShieldUi
 {
     internal const int BuffId = 1071101;
     internal const string Feature = "ShushuShield";
+    internal const string RestrictionsFeature = "ShushuShieldRestrictions";
     private static IntPtr _logicClass, _battleClass;
     private static readonly ActorShield Attacker = new(), Defender = new();
     private sealed record PendingEffect(ActorShield Owner, RuntimeObject Awaiter, GameObject Container);
@@ -18,7 +19,8 @@ internal static class ShushuShieldUi
     private static readonly List<IntPtr> StaleCards = new();
     private static IntPtr _gobject;
     private static float _findAt;
-    private static readonly Action[] Cleanup = { ClearCards, ClearDefense, Attacker.Clear, Defender.Clear };
+    private static readonly Action[] DisplayCleanup = { Attacker.Clear, Defender.Clear };
+    private static readonly Action[] RestrictionCleanup = { ClearCards, ClearDefense };
 
     private sealed class ActorShield
     {
@@ -96,17 +98,19 @@ internal static class ShushuShieldUi
                 if (pending.Container != null) UnityEngine.Object.Destroy(pending.Container);
                 if (slot.Awaiter?.Pointer == pending.Awaiter.Pointer) slot.Awaiter = null;
                 slot.Clear();
-                Compatibility.Block(Feature, ex, Clear);
+                Compatibility.Block(Feature, ex, ClearDisplay);
             }
         }
     }
 
     internal static void Tick()
     {
-        if (!Compatibility.Allowed(Feature)) return;
+        var display = Plugin.ShushuShield.Value && Compatibility.Allowed(Feature);
+        var restrictions = Plugin.ShushuShieldRestrictions.Value && Compatibility.Allowed(RestrictionsFeature);
+        if (!display && !restrictions) { Clear(); return; }
         try
         {
-            if (!Plugin.ShushuShield.Value || !Application.isFocused || ModUi.IsOpen || GameUi.Root == null)
+            if (!Application.isFocused || ModUi.IsOpen || GameUi.Root == null)
             { Clear(); return; }
             if (_logicClass == IntPtr.Zero) _logicClass = RuntimeObject.FindClass("GameLogic", "GameLogicManager");
             if (_battleClass == IntPtr.Zero) _battleClass = RuntimeObject.FindClass("Core.Scene", "BattleSceneController");
@@ -117,21 +121,31 @@ internal static class ShushuShieldUi
             { Clear(); return; }
             Tick(logic!, RuntimeObject.StaticField(_battleClass, "inst")?.Field("directorManager"));
         }
-        catch (Exception ex) { Compatibility.Block(Feature, ex, Clear); }
+        catch (Exception ex)
+        {
+            if (display) Compatibility.Block(Feature, ex, ClearDisplay);
+            if (restrictions) Compatibility.Block(RestrictionsFeature, ex, ClearRestrictions);
+        }
     }
 
     internal static void Tick(RuntimeObject logic, RuntimeObject? director)
     {
-        if (!Plugin.ShushuShield.Value) { Clear(); return; }
-        if (!Compatibility.Allowed(Feature)) return;
-        try { Update(logic, director); }
-        catch (Exception ex) { Compatibility.Block(Feature, ex, Clear); }
+        if (!Plugin.ShushuShield.Value || !Compatibility.Allowed(Feature)) ClearDisplay();
+        else
+            try
+            {
+                UpdateActor(Attacker, director?.Get("attacker"), logic, true);
+                UpdateActor(Defender, director?.Get("victim"), logic, false);
+            }
+            catch (Exception ex) { Compatibility.Block(Feature, ex, ClearDisplay); }
+        if (!Plugin.ShushuShieldRestrictions.Value || !Compatibility.Allowed(RestrictionsFeature)) ClearRestrictions();
+        else
+            try { UpdateRestrictions(director); }
+            catch (Exception ex) { Compatibility.Block(RestrictionsFeature, ex, ClearRestrictions); }
     }
 
-    private static void Update(RuntimeObject logic, RuntimeObject? director)
+    private static void UpdateRestrictions(RuntimeObject? director)
     {
-        UpdateActor(Attacker, director?.Get("attacker"), logic, true);
-        UpdateActor(Defender, director?.Get("victim"), logic, false);
         var root = GameUi.Root;
         if (!GameUi.Visible(_window) && root != null && Time.unscaledTime >= _findAt)
         {
@@ -140,8 +154,10 @@ internal static class ShushuShieldUi
         }
         var ui = GameUi.Visible(_window) ? _window!.Get("contentPane") : null;
         var deciding = Deciding(ui);
-        Defense.Update(ui?.Field("btn_Defend"), Defender.Buff != null && deciding, deciding);
-        UpdateCards(ui);
+        // Read only the public local defender buff; the display/effect branch is independent.
+        var shielded = (deciding || ChoosingCards(ui)) && ActiveBuff(Player(director?.Get("victim"), false)) != null;
+        Defense.Update(ui?.Field("btn_Defend"), shielded && deciding, deciding);
+        UpdateCards(ui, shielded);
     }
 
     private static bool ChoosingCards(RuntimeObject? ui) => ui?.Field("playerState")?.Get<int>("selectedIndex") == 1
@@ -151,10 +167,10 @@ internal static class ShushuShieldUi
     private static bool SameCard(RuntimeObject card, IntPtr data) => !card.Get<bool>("isDisposed")
         && card.Get("CardData")?.Pointer == data && card.Field("IsRelease")?.Value<bool>() == false;
 
-    private static void UpdateCards(RuntimeObject? ui)
+    private static void UpdateCards(RuntimeObject? ui, bool shielded)
     {
         // GetVailCard selects EffectType 2 for the local defender. Never inspect spectator hands.
-        if (Defender.Buff == null || !ChoosingCards(ui)) { ClearCards(); return; }
+        if (!shielded || !ChoosingCards(ui)) { ClearCards(); return; }
         var list = _window?.Field("cardItemList");
         var count = list?.Get<int>("Count") ?? 0;
         if (count is < 0 or > 11) throw new InvalidOperationException("Invalid combat hand count");
@@ -197,7 +213,7 @@ internal static class ShushuShieldUi
         {
             var entry = Cards[key]; Cards.Remove(key);
             try { entry.Lock.Clear(choosing && SameCard(entry.Card, entry.Data)); }
-            catch (Exception ex) { Compatibility.Block(Feature, ex); }
+            catch (Exception ex) { Compatibility.Block(RestrictionsFeature, ex); }
         }
         LiveCards.Clear(); StaleCards.Clear();
     }
@@ -209,10 +225,16 @@ internal static class ShushuShieldUi
 
     internal static bool IsBlocking(RuntimeObject button) => Defense.IsBlocking(button);
 
+    private static RuntimeObject? Player(RuntimeObject? actor, bool attacking)
+    {
+        var ui = actor?.Field("_UI");
+        return ui?.Get<bool>("isDisposed") == false ? ui.Field(attacking ? "attackerData" : "defenderData") : null;
+    }
+
     private static void UpdateActor(ActorShield slot, RuntimeObject? actor, RuntimeObject logic, bool attacking)
     {
         var ui = actor?.Field("_UI");
-        var player = ui?.Get<bool>("isDisposed") == false ? ui.Field(attacking ? "attackerData" : "defenderData") : null;
+        var player = Player(actor, attacking);
         if (actor?.Pointer != slot.Actor?.Pointer || player?.Pointer != slot.Player?.Pointer)
         { slot.Clear(); slot.Actor = actor; slot.Player = player; }
         if (player == null) return;
@@ -271,10 +293,21 @@ internal static class ShushuShieldUi
 
     internal static void Clear()
     {
-        // One failed native effect must not strand the input lock or escape into BattleStatus.
-        foreach (var cleanup in Cleanup)
+        ClearRestrictions(); ClearDisplay();
+    }
+
+    internal static void ClearDisplay()
+    {
+        foreach (var cleanup in DisplayCleanup)
             try { cleanup(); }
             catch (Exception ex) { Compatibility.Block(Feature, ex); }
+    }
+
+    internal static void ClearRestrictions()
+    {
+        foreach (var cleanup in RestrictionCleanup)
+            try { cleanup(); }
+            catch (Exception ex) { Compatibility.Block(RestrictionsFeature, ex); }
     }
 
     private static void ClearDefense()

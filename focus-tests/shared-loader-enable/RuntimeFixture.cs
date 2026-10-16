@@ -156,7 +156,7 @@ internal static class RuntimeFixture
             Reject(() => SteamLauncher.EnableSharedLoader(foreign, operation), "wrong root owned lease denied");
             Same(bytes, File.ReadAllBytes(Path.Combine(foreign, Ini)), "wrong root unchanged");
             Assert(Backups(foreign).Length == 0, "wrong root no backup");
-            File.WriteAllText(Path.Combine(own, "BetterAstralParty.reinstall-v3.pending"), "isolated pending");
+            File.WriteAllText(Path.Combine(own, "BetterAstralParty.reinstall-v4.pending"), "isolated pending");
             Reject(() => SteamLauncher.EnableSharedLoader(own, operation), "pending work introduced after acquisition denied");
             Same(bytes, File.ReadAllBytes(Path.Combine(own, Ini)), "pending work unchanged");
             Assert(Backups(own).Length == 0, "pending work no backup");
@@ -207,6 +207,33 @@ internal static class RuntimeFixture
         Assert(Backups(linked).Length == 0, "linked ini no backup");
     }
 
+    private static void WriteFailureRecovery()
+    {
+        var original=Encoding.UTF8.GetBytes("[General]\nenabled=false\ncustom=retained\n");
+        foreach(var mode in new[]{"before-write","verified-rollback","failed-rollback","unverified-rollback","failed-rollback-cleanup"}) {
+            var root=NewRoot(original);var other=OtherFiles(root);var writeError=new IOException("inert enable write failure");
+            var rollbackError=new UnauthorizedAccessException("inert rollback unavailable");Exception? observed=null;
+            SharedLoaderConfiguration.FixtureBoundary=point=>{
+                if(point==(mode=="before-write"?"before-enable-write":"after-enable-write"))throw writeError;
+                if(mode.StartsWith("failed-rollback",StringComparison.Ordinal)&&point=="before-enable-rollback" || mode=="unverified-rollback"&&point=="after-enable-rollback")throw rollbackError;
+                if(mode=="failed-rollback-cleanup"&&point=="after-enable-attempt")throw new IOException("inert failed-stream cleanup error");
+            };
+            try { Enable(root); } catch(Exception error) { observed=error; } finally { SharedLoaderConfiguration.FixtureBoundary=null; }
+            var uncertain=mode!="before-write"&&mode!="verified-rollback";
+            if(uncertain) {
+                Assert(observed is SharedLoaderRecoveryException,"Uncertain mutation has a distinct non-advisory recovery error: "+mode);
+                var error=(SharedLoaderRecoveryException)observed!;var causes=error.ToString();
+                Assert(causes.Contains(writeError.Message,StringComparison.Ordinal)&&causes.Contains(rollbackError.Message,StringComparison.Ordinal),"Write and failed-rollback causes both retained: "+mode);
+                if(mode=="failed-rollback-cleanup")Assert(causes.Contains("inert failed-stream cleanup error",StringComparison.Ordinal),"Cleanup failure cannot erase the typed uncertain-mutation outcome");
+                Assert(Path.GetFullPath(Path.Combine(root,error.BackupPath))==Path.GetFullPath(Backups(root).Single())&&error.Message.Contains("Restore doorstop_config.ini",StringComparison.Ordinal),"Recovery error names exact retained original backup: "+mode);
+            } else Assert(ReferenceEquals(observed,writeError),"Prewrite or verified rollback keeps original advisory error: "+mode);
+            Same(original,File.ReadAllBytes(Backups(root).Single()),"Failure retains exact original backup: "+mode);
+            if(!mode.StartsWith("failed-rollback",StringComparison.Ordinal))Same(original,File.ReadAllBytes(Path.Combine(root,Ini)),"Prewrite or completed restoration leaves original INI exact: "+mode);
+            else Assert(WindowsEnabled(root)=="true","Failed rollback does not pretend the changed INI is untouched");
+            CheckOther(root,other);
+        }
+    }
+
     private static int Main(string[] args)
     {
         try
@@ -217,7 +244,7 @@ internal static class RuntimeFixture
             if (!_root.StartsWith(allowed, StringComparison.OrdinalIgnoreCase) || _root.Length > 175 || Directory.Exists(_root))
                 throw new ArgumentException("Fixture root must be new, short, and inside the allowed artifact directory");
             Directory.CreateDirectory(_root);
-            ParserAndWrites(); LaunchLeaseAndBridge(); UnsafeWritesAndBackupPreservation();
+            ParserAndWrites(); LaunchLeaseAndBridge(); UnsafeWritesAndBackupPreservation(); WriteFailureRecovery();
             Console.WriteLine($"PASS SharedLoaderEnable: {_assertions} assertions, {_cases} isolated roots; production parser/write/fence/lease/launcher bridge and Windows INI API, no game install or operating-key access.");
             return 0;
         }

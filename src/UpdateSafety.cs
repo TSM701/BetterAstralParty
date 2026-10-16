@@ -37,7 +37,7 @@ internal sealed class FileUpdateSafety(string root, Func<bool, bool, Task> save,
                     using var plugin = fence.OpenFile(UpdateTrust.PluginPath); var metadata = InstalledPluginMetadata.Read(UpdateTicket.Read(plugin, UpdateTrust.MaxFileBytes));
                     if (plugin.Hash() != receipt.Files[UpdateTrust.PluginPath]) throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
                     channels = receipt.Channels; installed = metadata.Version;
-                    if (channels != null && (channels.Root != fence.RootIdentity.Text || channels.ActiveVersion != installed || metadata.UpdateProtocol != 3 || metadata.SettingsSchema != 1))
+                    if (channels != null && (channels.Root != fence.RootIdentity.Text || channels.ActiveVersion != installed || metadata.UpdateProtocol != 4 || metadata.SettingsSchema != 1))
                         throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
                 } catch (ApplySafetyException error) when (error.NativeError == 2) { }
                 if (readiness != null) await readiness().ConfigureAwait(false);

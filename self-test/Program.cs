@@ -1,4 +1,10 @@
 using BetterAstralParty;
+if (args.Contains("--settings-only"))
+{
+    LanguageCheck.Run();
+    ResolutionCheck.Run();
+    return;
+}
 if (args.Contains("--release-updates-only"))
 {
     ReleaseUpdateCheck.Run();

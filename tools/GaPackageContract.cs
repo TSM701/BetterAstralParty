@@ -21,18 +21,18 @@ namespace BetterAstralParty.Packaging
         }
         public static byte[] PrepareHelper(string version, byte[] image) {
             if (UpdateVersion.Parse(version).Tag != version) throw new ArgumentException("Canonical version required");
-            return HelperDescriptor.Prepare(version, image, 3);
+            return HelperDescriptor.Prepare(version, image, 4);
         }
         public static string VerifyHelper(string version, byte[] descriptor, byte[] signature, byte[] image) {
             return HelperDescriptor.Verify(UpdateTrust.Production(), descriptor, DetachedSignature.Parse(signature), image, version).Sha256;
         }
         public static string VerifyHelperBootstrap(byte[] descriptor,byte[] signature,byte[] image) {
             var helper=HelperDescriptor.Verify(UpdateTrust.Production(),descriptor,DetachedSignature.Parse(signature),image);
-            if(helper.Protocol!=3)throw new ArgumentException("Protocol3 helper required");
+            if(helper.Protocol!=4)throw new ArgumentException("Protocol4 helper required");
             return helper.Sha256;
         }
         public static byte[] PreviewUpdateZip(byte[][] payload) {
-            if(payload.Length!=InstallReceipt.Owned.Length)throw new ArgumentException("Owned8 required");
+            if(payload.Length!=InstallReceipt.Owned.Length)throw new ArgumentException("Exact native owned inventory required");
             var entries=new SortedDictionary<string,byte[]>(StringComparer.Ordinal);
             for(var i=0;i<payload.Length;i++){if(payload[i].Length==0 || payload[i].LongLength>UpdateTrust.MaxFileBytes)throw new ArgumentException("Invalid owned payload");entries.Add(InstallReceipt.Owned[i],payload[i]);}
             using(var stream=new MemoryStream()){
@@ -45,12 +45,12 @@ namespace BetterAstralParty.Packaging
         }
         public static string VerifyWholeUpdate(string version,byte[] descriptor,byte[] signature,byte[] zip) {
             var verified=WholeInstallBridge.VerifyUpdateProof(descriptor,signature);
-            if(verified.Protocol!=3 || verified.Version!=version || verified.Files.Count!=8)throw new ArgumentException("Exact v3 owned8 proof required");
+            if(verified.Protocol!=4 || verified.Version!=version || verified.Files.Count!=InstallReceipt.Owned.Length)throw new ArgumentException("Exact native-generation proof required");
             UpdatePackage.VerifyPayload(zip,verified);return verified.DescriptorSha256;
         }
         public static string VerifyHistoricalUpdate(byte[] descriptor,byte[] signature) {
             var proof=WholeInstallBridge.VerifyUpdateProof(descriptor,signature);
-            if(proof.Protocol!=3 || proof.SettingsSchema!=1 || proof.Files.Count!=8)throw new ArgumentException("Signed protocol3 owned8 history required");
+            if(proof.Protocol!=4 || proof.SettingsSchema!=1 || proof.Files.Count!=InstallReceipt.Owned.Length)throw new ArgumentException("Signed native-generation history required");
             return proof.DescriptorSha256;
         }
         public static byte[] PrepareUpdateDescriptor(string version, string channel, long releaseId, long assetId, byte[] zip, long[] sizes, string[] hashes) {
@@ -61,15 +61,16 @@ namespace BetterAstralParty.Packaging
         }
         private static byte[] PrepareDescriptor(string version, string channel, long releaseId, long assetId, byte[] zip, long[] sizes, string[] hashes, bool localInstall) {
             var v=UpdateVersion.Parse(version);
-            if(v.Tag!=version || channel!="Stable" && channel!="Beta" || channel=="Stable" && v.IsPrerelease && !(localInstall && v.IsLocalPrerelease)
+            if(v.Tag!=version || v.CompareTo(UpdateVersion.Parse("1.3.0-0"))<0 || !ReleaseFeedPolicy.IsChannel(channel) || !localInstall && v.IsLocalPrerelease || channel=="Stable" && v.IsPrerelease && !(localInstall && v.IsLocalPrerelease)
                 || (localInstall ? releaseId!=0 || assetId!=0 : releaseId<=0 || assetId<=0) || zip.Length==0 || zip.LongLength>UpdateTrust.MaxZipBytes
                 || sizes.Length!=InstallReceipt.Owned.Length || hashes.Length!=sizes.Length) throw new ArgumentException("Exact release/asset binding required");
             var feed=ReleaseFeedPolicy.For(channel);
             if(!feed.Configured) throw new ArgumentException("Verified repository identity is required");
-            var text=new StringBuilder((localInstall?"BetterAstralParty.LocalInstallDescriptor/v1":"BetterAstralParty.UpdateDescriptor/v3")+"\nrepository="+feed.Repository+"\nversion="+version
-                +"\nchannel="+channel+"\nplatform="+UpdateTrust.PlatformId+"\nrelease-id="+releaseId.ToString(CultureInfo.InvariantCulture)
+            var publicRelease=!localInstall && ReleaseFeedPolicy.IsPublicChannel(channel);
+            var text=new StringBuilder((localInstall?"BetterAstralParty.LocalInstallDescriptor/v1":"BetterAstralParty.UpdateDescriptor/v4")+"\nrepository="+feed.Repository+"\nversion="+version
+                +"\nchannel="+(publicRelease?"Stable":channel)+"\nplatform="+UpdateTrust.PlatformId+"\nrelease-id="+releaseId.ToString(CultureInfo.InvariantCulture)
                 +"\nasset-id="+assetId.ToString(CultureInfo.InvariantCulture)+"\nasset-name=BetterAstralParty-"+version+"-update.zip\nzip-bytes="
-                +zip.Length.ToString(CultureInfo.InvariantCulture)+"\nzip-sha256="+UpdateTrust.Hash(zip)+"\nfile-count=8\npurpose="+(localInstall?"local-install/"+channel:feed.Purpose)
+                +zip.Length.ToString(CultureInfo.InvariantCulture)+"\nzip-sha256="+UpdateTrust.Hash(zip)+"\nfile-count="+InstallReceipt.Owned.Length.ToString(CultureInfo.InvariantCulture)+"\npurpose="+(localInstall?"local-install/"+channel:publicRelease?ReleaseFeedPolicy.PublicPurpose:feed.Purpose)
                 +"\nrepository-id="+feed.RepositoryId.ToString(CultureInfo.InvariantCulture)+"\nsettings-schema=1\n");
             for(var i=0;i<sizes.Length;i++){
                 if(sizes[i]<=0 || sizes[i]>UpdateTrust.MaxFileBytes || hashes[i].Length!=64) throw new ArgumentException("Invalid payload");

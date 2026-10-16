@@ -1,0 +1,290 @@
+#nullable enable
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Threading;
+using Microsoft.Win32.SafeHandles;
+using BetterAstralParty.Packaging;
+using BetterAstralParty.Updating;
+
+namespace BetterAstralParty.GaSigning
+{
+    // Bounded remote-release signing only; publication, credentials and local-install proofs stay outside this entrypoint.
+    public static class SignRelease
+    {
+        private static string Stage="", PolicyPath="", ReviewPath="", Output="", Reservation="", Version="", Channel="", DescriptorHash="", HelperHash="", ImageHash="", ZipHash="", SourceHash="", Repository="", RemoteHash="";
+        private static long RepositoryId, ReleaseId, AssetId;
+        private const string KeyName="BetterAstralParty.PrivateTrial.20261002", KeyId="bap-trial-20261002";
+        private static void Select(string policyPath) {
+            if(!policyPath.StartsWith("artifacts/automatic-update-development/",StringComparison.Ordinal) || !policyPath.EndsWith("/signing-policy.json",StringComparison.Ordinal) || policyPath.Contains('\\') || policyPath.Split('/').Any(p=>p=="" || p=="." || p==".."))
+                throw new InvalidDataException("Release policy boundary required");
+            PolicyPath=policyPath;Stage=policyPath.Substring(0,policyPath.LastIndexOf('/'));ReviewPath=Stage+"/signing-review.json";Output=Stage+"/signatures";
+        }
+        private static int invoked;
+        private sealed class Inputs { internal byte[] Helper=null!,Image=null!,Descriptor=null!,Zip=null!,Proof=null!,ProofSignature=null!; }
+        private sealed class Budget {
+            internal readonly bool[] AttemptRecorded=new bool[2]; internal readonly int[] Calls=new int[2];
+            internal int Total=>Calls.Sum();
+            internal void Count(int index) { if(index<0 || index>=2 || !AttemptRecorded[index] || Calls[index]!=0 || Total>=2)throw new InvalidOperationException("One durable call per descriptor, two total");Calls[index]++; }
+        }
+        private static string Text(JsonElement e,string name)=>e.GetProperty(name).GetString()??"";
+        private static void Hash(string value) { if(value.Length!=64 || value.Any(c=>!(c>='0'&&c<='9'||c>='A'&&c<='F')))throw new InvalidDataException("Exact uppercase SHA-256 required"); }
+        private static void Fields(JsonElement e,params string[] names) {
+            var actual=e.EnumerateObject().Select(p=>p.Name).ToArray();
+            if(actual.Length!=names.Length || !actual.ToHashSet(StringComparer.Ordinal).SetEquals(names))throw new InvalidDataException("Exact JSON fields required");
+        }
+        private static byte[] Read(DevelopmentPackageFiles files,string path,string hash) {
+            Hash(hash);files.Capture(path);if(files.SourceHash(path)!=hash)throw new InvalidDataException("Reviewed input changed: "+path);return files.ReviewBytes(path);
+        }
+        private static Inputs Load(DevelopmentPackageFiles files,string root,string policyHash)
+        {
+            using var doc=JsonDocument.Parse(Read(files,PolicyPath,policyHash));var p=doc.RootElement;
+            Fields(p,"schema","purpose","version","channel","keyName","keyId","maximumNativeSignCalls","rootIdentity","output","reservation","sourceManifestSha256","helperDescriptorSha256","updateDescriptorSha256","helperImageSha256","zipSha256","compiledFiles","toolFiles","repository","repositoryId","releaseId","assetId","remoteVerificationSha256");
+            Version=Text(p,"version");Channel=Text(p,"channel");SourceHash=Text(p,"sourceManifestSha256");HelperHash=Text(p,"helperDescriptorSha256");DescriptorHash=Text(p,"updateDescriptorSha256");ImageHash=Text(p,"helperImageSha256");ZipHash=Text(p,"zipSha256");
+            Repository=Text(p,"repository");RepositoryId=p.GetProperty("repositoryId").GetInt64();ReleaseId=p.GetProperty("releaseId").GetInt64();AssetId=p.GetProperty("assetId").GetInt64();RemoteHash=Text(p,"remoteVerificationSha256");
+            Reservation="artifacts/automatic-update-development/signing-"+Version+".reserved.json";
+            foreach(var digest in new[]{SourceHash,HelperHash,DescriptorHash,ImageHash,ZipHash,RemoteHash})Hash(digest);
+            CheckScope(Version,Channel,Repository,RepositoryId,ReleaseId,AssetId);
+            if(p.GetProperty("schema").GetInt32()!=1 || Text(p,"purpose")!="sign-release-once"
+                || UpdateVersion.Parse(Version).Tag!=Version || Text(p,"keyName")!=KeyName || Text(p,"keyId")!=KeyId || p.GetProperty("maximumNativeSignCalls").GetInt32()!=2
+                || Text(p,"rootIdentity")!=files.RootIdentity || Text(p,"output")!=Output || Text(p,"reservation")!=Reservation)
+                throw new InvalidDataException("Exact release signing policy mismatch");
+            var expected=BetterAstralParty.Development.PackagingSigning.CompiledPaths(root).ToHashSet(StringComparer.Ordinal);
+            var rows=p.GetProperty("compiledFiles").EnumerateArray().ToArray();
+            if(rows.Length!=expected.Count || !rows.Select(x=>Text(x,"path")).ToHashSet(StringComparer.Ordinal).SetEquals(expected))throw new InvalidDataException("Exact compile closure required");
+            foreach(var row in rows){Fields(row,"path","sha256");Read(files,Text(row,"path"),Text(row,"sha256"));}
+            using var snapshot=JsonDocument.Parse(Read(files,Stage+"/inputs/build-source.json",SourceHash));
+            var source=snapshot.RootElement.EnumerateArray().ToDictionary(x=>Text(x,"path"),x=>Text(x,"sha256"),StringComparer.Ordinal);
+            foreach(var row in rows)if(!source.TryGetValue(Text(row,"path"),out var hash) || hash!=Text(row,"sha256"))throw new InvalidDataException("Compile dependency absent or different in immutable build source");
+            var tools=p.GetProperty("toolFiles").EnumerateArray().ToArray();
+            var expectedTools=BetterAstralParty.Development.PackagingSigning.ToolPaths(root).ToHashSet(StringComparer.Ordinal);
+            if(tools.Length!=expectedTools.Count || !tools.Select(x=>Text(x,"path")).ToHashSet(StringComparer.Ordinal).SetEquals(expectedTools))throw new InvalidDataException("Exact precompiled host closure required");
+            foreach(var row in tools) {
+                Fields(row,"path","sha256");var path=Text(row,"path");var hash=Text(row,"sha256");Hash(hash);
+                if(expected.Contains(path)){if(files.SourceHash(path)!=hash)throw new InvalidDataException("Conflicting tool hashes");}else Read(files,path,hash);
+            }
+            var h=new Inputs {
+                Descriptor=Read(files,Stage+"/signing-inputs/update.descriptor.unsigned",DescriptorHash),
+                Helper=Read(files,Stage+"/signing-inputs/helper.descriptor.unsigned",HelperHash),
+                Image=Read(files,Stage+"/inputs/files/helper-bootstrap/BetterAstralParty-UpdateHelper.exe",ImageHash),
+                Zip=Read(files,Stage+"/signing-inputs/payload.zip",ZipHash)
+            };
+            CheckHelper(Version,h.Helper,h.Image);
+            h.Proof=Read(files,"artifacts/automatic-update-development/b120/d/helper.descriptor.unsigned","07EECEF5DEF1E6E5AE95456354B719F290D75D56FBC84C066E4DE42679457856");
+            h.ProofSignature=Read(files,"artifacts/automatic-update-development/b120-sign/signatures/helper.signature","E8C34656F7224D61BC05CF2D5781D209057670248F253CC22A682AB91E4829F3");
+            // Historical signature proves the existing key only; it cannot authorize installation.
+            var proofEnvelope=DetachedSignature.Parse(h.ProofSignature);
+            UpdateTrust.Production().VerifyDetached(h.Proof,proofEnvelope.KeyId,proofEnvelope.Signature);
+            if(!GaPackageContract.PublicKeyIds().SequenceEqual(new[]{KeyId}) || DetachedSignature.Parse(h.ProofSignature).KeyId!=KeyId)throw new CryptographicException("Public key pin changed");
+            CheckDescriptor(Version,Channel,ReleaseId,AssetId,h.Descriptor,h.Zip);
+            CheckRemote(Read(files,Stage+"/staged-asset-verification.json",RemoteHash),Version,Channel,Repository,RepositoryId,ReleaseId,AssetId,h.Zip);
+            files.Recheck();return h;
+        }
+
+        private static void CheckScope(string version,string channel,string repository,long repositoryId,long releaseId,long assetId) {
+            var v=UpdateVersion.Parse(version);var feed=ReleaseFeedPolicy.For(channel);
+            if(v.Tag!=version || v.CompareTo(UpdateVersion.Parse("1.3.0-0"))<0 || v.IsLocalPrerelease || !ReleaseFeedPolicy.IsChannel(channel)
+                || channel=="Stable" && v.IsPrerelease || !feed.Configured || repository!=feed.Repository || repositoryId!=feed.RepositoryId
+                || releaseId<=0 || assetId<=0)throw new InvalidDataException("Exact remote release scope required");
+        }
+        private static void CheckHelper(string version,byte[] descriptor,byte[] image) {
+            if(!GaPackageContract.PrepareHelper(version,image).SequenceEqual(descriptor))throw new InvalidDataException("Canonical helper descriptor does not match actual image");
+        }
+        private static void CheckDescriptor(string version,string channel,long releaseId,long assetId,byte[] descriptor,byte[] zip) {
+            if(descriptor.Length==0 || descriptor.Length>UpdateTrust.MaxDescriptorBytes || zip.Length==0 || zip.LongLength>UpdateTrust.MaxZipBytes)throw new InvalidDataException("Release byte bounds");
+            var owned=GaPackageContract.OwnedPaths();var sizes=new long[owned.Length];var hashes=new string[owned.Length];long total=0;
+            using(var archive=new ZipArchive(new MemoryStream(zip),ZipArchiveMode.Read)) {
+                if(archive.Entries.Count!=owned.Length || !archive.Entries.Select(x=>x.FullName).ToHashSet(StringComparer.Ordinal).SetEquals(owned))throw new InvalidDataException("Exact current owned ZIP required");
+                for(var i=0;i<owned.Length;i++) {
+                    var entry=archive.GetEntry(owned[i])!;
+                    if(entry.Length<=0 || entry.Length>UpdateTrust.MaxFileBytes || (total+=entry.Length)>UpdateTrust.MaxExpandedBytes)throw new InvalidDataException("Owned entry expansion bound");
+                    var bytes=new byte[checked((int)entry.Length)];var position=0;using var stream=entry.Open();
+                    while(position<bytes.Length){var count=stream.Read(bytes,position,bytes.Length-position);if(count==0)throw new InvalidDataException("Incomplete owned entry");position+=count;}
+                    if(stream.ReadByte()!=-1)throw new InvalidDataException("Owned entry size changed");sizes[i]=bytes.LongLength;hashes[i]=UpdateTrust.Hash(bytes);
+                }
+            }
+            if(!GaPackageContract.PrepareUpdateDescriptor(version,channel,releaseId,assetId,zip,sizes,hashes).SequenceEqual(descriptor))throw new InvalidDataException("Canonical remote descriptor does not match actual ZIP");
+        }
+        private static void CheckRemote(byte[] bytes,string version,string channel,string repository,long repositoryId,long releaseId,long assetId,byte[] zip) {
+            CheckScope(version,channel,repository,repositoryId,releaseId,assetId);var feed=ReleaseFeedPolicy.For(channel);
+            if(bytes.Length==0 || bytes.Length>16384)throw new InvalidDataException("Remote evidence bound");
+            using var doc=JsonDocument.Parse(bytes);var r=doc.RootElement;
+            Fields(r,"schema","repository","repositoryId","channel","version","releaseId","assetId","assetName","zipSha256","zipBytes","assetState","repositoryVisibility","prerelease");
+            var prerelease=r.GetProperty("prerelease").ValueKind;
+            if(r.GetProperty("schema").GetInt32()!=1 || Text(r,"repository")!=repository || r.GetProperty("repositoryId").GetInt64()!=repositoryId
+                || Text(r,"channel")!=channel || Text(r,"version")!=version || r.GetProperty("releaseId").GetInt64()!=releaseId || r.GetProperty("assetId").GetInt64()!=assetId
+                || Text(r,"assetName")!="BetterAstralParty-"+version+"-update.zip" || Text(r,"zipSha256")!=UpdateTrust.Hash(zip) || r.GetProperty("zipBytes").GetInt64()!=zip.LongLength
+                || Text(r,"assetState")!="uploaded" || Text(r,"repositoryVisibility")!=(feed.RequiresAuthentication?"private":"public")
+                || prerelease!=JsonValueKind.True && prerelease!=JsonValueKind.False || !feed.Accepts(prerelease==JsonValueKind.True))
+                throw new InvalidDataException("Reviewed server identity/asset binding mismatch");
+        }
+        private static void Reject(Action check) {
+            try{check();}catch(Exception error)when(error is InvalidDataException || error is ArgumentException || error is InvalidOperationException || error is JsonException || error is UpdateValidationException){return;}
+            throw new Exception("Invalid release scope accepted");
+        }
+        private static int CheckReleaseParsing() {
+            var passed=0;var stable=ReleaseFeedPolicy.Stable;var beta=ReleaseFeedPolicy.Beta;
+            CheckScope("1.3.0","Stable",stable.Repository,stable.RepositoryId,1,2);passed++;
+            CheckScope("1.3.1-rc.1","PreRelease",stable.Repository,stable.RepositoryId,1,2);passed++;
+            CheckScope("1.3.1-rc.1","Beta",beta.Repository,beta.RepositoryId,1,2);passed++;
+            foreach(var values in new[]{("1.3.0-rc.1.local.2","Stable",stable.Repository,stable.RepositoryId,1L,2L),
+                ("1.3.0-rc.1","Stable",stable.Repository,stable.RepositoryId,1L,2L),("1.2.1","Stable",stable.Repository,stable.RepositoryId,1L,2L),
+                ("1.3.0","LocalInstall",stable.Repository,stable.RepositoryId,1L,2L),("1.3.0","Stable",beta.Repository,beta.RepositoryId,1L,2L),
+                ("1.3.0","Stable",stable.Repository,beta.RepositoryId,1L,2L),("1.3.0","Stable",stable.Repository,stable.RepositoryId,0L,2L),
+                ("1.3.0","Stable",stable.Repository,stable.RepositoryId,1L,0L),("1.3.0-rc.1.local.1","PreRelease",stable.Repository,stable.RepositoryId,1L,2L),
+                ("1.3.0-rc.1","PreRelease",beta.Repository,beta.RepositoryId,1L,2L),("1.3.0-rc.1","PreRelease",stable.Repository,beta.RepositoryId,1L,2L)}){Reject(()=>CheckScope(values.Item1,values.Item2,values.Item3,values.Item4,values.Item5,values.Item6));passed++;}
+            foreach(var hash in new[]{"",new string('a',64),new string('A',63),new string('A',65)}){Reject(()=>Hash(hash));passed++;}
+            var ownedCount=GaPackageContract.OwnedPaths().Length;var payload=Enumerable.Range(0,ownedCount).Select(i=>new[]{(byte)(i+1)}).ToArray();var zip=GaPackageContract.PreviewUpdateZip(payload);var sizes=Enumerable.Repeat(1L,ownedCount).ToArray();var hashes=payload.Select(UpdateTrust.Hash).ToArray();
+            var descriptor=GaPackageContract.PrepareUpdateDescriptor("1.3.0","Stable",1,2,zip,sizes,hashes);CheckDescriptor("1.3.0","Stable",1,2,descriptor,zip);passed++;
+            var preDescriptor=GaPackageContract.PrepareUpdateDescriptor("1.3.0","PreRelease",1,2,zip,sizes,hashes);CheckDescriptor("1.3.0","PreRelease",1,2,preDescriptor,zip);passed++;
+            CheckDescriptor("1.3.0","Stable",1,2,preDescriptor,zip);passed++;
+            CheckDescriptor("1.3.0","PreRelease",1,2,descriptor,zip);passed++;
+            if(!descriptor.SequenceEqual(preDescriptor))throw new InvalidDataException("Public promotion/demotion must retain its exact signing input");passed++;
+            Reject(()=>CheckDescriptor("1.3.0","Stable",1,2,GaPackageContract.PrepareLocalInstallDescriptor("1.3.0","Stable",zip,sizes,hashes),zip));passed++;
+            Reject(()=>CheckDescriptor("1.3.0","Stable",1,2,Encoding.ASCII.GetBytes(Encoding.ASCII.GetString(descriptor).Replace("UpdateDescriptor/v4","UpdateDescriptor/v3")),zip));passed++;
+            Reject(()=>CheckDescriptor("1.3.0","Stable",1,2,Encoding.ASCII.GetBytes(Encoding.ASCII.GetString(descriptor).Replace(UpdateTrust.Hash(zip),new string('A',64))),zip));passed++;
+            Reject(()=>CheckDescriptor("1.3.0","Stable",0,2,descriptor,zip));passed++;
+            var image=new byte[512];image[0]=77;image[1]=90;image[60]=64;image[64]=80;image[65]=69;image[68]=0x64;image[69]=0x86;
+            var helper=GaPackageContract.PrepareHelper("1.3.0",image);CheckHelper("1.3.0",helper,image);passed++;
+            Reject(()=>CheckHelper("1.3.0",Encoding.ASCII.GetBytes(Encoding.ASCII.GetString(helper).Replace("HelperDelivery/v4","HelperDelivery/v3")),image));passed++;
+            Reject(()=>CheckHelper("1.3.1",helper,image));passed++;
+            var remote=Json(new{schema=1,repository=stable.Repository,repositoryId=stable.RepositoryId,channel="Stable",version="1.3.0",releaseId=1,assetId=2,assetName="BetterAstralParty-1.3.0-update.zip",zipSha256=UpdateTrust.Hash(zip),zipBytes=zip.LongLength,assetState="uploaded",repositoryVisibility="public",prerelease=false});
+            CheckRemote(remote,"1.3.0","Stable",stable.Repository,stable.RepositoryId,1,2,zip);passed++;
+            foreach(var pair in new[]{("\"assetId\":2","\"assetId\":0"),("\"repositoryVisibility\":\"public\"","\"repositoryVisibility\":\"private\""),("\"prerelease\":false","\"prerelease\":true"),("\"assetState\":\"uploaded\"","\"assetState\":\"new\"")}) {
+                var changed=Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(remote).Replace(pair.Item1,pair.Item2));Reject(()=>CheckRemote(changed,"1.3.0","Stable",stable.Repository,stable.RepositoryId,1,2,zip));passed++;
+            }
+            var preRemote=Json(new{schema=1,repository=stable.Repository,repositoryId=stable.RepositoryId,channel="PreRelease",version="1.3.0-rc.1",releaseId=1,assetId=2,assetName="BetterAstralParty-1.3.0-rc.1-update.zip",zipSha256=UpdateTrust.Hash(zip),zipBytes=zip.LongLength,assetState="uploaded",repositoryVisibility="public",prerelease=true});
+            CheckRemote(preRemote,"1.3.0-rc.1","PreRelease",stable.Repository,stable.RepositoryId,1,2,zip);passed++;
+            foreach(var pair in new[]{("\"prerelease\":true","\"prerelease\":false"),("\"repositoryVisibility\":\"public\"","\"repositoryVisibility\":\"private\""),("\"channel\":\"PreRelease\"","\"channel\":\"Stable\"")}) {
+                var changed=Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(preRemote).Replace(pair.Item1,pair.Item2));Reject(()=>CheckRemote(changed,"1.3.0-rc.1","PreRelease",stable.Repository,stable.RepositoryId,1,2,zip));passed++;
+            }
+            foreach(var prereleaseFlag in new[]{false,true}) {
+                var betaRemote=Json(new{schema=1,repository=beta.Repository,repositoryId=beta.RepositoryId,channel="Beta",version="1.3.0-rc.1",releaseId=1,assetId=2,assetName="BetterAstralParty-1.3.0-rc.1-update.zip",zipSha256=UpdateTrust.Hash(zip),zipBytes=zip.LongLength,assetState="uploaded",repositoryVisibility="private",prerelease=prereleaseFlag});CheckRemote(betaRemote,"1.3.0-rc.1","Beta",beta.Repository,beta.RepositoryId,1,2,zip);passed++;
+            }
+            Reject(()=>{using var json=JsonDocument.Parse("{\"schema\":1,\"schema\":1}");Fields(json.RootElement,"schema");});passed++;
+            return passed;
+        }
+
+        private static void Review(DevelopmentPackageFiles files,string policyHash,string reviewHash) {
+            using var doc=JsonDocument.Parse(Read(files,ReviewPath,reviewHash));var r=doc.RootElement;
+            Fields(r,"schema","purpose","status","policySha256","maximumNativeSignCalls","automaticExecutionAuthorized","providerConfirmationPreserved","newHumanApprovalInvented","reviewReference");
+            if(r.GetProperty("schema").GetInt32()!=1 || Text(r,"purpose")!="approve-release-signing" || Text(r,"status")!="approved"
+                || Text(r,"policySha256")!=policyHash || r.GetProperty("maximumNativeSignCalls").GetInt32()!=2
+                || r.GetProperty("automaticExecutionAuthorized").ValueKind!=JsonValueKind.True || r.GetProperty("providerConfirmationPreserved").ValueKind!=JsonValueKind.True
+                || r.GetProperty("newHumanApprovalInvented").ValueKind!=JsonValueKind.False || Text(r,"reviewReference").Length==0)
+                throw new InvalidDataException("Independent exact automatic-signing review missing");
+        }
+        public static string Validate(string root,string policyPath,string policyHash,string? reviewHash) {
+            Select(policyPath);using var files=new DevelopmentPackageFiles(root);Load(files,root,policyHash);if(!string.IsNullOrEmpty(reviewHash))Review(files,policyHash,reviewHash);files.Recheck();
+            return JsonSerializer.Serialize(new{validated=true,policySha256=policyHash,reviewSha256=reviewHash,keyOpened=false,nativeSignCalls=0,outputsCreated=false});
+        }
+        private static byte[] Json(object value)=>Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value));
+        private static void SignOne(Budget budget,int index,Action record,Func<byte[]> sign,Action<byte[]> verify,Action<byte[]> save) {
+            record();budget.AttemptRecorded[index]=true;var signature=sign();verify(signature);save(signature);
+        }
+        public static string Execute(string root,string policyPath,string policyHash,string reviewHash)
+        {
+            Select(policyPath);Hash(policyHash);Hash(reviewHash);if(Interlocked.Exchange(ref invoked,1)!=0)throw new InvalidOperationException("No retry in this process");
+            using var files=new DevelopmentPackageFiles(root);var h=Load(files,root,policyHash);Review(files,policyHash,reviewHash);files.Recheck();
+            using var fence=new WindowsFileFence(root);var budget=new Budget();var stage="reserve";int? nativeStatus=null;var created=false;
+            // Every entrypoint for this version shares this FILE_CREATE marker before outputs or key access.
+            using var marker=fence.OpenFile(Reservation,true,true);
+            var scope=Json(new{schema=1,purpose="release-signing",policySha256=policyHash,reviewSha256=reviewHash,rootIdentity=files.RootIdentity,
+                helperDescriptorSha256=HelperHash,updateDescriptorSha256=DescriptorHash,helperImageSha256=ImageHash,zipSha256=ZipHash,
+                channel=Channel,repository=Repository,repositoryId=RepositoryId,releaseId=ReleaseId,assetId=AssetId,remoteVerificationSha256=RemoteHash,sourceManifestSha256=SourceHash,keyName=KeyName,keyId=KeyId,maximumNativeSignCalls=2,output=Output,
+                providerConfirmationPreserved=true,newHumanApprovalInvented=false});
+            marker.Stream.Write(scope,0,scope.Length);marker.Flush();
+            try {
+                stage="create-private-output";var directoryIdentity=files.CreateOutput(Output);created=true;files.Write("scope.json",scope);files.Recheck();
+                stage="silent-key-open";using var key=CngKey.Open(KeyName,CngProvider.MicrosoftSoftwareKeyStorageProvider,CngKeyOpenOptions.Silent);
+                using var handle=key.Handle;
+                stage="silent-key-facts";var facts=new Dictionary<string,byte[]>();
+                foreach(var name in new[]{"Name","Algorithm Group","Length","Export Policy","Key Usage","Key Type","UI Policy"})facts.Add(name,Property(handle,name));
+                CheckFacts(facts);
+                stage="verify-existing-key-identity";var padding=new PssPadding{Algorithm="SHA256",SaltBytes=32};var proofHash=SHA256.HashData(h.Proof);var proofSignature=DetachedSignature.Parse(h.ProofSignature).Signature;
+                nativeStatus=NCryptVerifySignature(handle,ref padding,proofHash,proofHash.Length,proofSignature,proofSignature.Length,0x8|0x40);
+                if(nativeStatus!=0)throw new CryptographicException("Existing key does not match public proof; no fallback",new CryptographicException(nativeStatus.Value));
+                for(var index=0;index<2;index++) {
+                    var name=index==0?"helper":"update";var descriptor=index==0?h.Helper:h.Descriptor;var descriptorHash=index==0?HelperHash:DescriptorHash;
+                    SignOne(budget,index,()=>{
+                        stage=name+"-record-attempt";files.Recheck();marker.Recheck();
+                        files.Write(name+"-signing-attempt.json",Json(new{schema=1,policySha256=policyHash,reviewSha256=reviewHash,descriptorSha256=descriptorHash,maximumNativeSignCalls=1}));
+                    },()=>{
+                        stage=name+"-native-sign";var hash=SHA256.HashData(descriptor);var signature=new byte[384];budget.Count(index);
+                        nativeStatus=NCryptSignHash(handle,ref padding,hash,hash.Length,signature,signature.Length,out var written,0x8|0x40);
+                        if(nativeStatus!=0)throw new CryptographicException("Silent signing failed; preserve evidence, never retry",new CryptographicException(nativeStatus.Value));
+                        if(written!=384)throw new CryptographicException("Unexpected RSA-3072 output; never retry");return signature;
+                    },signature=>{
+                        stage=name+"-public-verify";var envelope=new DetachedSignature(KeyId,signature).Bytes();
+                        if(index==0)GaPackageContract.VerifyHelper(Version,h.Helper,envelope,h.Image);
+                        else GaPackageContract.VerifyWholeUpdate(Version,h.Descriptor,envelope,h.Zip);
+                    },signature=>{
+                        stage=name+"-save-signature";files.Recheck();marker.Recheck();files.Write(name+".signature",new DetachedSignature(KeyId,signature).Bytes());
+                    });
+                }
+                stage="save-evidence";var helperSignatureHash=files.OutputHash("helper.signature");var updateSignatureHash=files.OutputHash("update.signature");
+                files.Write("signing-evidence.json",Json(new{schema=1,signingComplete=true,policySha256=policyHash,reviewSha256=reviewHash,helperDescriptorSha256=HelperHash,updateDescriptorSha256=DescriptorHash,
+                    helperSignatureSha256=helperSignatureHash,updateSignatureSha256=updateSignatureHash,nativeSignCalls=budget.Total,perDescriptorNativeSignCalls=budget.Calls,directoryIdentity,
+                    productionPublicVerification=true,providerConfirmationPreserved=true,keyCreated=false,keyExported=false,existingAclChanged=false,remoteWrites=false}));files.Recheck();marker.Recheck();
+                return JsonSerializer.Serialize(new{signingComplete=true,nativeSignCalls=budget.Total,helperSignatureSha256=helperSignatureHash,updateSignatureSha256=updateSignatureHash,output=Output});
+            } catch(Exception error) {
+                if(created)try{files.Write("failure.json",Json(new{schema=1,stage,nativeStatus,nativeSignCalls=budget.Total,perDescriptorNativeSignCalls=budget.Calls,exceptionType=error.GetType().FullName,hresult=error.HResult,retryAuthorized=false}));}catch{}
+                throw new InvalidOperationException("Release signing stopped; preserve reservation and outputs; never rerun Execute",error);
+            }
+        }
+        [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)]
+        private struct PssPadding { [MarshalAs(UnmanagedType.LPWStr)] internal string Algorithm;internal int SaltBytes; }
+        [DllImport("ncrypt.dll",ExactSpelling=true)]
+        private static extern int NCryptSignHash(SafeNCryptKeyHandle key,ref PssPadding padding,[In]byte[] hash,int hashBytes,[Out]byte[] signature,int signatureBytes,out int written,int flags);
+        [DllImport("ncrypt.dll",ExactSpelling=true)]
+        private static extern int NCryptVerifySignature(SafeNCryptKeyHandle key,ref PssPadding padding,[In]byte[] hash,int hashBytes,[In]byte[] signature,int signatureBytes,int flags);
+        [DllImport("ncrypt.dll",ExactSpelling=true,CharSet=CharSet.Unicode)]
+        private static extern int NCryptGetProperty(SafeNCryptKeyHandle key,string property,[Out]byte[]? bytes,int byteCount,out int written,int flags);
+        private const int NteNotFound=unchecked((int)0x80090011);
+        private static byte[] UiPolicy(Func<byte[]?,(int Status,int Written)> query) {
+            var size=query(null);if(size.Status==NteNotFound || size.Status==0&&size.Written==0)return Array.Empty<byte>();
+            if(size.Status!=0)throw new CryptographicException("Silent UI policy sizing failed",new CryptographicException(size.Status));
+            if(size.Written<32 || size.Written>4096)throw new CryptographicException("UI policy size bound");
+            var bytes=new byte[size.Written];var data=query(bytes);
+            if(data.Status!=0 || data.Written!=bytes.Length)throw new CryptographicException("Silent UI policy data failed; no fallback");return bytes;
+        }
+        private static byte[] Property(SafeNCryptKeyHandle key,string name) {
+            if(name=="UI Policy")return UiPolicy(bytes=>{var status=NCryptGetProperty(key,name,bytes,bytes?.Length??0,out var count,0x40);return(status,count);});
+            var buffer=new byte[4096];var result=NCryptGetProperty(key,name,buffer,buffer.Length,out var written,0x40);
+            if(result!=0 || written<=0 || written>buffer.Length)throw new CryptographicException("Silent key property failed; no fallback");return buffer.Take(written).ToArray();
+        }
+        private static void CheckFacts(Dictionary<string,byte[]> facts) {
+            uint Number(string name){var b=facts[name];if(b.Length!=4)throw new CryptographicException("Key number size");return BitConverter.ToUInt32(b,0);}
+            string Name(string name){var b=facts[name];if(b.Length<2 || b.Length%2!=0 || b[^1]!=0 || b[^2]!=0)throw new CryptographicException("Key string size");return Encoding.Unicode.GetString(b,0,b.Length-2);}
+            var ui=facts["UI Policy"];
+            if(Name("Name")!=KeyName || Name("Algorithm Group")!="RSA" || Number("Length")!=3072 || Number("Export Policy")!=0 || Number("Key Usage")!=2 || Number("Key Type")!=0
+                || ui.Length!=0&&(ui.Length<32 || ui.Length>4096 || BitConverter.ToUInt32(ui,0)!=1 || BitConverter.ToUInt32(ui,4)!=0))
+                throw new CryptographicException("Key needs confirmation or differs from reviewed policy; no bypass");
+        }
+        public static string SelfCheck() {
+            var passed=CheckReleaseParsing();
+            foreach(var size in new[]{(NteNotFound,0),(0,0)}){var calls=0;if(UiPolicy(_=>{calls++;return size;}).Length!=0 || calls!=1)throw new Exception("Default UI policy");passed++;}
+            var header=new byte[32];header[0]=1;var calls2=0;
+            if(!UiPolicy(b=>{calls2++;if(b!=null)header.CopyTo(b,0);return(0,32);}).SequenceEqual(header)||calls2!=2)throw new Exception("Present UI policy");passed++;
+            foreach(var status in new[]{5,unchecked((int)0x80090022)}){var rejected=false;try{UiPolicy(_=>(status,0));}catch(CryptographicException){rejected=true;}if(!rejected)throw new Exception("UI error accepted");passed++;}
+            foreach(var data in new[]{(NteNotFound,0),(0,31)}){var count=0;var rejected=false;try{UiPolicy(_=>++count==1?(0,32):data);}catch(CryptographicException){rejected=true;}if(!rejected||count!=2)throw new Exception("UI data error accepted");passed++;}
+            for(var index=0;index<2;index++)for(var fail=-1;fail<4;fail++) {
+                var budget=new Budget();var log=new List<int>();var step=0;Action next=()=>{var current=step++;log.Add(current);if(current==fail)throw new IOException("inert failure");};var stopped=false;
+                try{SignOne(budget,index,next,()=>{budget.Count(index);next();return new byte[384];},_=>next(),_=>next());}catch(IOException){stopped=true;}
+                if(stopped!=(fail>=0)||!log.SequenceEqual(Enumerable.Range(0,fail<0?4:fail+1))||budget.Total!=(fail==0?0:1))throw new Exception("Attempt/sign/verify/save order");passed++;
+                if(budget.Total==1){var rejected=false;try{budget.Count(index);}catch(InvalidOperationException){rejected=true;}if(!rejected||budget.Total!=1)throw new Exception("Repeat call accepted");passed++;}
+            }
+            var noAttempt=new Budget();var refused=false;try{noAttempt.Count(0);}catch(InvalidOperationException){refused=true;}if(!refused||noAttempt.Total!=0)throw new Exception("Unrecorded attempt accepted");passed++;
+            var both=new Budget();both.AttemptRecorded[0]=both.AttemptRecorded[1]=true;both.Count(0);both.Count(1);
+            foreach(var index in new[]{-1,0,1,2}){var rejected=false;try{both.Count(index);}catch(InvalidOperationException){rejected=true;}if(!rejected||both.Total!=2)throw new Exception("Two call ceiling failed");passed++;}
+            if(Marshal.SizeOf<PssPadding>()!=16 || Marshal.OffsetOf<PssPadding>(nameof(PssPadding.SaltBytes)).ToInt32()!=8)throw new Exception("PSS x64 layout");passed++;
+            return JsonSerializer.Serialize(new{selfCheckPassed=true,cases=passed,keyOpened=false,nativeSignCalls=0,outputsCreated=false});
+        }
+    }
+}

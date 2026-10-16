@@ -16,7 +16,8 @@ public readonly record struct VisibleAdvice(string Defend, string Dodge)
 
 public static class VisibleCombatAdvisor
 {
-    public static bool IsPve(int mapType) => mapType is 4 or 6 or 9 or 10 or 12;
+    internal static Func<int, bool>? PveClassifier { get; set; }
+    public static bool IsPve(int mapType) => PveClassifier?.Invoke(mapType) ?? (mapType is 4 or 6 or 9 or 10 or 12);
 
     public static VisibleAdvice? Calculate(VisibleCombat input)
     {

@@ -281,6 +281,15 @@ Case("native close X and mouse settings each dispatch once",()=>{
     UpdateNotificationUi.Tick();
     Check(Live()==0 && ModUi.Opens==2 && UpdateNotificationUi.ConsumedInput,"mouse settings once");
 });
+Case("ordinary notifications OFF restores owned UI and leaves unseen releases available",()=>{
+    Show("2.7.40"); Plugin.UpdateNotifications.Value=false; Frame();
+    Check(Live()==0 && Compatibility.Blocked.Count==0,"OFF releases the ordinary popup without a compatibility failure");
+    Inject(Available("2.7.41")); Frame(); Frame();
+    Check(Live()==0,"a newer ordinary release stays hidden while OFF");
+    Plugin.UpdateNotifications.Value=true; Frame(); Frame();
+    Check(Live()==1 && Body().Get<string>("text").Contains("2.7.41"),"re-ON can display the release not acknowledged while hidden");
+    Frame(()=>UInput.Escape=true);
+});
 Case("w2 transition and stale generation never consume notification identity",()=>{
     var s=new UpdateNotificationState(); var r=Release("4.0.0") with{Generation=7,TransitionCandidate=true};
     s.Observe(new(ReleaseUpdateStatus.Available,r),ReleaseChannel.Stable,7); Check(s.Next==null,"transition hidden");
@@ -364,6 +373,14 @@ Case("explicit lower-channel native confirmation displays source target and one-
     Check(Plugin.Automatic.ConfirmCalls==before,"showing review does not approve");
     Click("Button_ConfirmRounded",true);Click("Button_ConfirmRounded",false);
     Check(Plugin.Automatic.ConfirmCalls==before+1&&Plugin.Automatic.ApplyOnce&&Live()==0,"only exact confirm click approves once after exit");
+});
+Case("ordinary notification OFF preserves an explicit channel-switch approval",()=>{
+    Plugin.UpdateNotifications.Value=false; Plugin.Automatic.ProposalWorker=null; ReviewSwitch();
+    var before=Plugin.Automatic.ConfirmCalls; Frame();
+    Check(Live()==1 && Plugin.Automatic.ConfirmCalls==before,"explicit approval remains visible without automatic confirmation");
+    Click("Button_ConfirmRounded",true); Click("Button_ConfirmRounded",false);
+    Check(Live()==0 && Plugin.Automatic.ConfirmCalls==before+1,"only the explicit confirm still applies a one-shot transition");
+    Plugin.UpdateNotifications.Value=true;
 });
 Case("Escape Enter and close never approve a channel switch",()=>{
     foreach(var key in new[]{"escape","enter","close"}){

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings><EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="$(LegacyReferencePath)" Link="Frozen112.cs" />
+    <Compile Include="../../self-test/UpdateGenerationCheck.cs" Link="UpdateGenerationCheck.cs" />
+    <Compile Include="../../src/ReleaseUpdates.cs" Link="ReleaseUpdates.cs" />
+    <Compile Include="../../src/ReleaseHttpClient.cs" Link="ReleaseHttpClient.cs" />
+    <Compile Include="../../src/ReleaseFeedTransport.cs" Link="ReleaseFeedTransport.cs" />
+    <Compile Include="../../src/UpdateDownload.cs" Link="UpdateDownload.cs" />
+    <Compile Include="../../src/Observability/*.cs" />
+    <Compile Include="../../diagnostics/MinimalDiagnosticProjection.cs" />
+    <Compile Include="../../updater/*.cs" Exclude="../../updater/UpdateHelperProgram.cs" />
+    <Reference Include="SemanticVersioning"><HintPath>../../.deps/bepinex/BepInEx/core/SemanticVersioning.dll</HintPath></Reference>
+  </ItemGroup>
+  <Target Name="RequireFrozenReference" BeforeTargets="CoreCompile" Condition="'$(LegacyReferencePath)' == ''">
+    <Error Text="Use the reviewed runner to bind the frozen 1.1.2 source." />
+  </Target>
+</Project>

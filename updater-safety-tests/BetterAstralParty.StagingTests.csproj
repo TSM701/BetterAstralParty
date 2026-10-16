@@ -6,7 +6,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="StagingFixture.cs" />
+    <Compile Include="UpdaterFixtureScope.cs" />
     <Compile Include="..\updater\*.cs" Exclude="..\updater\UpdateHelperProgram.cs" />
     <Compile Include="..\src\Observability\*.cs" />
+    <Compile Include="..\diagnostics\MinimalDiagnosticProjection.cs" />
   </ItemGroup>
 </Project>

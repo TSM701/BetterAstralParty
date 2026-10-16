@@ -31,6 +31,7 @@ namespace BetterAstralParty.Observability
     internal sealed class DiagnosticFileFence : IDisposable
     {
         internal const uint Read = 0x80000000, Write = 0x40000000, Delete = 0x00010000;
+        private const int MaximumPathLength = 32760;
         private const uint OpenReparse = 0x00200000, BackupSemantics = 0x02000000, WriteThrough = 0x80000000;
         [StructLayout(LayoutKind.Sequential)]
         private struct Info
@@ -96,7 +97,7 @@ namespace BetterAstralParty.Observability
         }
         private static void Component(string component)
         {
-            if (component.Length == 0 || component.Length > 180 || component == "." || component == ".."
+            if (component.Length == 0 || component.Length > 255 || component == "." || component == ".."
                 || component.EndsWith(".", StringComparison.Ordinal) || component.EndsWith(" ", StringComparison.Ordinal)
                 || component.IndexOfAny(new[] { ':', '*', '?', '<', '>', '|', '"', '/', '\\' }) >= 0)
                 throw new DiagnosticStorageException(DiagnosticStorageFailure.UnsafePath);
@@ -106,13 +107,17 @@ namespace BetterAstralParty.Observability
         }
         private static string Absolute(string path)
         {
-            if (path == null || path.Length > 240 || !Regex.IsMatch(path, @"\A[A-Za-z]:\\") || path.IndexOf(':', 2) >= 0)
+            if (path == null || path.Length > MaximumPathLength || !Regex.IsMatch(path, @"\A[A-Za-z]:\\") || path.IndexOf(':', 2) >= 0)
                 throw new DiagnosticStorageException(DiagnosticStorageFailure.UnsafePath);
             var trimmed = path.Length == 3 ? path : path.TrimEnd('\\');
-            if (!string.Equals(Path.GetFullPath(trimmed), trimmed, StringComparison.OrdinalIgnoreCase)) throw new DiagnosticStorageException(DiagnosticStorageFailure.UnsafePath);
+            if (trimmed.Length < 3) throw new DiagnosticStorageException(DiagnosticStorageFailure.UnsafePath);
             if (trimmed.Length > 3) foreach (var part in trimmed.Substring(3).Split('\\')) Component(part);
             return trimmed;
         }
+        internal static string CanonicalPath(string path) { return Absolute(path); }
+        internal static string ParentPath(string path) { var index = path.LastIndexOf('\\'); return index < 3 ? path.Substring(0, 3) : path.Substring(0, index); }
+        internal static bool DirectoryExists(string path) { return Directory.Exists(@"\\?\" + Absolute(path)); }
+        private static string Leaf(string path) { return path.Substring(path.LastIndexOf('\\') + 1); }
         internal string Full(string relative)
         {
             if (_disposed) throw new ObjectDisposedException(nameof(DiagnosticFileFence));
@@ -122,7 +127,7 @@ namespace BetterAstralParty.Observability
         }
         private static SafeFileHandle Open(string path, uint access, uint share, uint disposition, uint flags)
         {
-            var handle = CreateFileW(path, access, share, IntPtr.Zero, disposition, flags | OpenReparse, IntPtr.Zero);
+            var handle = CreateFileW(@"\\?\" + Absolute(path), access, share, IntPtr.Zero, disposition, flags | OpenReparse, IntPtr.Zero);
             if (handle.IsInvalid)
             {
                 var error = Marshal.GetLastWin32Error(); handle.Dispose();
@@ -181,8 +186,13 @@ namespace BetterAstralParty.Observability
         private static DiagnosticFileIdentity Identity(Info info) { return new DiagnosticFileIdentity(info.Volume, (ulong)info.IndexHigh << 32 | info.IndexLow); }
         private static string Final(SafeFileHandle handle)
         {
-            var name = new StringBuilder(512); var length = GetFinalPathNameByHandleW(handle, name, (uint)name.Capacity, 0);
-            if (length == 0 || length >= name.Capacity) throw new DiagnosticStorageException(DiagnosticStorageFailure.IdentityChanged, Marshal.GetLastWin32Error());
+            var name = new StringBuilder(512);
+            for (;;) {
+                var length = GetFinalPathNameByHandleW(handle, name, (uint)name.Capacity, 0);
+                if (length == 0 || length > MaximumPathLength + (length >= name.Capacity ? 5 : 4)) throw new DiagnosticStorageException(DiagnosticStorageFailure.IdentityChanged, Marshal.GetLastWin32Error());
+                if (length < name.Capacity) break;
+                name = new StringBuilder(checked((int)length + 1));
+            }
             var path = name.ToString();
             if (!path.StartsWith(@"\\?\", StringComparison.Ordinal) || path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
                 throw new DiagnosticStorageException(DiagnosticStorageFailure.UnsafePath);
@@ -199,7 +209,7 @@ namespace BetterAstralParty.Observability
         {
             if (_pins.ContainsKey(path)) return;
             var handle = path.Length == 3 ? Open(path, 0x80 | 0x20000, 1, 3, BackupSemantics)
-                : OpenRelative(_pins[Path.GetDirectoryName(path)!], Path.GetFileName(path), 0x80 | 0x20000, 1, false, true, false);
+                : OpenRelative(_pins[ParentPath(path)!], Leaf(path), 0x80 | 0x20000, 1, false, true, false);
             try
             {
                 var info = ReadInfo(handle, true);
@@ -228,8 +238,8 @@ namespace BetterAstralParty.Observability
                 {
                     // OPEN_REPARSE_POINT recognizes existing/broken links before any creation.
                     if (error.NativeError != 2 && error.NativeError != 3) throw;
-                    var parent = _pins[Path.GetDirectoryName(current)!];
-                    try { using (OpenRelative(parent, Path.GetFileName(current), 0x80, 1, true, true, false)) { } }
+                    var parent = _pins[ParentPath(current)!];
+                    try { using (OpenRelative(parent, Leaf(current), 0x80, 1, true, true, false)) { } }
                     catch (DiagnosticStorageException race) when(race.NativeError==80 || race.NativeError==183) { }
                     // Only an exact create collision is reopened. AddPin checks path, type, identity and links.
                     AddPin(current);
@@ -242,7 +252,7 @@ namespace BetterAstralParty.Observability
             var path = Full(relative); var parent = Parent(path);
             using (var security = new DiagnosticPrivateSecurity.Descriptor())
             {
-                var handle = OpenRelative(parent, Path.GetFileName(path), 0x80 | 0x20000, 1, true, true, false, security.Pointer);
+                var handle = OpenRelative(parent, Leaf(path), 0x80 | 0x20000, 1, true, true, false, security.Pointer);
                 try
                 {
                     var info = ReadInfo(handle, true); var identity = Identity(info);
@@ -265,7 +275,7 @@ namespace BetterAstralParty.Observability
         }
         private Pin Parent(string path)
         {
-            var parent = Path.GetDirectoryName(path)!;
+            var parent = ParentPath(path)!;
             if (!parent.StartsWith(Root.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(parent, Root, StringComparison.OrdinalIgnoreCase)) throw new DiagnosticStorageException(DiagnosticStorageFailure.UnsafePath);
             PinPath(parent); Recheck(); return _pins[parent];
@@ -279,8 +289,8 @@ namespace BetterAstralParty.Observability
             _beforeOperation?.Invoke("open");
             SafeFileHandle handle;
             if (create) { using (var security = new DiagnosticPrivateSecurity.Descriptor(true))
-                handle = OpenRelative(parent, Path.GetFileName(path), access, share, true, false, mutable, security.Pointer); }
-            else handle = OpenRelative(parent, Path.GetFileName(path), access, share, false, false, mutable);
+                handle = OpenRelative(parent, Leaf(path), access, share, true, false, mutable, security.Pointer); }
+            else handle = OpenRelative(parent, Leaf(path), access, share, false, false, mutable);
             try
             {
                 var info = ReadInfo(handle, false); var identity = Identity(info);

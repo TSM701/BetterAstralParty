@@ -10,6 +10,7 @@ internal static class AutoThanksUi
 
     internal static void Tick()
     {
+        if (!Plugin.AutoThanks.Value) return;
         if (!Compatibility.Allowed(Feature)) return;
         try
         {

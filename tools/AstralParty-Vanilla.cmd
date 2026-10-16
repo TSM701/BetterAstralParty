@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal DisableDelayedExpansion
 tasklist /FI "IMAGENAME eq AstralParty_INT.exe" /NH | find /I "AstralParty_INT.exe" >nul
 if not errorlevel 1 (
     echo Close Astral Party before switching between Vanilla and Mod.

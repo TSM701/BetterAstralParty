@@ -118,38 +118,37 @@ internal static class Program
         var json = Path.Combine(good.Cache, "catalog_3.2.0.json"); var original = File.ReadAllBytes(json);
         // A pre-expiry call must retain the existing ten-second schedule; it must not rescan early.
         File.WriteAllText(json, "changed current catalog"); guard.Verify(now.AddSeconds(9)); Check(true, "runtime retained interval");
-        Reject(() => guard.Verify(now.AddSeconds(10)), "runtime current hash mandatory after interval"); File.WriteAllBytes(json, original);
+        guard.Verify(now.AddSeconds(10)); Check(guard.Changed, "runtime changed current hash is advisory after interval"); File.WriteAllBytes(json, original);
         guard.Verify(now.AddSeconds(10));
         var pendingField = typeof(CatalogGuard).GetField("_pending", BindingFlags.NonPublic | BindingFlags.Instance)!;
         guard.Poll(now.AddSeconds(19)); Check(pendingField.GetValue(guard) == null, "poll skips before interval");
         File.WriteAllText(Path.Combine(good.Cache, "catalog_3.3.0.json"), "newer catalog fixture");
         guard.Poll(now.AddSeconds(20)); var task = (Task?)pendingField.GetValue(guard); Check(task != null, "poll starts one worker");
-        try { task!.GetAwaiter().GetResult(); } catch (InvalidDataException) { }
-        Reject(() => guard.Poll(now.AddSeconds(20)), "poll observes worker failure");
+        task!.GetAwaiter().GetResult(); guard.Poll(now.AddSeconds(20)); Check(guard.Changed, "poll observes advisory drift without throwing");
         good.Unchanged();
         foreach (var test in new[] { ("newer", new[] { "catalog_3.2.1.hash" }), ("unknown", new[] { "catalog_other.json" }), ("leading-zero", new[] { "catalog_03.1.0.hash" }), ("uppercase", new[] { "catalog_3.3.0.HASH" }) })
         {
             var seed = new Seed(scratch, "runtime-" + test.Item1, extra: test.Item2);
-            Reject(() => new CatalogGuard(seed.ManifestPath, seed.Cache).Verify(now), "runtime " + test.Item1 + " blocked"); seed.Unchanged();
+            var observer = new CatalogGuard(seed.ManifestPath, seed.Cache); observer.Verify(now); Check(observer.Changed, "runtime " + test.Item1 + " is advisory"); seed.Unchanged();
         }
         foreach (var missing in Current)
         {
             var seed = new Seed(scratch, "runtime-missing-" + Path.GetExtension(missing)[1..], missing: "fixture-cache/" + missing);
-            Reject(() => new CatalogGuard(seed.ManifestPath, seed.Cache).Verify(now), "runtime missing expected"); seed.Unchanged();
+            var observer = new CatalogGuard(seed.ManifestPath, seed.Cache); observer.Verify(now); Check(observer.Changed, "runtime missing expected is advisory"); seed.Unchanged();
         }
         var malformed = new Seed(scratch, "runtime-malformed-digest", wrongDigest: "fixture-cache/catalog_3.2.0.json");
         Reject(() => new CatalogGuard(malformed.ManifestPath, malformed.Cache).Verify(now), "runtime malformed digest"); malformed.Unchanged();
         foreach (var test in new[] { ("no-settings-exact", Current, Array.Empty<string>(), true), ("no-settings-older", Current, new[] { "catalog_3.1.0.hash" }, false), ("legacy-exact", new[] { "catalog_fixture.hash", "catalog_fixture.json" }, Array.Empty<string>(), true), ("legacy-extra", new[] { "catalog_fixture.hash", "catalog_fixture.json" }, new[] { "catalog_1.0.0.hash" }, false) })
         {
             var seed = new Seed(scratch, "runtime-" + test.Item1, expected: test.Item2, extra: test.Item3, settingsAnchor: false);
-            if (test.Item4) { new CatalogGuard(seed.ManifestPath, seed.Cache).Verify(now); Check(true, "runtime " + test.Item1 + " exact fallback accepted"); }
-            else Reject(() => new CatalogGuard(seed.ManifestPath, seed.Cache).Verify(now), "runtime " + test.Item1 + " extras without anchor blocked");
+            var observer = new CatalogGuard(seed.ManifestPath, seed.Cache); observer.Verify(now);
+            Check(observer.Changed == !test.Item4, "runtime " + test.Item1 + " reports drift without blocking");
             seed.Unchanged();
         }
         var bounded = new Seed(scratch, "runtime-limit", extra: Enumerable.Range(0, 510).Select(i => "catalog_1.0." + i + ".hash").ToArray());
         new CatalogGuard(bounded.ManifestPath, bounded.Cache).Verify(now); Check(true, "runtime 512 catalogs accepted");
         File.WriteAllText(Path.Combine(bounded.Cache, "catalog_1.1.0.hash"), "limit fixture");
-        Reject(() => new CatalogGuard(bounded.ManifestPath, bounded.Cache).Verify(now), "runtime 513 catalogs blocked"); bounded.Unchanged();
+        var capped = new CatalogGuard(bounded.ManifestPath, bounded.Cache); capped.Verify(now); Check(capped.Changed, "runtime 513 catalogs advisory and bounded"); bounded.Unchanged();
         _runtimeChecks = _checks - start;
     }
     private static void Native(string scratch)
@@ -160,8 +159,8 @@ internal static class Program
             var seed = new Seed(scratch, "native-" + test.Item1, extra: test.Item2);
             using (var fence = new WindowsFileFence(seed.Root)) using (var image = fence.OpenFile("AstralParty_INT.exe"))
             {
-                if (test.Item3) { using var compatible = seed.Require(fence, image); compatible.Recheck(); Check(true, "native " + test.Item1 + " accepted"); }
-                else Reject(() => { using var compatible = seed.Require(fence, image); }, "native " + test.Item1 + " blocked");
+                using var compatible = seed.Require(fence, image); compatible.Recheck();
+                Check(test.Item3 || compatible.Warnings.Count > 0, "native " + test.Item1 + " drift is advisory");
             }
             seed.Unchanged();
         }
@@ -169,23 +168,35 @@ internal static class Program
         {
             var seed = new Seed(scratch, "native-digest-" + Guid.NewGuid().ToString("N")[..8]);
             File.WriteAllText(Path.Combine(seed.Root, path), "modified fixture anchor");
-            using (var fence = new WindowsFileFence(seed.Root)) using (var image = fence.OpenFile("AstralParty_INT.exe"))
-                Reject(() => { using var compatible = seed.Require(fence, image); }, "native digest required: " + path);
+            using (var fence = new WindowsFileFence(seed.Root)) using (var image = fence.OpenFile("AstralParty_INT.exe")) {
+                using var compatible = seed.Require(fence, image); Check(compatible.Warnings.Count > 0, "native game/catalog digest drift advisory: " + path);
+            }
         }
         foreach (var test in new[] { ("malformed", "fixture-cache/catalog_3.2.0.hash", (string?)null), ("missing", (string?)null, "fixture-cache/catalog_3.2.0.json") })
         {
             var seed = new Seed(scratch, "native-" + test.Item1, wrongDigest: test.Item2, missing: test.Item3);
-            using (var fence = new WindowsFileFence(seed.Root)) using (var image = fence.OpenFile("AstralParty_INT.exe"))
-                Reject(() => { using var compatible = seed.Require(fence, image); }, "native " + test.Item1 + " blocked");
+            using (var fence = new WindowsFileFence(seed.Root)) using (var image = fence.OpenFile("AstralParty_INT.exe")) {
+                if (test.Item1 == "malformed") { using var compatible = seed.Require(fence, image); Check(compatible.Warnings.Count > 0, "Malformed compatibility observation is advisory, not an update gate"); }
+                else { using var compatible = seed.Require(fence, image); Check(compatible.Warnings.Count > 0, "native missing old catalog is advisory"); }
+            }
             seed.Unchanged();
         }
-        foreach (var test in new[] { ("no-settings-exact", Current, Array.Empty<string>(), true), ("no-settings-older", Current, new[] { "catalog_3.1.0.hash" }, false), ("legacy-exact", new[] { "catalog_fixture.hash", "catalog_fixture.json" }, Array.Empty<string>(), true), ("legacy-extra", new[] { "catalog_fixture.hash", "catalog_fixture.json" }, new[] { "catalog_1.0.0.hash" }, false) })
+        foreach (var scenario in new[] { (Name: "sharing", Error: (Exception)new IOException("inert share error", unchecked((int)0x80070020))), (Name: "denied", Error: (Exception)new UnauthorizedAccessException("inert denied error")), (Name: "security", Error: (Exception)new System.Security.SecurityException("inert Framework observation permission error")), (Name: "io", Error: (Exception)new IOException("inert unknown I/O error")) }) {
+            var error = scenario.Error; var seed = new Seed(scratch, "native-cause-" + scenario.Name); var inject = false;
+            using (var fence = new WindowsFileFence(seed.Root, point => { if (inject && point == "open") throw error; })) using (var image = fence.OpenFile("AstralParty_INT.exe")) {
+                inject = true;
+                using var compatible = seed.Require(fence, image); compatible.Recheck();
+                Check(compatible.Warnings.Count > 0, "I/O failure retires only compatibility observation: " + scenario.Name);
+            }
+            seed.Unchanged();
+        }
+        foreach (var test in new[] { ("no-settings-exact", Current, Array.Empty<string>(), true), ("no-settings-older", Current, new[] { "catalog_3.1.0.hash" }, true), ("legacy-exact", new[] { "catalog_fixture.hash", "catalog_fixture.json" }, Array.Empty<string>(), true), ("legacy-extra", new[] { "catalog_fixture.hash", "catalog_fixture.json" }, new[] { "catalog_1.0.0.hash" }, false) })
         {
             var seed = new Seed(scratch, "native-" + test.Item1, expected: test.Item2, extra: test.Item3, settingsAnchor: false);
             using (var fence = new WindowsFileFence(seed.Root)) using (var image = fence.OpenFile("AstralParty_INT.exe"))
             {
-                if (test.Item4) { using var compatible = seed.Require(fence, image); compatible.Recheck(); Check(true, "native " + test.Item1 + " exact fallback accepted"); }
-                else Reject(() => { using var compatible = seed.Require(fence, image); }, "native " + test.Item1 + " extras without anchor blocked");
+                using var compatible = seed.Require(fence, image); compatible.Recheck();
+                Check(test.Item4 || compatible.Warnings.Count > 0, "native " + test.Item1 + " no-settings extras advisory");
             }
             seed.Unchanged();
         }
@@ -195,15 +206,35 @@ internal static class Program
             using (var fence = new WindowsFileFence(seed.Root)) using (var image = fence.OpenFile("AstralParty_INT.exe")) using (var compatible = seed.Require(fence, image))
             {
                 using (var file = fence.OpenFile("fixture-cache/" + added, true, true)) { file.Stream.Write(Encoding.ASCII.GetBytes("inventory changed after acceptance")); file.Flush(); }
-                Reject(compatible.Recheck, "native exact accepted inventory snapshot blocks later addition: " + added);
+                compatible.Recheck(); Check(compatible.Warnings.Count > 0, "native later catalog addition is advisory: " + added);
             }
             seed.Unchanged();
         }
         var many = new Seed(scratch, "native-limit", extra: Enumerable.Range(0, 510).Select(i => "catalog_1.0." + i + ".hash").ToArray());
         using (var fence = new WindowsFileFence(many.Root)) using (var image = fence.OpenFile("AstralParty_INT.exe")) { using var compatible = many.Require(fence, image); Check(true, "native 512 catalogs accepted"); }
         File.WriteAllText(Path.Combine(many.Cache, "catalog_1.1.0.hash"), "limit fixture");
-        using (var fence = new WindowsFileFence(many.Root)) using (var image = fence.OpenFile("AstralParty_INT.exe")) Reject(() => { using var compatible = many.Require(fence, image); }, "native 513 files blocked");
+        using (var fence = new WindowsFileFence(many.Root)) using (var image = fence.OpenFile("AstralParty_INT.exe")) { using var compatible = many.Require(fence, image); Check(compatible.Warnings.Count > 0, "native 513 files produce bounded advisory"); }
         many.Unchanged();
+        foreach (var path in new[] { "winhttp.dll", "BepInEx/core/BepInEx.Core.dll" }) {
+            var seed = new Seed(scratch, "native-loader-" + Path.GetFileNameWithoutExtension(path));
+            File.WriteAllText(Path.Combine(seed.Root, path), "changed shared loader");
+            using var fence = new WindowsFileFence(seed.Root); using var image = fence.OpenFile("AstralParty_INT.exe");
+            using var compatible = seed.Require(fence, image); compatible.Recheck();Check(compatible.Warnings.Count > 0, "Unknown third-party loader is preserved without approval: " + path);
+        }
+        var absent = new Seed(scratch, "native-cache-absent");
+        foreach (var path in Directory.GetFiles(absent.Cache)) File.Delete(path); Directory.Delete(absent.Cache);
+        using (var fence = new WindowsFileFence(absent.Root)) using (var image = fence.OpenFile("AstralParty_INT.exe")) {
+            using var compatible = absent.Require(fence, image); Check(compatible.Warnings.Count > 0, "native absent catalog directory is advisory"); compatible.Recheck();
+            Check(!Directory.Exists(absent.Cache), "native advisory does not create a catalog directory");
+        }
+        foreach (var file in absent.Original.Where(file => !file.Key.StartsWith("fixture-cache/", StringComparison.Ordinal)))
+            Check(Hash(File.ReadAllBytes(Path.Combine(absent.Root, file.Key))) == file.Value, "absent-cache observation preserves every game/mod input");
+        foreach (var relative in new[] { "AstralParty_INT_Data/data.unity3d", "fixture-cache/" + Current[0], "GameAssembly.dll", "winhttp.dll" }) {
+            var seed = new Seed(scratch, "native-busy-" + Path.GetFileName(relative));
+            using var held = File.Open(Path.Combine(seed.Root, relative), FileMode.Open, FileAccess.Read, FileShare.None);
+            using var fence = new WindowsFileFence(seed.Root); using var image = fence.OpenFile("AstralParty_INT.exe");
+            using var compatible = seed.Require(fence, image); compatible.Recheck();Check(compatible.Warnings.Count > 0, "Compatibility observation lock never blocks owned update: " + relative);
+        }
         _nativeChecks = _checks - start;
     }
     internal static int Main(string[] args)

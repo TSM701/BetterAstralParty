@@ -17,7 +17,7 @@ internal interface IReleaseAuthentication
     bool TryAuthorize(HttpRequestMessage request);
 }
 
-internal enum ReleaseChannel { Stable, Beta }
+internal enum ReleaseChannel { Stable = 0, Beta = 1, PreRelease = 2 }
 internal enum ReleaseUpdateStatus
 {
     NotConfigured, NotChecked, Checking, UpToDate, Available, AuthenticationRequired,
@@ -26,6 +26,7 @@ internal enum ReleaseUpdateStatus
 internal sealed record ReleaseUpdate(string Version, string Title, string Notes, Uri Page)
 {
     internal bool Beta { get; init; }
+    internal bool GitHubPrerelease { get; init; }
     internal long ReleaseId { get; init; }
     internal long ZipAssetId { get; init; }
     internal long DescriptorAssetId { get; init; }
@@ -37,17 +38,20 @@ internal sealed record ReleaseUpdate(string Version, string Title, string Notes,
     internal bool TransitionCandidate { get; init; }
     internal Updating.UpdateDownloadRequest? DownloadRequest(string current, ReleaseChannel channel, ChannelTransitionIntent? transition = null)
     {
+        if (RepositoryId > 0 && (!ReleaseFeedPolicy.SupportsAutomaticSource(current)
+            || !ReleaseFeedPolicy.SupportsAutomaticTarget(Version, channel.ToString()))) return null;
         if (ReleaseId <= 0 || ZipAssetId <= 0 || DescriptorAssetId <= 0 || SignatureAssetId <= 0) return null;
-        if (channel == ReleaseChannel.Stable && Beta) return null;
+        if (channel == ReleaseChannel.Stable && Beta || channel == ReleaseChannel.PreRelease && !GitHubPrerelease) return null;
         if (TransitionCandidate && transition == null) return null;
         // A production feed fixes both repository and channel; repositories are never merged here.
         var repository = Repository.Length == 0 ? "TSM701/BetterAstralParty" : Repository;
-        var actualChannel = FeedChannel.Length == 0 ? Beta ? "Beta" : "Stable" : FeedChannel;
+        var actualChannel = FeedChannel.Length == 0 ? channel == ReleaseChannel.PreRelease ? "PreRelease" : Beta ? "Beta" : "Stable" : FeedChannel;
         if (FeedChannel.Length != 0 && actualChannel != channel.ToString()) return null;
         return new(new Updating.UpdateContext(repository, actualChannel, current, Version, ReleaseId, ZipAssetId, Updating.UpdateTrust.PlatformId, repositoryId: RepositoryId, transition: transition), DescriptorAssetId, SignatureAssetId);
     }
     internal Updating.UpdateDownloadRequest? ProposalRequest(string current)
-        => FeedChannel is "Stable" or "Beta" && RepositoryId > 0 && ReleaseId > 0 && ZipAssetId > 0 && DescriptorAssetId > 0 && SignatureAssetId > 0
+        => ReleaseFeedPolicy.IsChannel(FeedChannel) && RepositoryId > 0 && ReleaseId > 0 && ZipAssetId > 0 && DescriptorAssetId > 0 && SignatureAssetId > 0
+        && ReleaseFeedPolicy.SupportsAutomaticSource(current) && ReleaseFeedPolicy.SupportsAutomaticTarget(Version, FeedChannel)
         ? new(new UpdateContext(Repository, FeedChannel, current, Version, ReleaseId, ZipAssetId, UpdateTrust.PlatformId, repositoryId: RepositoryId), DescriptorAssetId, SignatureAssetId) : null;
 }
 internal sealed record ReleaseUpdateResult(ReleaseUpdateStatus Status, ReleaseUpdate? Release = null,
@@ -95,11 +99,12 @@ internal sealed class ReleaseUpdates : IDisposable
     internal string? NotificationVersion { get; private set; }
     internal int Revision { get; private set; }
     internal int Generation => _generation;
+    internal bool TransitionCheckPending => _transitionScan;
     internal string FeedIdentity => _feed?.Identity ?? _repository;
     internal ReleaseFeed? Feed => _feed;
     internal void InstalledChannel(string? channel)
     {
-        channel = channel is "Stable" or "Beta" ? channel : null;
+        channel = channel != null && ReleaseFeedPolicy.IsChannel(channel) ? channel : null;
         if (_disposed || _installedChannel == channel) return;
         _installedChannel = channel; Clear(); _channelCache.Clear(); _channelRefresh = true;
         Set(ReadyState());
@@ -125,9 +130,9 @@ internal sealed class ReleaseUpdates : IDisposable
     internal ReleaseUpdates(string current, ReleaseFeed feed, HttpClient? client = null, IReleaseAuthentication? authentication = null, TimeSpan? timeout = null)
         : this(current, feed.Repository, client, null, timeout)
     {
-        _feed = feed; Channel = feed.Channel == "Beta" ? ReleaseChannel.Beta : ReleaseChannel.Stable; Configure(client, authentication);
+        _feed = feed; Channel = feed.Channel == "Beta" ? ReleaseChannel.Beta : feed.Channel == "PreRelease" ? ReleaseChannel.PreRelease : ReleaseChannel.Stable; Configure(client, authentication);
     }
-    // Stable is anonymous; Beta uses only the memory provider on a verified private identity.
+    // Public channels are anonymous; Beta uses only the memory provider on a verified private identity.
     internal static ReleaseUpdates Production(string current, string repository, IReleaseAuthentication? authentication = null)
         => Production(current, repository == ReleaseFeedPolicy.StableRepository ? ReleaseChannel.Stable
             : repository == ReleaseFeedPolicy.BetaRepository ? ReleaseChannel.Beta : throw new ArgumentException("Unknown production repository"), authentication);
@@ -146,7 +151,7 @@ internal sealed class ReleaseUpdates : IDisposable
     {
         if (_disposed) return;
         if (_ownedClient == null) throw new InvalidOperationException("A production transport is required");
-        _channelCache.Remove(ReleaseChannel.Beta); // Signing out while Stable is selected must retire hidden Beta metadata too.
+        _channelCache.Remove(ReleaseChannel.Beta); // Signing out on a public channel must retire hidden Beta metadata too.
         if (_feed is { RequiresAuthentication: false }) { _authentication = authentication; return; }
         Configure(_ownedClient, authentication);
     }
@@ -162,7 +167,8 @@ internal sealed class ReleaseUpdates : IDisposable
         if (previousIdentity != _identity) _notifiedVersions.Clear();
         Set(ReadyState());
     }
-    private bool Configured => !_disposed && _client != null && _identity.Length != 0 && (_feed == null || _feed.Configured)
+    private bool Configured => !_disposed && _client != null && _identity.Length != 0
+        && (_feed == null || _feed.Configured && ReleaseFeedPolicy.SupportsAutomaticSource(_current))
         && (_feed is { RequiresAuthentication: false } || _authentication != null);
     private ReleaseUpdateResult ReadyState() => !Configured ? new(ReleaseUpdateStatus.NotConfigured)
         : _retryAt != DateTimeOffset.MinValue ? new(ReleaseUpdateStatus.RateLimited, RetryAt: _retryAt)
@@ -364,7 +370,8 @@ internal sealed class ReleaseUpdates : IDisposable
                 next = page.Next;
             }
             token.ThrowIfCancellationRequested();
-            var release = transitionScan ? Select(collected, "0.0.0", channel) : Select(collected, _current, channel);
+            var eligible = feed == null ? collected : collected.Where(release => ReleaseFeedPolicy.SupportsAutomaticTarget(release.Version, feed.Channel));
+            var release = transitionScan ? Select(eligible, "0.0.0", channel) : Select(eligible, _current, channel);
             if (release != null && transitionScan && TryVersion(release.Version, out var target) && TryVersion(_current, out var current) && target.CompareTo(current) <= 0)
                 release = release with { TransitionCandidate = true };
             DiagnosticHub.Stage(DiagnosticFeature.ReleaseCheck, DiagnosticPhase.ReleaseMetadata, DiagnosticOutcome.Completed, diagnosticOperation);
@@ -482,7 +489,7 @@ internal sealed class ReleaseUpdates : IDisposable
             var beta = prerelease.ValueKind == JsonValueKind.True || version.IsPreRelease || version.Major == 0;
             var assets = Assets(item, tag);
             releases.Add(new(tag, PlainText(Text("name"), 160), PlainText(Text("body"), MaxNotes), page!)
-            { Beta = beta, ReleaseId = assets[0], ZipAssetId = assets[1], DescriptorAssetId = assets[2], SignatureAssetId = assets[3] });
+            { Beta = beta, GitHubPrerelease = prerelease.ValueKind == JsonValueKind.True, ReleaseId = assets[0], ZipAssetId = assets[1], DescriptorAssetId = assets[2], SignatureAssetId = assets[3] });
         }
         return releases.ToArray();
     }
@@ -509,7 +516,8 @@ internal sealed class ReleaseUpdates : IDisposable
         foreach (var release in releases)
         {
             if (!TryVersion(release.Version, out var version) || version.CompareTo(installed) <= 0
-                || channel == ReleaseChannel.Stable && (release.Beta || version.Major == 0 || version.IsPreRelease)) continue;
+                || channel == ReleaseChannel.Stable && (release.Beta || version.Major == 0 || version.IsPreRelease)
+                || channel == ReleaseChannel.PreRelease && !release.GitHubPrerelease) continue;
             if (highest != null && version.CompareTo(highest) <= 0) continue;
             highest = version; selected = release;
         }

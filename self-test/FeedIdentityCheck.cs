@@ -5,7 +5,7 @@ internal static class FeedIdentityCheck
 {
     internal static void Run()
     {
-        var feeds = new[] { ReleaseFeedPolicy.Stable, ReleaseFeedPolicy.Beta,
+        var feeds = new[] { ReleaseFeedPolicy.Stable, ReleaseFeedPolicy.Beta, ReleaseFeedPolicy.PreRelease,
             new ReleaseFeed(ReleaseFeedPolicy.StableRepository, 0, "Stable") };
         static string Previous(ReleaseFeed feed) => feed.Repository + "|"
             + feed.RepositoryId.ToString(CultureInfo.InvariantCulture) + "|" + feed.Channel;
@@ -28,6 +28,7 @@ internal static class FeedIdentityCheck
             (ReleaseFeedPolicy.StableRepository, -1L, "Stable"),
             (ReleaseFeedPolicy.StableRepository, 1L, "Unknown"),
             (ReleaseFeedPolicy.BetaRepository, 1L, "Stable"),
+            (ReleaseFeedPolicy.BetaRepository, 1L, "PreRelease"),
             (ReleaseFeedPolicy.StableRepository, 1L, "Beta") })
         {
             try { _ = new ReleaseFeed(repository, id, channel); }
@@ -44,6 +45,10 @@ internal static class FeedIdentityCheck
         for (var i = 0; i < 10000; i++) GC.KeepAlive(stable.AnonymousIdentity);
         var currentBytes = GC.GetAllocatedBytesForCurrentThread() - start;
         if (currentBytes != 0 || previousBytes <= currentBytes) throw new Exception("Feed identity allocation regression");
-        Console.WriteLine($"Feed identity: exact Stable/Beta/unconfigured text and invariant culture passed; 10000 anonymous reads: {previousBytes} -> {currentBytes} managed bytes.");
+        var pre = ReleaseFeedPolicy.PreRelease;
+        if (pre.Repository != stable.Repository || pre.RepositoryId != stable.RepositoryId || pre.RequiresAuthentication || pre.Identity == stable.Identity
+            || pre.Purpose == stable.Purpose || !pre.Accepts(true) || pre.Accepts(false) || stable.Accepts(true) || !stable.Accepts(false)
+            || !ReleaseFeedPolicy.Beta.Accepts(true) || !ReleaseFeedPolicy.Beta.Accepts(false)) throw new Exception("Release channels lost exact identity, prerelease eligibility or authentication separation");
+        Console.WriteLine($"Feed identity: exact Stable/PreRelease/Beta/unconfigured text and invariant culture passed; 10000 anonymous reads: {previousBytes} -> {currentBytes} managed bytes.");
     }
 }

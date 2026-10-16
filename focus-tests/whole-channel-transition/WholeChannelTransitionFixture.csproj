@@ -11,6 +11,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../updater/*.cs" Exclude="../../updater/UpdateHelperProgram.cs" />
+    <Compile Remove="../../updater/ProductionUpdateKeys.cs" Condition="'$(FixtureTrustSource)' != ''" />
+    <Compile Include="$(FixtureTrustSource)" Condition="'$(FixtureTrustSource)' != ''" />
     <Compile Include="../../src/Observability/*.cs" />
   </ItemGroup>
 </Project>

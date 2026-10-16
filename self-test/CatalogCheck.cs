@@ -20,25 +20,35 @@ internal static class CatalogCheck
         var guard = new CatalogGuard(manifest, root);
         var now = DateTime.UtcNow;
         guard.Verify(now);
+        if (guard.Changed) throw new Exception("Unchanged catalog reported as changed");
         File.WriteAllText(path, "changed!");
         guard.Verify(now.AddSeconds(1)); // Bounded polling.
-        try { guard.Verify(now.AddSeconds(11)); throw new Exception("Changed catalog accepted"); }
-        catch (InvalidDataException) { }
+        if (guard.Changed) throw new Exception("Catalog polling interval ignored");
+        guard.Verify(now.AddSeconds(11));
+        if (!guard.Changed) throw new Exception("Changed catalog was not observed");
         File.WriteAllText(path, "baseline");
-        guard.Verify(now.AddSeconds(12));
+        guard.Verify(now.AddSeconds(22));
+        if (guard.Changed) throw new Exception("Restored catalog remained changed");
         File.WriteAllText(Path.Combine(root, "catalog_new.hash"), "new");
-        try { guard.Verify(now.AddSeconds(23)); throw new Exception("New catalog accepted"); }
-        catch (InvalidDataException) { }
+        guard.Verify(now.AddSeconds(33));
+        if (!guard.Changed) throw new Exception("New catalog was not observed");
         var background = new CatalogGuard(manifest, root);
-        // Poll must schedule I/O, not throw a worker failure synchronously.
+        // A content hotfix is observed without becoming a runtime failure.
         background.Poll(now);
         var observed = SpinWait.SpinUntil(() =>
         {
-            try { background.Poll(now); return false; }
-            catch (InvalidDataException) { return true; }
+            background.Poll(now);
+            return background.Changed;
         }, TimeSpan.FromSeconds(5));
-        if (!observed) throw new Exception("Background catalog failure was not delivered to the UI caller");
-        Console.WriteLine("다운로드 카탈로그 기준 일치·실행 후 변경·신규 버전 감지·검사 주기 검증 통과");
-        Console.WriteLine("카탈로그 백그라운드 검사·메인 스레드 오류 전달 검증 통과");
+        if (!observed) throw new Exception("Background catalog drift was not observed");
+        File.Delete(path);
+        guard.Verify(now.AddSeconds(44));
+        if (!guard.Changed) throw new Exception("Removed historical catalog was not observed");
+        new CatalogGuard(manifest, Path.Combine(root, "not-downloaded-yet")).Verify(now);
+        var badManifest = Path.Combine(root, "malformed.json");
+        File.WriteAllText(badManifest, JsonSerializer.Serialize(new { files = new[] { new { root = "cache", path = "../escape.hash", sha256 = hash } } }));
+        try { new CatalogGuard(badManifest, root); throw new Exception("Unsafe manifest path accepted"); }
+        catch (InvalidDataException) { }
+        Console.WriteLine("Catalog observation: matching, drift, restore, missing cache, background polling and unsafe-path rejection passed; hotfix drift does not block features.");
     }
 }

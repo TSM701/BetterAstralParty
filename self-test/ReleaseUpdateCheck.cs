@@ -83,6 +83,8 @@ internal static class ReleaseUpdateCheck
             Item("banana"), Item("0.99.0")), Repository);
         Check(ReleaseUpdates.Select(releases, "1.0.0", ReleaseChannel.Stable)?.Version == "v1.10.0", "numeric stable ordering and flags");
         Check(ReleaseUpdates.Select(releases.Where(r => r.Version != "8.0.0"), "1.0.0", ReleaseChannel.Beta)?.Version == "2.0.0-rc.10", "numeric prerelease ordering");
+        Check(ReleaseUpdates.Select(releases, "1.0.0", ReleaseChannel.PreRelease)?.Version == "8.0.0", "public prerelease channel uses the GitHub flag even when the tag has no prerelease suffix");
+        Check(ReleaseUpdates.Select(ReleaseUpdates.Parse(Json(Item("9.0.0-rc.1"), Item("2.0.0-rc.1", prerelease:true), Item("0.99.0")), Repository), "1.0.0", ReleaseChannel.PreRelease)?.Version == "2.0.0-rc.1", "unflagged prerelease and historical 0.x tags cannot enter the public prerelease channel");
         Check(releases.Single(r => r.Version == "0.99.0").Beta, "historical 0.x is beta regardless of GitHub flag");
         Check(ReleaseUpdates.Select(releases, "10.0.0", ReleaseChannel.Beta) == null, "no downgrade");
         Check(ReleaseUpdates.Select(ReleaseUpdates.Parse(Json(Item("1.2.3+new")), Repository), "1.2.3+old", ReleaseChannel.Stable) == null, "build metadata ignored");
@@ -133,7 +135,7 @@ internal static class ReleaseUpdateCheck
             Check(popup.Contains("<a") && popup.Contains("한글") && popup.Contains(ModText.AutomaticStatus(AutomaticUpdateStatus.Queued)), "popup preserves literal release notes alongside current status");
             foreach (var action in new[] { "UpdateChannel", "UpdateCheck", "UpdateDownload" })
                 Check(MenuLayout.GeneralControl(action) && !MenuLayout.FixedControl(action), "update controls stay in scrolling general settings");
-            foreach (var mode in new[] { "Stable", "Beta" })
+            foreach (var mode in new[] { "Stable", "PreRelease", "Beta" })
                 Check(language != "English" || !ModText.Text(MenuLayout.StateHelp("UpdateChannel", true, mode)).Any(c => c is >= '\uac00' and <= '\ud7a3'), "channel help translated");
         }
         var bottom = MenuLayout.ToggleY(8) + MenuLayout.ToggleHeight - MenuLayout.SettingsY;

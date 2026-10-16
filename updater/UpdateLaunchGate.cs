@@ -5,13 +5,20 @@ namespace BetterAstralParty.Updating
     internal static class UpdateLaunchGate
     {
         internal static void AssertNoReinstall(WindowsFileFence fence) {
-            try { using(var pending=fence.OpenFile("BetterAstralParty.reinstall-v3.pending")) throw new ApplySafetyException(ApplyFailure.RecoveryRequired); }
+            try { using(var pending=fence.OpenFile("BetterAstralParty.reinstall-v4.pending")) throw new ApplySafetyException(ApplyFailure.RecoveryRequired); }
             catch(ApplySafetyException error) when(error.NativeError==2) { }
         }
         internal static void Check(WindowsFileFence fence) {
+            Check(fence,false);
+        }
+        internal static void CheckHelperRecovery(WindowsFileFence fence) {
+            Check(fence,true);
+        }
+        private static void Check(WindowsFileFence fence,bool helperRecovery) {
             AssertNoReinstall(fence);
             UpdateFaults.Read(fence); // Corrupt fault/guard evidence is unsafe; valid retired failures remain visible in-game.
-            if(UpdateFaults.ReadFile(fence,UpdateFaults.OperationPath)!=null || AutomaticHelperUpgrade.Pending(fence) || HelperDelivery.PendingInstall(fence) || WholeInstallBridge.Pending(fence)) throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
+            var helperPending=AutomaticHelperUpgrade.Pending(fence);var deliveryPending=HelperDelivery.PendingInstall(fence);
+            if(UpdateFaults.ReadFile(fence,UpdateFaults.OperationPath)!=null || !helperRecovery && (helperPending || deliveryPending) || WholeInstallBridge.Pending(fence)) throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
             foreach(var entry in UpdateRecovery.Scan(fence)) if(entry.Pending) throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
         }
         internal sealed class Lease : IDisposable {

@@ -54,6 +54,16 @@ internal sealed unsafe class RuntimeObject
         return IntPtr.Zero;
     }
 
+    internal static bool IsPve(int mode)
+    {
+        var helper = FindClass("UI", "UIHelper");
+        var configure = FindClass("", "StaticConfigure");
+        if (helper == IntPtr.Zero || configure == IntPtr.Zero
+            || StaticCall(configure, "get_GameMode")?.Get("InfoDict") == null) return false;
+        var config = StaticCall(helper, "GetGameModeInfoConfigure", mode);
+        return config != null && config.Get<int>("MapModeType") == mode && config.Get<int>("MapModeGroup") == 1;
+    }
+
     private static IntPtr FieldInfo(IntPtr klass, string name)
     {
         if (klass == IntPtr.Zero) throw new TypeLoadException("Required runtime class is unavailable");
@@ -78,6 +88,7 @@ internal sealed unsafe class RuntimeObject
         return value;
     }
     internal static RuntimeObject? StaticField(IntPtr klass, string name) => Wrap(IL2CPP.il2cpp_field_get_value_object(FieldInfo(klass, name), IntPtr.Zero));
+    internal static int EnumValue(string ns, string name, string field) => StaticField(FindClass(ns, name), field)!.Value<int>();
     internal T Value<T>() where T : unmanaged
     {
         CheckValue<T>(Class);

@@ -14,7 +14,7 @@ namespace BetterAstralParty.Updating
     // Transaction core only. No helper entrypoint/UI, credentials, installer execution or deletion.
     internal static class UpdateTransaction
     {
-        internal const string HighWaterPath = "BetterAstralParty.update-v3.version";
+        internal const string HighWaterPath = "BetterAstralParty.update-v4.version";
         private const string LockPath = "BetterAstralParty.update.lock";
         private sealed class Item
         {
@@ -25,7 +25,7 @@ namespace BetterAstralParty.Updating
         private sealed class Plan
         {
             internal string Root = "", Work = "", WorkId = "", Stage = "", StageId = "", Descriptor = "", Original = "";
-            internal int Protocol = 3;
+            internal int Protocol = 4;
             internal string SettingsId = "-", SettingsHash = "-";
             internal readonly List<Item> Items = new List<Item>();
         }
@@ -59,7 +59,7 @@ namespace BetterAstralParty.Updating
         private static string Slot(string work, string prefix, int index) { return work + "/" + prefix + index.ToString("D2", CultureInfo.InvariantCulture); }
         private static string[] Targets()
         {
-            var targets = new string[10]; Array.Copy(InstallReceipt.Owned, targets, 8); targets[8] = InstallReceipt.Path; targets[9] = HighWaterPath; return targets;
+            var count = InstallReceipt.Owned.Length; var targets = new string[count + 2]; Array.Copy(InstallReceipt.Owned, targets, count); targets[count] = InstallReceipt.Path; targets[count + 1] = HighWaterPath; return targets;
         }
         private static WindowsFileFence.FileLease? Maybe(WindowsFileFence fence, string path, bool mutable = true)
         {
@@ -117,9 +117,9 @@ namespace BetterAstralParty.Updating
             }catch {held.Dispose();throw;}
         }
         private static bool HistoryRow(ReceiptChannelState state,string channel,HistoryRecord water,bool exact) {
-            var version=channel=="Stable"?state.StableVersion:state.BetaVersion;
-            var id=channel=="Stable"?state.StableRepositoryId:state.BetaRepositoryId;
-            var digest=channel=="Stable"?state.StableDescriptor:state.BetaDescriptor;
+            var version=state.VersionFor(channel);
+            var id=state.RepositoryIdFor(channel);
+            var digest=state.DescriptorFor(channel);
             if(version==null)return false;
             if(id!=ReleaseFeedPolicy.For(channel).RepositoryId || id<=0)throw HistoryBad("HighWaterRepositoryMismatch",DiagnosticCode.WrongTarget);
             var comparison=UpdateVersion.Parse(version).CompareTo(UpdateVersion.Parse(water.Version));
@@ -141,15 +141,15 @@ namespace BetterAstralParty.Updating
             if(state==null || state.Root!=fence.RootIdentity.Text)throw HistoryBad("HighWaterRootMismatch",DiagnosticCode.WrongTarget);
             if(water==null)return; // Absence is an existing optional state, not invented history.
             var record=ParseWater(Read(water,2048),fence);
-            if(HistoryRow(state,"Stable",record,true) || HistoryRow(state,"Beta",record,true))return;
-            if(!HistoryRow(state,"Stable",record,false) && !HistoryRow(state,"Beta",record,false))throw HistoryBad("HighWaterUnbound");
+            if(HistoryRow(state,"Stable",record,true) || HistoryRow(state,"PreRelease",record,true) || HistoryRow(state,"Beta",record,true))return;
+            if(!HistoryRow(state,"Stable",record,false) && !HistoryRow(state,"PreRelease",record,false) && !HistoryRow(state,"Beta",record,false))throw HistoryBad("HighWaterUnbound");
             if(seen.Count>=128 || !seen.Add(water.Identity.Text))throw HistoryBad("HighWaterProofAmbiguous");
             var waterHash=water.Hash();RecoveryEntry? selected=null;Plan? selectedPlan=null;
             foreach(var entry in UpdateRecovery.Scan(fence)) {
                 if(entry.Pending || !entry.Committed)continue;
                 byte[] planBytes;Plan plan;
                 using(var candidate=fence.OpenFile(entry.Work+"/plan",false)){planBytes=Read(candidate,16384);plan=Parse(planBytes);}
-                var slot=plan.Items[9];if(slot.NewId!=water.Identity.Text || slot.NewHash!=waterHash)continue;
+                var slot=plan.Items[InstallReceipt.Owned.Length + 1];if(slot.NewId!=water.Identity.Text || slot.NewHash!=waterHash)continue;
                 if(selected!=null)throw HistoryBad("HighWaterProofAmbiguous");
                 var planFile=held.Own(fence.OpenFile(entry.Work+"/plan",false));if(planFile.Hash()!=UpdateTrust.Hash(planBytes))throw HistoryBad("HighWaterProofChanged");
                 if(plan.Root!=fence.RootIdentity.Text || plan.Work!=entry.Work || plan.Stage!=entry.Stage || plan.WorkId!=fence.DirectoryIdentity(entry.Work).Text || plan.StageId!=fence.DirectoryIdentity(entry.Stage).Text)
@@ -167,25 +167,29 @@ namespace BetterAstralParty.Updating
             foreach(var value in keyBytes)if(value>127)throw HistoryBad("HighWaterProofChanged");
             var key=Encoding.ASCII.GetString(keyBytes);if(!Regex.IsMatch(key,@"\A[A-Za-z0-9_-]{1,40}\z"))throw HistoryBad("HighWaterProofChanged");
             var fields=Encoding.ASCII.GetString(descriptor).Split('\n');long release,asset,repository;
-            if(fields.Length<14 || fields[0]!="BetterAstralParty.UpdateDescriptor/v3" || !fields[1].StartsWith("repository=",StringComparison.Ordinal) || !fields[2].StartsWith("version=",StringComparison.Ordinal) || !fields[3].StartsWith("channel=",StringComparison.Ordinal)
+            if(fields.Length<14 || fields[0]!="BetterAstralParty.UpdateDescriptor/v4" || !fields[1].StartsWith("repository=",StringComparison.Ordinal) || !fields[2].StartsWith("version=",StringComparison.Ordinal) || !fields[3].StartsWith("channel=",StringComparison.Ordinal)
                 || !fields[5].StartsWith("release-id=",StringComparison.Ordinal) || !fields[6].StartsWith("asset-id=",StringComparison.Ordinal) || !fields[12].StartsWith("repository-id=",StringComparison.Ordinal)
                 || !long.TryParse(fields[5].Substring(11),NumberStyles.None,CultureInfo.InvariantCulture,out release) || !long.TryParse(fields[6].Substring(9),NumberStyles.None,CultureInfo.InvariantCulture,out asset) || !long.TryParse(fields[12].Substring(14),NumberStyles.None,CultureInfo.InvariantCulture,out repository))throw HistoryBad("HighWaterProofChanged");
-            var context=new UpdateContext(fields[1].Substring(11),fields[3].Substring(8),"0.0.0",fields[2].Substring(8),release,asset,UpdateTrust.PlatformId,repositoryId:repository);
+            var historyChannel=fields[3].Substring(8);
+            if(fields[11]=="purpose="+ReleaseFeedPolicy.PublicPurpose && UpdateVersion.Parse(fields[2].Substring(8)).IsPrerelease)historyChannel="PreRelease";
+            var context=new UpdateContext(fields[1].Substring(11),historyChannel,"0.0.0",fields[2].Substring(8),release,asset,UpdateTrust.PlatformId,repositoryId:repository);
             VerifiedUpdateDescriptor verified;
             try {verified=trust.VerifyProposal(descriptor,key,signature,context);}
             catch(UpdateValidationException){throw HistoryBad("HighWaterProofChanged");}
             if(verified.DescriptorSha256!=selectedPlan.Descriptor || !ReleaseFeedPolicy.Matches(context))throw HistoryBad("HighWaterProofChanged");
             // A channel transition may copy a higher other-channel watermark into a new slot.
             if(verified.DescriptorSha256==record.Descriptor) {
-                if(UpdateVersion.Parse(verified.Version).Tag!=record.Version || !HistoryRow(state,verified.Channel,record,false))throw HistoryBad("HighWaterUnbound");
+                if(UpdateVersion.Parse(verified.Version).Tag!=record.Version ||
+                    !HistoryRow(state,verified.Channel,record,false) && !(verified.PublicRelease &&
+                        (HistoryRow(state,"Stable",record,false) || HistoryRow(state,"PreRelease",record,false))))throw HistoryBad("HighWaterUnbound");
             }else {
-                var oldReceiptItem=selectedPlan.Items[8];var oldReceiptFile=held.Own(fence.OpenFile(Slot(selected.Work,"old-",8),false));
+                var oldReceiptItem=selectedPlan.Items[InstallReceipt.Owned.Length];var oldReceiptFile=held.Own(fence.OpenFile(Slot(selected.Work,"old-",InstallReceipt.Owned.Length),false));
                 if(oldReceiptFile.Identity.Text!=oldReceiptItem.OldId || oldReceiptFile.Hash()!=oldReceiptItem.OldHash)throw HistoryBad("HighWaterProofChanged");
                 var oldReceipt=InstallReceipt.Parse(Read(oldReceiptFile,16384));
                 if(oldReceipt.Channels==null || oldReceipt.Channels.ActiveVersion!=selectedPlan.Original)throw HistoryBad("HighWaterProofChanged");
-                var oldWaterItem=selectedPlan.Items[9];WindowsFileFence.FileLease? oldWater=null;
+                var oldWaterItem=selectedPlan.Items[InstallReceipt.Owned.Length + 1];WindowsFileFence.FileLease? oldWater=null;
                 if(oldWaterItem.OldId!="-") {
-                    oldWater=held.Own(fence.OpenFile(Slot(selected.Work,"old-",9),false));
+                    oldWater=held.Own(fence.OpenFile(Slot(selected.Work,"old-",InstallReceipt.Owned.Length + 1),false));
                     if(oldWater.Identity.Text!=oldWaterItem.OldId || oldWater.Hash()!=oldWaterItem.OldHash)throw HistoryBad("HighWaterProofChanged");
                 }
                 if(UpdateTrust.Hash(WaterBytes(fence,verified,oldWater))!=waterHash)throw HistoryBad("HighWaterProofChanged");
@@ -220,6 +224,7 @@ namespace BetterAstralParty.Updating
         {
             WindowsFileFence.FileLease? file;
             try { file = Maybe(fence, ChannelTransitionIntent.SettingsPath, false); }
+            catch (ApplySafetyException error) when (error.NativeError == 3) { fence.Recheck(); file = null; }
             catch (ApplySafetyException error) when (error.Failure == ApplyFailure.FileBusy && error.NativeError == 32) { throw new ApplySafetyException(ApplyFailure.ProcessBusy, 32); }
             if (file != null) leases.Own(file);
             if (file != null && file.Stream.Length > 1024 * 1024) throw new ApplySafetyException(ApplyFailure.InstallationRequired);
@@ -235,25 +240,25 @@ namespace BetterAstralParty.Updating
         private static byte[] Serialize(Plan plan)
         {
             var output = new StringBuilder("BetterAstralParty.Transaction/v" + plan.Protocol + "\nroot=" + plan.Root + "\nwork=" + plan.Work + "\nwork-id=" + plan.WorkId
-                + "\nstage=" + plan.Stage + "\nstage-id=" + plan.StageId + "\ndescriptor=" + plan.Descriptor + "\noriginal=" + plan.Original + "\ncount=10\n");
+                + "\nstage=" + plan.Stage + "\nstage-id=" + plan.StageId + "\ndescriptor=" + plan.Descriptor + "\noriginal=" + plan.Original + "\ncount=" + plan.Items.Count.ToString(CultureInfo.InvariantCulture) + "\n");
             foreach (var item in plan.Items) output.Append("file=").Append(item.Path).Append('\t').Append(item.OldId).Append('\t').Append(item.OldHash).Append('\t').Append(item.NewId).Append('\t').Append(item.NewHash).Append('\n');
-            if (plan.Protocol == 3) output.Append("settings=").Append(plan.SettingsId).Append('\t').Append(plan.SettingsHash).Append('\n');
+            if (plan.Protocol == 4) output.Append("settings=").Append(plan.SettingsId).Append('\t').Append(plan.SettingsHash).Append('\n');
             return Encoding.ASCII.GetBytes(output.ToString());
         }
         private static Plan Parse(byte[] bytes)
         {
             foreach (var value in bytes) if (value > 127 || value == 13) throw Bad(); var lines = Encoding.ASCII.GetString(bytes).Split('\n');
-            var protocol = lines.Length == 21 && lines[0] == "BetterAstralParty.Transaction/v3" ? 3 : 0;
-            if (protocol == 0 || lines[8] != "count=10" || lines[lines.Length - 1] != "") throw Bad();
+            var protocol = lines.Length == Targets().Length + 11 && lines[0] == "BetterAstralParty.Transaction/v4" ? 4 : 0;
+            if (protocol == 0 || lines[8] != "count=" + Targets().Length.ToString(CultureInfo.InvariantCulture) || lines[lines.Length - 1] != "") throw Bad();
             var keys = new[] { "root=", "work=", "work-id=", "stage=", "stage-id=", "descriptor=", "original=" }; var values = new string[7];
             for (var i = 0; i < keys.Length; i++) { if (!lines[i + 1].StartsWith(keys[i], StringComparison.Ordinal)) throw Bad(); values[i] = lines[i + 1].Substring(keys[i].Length); }
             var plan = new Plan { Protocol = protocol, Root = values[0], Work = values[1], WorkId = values[2], Stage = values[3], StageId = values[4], Descriptor = values[5], Original = values[6] };
-            if (protocol == 3) {
-                if (!lines[19].StartsWith("settings=", StringComparison.Ordinal)) throw Bad(); var cfg = lines[19].Substring(9).Split('\t');
+            if (protocol == 4) {
+                if (!lines[9 + Targets().Length].StartsWith("settings=", StringComparison.Ordinal)) throw Bad(); var cfg = lines[9 + Targets().Length].Substring(9).Split('\t');
                 if (cfg.Length != 2 || (cfg[0] == "-" ? cfg[1] != "-" : !Regex.IsMatch(cfg[0], @"\A[0-9A-F]{8}:[0-9A-F]{16}\z") || !Regex.IsMatch(cfg[1], @"\A[0-9A-F]{64}\z"))) throw Bad();
                 plan.SettingsId = cfg[0]; plan.SettingsHash = cfg[1];
             }
-            if (!Regex.IsMatch(plan.Work, @"\Abap-v3-txn-[0-9a-f]{32}\z") || !Regex.IsMatch(plan.Stage, @"\Abap-v3-stage-[0-9a-f]{32}\z") || !Regex.IsMatch(plan.Descriptor, @"\A[0-9A-F]{64}\z")) throw Bad();
+            if (!Regex.IsMatch(plan.Work, @"\A" + UpdateWorkPath.OptionalRootPattern + @"bap-v4-txn-[0-9a-f]{32}\z") || !Regex.IsMatch(plan.Stage, @"\A" + UpdateWorkPath.OptionalRootPattern + @"bap-v4-stage-[0-9a-f]{32}\z") || !Regex.IsMatch(plan.Descriptor, @"\A[0-9A-F]{64}\z")) throw Bad();
             UpdateVersion.Parse(plan.Original); var targets = Targets();
             for (var i = 0; i < targets.Length; i++) {
                 if (!lines[9 + i].StartsWith("file=", StringComparison.Ordinal)) throw Bad(); var f = lines[9 + i].Substring(5).Split('\t');
@@ -299,77 +304,79 @@ namespace BetterAstralParty.Updating
         private static void AssertNoPending(WindowsFileFence fence)
         {
             // Enumerate only immediate, fixed-prefix work names; every open still uses the pinned fence.
-            var directories = Directory.GetDirectories(fence.Root, "bap-v3-txn-*", SearchOption.TopDirectoryOnly);
+            var directories = new List<string>(UpdateWorkPath.Directories(fence, "txn")).ToArray();
             if (directories.Length > 128) throw Bad();
             foreach (var directory in directories) using (var leases = new Leases()) {
-                var work = System.IO.Path.GetFileName(directory);
-                if (!Regex.IsMatch(work, @"\Abap-v3-txn-[0-9a-f]{32}\z")) throw Bad(); fence.AssertPrivateDirectory(work);
-                var journal = Maybe(fence, work + "/plan", false); if (journal == null) continue; leases.Own(journal);
+                var work = directory;
+                if (!Regex.IsMatch(work, @"\A" + UpdateWorkPath.OptionalRootPattern + @"bap-v4-txn-[0-9a-f]{32}\z")) throw Bad(); fence.AssertPrivateDirectory(work);
+                var journal = Maybe(fence, work + "/plan", false); if (journal == null) { UpdateWorkPath.RequireContained(work,"txn"); continue; } leases.Own(journal);
                 var bytes = Read(journal, 16384); var plan = Parse(bytes); var hash = UpdateTrust.Hash(bytes);
                 if (plan.Root != fence.RootIdentity.Text || plan.Work != work || plan.WorkId != fence.DirectoryIdentity(work).Text) throw Bad();
                 var committed = Marker(fence, work + "/committed", hash, leases); var rolled = Marker(fence, work + "/rolled-back", hash, leases);
                 var intent = Marker(fence, work + "/commit-intent", hash, leases);
-                if (committed ? !intent || rolled : !rolled || intent) throw Bad();
+                if (committed ? !intent || rolled : !rolled || intent) { UpdateWorkPath.RequireContained(work,"txn"); throw Bad(); }
             }
         }
         internal static TransactionResult Apply(WindowsFileFence fence, byte[] descriptor, string keyId, byte[] signature, byte[] zip,
             UpdateTrust trust, UpdateContext selection, Action<string>? boundary = null,Action? beforeGameLease=null,string? attemptWork=null,DiagnosticOperation diagnosticOperation=default)
         {
             if (!trust.Configured) throw new UpdateValidationException(UpdateFailure.NotConfigured);
-            if (attemptWork != null && !Regex.IsMatch(attemptWork, @"\Abap-v3-txn-[0-9a-f]{32}\z")) throw Bad();
+            if (attemptWork != null && !Regex.IsMatch(attemptWork, @"\A" + UpdateWorkPath.OptionalRootPattern + @"bap-v4-txn-[0-9a-f]{32}\z")) throw Bad();
+            if (attemptWork != null) UpdateWorkPath.RequireContained(attemptWork,"txn");
             using (var leases = new Leases()) {
                 leases.Own(OperationLock(fence)); AssertNoPending(fence);
                 WindowsFileFence.FileLease gameImage;
-                try { Processes(fence); beforeGameLease?.Invoke(); gameImage=leases.Own(fence.OpenFile("AstralParty_INT.exe")); }
+                try { Processes(fence); beforeGameLease?.Invoke(); gameImage=leases.Own(fence.OpenExecutionBarrier("AstralParty_INT.exe")); }
                 catch(ApplySafetyException error) when(error.Failure==ApplyFailure.FileBusy && error.NativeError==32) {throw new ApplySafetyException(ApplyFailure.ProcessBusy,32);}
-                var plan = new Plan { Root = fence.RootIdentity.Text, Work = attemptWork ?? "bap-v3-txn-" + Guid.NewGuid().ToString("N") }; var targets = Targets();
+                var plan = new Plan { Root = fence.RootIdentity.Text, Work = attemptWork ?? UpdateWorkPath.New("txn") }; var targets = Targets();
                 foreach (var path in targets) { WindowsFileFence.FileLease? file;
                     try {file=Maybe(fence,path);} catch(ApplySafetyException error) when(path=="BetterAstralParty-Launcher.exe" && error.Failure==ApplyFailure.FileBusy && error.NativeError==32) {throw new ApplySafetyException(ApplyFailure.ProcessBusy,32);}
                     if (file != null) leases.Own(file);
                     plan.Items.Add(new Item { Path = path, Target = file, OldId = file?.Identity.Text ?? "-", OldHash = file?.Hash() ?? "-" }); }
-                Processes(fence); var receiptFile = plan.Items[8].Target;
+                Processes(fence); var receiptFile = plan.Items[InstallReceipt.Owned.Length].Target;
                 // Recheck eligibility after the original game exits, before any private
                 // transaction work or owned rename. Path/identity/hash errors still fault.
                 if (receiptFile == null || receiptFile.Stream.Length > 16384) throw new ApplySafetyException(ApplyFailure.InstallationRequired);
                 var receiptBytesBefore = Read(receiptFile, 16384); InstallReceipt receipt;
                 try { receipt = InstallReceipt.Parse(receiptBytesBefore); }
                 catch (ApplySafetyException error) when (error.Failure == ApplyFailure.InvalidState) { throw new ApplySafetyException(ApplyFailure.InstallationRequired); }
-                for (var i = 0; i < 8; i++) if (plan.Items[i].Target != null && plan.Items[i].OldHash != receipt.Files[plan.Items[i].Path]) throw Bad();
+                for (var i = 0; i < InstallReceipt.Owned.Length; i++) if (plan.Items[i].Target != null && plan.Items[i].OldHash != receipt.Files[plan.Items[i].Path]) throw Bad();
                 var plugin = plan.Items.Find(item => item.Path == UpdateTrust.PluginPath)!;
                 var installedMetadata = InstalledPluginMetadata.Read(Read(plugin.Target ?? throw Bad(), UpdateTrust.MaxFileBytes)); plan.Original = installedMetadata.Version;
-                var channels = selection.RepositoryId > 0 ? Channels(fence, receipt, plan.Original, plan.Items[9].Target, trust,leases) : null;
+                var channels = selection.RepositoryId > 0 ? Channels(fence, receipt, plan.Original, plan.Items[InstallReceipt.Owned.Length + 1].Target, trust,leases) : null;
                 if(channels!=null && channels.ActiveChannel!=selection.Channel && selection.Transition==null) {
                     var error=new UpdateValidationException(UpdateFailure.WrongTarget);
                     DiagnosticHub.Failure(DiagnosticFeature.Helper,DiagnosticPhase.DescriptorVerification,DiagnosticCode.Prerequisite,error,validationCode:(int)error.Failure,operation:diagnosticOperation,targetVersion:selection.ReleaseTag);throw error;
                 }
-                var context = Context(selection, plan.Original, channels == null ? Water(plan.Items[9].Target, fence) : channels.Floor(selection), channels == null ? null : selection.Channel == "Stable" ? channels.StableDescriptor : channels.BetaDescriptor);
+                var context = Context(selection, plan.Original, channels == null ? Water(plan.Items[InstallReceipt.Owned.Length + 1].Target, fence) : channels.Floor(selection), channels?.DescriptorFor(selection.Channel));
                 var verified = trust.VerifyDescriptor(descriptor, keyId, signature, context); var payload = UpdatePackage.VerifyPayload(zip, verified);
                 plan.Protocol = verified.Protocol;
-                if (receipt.Channels != null && (installedMetadata.UpdateProtocol != 3 || installedMetadata.SettingsSchema != 1)) throw Bad();
-                if (selection.Transition != null) selection.Transition.Require(fence, receipt, plan.Items[8].OldHash, plan.Items[9].Target?.Hash(), plan.Original, verified);
+                if (receipt.Channels != null && (installedMetadata.UpdateProtocol != 4 || installedMetadata.SettingsSchema != 1)) throw Bad();
+                if (selection.Transition != null) selection.Transition.Require(fence, receipt, plan.Items[InstallReceipt.Owned.Length].OldHash, plan.Items[InstallReceipt.Owned.Length + 1].Target?.Hash(), plan.Original, verified);
                 var settings = Settings(fence, plan, leases, false);
                 byte[] compatibility;
                 using(var stream=payload.OpenRead()) using(var archive=new ZipArchive(stream,ZipArchiveMode.Read,false)) {
-                    var entry=archive.GetEntry("BetterAstralParty.compatibility.json") ?? throw Bad();if(entry.Length>65536) throw new ApplySafetyException(ApplyFailure.CompatibilityRequired);
-                    using(var input=entry.Open()) using(var output=new MemoryStream()) {input.CopyTo(output);compatibility=output.ToArray();}
+                    var entry=archive.GetEntry("BetterAstralParty.compatibility.json") ?? throw Bad();
+                    compatibility=Array.Empty<byte>();
+                    if(entry.Length<=65536) using(var input=entry.Open()) using(var output=new MemoryStream()) {input.CopyTo(output);compatibility=output.ToArray();}
                     var pluginEntry=archive.GetEntry(UpdateTrust.PluginPath) ?? throw Bad();
                     using(var input=pluginEntry.Open()) using(var output=new MemoryStream()) {
                         input.CopyTo(output);var target=InstalledPluginMetadata.Read(output.ToArray());
-                        if(target.Version!=UpdateVersion.Parse(verified.Version).Tag || verified.Protocol==3 && (target.UpdateProtocol!=3 || target.SettingsSchema!=verified.SettingsSchema))
+                        if(target.Version!=UpdateVersion.Parse(verified.Version).Tag || verified.Protocol==4 && (target.UpdateProtocol!=4 || target.SettingsSchema!=verified.SettingsSchema))
                             throw new ApplySafetyException(ApplyFailure.InstallationRequired);
                     }
                 }
                 var compatible=leases.Own(UpdateCompatibility.Require(fence,compatibility,gameImage));
                 var nextChannels = channels?.Applied(fence.RootIdentity.Text, verified, selection.Transition?.Operation ?? Guid.NewGuid().ToString("N"), selection.Transition);
                 var receiptBytes = receipt.Updated(verified, nextChannels); // All owned files and per-channel history share the receipt slot.
-                plan.WorkId = fence.CreatePrivateDirectory(plan.Work).Text;
+                plan.WorkId = UpdateWorkPath.Create(fence, plan.Work).Text;
                 if (settings != null) { settings.Stream.Position = 0; var backup = leases.Own(fence.OpenFile(plan.Work + "/settings.backup", true, true)); settings.Stream.CopyTo(backup.Stream); backup.Flush(); if (backup.Hash() != plan.SettingsHash) throw Bad(); }
                 var staged = UpdateStaging.Create(fence, descriptor, keyId, signature, zip, trust, context);
                 plan.Stage = staged.Directory; plan.StageId = staged.DirectoryIdentity.Text; plan.Descriptor = staged.DescriptorSha256;
                 boundary = Guarded(fence, plan, boundary,diagnosticOperation,selection.ReleaseTag);
                 using (var locked = UpdateStaging.VerifyLocked(fence, staged, trust, context)) {
                     using (var stream = locked.Payload.OpenRead()) using (var archive = new ZipArchive(stream, ZipArchiveMode.Read, false)) {
-                        for (var i = 0; i < 8; i++) {
+                        for (var i = 0; i < InstallReceipt.Owned.Length; i++) {
                             var item = plan.Items[i]; var entry = archive.GetEntry(item.Path) ?? throw Bad(); var file = leases.Own(fence.OpenFile(Slot(plan.Work, "new-", i), true, true));
                             using (var input = entry.Open()) { var buffer = new byte[32768]; long total = 0; int count;
                                 while ((count = input.Read(buffer, 0, buffer.Length)) != 0) { total += count; if (total > UpdateTrust.MaxFileBytes) throw Bad(); file.Stream.Write(buffer, 0, count); } }
@@ -378,73 +385,74 @@ namespace BetterAstralParty.Updating
                         }
                     }
                     var targetMetadata = InstalledPluginMetadata.Read(Read(plugin.New ?? throw Bad(), UpdateTrust.MaxFileBytes));
-                    if (targetMetadata.Version != UpdateVersion.Parse(verified.Version).Tag || verified.Protocol == 3 && (targetMetadata.UpdateProtocol != 3 || targetMetadata.SettingsSchema != verified.SettingsSchema)) throw new ApplySafetyException(ApplyFailure.InstallationRequired);
-                    for (var i = 8; i < 10; i++) { var file = Write(fence, Slot(plan.Work, "new-", i), i == 8 ? receiptBytes : WaterBytes(fence, verified, plan.Items[9].Target), leases);
+                    if (targetMetadata.Version != UpdateVersion.Parse(verified.Version).Tag || verified.Protocol == 4 && (targetMetadata.UpdateProtocol != 4 || targetMetadata.SettingsSchema != verified.SettingsSchema)) throw new ApplySafetyException(ApplyFailure.InstallationRequired);
+                    for (var i = InstallReceipt.Owned.Length; i < InstallReceipt.Owned.Length + 2; i++) { var file = Write(fence, Slot(plan.Work, "new-", i), i == InstallReceipt.Owned.Length ? receiptBytes : WaterBytes(fence, verified, plan.Items[InstallReceipt.Owned.Length + 1].Target), leases);
                         var item = plan.Items[i]; item.New = file; item.NewId = file.Identity.Text; item.NewHash = file.Hash(); }
                     var planBytes = Serialize(plan); var hash = UpdateTrust.Hash(planBytes); Hit(boundary, "before:prepared"); Write(fence, plan.Work + "/plan", planBytes, leases); Hit(boundary, "after:prepared");
                     locked.Recheck(); fence.AssertPrivateDirectory(plan.Work); Processes(fence);
                     compatible.Recheck(); // Last read-only compatibility check before the first owned rename.
-                    for (var i = 0; i < 9; i++) Install(fence, plan, i, boundary);
+                    for (var i = 0; i < InstallReceipt.Owned.Length + 1; i++) Install(fence, plan, i, boundary);
                     Mark(fence, plan.Work + "/commit-intent", hash, leases, "commit-intent", boundary);
-                    Install(fence, plan, 9, boundary); // High-water is last; intent makes recovery finish forward.
+                    Install(fence, plan, InstallReceipt.Owned.Length + 1, boundary); // High-water is last; intent makes recovery finish forward.
                     Mark(fence, plan.Work + "/committed", hash, leases, "committed", boundary); return TransactionResult.Committed;
                 }
             }
         }
         internal static TransactionResult Recover(WindowsFileFence fence, string work, UpdateTrust trust, UpdateContext selection, Action<string>? boundary = null,DiagnosticOperation diagnosticOperation=default)
         {
+            UpdateWorkPath.RequireContained(work,"txn");
             if (!trust.Configured) throw new UpdateValidationException(UpdateFailure.NotConfigured);
-            if (!Regex.IsMatch(work, @"\Abap-v3-txn-[0-9a-f]{32}\z")) throw Bad();
+            if (!Regex.IsMatch(work, @"\A" + UpdateWorkPath.OptionalRootPattern + @"bap-v4-txn-[0-9a-f]{32}\z")) throw Bad();
             using (var leases = new Leases()) {
-                leases.Own(OperationLock(fence)); Processes(fence); leases.Own(fence.OpenFile("AstralParty_INT.exe")); fence.AssertPrivateDirectory(work);
+                leases.Own(OperationLock(fence)); Processes(fence); leases.Own(fence.OpenExecutionBarrier("AstralParty_INT.exe")); fence.AssertPrivateDirectory(work);
                 var journal = Maybe(fence, work + "/plan", false); if (journal == null) return TransactionResult.Abandoned; leases.Own(journal);
                 var bytes = Read(journal, 16384); var plan = Parse(bytes); var hash = UpdateTrust.Hash(bytes);
                 boundary = Guarded(fence, plan, boundary,diagnosticOperation,selection.ReleaseTag);
                 if (plan.Work != work || plan.Root != fence.RootIdentity.Text || plan.WorkId != fence.DirectoryIdentity(work).Text) throw Bad();
                 fence.AssertPrivateDirectory(plan.Stage); if (plan.StageId != fence.DirectoryIdentity(plan.Stage).Text) throw Bad();
                 var evidence = new List<WindowsFileFence.FileLease>(); foreach (var name in new[] { "descriptor.bin", "signature.bin", "key-id.bin", "package.zip" }) evidence.Add(leases.Own(fence.OpenFile(plan.Stage + "/" + name)));
-                for (var i = 0; i < 10; i++) {
+                for (var i = 0; i < InstallReceipt.Owned.Length + 2; i++) {
                     var item = plan.Items[i]; item.Target = Maybe(fence, item.Path); item.Backup = Maybe(fence, Slot(work, "old-", i)); item.New = Maybe(fence, Slot(work, "new-", i));
                     foreach (var file in new[] { item.Target, item.Backup, item.New }) if (file != null) leases.Own(file); Classify(item);
                 }
                 Processes(fence); var plugin = plan.Items.Find(item => item.Path == UpdateTrust.PluginPath)!;
                 if (InstalledPluginMetadata.Read(Read(Original(plugin), UpdateTrust.MaxFileBytes)).Version != plan.Original) throw Bad();
-                var originalReceipt = InstallReceipt.Parse(Read(Original(plan.Items[8]), 16384));
-                for (var i = 0; i < 8; i++) if (plan.Items[i].OldId != "-" && plan.Items[i].OldHash != originalReceipt.Files[plan.Items[i].Path]) throw Bad();
-                var waterItem = plan.Items[9]; var oldWater = waterItem.OldId == "-" ? null : Original(waterItem);
+                var originalReceipt = InstallReceipt.Parse(Read(Original(plan.Items[InstallReceipt.Owned.Length]), 16384));
+                for (var i = 0; i < InstallReceipt.Owned.Length; i++) if (plan.Items[i].OldId != "-" && plan.Items[i].OldHash != originalReceipt.Files[plan.Items[i].Path]) throw Bad();
+                var waterItem = plan.Items[InstallReceipt.Owned.Length + 1]; var oldWater = waterItem.OldId == "-" ? null : Original(waterItem);
                 var channels = selection.RepositoryId > 0 ? Channels(fence, originalReceipt, plan.Original, oldWater, trust,leases) : null;
-                var context = Context(selection, plan.Original, channels == null ? Water(oldWater, fence) : channels.Floor(selection), channels == null ? null : selection.Channel == "Stable" ? channels.StableDescriptor : channels.BetaDescriptor);
+                var context = Context(selection, plan.Original, channels == null ? Water(oldWater, fence) : channels.Floor(selection), channels?.DescriptorFor(selection.Channel));
                 var descriptor = trust.VerifyDescriptor(Read(evidence[0], UpdateTrust.MaxDescriptorBytes), Encoding.ASCII.GetString(Read(evidence[2], 40)), Read(evidence[1], UpdateTrust.MaxSignatureBytes), context);
-                if (descriptor.DescriptorSha256 != plan.Descriptor || descriptor.Files.Count != 8) throw Bad();
+                if (descriptor.DescriptorSha256 != plan.Descriptor || descriptor.Files.Count != InstallReceipt.Owned.Length) throw Bad();
                 if (descriptor.Protocol != plan.Protocol) throw Bad(); Settings(fence, plan, leases, true);
-                if (selection.Transition != null) selection.Transition.RequireRecovery(fence, originalReceipt, plan.Items[8].OldHash, oldWater?.Hash(), plan.Original, descriptor, plan.SettingsHash);
+                if (selection.Transition != null) selection.Transition.RequireRecovery(fence, originalReceipt, plan.Items[InstallReceipt.Owned.Length].OldHash, oldWater?.Hash(), plan.Original, descriptor, plan.SettingsHash);
                 UpdatePackage.VerifyPayload(Read(evidence[3], UpdateTrust.MaxZipBytes), descriptor);
-                for (var i = 0; i < 8; i++) {
+                for (var i = 0; i < InstallReceipt.Owned.Length; i++) {
                     var item = plan.Items[i]; var signed = descriptor.Files.FindByPath(item.Path); var file = item.State == 2 ? item.Target : item.New;
                     if (item.NewHash != signed.Sha256 || file == null || file.Stream.Length != signed.Bytes) throw Bad();
                 }
-                var newReceiptFile = plan.Items[8].State == 2 ? plan.Items[8].Target : plan.Items[8].New;
+                var newReceiptFile = plan.Items[InstallReceipt.Owned.Length].State == 2 ? plan.Items[InstallReceipt.Owned.Length].Target : plan.Items[InstallReceipt.Owned.Length].New;
                 var expectedChannels = newReceiptFile == null ? null : InstallReceipt.Parse(Read(newReceiptFile, 16384)).Channels;
                 if (channels != null) {
                     if (expectedChannels == null || selection.Transition != null && expectedChannels.Operation != selection.Transition.Operation) throw Bad();
                     expectedChannels = channels.Applied(fence.RootIdentity.Text, descriptor, expectedChannels.Operation, selection.Transition);
                 }
-                if (plan.Items[8].NewHash != UpdateTrust.Hash(originalReceipt.Updated(descriptor, expectedChannels)) || plan.Items[9].NewHash != UpdateTrust.Hash(WaterBytes(fence, descriptor, oldWater))) throw Bad();
+                if (plan.Items[InstallReceipt.Owned.Length].NewHash != UpdateTrust.Hash(originalReceipt.Updated(descriptor, expectedChannels)) || plan.Items[InstallReceipt.Owned.Length + 1].NewHash != UpdateTrust.Hash(WaterBytes(fence, descriptor, oldWater))) throw Bad();
                 var newPlugin = plugin.State == 2 ? plugin.Target : plugin.New;
                 var newMetadata = InstalledPluginMetadata.Read(Read(newPlugin ?? throw Bad(), UpdateTrust.MaxFileBytes));
-                if (newMetadata.Version != UpdateVersion.Parse(descriptor.Version).Tag || descriptor.Protocol == 3 && (newMetadata.UpdateProtocol != 3 || newMetadata.SettingsSchema != descriptor.SettingsSchema)) throw Bad();
+                if (newMetadata.Version != UpdateVersion.Parse(descriptor.Version).Tag || descriptor.Protocol == 4 && (newMetadata.UpdateProtocol != 4 || newMetadata.SettingsSchema != descriptor.SettingsSchema)) throw Bad();
                 var intent = Marker(fence, work + "/commit-intent", hash, leases); var committed = Marker(fence, work + "/committed", hash, leases); var rolled = Marker(fence, work + "/rolled-back", hash, leases);
-                var states = new int[10]; for (var i = 0; i < 10; i++) states[i] = plan.Items[i].State;
+                var states = new int[InstallReceipt.Owned.Length + 2]; for (var i = 0; i < InstallReceipt.Owned.Length + 2; i++) states[i] = plan.Items[i].State;
                 var direction = UpdateRecoveryPolicy.Direction(states, intent, committed, rolled);
                 fence.AssertPrivateDirectory(work); fence.AssertPrivateDirectory(plan.Stage);
                 if (direction == RecoveryDirection.CompleteTarget) {
-                    Install(fence, plan, 9, boundary); VerifyResolved(fence, plan, true);
+                    Install(fence, plan, InstallReceipt.Owned.Length + 1, boundary); VerifyResolved(fence, plan, true);
                     if (!committed) Mark(fence, work + "/committed", hash, leases, "committed", boundary);
                     return TransactionResult.Committed;
                 }
                 if (rolled) { VerifyResolved(fence, plan, false); return TransactionResult.RolledBack; }
                 DiagnosticHub.Stage(DiagnosticFeature.Helper,DiagnosticPhase.Rollback,DiagnosticOutcome.Begin,diagnosticOperation,selection.ReleaseTag);
-                for (var i = 8; i >= 0; i--) Rollback(fence, plan, i, boundary);
+                for (var i = InstallReceipt.Owned.Length; i >= 0; i--) Rollback(fence, plan, i, boundary);
                 VerifyResolved(fence, plan, false);
                 Mark(fence, work + "/rolled-back", hash, leases, "rolled-back", boundary); return TransactionResult.RolledBack;
             }

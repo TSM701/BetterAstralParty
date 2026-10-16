@@ -9,6 +9,7 @@ internal static class Compatibility
     {
         if (Blocked.TryGetValue(feature, out var reason)) return ModText.Text(reason);
         if (feature is "Details" or "KoMinimum") return Reason("Enabled");
+        if (feature is "CounterSound" or "CounterAnimation") return Reason("CounterIndicators");
         if (feature is not ("MuteUnfocused" or "MatchFocus" or "Diagnostics" or "Notices")
             && Blocked.TryGetValue("CoreUi", out reason)) return reason;
         return null;
@@ -26,12 +27,12 @@ internal static class Compatibility
         };
         if (!Blocked.TryAdd(feature, reason)) return;
         Revision++;
-        Plugin.Logger.LogWarning($"[Compatibility] blocked={feature}; {error}");
-        Plugin.Diagnostics.Error("Compatibility." + feature, error);
+        try { Plugin.Logger.LogWarning($"[Compatibility] blocked={feature}; {error}"); } catch { }
+        try { Plugin.Diagnostics.Error("Compatibility." + feature, error); } catch { }
         foreach (var action in cleanup)
         {
             try { action(); }
-            catch (Exception ex) { Plugin.Logger.LogWarning($"[Compatibility] cleanup={feature}; {ex}"); }
+            catch (Exception ex) { try { Plugin.Logger.LogWarning($"[Compatibility] cleanup={feature}; {ex}"); } catch { } }
         }
     }
 }

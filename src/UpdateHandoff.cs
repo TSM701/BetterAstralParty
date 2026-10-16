@@ -7,13 +7,16 @@ namespace BetterAstralParty;
 
 internal sealed class UpdateHandoff(string root, UpdateTrust trust, string helperSha256 = "") : IUpdateHandoff
 {
+#if BAP_SAFETY_FIXTURE
+    internal static Action? BeforeHelperStart=null;
+#endif
     private const string HelperImage = "BetterAstralParty-UpdateHelper.exe";
     private string _helperHash = helperSha256;
     public bool Configured => trust.Configured && Volatile.Read(ref _helperHash).Length == 64;
     internal Task Initialize() {
         if (!trust.Configured || Volatile.Read(ref _helperHash).Length == 64) return Task.CompletedTask;
         using var fence = new WindowsFileFence(root);
-        Volatile.Write(ref _helperHash, HelperDelivery.Fingerprint(fence, trust, minimumProtocol: 3) ?? "");
+        Volatile.Write(ref _helperHash, HelperDelivery.Fingerprint(fence, trust, minimumProtocol: 4) ?? "");
         return Task.CompletedTask;
     }
     private sealed record Prepared(string Root, UpdateTicket Ticket, UpdateCancelSignal Signal) : IPreparedUpdate { public string Stage => Ticket.Stage; }
@@ -63,7 +66,7 @@ internal sealed class UpdateHandoff(string root, UpdateTrust trust, string helpe
         }
         token.ThrowIfCancellationRequested(); UpdateTicket.Write(fence, ticket.Stage + "/handoff.ticket", ticket.Bytes());
         if (context.Transition != null) {
-            try { UpdateTicket.Write(fence, "bap-v3-transition-" + context.Transition.Operation,
+            try { UpdateTicket.Write(fence, UpdateWorkPath.Transition(context.Transition.Operation),
                 Encoding.ASCII.GetBytes(context.Transition.Identity + "\nstage=" + ticket.Stage + "\n")); }
             catch (ApplySafetyException error) when (error.NativeError == 80 || error.NativeError == 183) { throw new AutomaticUpdateException(AutomaticUpdateStatus.Cancelled); }
         }
@@ -76,10 +79,31 @@ internal sealed class UpdateHandoff(string root, UpdateTrust trust, string helpe
         using var image = fence.OpenLaunchImage(HelperImage); if (image.Hash() != Volatile.Read(ref _helperHash)) throw new AutomaticUpdateException(AutomaticUpdateStatus.Failed);
         using var registration = token.Register(item.Signal.Set); token.ThrowIfCancellationRequested();
         var guard = UpdateFaults.Begin(fence, item.Ticket.Context, FaultPhase.Apply, item.Ticket);
-        if (token.IsCancellationRequested) { UpdateFaults.Complete(fence, guard); token.ThrowIfCancellationRequested(); }
-        var info = new ProcessStartInfo { FileName = fence.Full(HelperImage), WorkingDirectory = root, UseShellExecute = false, CreateNoWindow = true };
+        var info = new ProcessStartInfo { FileName = WindowsPath.ForProcess(fence.Full(HelperImage)), WorkingDirectory = WindowsPath.ForProcess(fence.Root), UseShellExecute = false, CreateNoWindow = true };
         info.ArgumentList.Add("--apply"); info.ArgumentList.Add(root); info.ArgumentList.Add(item.Ticket.Stage);
-        var process = Process.Start(info) ?? throw new AutomaticUpdateException(AutomaticUpdateStatus.Failed);
+        Process process;
+        try {
+#if BAP_SAFETY_FIXTURE
+            BeforeHelperStart?.Invoke();
+#endif
+            token.ThrowIfCancellationRequested();
+            process = Process.Start(info) ?? throw new AutomaticUpdateException(AutomaticUpdateStatus.Failed);
+        } catch(Exception error) {
+            if(error is OperationCanceledException) DiagnosticHub.Stage(DiagnosticFeature.Coordinator,DiagnosticPhase.HelperQueue,DiagnosticOutcome.Cancelled,DiagnosticOperation.VerifiedGuid(guard.Operation),item.Ticket.Context.ReleaseTag);
+            else DiagnosticHub.Failure(DiagnosticFeature.Coordinator,DiagnosticPhase.HelperQueue,DiagnosticCode.InterruptedUnknown,error,operation:DiagnosticOperation.VerifiedGuid(guard.Operation),targetVersion:item.Ticket.Context.ReleaseTag,
+                nativeCode:error is System.ComponentModel.Win32Exception native ? native.NativeErrorCode : error is ApplySafetyException safety ? safety.NativeError : 0,
+                applyCode:error is ApplySafetyException apply ? (int)apply.Failure : 0);
+            try {
+                item.Signal.Set();
+                try { UpdateTicket.Write(fence,item.Ticket.Stage+"/helper.cancel",Encoding.ASCII.GetBytes(UpdateTrust.Hash(item.Ticket.Bytes())+"\n")); }
+                catch(ApplySafetyException cleanup) when(cleanup.NativeError==80 || cleanup.NativeError==183) { }
+                if(!UpdateRetention.CancelUnclaimed(fence,item.Ticket,trust,unstarted:guard)) throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
+            } catch(Exception cleanup) {
+                DiagnosticHub.Failure(DiagnosticFeature.Coordinator,DiagnosticPhase.Recovery,DiagnosticCode.StorageUnavailable,cleanup,operation:DiagnosticOperation.VerifiedGuid(guard.Operation),targetVersion:item.Ticket.Context.ReleaseTag,
+                    nativeCode:cleanup is ApplySafetyException safety ? safety.NativeError : 0,applyCode:cleanup is ApplySafetyException apply ? (int)apply.Failure : 0);
+            }
+            item.Signal.Dispose();throw;
+        }
         if (token.IsCancellationRequested) { process.Dispose(); await Cancel(item); token.ThrowIfCancellationRequested(); }
         try {
             var due = DateTime.UtcNow.AddSeconds(15);
@@ -109,7 +133,11 @@ internal sealed class UpdateHandoff(string root, UpdateTrust trust, string helpe
     public Task Cancel(object prepared)
     {
         var item = (Prepared)prepared; item.Signal.Set();
-        try { using var fence = new WindowsFileFence(item.Root); item.Ticket.Recheck(fence); UpdateTicket.Write(fence, item.Ticket.Stage + "/helper.cancel", Encoding.ASCII.GetBytes(UpdateTrust.Hash(item.Ticket.Bytes()) + "\n")); }
+        try { using var fence = new WindowsFileFence(item.Root); item.Ticket.Recheck(fence);
+            try { UpdateTicket.Write(fence, item.Ticket.Stage + "/helper.cancel", Encoding.ASCII.GetBytes(UpdateTrust.Hash(item.Ticket.Bytes()) + "\n")); }
+            catch (ApplySafetyException error) when (error.NativeError == 80 || error.NativeError == 183) { }
+            UpdateRetention.CancelUnclaimed(fence, item.Ticket, trust);
+        }
         catch (ApplySafetyException error) when (error.NativeError == 80 || error.NativeError == 183) { }
         item.Signal.Dispose(); return Task.CompletedTask;
     }

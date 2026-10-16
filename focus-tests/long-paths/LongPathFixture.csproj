@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+ <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems><GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute><GenerateAssemblyInfo>false</GenerateAssemblyInfo><AssemblyName>LongPathFixture</AssemblyName><StartupObject>FixtureEntry</StartupObject><UseAppHost>false</UseAppHost><Nullable>enable</Nullable><EnableNETAnalyzers>false</EnableNETAnalyzers></PropertyGroup>
+ <ItemGroup><Compile Include="FixtureEntry.cs"/><Compile Include="$(FixtureBoundarySource)"/><Compile Include="../../updater/*.cs" Exclude="../../updater/UpdateHelperProgram.cs"/><Compile Include="../../src/Observability/*.cs"/><Compile Include="../../diagnostics/MinimalDiagnosticProjection.cs"/></ItemGroup>
+</Project>

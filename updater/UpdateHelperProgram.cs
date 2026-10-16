@@ -20,9 +20,9 @@ namespace BetterAstralParty.Updating
             AppDomain.CurrentDomain.ProcessExit+=(_,__)=>_diagnostics?.Stop(DiagnosticEndReason.ProcessExitCallback);
             try {
                 if (args.Length == 1 && args[0] == "--help") {
-                    Console.WriteLine("BetterAstralParty-UpdateHelper.exe --apply|--recover <game INT root> <bap-v3-stage-id>");
+                    Console.WriteLine("BetterAstralParty-UpdateHelper.exe --apply|--recover <game INT root> <verified-game-relative-stage-path>");
                     Console.WriteLine("Recovery requires the game/mod launcher closed; preserves backups and verifies signatures again.");
-                    Console.WriteLine("From extracted trusted bootstrap outside the game root: --install-helper <root> <bundle>; --recover-helper <root> <bap-v3-helper-id>.");
+                    Console.WriteLine("From extracted trusted bootstrap outside the game root: --install-helper <root> <bundle>; --recover-helper <root> <verified-game-relative-helper-path>.");
                     Console.WriteLine("--clean-completed <root> - removes only authenticated duplicate handoff ZIPs; preserves journals/backups."); return 0;
                 }
                 var trust = UpdateTrust.Production();
@@ -33,9 +33,9 @@ namespace BetterAstralParty.Updating
                 var allowed = Path.GetFullPath(fixtureDirectory!).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                 var temporaryDirectory = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                 if (!string.Equals(Path.GetDirectoryName(allowed), temporaryDirectory, StringComparison.OrdinalIgnoreCase)
-                    || !System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(allowed), @"\Abap-v3-helper-fixture-[a-f0-9]{32}\z")) return 65;
+                    || !System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(allowed), @"\Abap-v4-helper-fixture-[a-f0-9]{32}\z")) return 65;
                 using (var boundary = new WindowsFileFence(allowed))
-                using (var marker = boundary.OpenFile(".bap-v3-helper-fixture-root")) {
+                using (var marker = boundary.OpenFile(".bap-v4-helper-fixture-root")) {
                     var expected = System.Text.Encoding.ASCII.GetBytes("BetterAstralParty.HelperFixtureRoot/v1\n");
                     var actual = UpdateTicket.Read(marker, expected.Length);
                     if (actual.Length != expected.Length || UpdateTrust.Hash(actual) != UpdateTrust.Hash(expected)) return 65;
@@ -45,8 +45,23 @@ namespace BetterAstralParty.Updating
                 using (var boundary = new WindowsFileFence(allowed))
                 using (var key = boundary.OpenFile(keyPath.Substring(allowed.Length + 1).Replace(Path.DirectorySeparatorChar, '/')))
                     trust = new UpdateTrust(new[] { new TrustedUpdateKey("helper-fixture", new RSAParameters { Modulus = UpdateTicket.Read(key, 512), Exponent = new byte[] { 1, 0, 1 } }) });
+                PublicReleaseEligibility.FixtureRead = (uri, context, descriptor) => {
+                    if (uri == PublicReleaseEligibility.RepositoryEndpoint(context)) return PublicReleaseEligibility.FixtureMetadata(uri, context, descriptor);
+                    var source = Environment.GetEnvironmentVariable("BAP_FIXTURE_PUBLIC_RELEASE");
+                    if (source != null) {
+                        var path = Path.GetFullPath(source);
+                        if (!path.StartsWith(allowed + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Fixture release metadata outside inert root");
+                        using var boundary = new WindowsFileFence(allowed); using var file = boundary.OpenFile(path.Substring(allowed.Length + 1).Replace(Path.DirectorySeparatorChar, '/'));
+                        return UpdateTicket.Read(file, PublicReleaseEligibility.MaxReleaseBytes);
+                    }
+                    return PublicReleaseEligibility.FixtureMetadata(uri, context, descriptor);
+                };
 #else
                 if (args.Length != 3 || (args[0] != "--apply" && args[0] != "--recover" && args[0] != "--install-helper" && args[0] != "--recover-helper" && args[0] != "--clean-completed")) return 64;
+#if BAP_LAUNCHER_RECOVERY_FIXTURE
+                if (!Path.GetFullPath(args[1]).StartsWith(FixtureBoundary.Root, StringComparison.OrdinalIgnoreCase)) return 65;
+                PublicReleaseEligibility.FixtureRead = PublicReleaseEligibility.FixtureMetadata;
+#endif
 #endif
                 if (!trust.Configured) throw new UpdateValidationException(UpdateFailure.NotConfigured);
                 if (args[0] == "--install-helper" || args[0] == "--recover-helper" || args[0] == "--clean-completed") {

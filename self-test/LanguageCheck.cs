@@ -48,8 +48,7 @@ internal static class LanguageCheck
         Check(ModText.Text("생존 최소 조건") == "Minimum survival conditions", "Defender survival title");
         Check(ModText.Text("≥") == "≥" && ModText.Text("≤") == "≤", "Language-neutral KO comparisons");
         Check(ModText.Text("KO 불가") == "KO impossible"
-            && ModText.Text("확정 KO") == "Guaranteed KO"
-            && ModText.Text(MenuLayout.Help("KoMinimum").Body).Contains("best-case"), "Condition status and best-case policy in English");
+            && ModText.Text("확정 KO") == "Guaranteed KO", "Condition status in English");
         ModText.Select("한국어");
         Check(ModText.Text("KO 최소 조건") == "KO 최소 조건"
             && ModText.Text("KO 불가") == "KO 불가", "Condition status in Korean");
@@ -90,40 +89,74 @@ internal static class LanguageCheck
                     "New setting English current-state help: " + action);
             }
         }
-        Check(ModText.Text(MenuLayout.StateHelp("MatchFocus", true, "")).Contains("PvE match")
-            && ModText.Text(MenuLayout.StateHelp("MatchFocus", true, "")).Contains("taskbar")
-            && ModText.Text(MenuLayout.StateHelp("MatchFocus", false, "")).Contains("Does not focus"), "Focus help reflects PvE-only ON and inactive OFF");
-        Check(ModText.Text(MenuLayout.StateHelp("FieldZoom", true, "")).Contains("whole field")
-            && ModText.Text(MenuLayout.StateHelp("FieldZoom", false, "")).Contains("Does not apply"), "Zoom help reflects whole-field ON and inactive OFF");
-        Check(ModText.Text(MenuLayout.StateHelp("FieldBuffs", true, "")).Contains("player names, HP")
-            && ModText.Text(MenuLayout.StateHelp("FieldBuffs", true, "")).Contains("public effect icons")
-            && ModText.Text(MenuLayout.StateHelp("FieldBuffs", true, "")).Contains("Click for effect details")
-            && ModText.Text(MenuLayout.StateHelp("FieldBuffs", false, "")) == "Hides the player field indicator.", "Player field help describes only the current state");
+        Check(MenuLayout.StateHelp("MatchFocus", true, "").Contains("PvE"), "Focus help retains the PvE scope");
+        Check(MenuLayout.StateHelp("FieldZoom", true, "").Contains("휠")
+            && MenuLayout.StateHelp("FieldZoom", true, "").Contains("자유 시점"), "Camera help covers zoom and free movement");
+        Check(MenuLayout.StateHelp("FieldBuffs", true, "").Contains("HP")
+            && MenuLayout.StateHelp("FieldBuffs", true, "").Contains("공개 효과")
+            && MenuLayout.StateHelp("FieldBuffs", true, "").Contains("클릭"), "Player indicator help retains public information and detail access");
         Check(CardAdvisor.Parse("ATK +1~6.\n(Only for attacker)", 2) == new CardBonus(true, 1, 6, 2), "English ATK");
         Check(CardAdvisor.Parse("DEF +2\n(Only for defender)", 1) == new CardBonus(false, 2, 2, 1), "English DEF");
         foreach (var text in new[] { "ATK +2 (Only for defender)", "ATK +2 and draw a card", "DEF +9~2", "ATK +999" })
             Check(CardAdvisor.Parse(text, 1) == null, "Unsafe English card: " + text);
         ModText.Select("한국어"); // Existing calculation/presentation regression tests retain their baseline.
-        foreach (var action in new[] { "Enabled", "Details", "KoMinimum", "CardPopups", "BattleStatus", "ShushuShield",
-            "FieldBuffs", "FieldZoom", "MatchFocus", "Names", "Diagnostics", "MuteUnfocused", "HandLayout" })
+        var booleanActions = new[] { "Enabled", "Details", "KoMinimum", "CardPopups", "BattleStatus", "ShushuShield", "ShushuShieldRestrictions",
+            "FieldBuffs", "FieldZoom", "MatchFocus", "Names", "Diagnostics", "MuteUnfocused", "AutoThanks", "CharacterRoles", "CharacterGuide",
+            "IndicatorFade", "IndicatorHide", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "AutomaticChecks", "UpdateNotifications", "AutoDownload", "AfterExit" };
+        var padding = new[] { "이 기능을 끕니다", "다른 설정", "별도", "independent", "other settings" };
+        foreach (var action in booleanActions)
         {
-            var on = MenuLayout.StateHelp(action, true, "Hover");
-            var off = MenuLayout.StateHelp(action, false, "Hover");
-            Check(on != off, "Help must describe current state: " + action);
-            foreach (var body in new[] { on, off })
+            Check(MenuLayout.Options(action).Length == 0, "Boolean preference remains a toggle: " + action);
+            foreach (var language in new[] { "한국어", "English" })
             {
-                ModText.Select("English");
-                Check(!ModText.Text(body).Any(c => c is >= '가' and <= '힣'), "State help translation: " + action);
+                ModText.Select(language);
+                var title = ModText.Text(MenuLayout.Help(action).Title);
+                var bodies = new[] { false, true }.Select(enabled => ModText.Text(MenuLayout.StateHelp(action, enabled, ""))).ToArray();
+                Check(!string.IsNullOrWhiteSpace(title) && bodies.All(body => !string.IsNullOrWhiteSpace(body))
+                    && bodies[0] != bodies[1], "Nonempty distinct current-state help: " + language + "/" + action);
+                foreach (var body in bodies)
+                    Check(!padding.Any(phrase => body.Contains(phrase, StringComparison.OrdinalIgnoreCase)), "No generic state-help padding: " + language + "/" + action);
+                Check(language == "한국어" ? bodies.All(body => body.Any(c => c is >= '가' and <= '힣'))
+                    : !title.Any(c => c is >= '가' and <= '힣') && bodies.All(body => !body.Any(c => c is >= '가' and <= '힣')),
+                    "Boolean title and state help translated: " + language + "/" + action);
             }
         }
-        foreach (var action in new[] { "Language", "InputAttention", "HandLayout" })
+        var sections = MenuLayout.Sections;
+        Check(sections.Any(section => section.General) && sections.Any(section => !section.General)
+            && sections.Select(section => section.Title).Distinct().Count() == sections.Length, "Both settings tabs have distinct category titles");
+        var categoryActions = sections.SelectMany(section => section.Actions).ToArray();
+        Check(sections.Single(section => section.Title == "카드").Actions.SequenceEqual(new[] { "HandLayout", "CardPopups" })
+            && sections.Single(section => section.Title == "캐릭터").Actions.SequenceEqual(new[] { "Names", "CharacterRoles", "CharacterGuide" })
+            && !categoryActions.Contains("CardTargetButtons"), "Cards and characters are separate; target button priority is always applied");
+        Check(MenuLayout.SectionLineHeight == 2, "Category separator uses a thin two-pixel fill");
+        foreach (var textWidth in new[] { 44f, 88f, 170f, 240f, 460f, 480f, 700f })
+        {
+            var line = MenuLayout.SectionLine(10, 480, textWidth, 490);
+            Check(line.X == Math.Min(490, 10 + Math.Min(480, textWidth) + 12)
+                && line.Width >= 0 && line.X + line.Width == 490, "Separator follows rendered text with a gap and a fixed right edge");
+        }
+        foreach (var textWidth in new[] { 0f, -1f, float.NaN, float.PositiveInfinity })
+            Check(MenuLayout.SectionLine(10, 480, textWidth, 490) == (490f, 0f), "Unavailable text measurement hides only the separator");
+        Check(categoryActions.Distinct().Count() == categoryActions.Length && booleanActions.All(categoryActions.Contains), "Every boolean preference belongs to exactly one category");
+        foreach (var section in sections)
+        foreach (var language in new[] { "한국어", "English" })
+        {
+            ModText.Select(language);
+            var title = ModText.Text(section.Title);
+            Check(!string.IsNullOrWhiteSpace(title) && (language == "한국어" ? title == section.Title
+                : title != section.Title && !title.Any(c => c is >= '가' and <= '힣')), "Category title translation: " + language + "/" + section.Title);
+        }
+        ModText.Select("English");
+        foreach (var action in new[] { "Language", "InputAttention", "HandLayout", "UpdateChannel" })
         {
             var modes = action == "Language" ? new[] { "Auto", "한국어", "English" }
-                : action == "InputAttention" ? new[] { "Off", "Windows", "Taskbar" } : new[] { "Click", "Hover" };
-            var bodies = modes.Select(mode => MenuLayout.StateHelp(action, true, mode)).ToArray();
+                : action == "InputAttention" ? new[] { "Off", "Windows", "Taskbar" }
+                : action == "UpdateChannel" ? new[] { "Stable", "PreRelease", "Beta" } : new[] { "Native", "Click", "Hover" };
+            var bodies = modes.Select(mode => MenuLayout.OptionHelp(action, mode)).ToArray();
             Check(bodies.Distinct().Count() == modes.Length, "Separate descriptions for every mode: " + action);
             foreach (var body in bodies)
-                Check(!ModText.Text(body).Any(c => c is >= '가' and <= '힣'), "Mode help translation: " + action);
+                Check(!string.IsNullOrWhiteSpace(body) && !ModText.Text(body).Any(c => c is >= '가' and <= '힣')
+                    && !padding.Any(phrase => ModText.Text(body).Contains(phrase, StringComparison.OrdinalIgnoreCase)), "Specific translated mode help: " + action);
         }
         foreach (var action in new[] { "Language", "HandLayout", "InputAttention" })
         {
@@ -151,7 +184,8 @@ internal static class LanguageCheck
         Check(!MenuLayout.StateHelp("Names", true, "").Contains("이명")
             && !MenuLayout.StateHelp("Names", false, "").Contains("본명"), "Names help must not describe the other state");
         Check(!MenuLayout.Help("Details").Body.Contains("KO·생존")
-            && MenuLayout.StateHelp("KoMinimum", true, "").Contains("생존 최소 조건")
+            && MenuLayout.StateHelp("KoMinimum", true, "").Contains("KO")
+            && MenuLayout.StateHelp("KoMinimum", true, "").Contains("생존")
             && MenuLayout.Options("KoMinimum").Length == 0, "Separate binary indicator help");
         ModText.Select("한국어");
         Console.WriteLine("Korean/English auto/manual modes, UI coverage, tabs and English card parsing passed.");

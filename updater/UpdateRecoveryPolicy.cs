@@ -15,21 +15,21 @@ namespace BetterAstralParty.Updating
         private static ApplySafetyException Bad() { return new ApplySafetyException(ApplyFailure.RecoveryRequired); }
         internal static RecoveryDirection Direction(int[] states, bool intent, bool committed, bool rolled)
         {
-            if (states.Length != 10 || committed && !intent || rolled && intent) throw Bad();
+            if (states.Length != InstallReceipt.Owned.Length + 2 || committed && !intent || rolled && intent) throw Bad();
             foreach (var state in states) if (state < 0 || state > 2) throw Bad();
             if (intent) {
-                for (var i = 0; i < 9; i++) if (states[i] != 2) throw Bad();
-                if (committed && states[9] != 2) throw Bad();
+                for (var i = 0; i < states.Length - 1; i++) if (states[i] != 2) throw Bad();
+                if (committed && states[states.Length - 1] != 2) throw Bad();
                 return RecoveryDirection.CompleteTarget;
             }
-            if (states[9] != 0) throw Bad();
+            if (states[states.Length - 1] != 0) throw Bad();
             if (rolled) foreach (var state in states) if (state != 0) throw Bad();
             return RecoveryDirection.RestoreOriginal;
         }
         internal static RecoveryEntry? Select(List<RecoveryEntry> entries, string descriptor, string? work)
         {
             RecoveryEntry? selected = null;
-            if (work != null && !Regex.IsMatch(work, @"\Abap-v3-txn-[0-9a-f]{32}\z")) throw Bad();
+            if (work != null && !Regex.IsMatch(work, @"\A" + UpdateWorkPath.OptionalRootPattern + @"bap-v4-txn-[0-9a-f]{32}\z")) throw Bad();
             foreach (var entry in entries) {
                 if (work != null && entry.Work == work) {
                     if (selected != null || entry.Descriptor != descriptor) throw Bad(); selected = entry;
@@ -62,7 +62,7 @@ namespace BetterAstralParty.Updating
         }
         internal static byte[] Attempt(string ticketHash, string work)
         {
-            if (!Regex.IsMatch(ticketHash, @"\A[0-9A-F]{64}\z") || !Regex.IsMatch(work, @"\Abap-v3-txn-[0-9a-f]{32}\z")) throw Bad();
+            if (!Regex.IsMatch(ticketHash, @"\A[0-9A-F]{64}\z") || !Regex.IsMatch(work, @"\A" + UpdateWorkPath.OptionalRootPattern + @"bap-v4-txn-[0-9a-f]{32}\z")) throw Bad();
             return Encoding.ASCII.GetBytes("BetterAstralParty.HelperAttempt/v1\nticket=" + ticketHash + "\nwork=" + work + "\n");
         }
         internal static string ParseAttempt(byte[] bytes, string ticketHash)
@@ -79,7 +79,7 @@ namespace BetterAstralParty.Updating
         internal static void RequireNoUntrackedWork(WindowsFileFence fence, string? work)
         {
             if (work == null) return;
-            if (!Regex.IsMatch(work, @"\Abap-v3-txn-[0-9a-f]{32}\z")) throw Bad();
+            if (!Regex.IsMatch(work, @"\A" + UpdateWorkPath.OptionalRootPattern + @"bap-v4-txn-[0-9a-f]{32}\z")) throw Bad();
             try { fence.DirectoryIdentity(work); }
             catch (ApplySafetyException error) when (error.NativeError == 2) { return; }
             // A missing journal in an existing attempt directory is uncertain. Retain
@@ -90,7 +90,7 @@ namespace BetterAstralParty.Updating
         {
             if (!Enum.IsDefined(typeof(RecoveryOutcome), outcome)) throw Bad();
             var attempt = work == null ? "-" : work;
-            if (!Regex.IsMatch(ticketHash, @"\A[0-9A-F]{64}\z") || work != null && !Regex.IsMatch(work, @"\Abap-v3-txn-[0-9a-f]{32}\z") || work == null && outcome != RecoveryOutcome.NoChanges) throw Bad();
+            if (!Regex.IsMatch(ticketHash, @"\A[0-9A-F]{64}\z") || work != null && !Regex.IsMatch(work, @"\A" + UpdateWorkPath.OptionalRootPattern + @"bap-v4-txn-[0-9a-f]{32}\z") || work == null && outcome != RecoveryOutcome.NoChanges) throw Bad();
             return Encoding.ASCII.GetBytes("BetterAstralParty.HelperRecovery/v1\nticket=" + ticketHash + "\nwork=" + attempt + "\noutcome=" + outcome + "\n");
         }
         internal static RecoveryOutcome ParseResolution(byte[] bytes, string ticketHash, string? work)

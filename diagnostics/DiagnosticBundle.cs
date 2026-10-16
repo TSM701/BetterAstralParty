@@ -41,7 +41,7 @@ namespace BetterAstralParty.Diagnostics
         {
             module = modulePresent; detail = requestedDetailed; failed = storageFailed; recording = isRecording && !storageFailed;
             dropped = Math.Max(0, Math.Min(1000000000L, droppedEvents));
-            version = Regex.IsMatch(modVersion ?? "", @"\A[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}(?:-(?:rc|beta|alpha|dev)(?:\.[0-9]{1,6}){0,3})?(?:\+[0-9A-Fa-f]{1,64})?\z", RegexOptions.CultureInvariant) ? modVersion : "unknown";
+            version = Regex.IsMatch(modVersion ?? "", MinimalDiagnosticProjection.VersionPattern, RegexOptions.CultureInvariant) ? modVersion : "unknown";
             build = Regex.IsMatch(buildId ?? "", @"\A(?:[0-9A-F]{32}|[0-9A-F]{64})\z", RegexOptions.CultureInvariant) ? buildId : "unknown";
             Guid value; session = Guid.TryParseExact(processSession, "N", out value) ? value.ToString("N") : "";
             captured = captureUtc.Kind == DateTimeKind.Utc ? captureUtc : DateTime.MinValue;
@@ -223,7 +223,7 @@ namespace BetterAstralParty.Diagnostics
                                 {
                                     // Metadata only, no assembly load. The lease prevents rename/delete.
                                     string candidate = FileVersionInfo.GetVersionInfo(dll.FullPath).ProductVersion ?? "";
-                                    if (Regex.IsMatch(candidate, @"\A[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}(?:\.[0-9]{1,5}|-(?:rc|beta|alpha)\.[0-9]{1,5})?\z", RegexOptions.CultureInvariant)) version = candidate;
+                                    if (Version.IsMatch(candidate)) version = candidate;
                                 }
                             }
                         }
@@ -341,7 +341,7 @@ namespace BetterAstralParty.Diagnostics
                         status = "complete"; var names = new List<string>();
                         try
                         {
-                            foreach (string candidate in Directory.EnumerateFileSystemEntries(root.Root))
+                            foreach (string candidate in Directory.EnumerateFileSystemEntries(Fence.IoPath(root.Root)))
                             {
                                 if (scanned == MaxDirectoryEntries) { status = "directory-scan-limit"; break; }
                                 scanned++; string name = Path.GetFileName(candidate);
@@ -398,10 +398,17 @@ namespace BetterAstralParty.Diagnostics
         {
             private readonly List<string> files = new List<string>(), roots = new List<string>(), observations = new List<string>();
             private long reserved; private int atomicCount;
-            private static readonly Regex WorkNames = Pattern(@"\Abap-(?:v3-)?(helper|helperbridge|helperauto|wholeintent|wholehist|txn|stage)-[a-f0-9]{32}\z");
+            private static readonly Regex WorkNames = Pattern(@"\Abap-(?:v[34]-)?(helper|helperbridge|helperauto|wholeintent|wholehist|txn|stage)-[a-f0-9]{32}\z");
+            private static readonly Regex ContainedWorkNames = Pattern(@"\Abap-v4-(helper|helperbridge|helperauto|wholeintent|wholehist|txn|stage)-[a-f0-9]{32}\z");
+            private static readonly Regex ContainedTransitions = Pattern(@"\Abap-v4-transition-[a-f0-9]{32}\z");
             private static readonly Regex GenerationNames = Pattern(@"\A[a-f0-9]{32}\z");
-            private static readonly Regex RootMarkers = Pattern(@"\A(?:bap-(?:v3-)?transition-|BetterAstralParty\.reinstall(?:-v3)?\.completed-|BetterAstralParty\.update(?:-v3)?\.version\.uninstalled-)[a-f0-9]{32}\z");
+            private static readonly Regex EmergencyNames = Pattern(@"\ABetterAstralParty-emergency-[a-f0-9]{32}\z");
+            private static readonly Regex EmergencyBackupNames = Pattern(@"\Aemergency-[a-f0-9]{32}\z");
+            private static readonly Regex EmergencyMarkers = Pattern(@"\A(?:emergency(?:-completed)?\.json|[0-9]{2}\.(?:detaching|detached)\.json)\z");
+            private static readonly Regex RootMarkers = Pattern(@"\A(?:bap-(?:v[34]-)?transition-|BetterAstralParty\.reinstall(?:-v[34])?\.completed-|BetterAstralParty\.update(?:-v[34])?\.version\.uninstalled-)[a-f0-9]{32}\z");
             private static readonly Regex AtomicMarkers = Pattern(@"\A(plan|descriptor|signature|image|receipt|committed)-pending-[a-f0-9]{32}\z");
+            private static readonly Regex HelperAtomicMarkers = Pattern(@"\A(plan|descriptor|signature|image|receipt|committed|ordinary-repair)-pending-[a-f0-9]{32}\z");
+            private static readonly Regex HelperAutoAtomicMarkers = Pattern(@"\A(plan|descriptor|signature|image|receipt|committed|incoming-(?:descriptor|signature|image)|old-image|old-receipt)-pending-[a-f0-9]{32}\z");
             internal void RootStatus(string id, string status) { roots.Add("{\"source\":" + Quote(id) + ",\"status\":" + Quote(status) + "}"); }
             private void Observe(string id, string code, bool? potential)
             {
@@ -436,12 +443,12 @@ namespace BetterAstralParty.Diagnostics
                     + ",\"sha256\":" + (hash == null ? "null" : Quote(hash)) + ",\"status\":" + Quote(status) + ",\"hresult\":" + Quote("0x" + hresult.ToString("X8", CultureInfo.InvariantCulture)) + "}");
                 return present;
             }
-            private List<string> Scan(Fence root, Regex pattern, string id)
+            private List<string> Scan(Fence root, Regex pattern, string id, int limit = MaxRecoveryDirectories)
             {
                 var names = new List<string>(); int scanned = 0, matched = 0; string status = "complete";
                 try
                 {
-                    foreach (string candidate in Directory.EnumerateFileSystemEntries(root.Root))
+                    foreach (string candidate in Directory.EnumerateFileSystemEntries(Fence.IoPath(root.Root)))
                     {
                         if (scanned == MaxDirectoryEntries) { status = "directory-scan-limit"; break; }
                         scanned++; string name = Path.GetFileName(candidate);
@@ -450,34 +457,23 @@ namespace BetterAstralParty.Diagnostics
                 }
                 catch { status = "enumeration-unavailable"; }
                 names.Sort(StringComparer.Ordinal); matched = names.Count;
-                if (matched > MaxRecoveryDirectories) names.RemoveRange(MaxRecoveryDirectories, matched - MaxRecoveryDirectories);
+                if (matched > limit) names.RemoveRange(limit, matched - limit);
                 roots.Add("{\"source\":" + Quote(id) + ",\"status\":" + Quote(status) + ",\"scannedEntries\":" + scanned
-                    + ",\"matchedEntries\":" + matched + ",\"limitOmitted\":" + Math.Max(0, matched - MaxRecoveryDirectories) + "}");
+                    + ",\"matchedEntries\":" + matched + ",\"limitOmitted\":" + Math.Max(0, matched - limit) + "}");
                 return names;
             }
-            internal void Game(Fence game)
+            private void Work(Fence parent, string name, string kind, string id)
             {
-                RootStatus("game", "pinned-selected-root");
-                string[] owned = { "AstralParty_INT.exe", "AstralParty-Vanilla.cmd", "BepInEx/plugins/BetterAstralParty/BetterAstralParty.dll", "BetterAstralParty-Launcher.exe",
-                    "BetterAstralParty-Mod.cmd", "BetterAstralParty-Steam.ps1", "BetterAstralParty.compatibility.json", "check-compatibility.ps1", "steam-shortcut.ps1",
-                    "BetterAstralParty-UpdateHelper.exe", "BetterAstralParty.helper.receipt", "BetterAstralParty.install.json", "BetterAstralParty.update-v3.version", "BetterAstralParty.update.version", "BetterAstralParty.update.lock" };
-                foreach (string path in owned) File(game, path, "game/" + path);
-                string[] pending = { "BetterAstralParty.reinstall-v3.pending", "BetterAstralParty.update-v3.failure", "BetterAstralParty.update-v3.operation", "BetterAstralParty.update-v3.preferences-failed", "BetterAstralParty.update-v3.failed", "BetterAstralParty.reinstall.pending", "BetterAstralParty.update.failure", "BetterAstralParty.update.operation",
-                    "BetterAstralParty.update.preferences-failed", "BetterAstralParty.update.failed" };
-                foreach (string path in pending) Observe("game/" + path, "root-marker-observed", File(game, path, "game/" + path));
-                int alias = 0;
-                foreach (string name in Scan(game, WorkNames, "game/work-directories"))
-                {
-                    string kind = WorkNames.Match(name).Groups[1].Value, id = "game/" + kind + "/" + (++alias).ToString("D2", CultureInfo.InvariantCulture);
                     try
                     {
-                        using (var held = game.Open(name, true))
-                        using (var work = new Fence(Path.Combine(game.Root, name)))
+                        using (var held = parent.Open(name, true))
+                        using (var work = new Fence(Path.Combine(parent.Root, name)))
                         {
                             string[] markers = kind == "stage" ? new[] { "descriptor.bin", "signature.bin", "key-id.bin", "handoff.ticket", "helper.owner", "helper.ready", "helper.cancel", "helper.attempt", "helper.recovery" }
                                 : kind == "wholeintent" || kind == "wholehist" ? new[] { "plan", "target-receipt", "signed-update.descriptor", "signed-update.signature", "committed", "cancelled" }
                                 : kind == "txn" ? new[] { "plan", "commit-intent", "committed", "rolled-back" }
-                                : kind == "helper" ? new[] { "plan", "descriptor", "signature", "receipt", "committed" }
+                                : kind == "helper" ? new[] { "plan", "descriptor", "signature", "receipt", "ordinary-repair", "committed" }
+                                : kind == "helperauto" ? new[] { "plan", "incoming-descriptor", "incoming-signature", "incoming-image", "old-image", "old-receipt", "committed" }
                                 : new[] { "plan", "committed" };
                             bool? plan = null, terminal = false;
                             foreach (string marker in markers)
@@ -491,22 +487,65 @@ namespace BetterAstralParty.Diagnostics
                             if (kind == "helper" || kind == "helperauto" || kind == "helperbridge")
                             {
                                 int tempAlias = 0;
-                                foreach (string temp in Scan(work, AtomicMarkers, id + "/atomic-markers"))
+                                var atomicMarkers = kind == "helperauto" ? HelperAutoAtomicMarkers : kind == "helper" ? HelperAtomicMarkers : AtomicMarkers;
+                                foreach (string temp in Scan(work, atomicMarkers, id + "/atomic-markers"))
                                 {
                                     if (atomicCount == MaxRecoveryDirectories) { RootStatus(id + "/atomic-markers", "file-limit"); break; }
                                     atomicCount++;
                                     Observe(id + "/atomic-marker/" + (++tempAlias).ToString("D2", CultureInfo.InvariantCulture), "unpublished-marker-observed",
-                                        File(work, temp, id + "/" + AtomicMarkers.Match(temp).Groups[1].Value + "-pending/" + tempAlias.ToString("D2", CultureInfo.InvariantCulture)));
+                                        File(work, temp, id + "/" + atomicMarkers.Match(temp).Groups[1].Value + "-pending/" + tempAlias.ToString("D2", CultureInfo.InvariantCulture)));
                                 }
                             }
                         }
                     }
                     catch { RootStatus(id, "unsafe-or-unreadable"); Observe(id, "work-unavailable", null); }
+            }
+            internal void Game(Fence game)
+            {
+                RootStatus("game", "pinned-selected-root");
+                string[] owned = { "AstralParty_INT.exe", "AstralParty-Vanilla.cmd", "BepInEx/plugins/BetterAstralParty/BetterAstralParty.dll", "BetterAstralParty-Launcher.exe",
+                    "BetterAstralParty-Mod.cmd", "BetterAstralParty-Steam.ps1", "BetterAstralParty.compatibility.json", "check-compatibility.ps1", "steam-shortcut.ps1",
+                    "BetterAstralParty-UpdateHelper.exe", "BetterAstralParty.helper.receipt", "BetterAstralParty.install.json", "BetterAstralParty.update-v4.version", "BetterAstralParty.update-v3.version", "BetterAstralParty.update.version", "BetterAstralParty.update.lock" };
+                foreach (string path in owned) File(game, path, "game/" + path);
+                string[] pending = { "BetterAstralParty.reinstall-v4.pending", "BetterAstralParty.update-v4.failure", "BetterAstralParty.update-v4.operation", "BetterAstralParty.update-v4.preferences-failed", "BetterAstralParty.update-v4.failed", "BetterAstralParty.reinstall-v3.pending", "BetterAstralParty.update-v3.failure", "BetterAstralParty.update-v3.operation", "BetterAstralParty.update-v3.preferences-failed", "BetterAstralParty.update-v3.failed", "BetterAstralParty.reinstall.pending", "BetterAstralParty.update.failure", "BetterAstralParty.update.operation",
+                    "BetterAstralParty.update.preferences-failed", "BetterAstralParty.update.failed" };
+                foreach (string path in pending) Observe("game/" + path, "root-marker-observed", File(game, path, "game/" + path));
+                int alias = 0, workRemaining = MaxRecoveryDirectories;
+                var flatWork = Scan(game, WorkNames, "game/work-directories", workRemaining);
+                workRemaining -= flatWork.Count;
+                foreach (string name in flatWork)
+                    Work(game, name, WorkNames.Match(name).Groups[1].Value, "game/" + WorkNames.Match(name).Groups[1].Value + "/" + (++alias).ToString("D2", CultureInfo.InvariantCulture));
+                try
+                {
+                    using (var held = game.Open("BetterAstralParty.Update", true))
+                    using (var contained = new Fence(Path.Combine(game.Root, "BetterAstralParty.Update")))
+                    {
+                        RootStatus("game/work-v4", "pinned-contained-selected-root");
+                        alias = 0;
+                        foreach (string name in Scan(contained, ContainedWorkNames, "game/work-v4/directories", workRemaining))
+                            Work(contained, name, ContainedWorkNames.Match(name).Groups[1].Value, "game/work-v4/" + ContainedWorkNames.Match(name).Groups[1].Value + "/" + (++alias).ToString("D2", CultureInfo.InvariantCulture));
+                        alias = 0;
+                        foreach (string name in Scan(contained, ContainedTransitions, "game/work-v4/transitions"))
+                        {
+                            string id = "game/work-v4/transition/" + (++alias).ToString("D2", CultureInfo.InvariantCulture);
+                            Observe(id, "transition-marker-observed", File(contained, name, id));
+                        }
+                    }
+                }
+                catch (FileNotFoundException) { RootStatus("game/work-v4", "missing"); }
+                catch (DirectoryNotFoundException) { RootStatus("game/work-v4", "missing"); }
+                catch { RootStatus("game/work-v4", "unsafe-or-unreadable"); }
+                alias = 0;
+                foreach (string name in Scan(game, EmergencyNames, "game/emergency-quarantine"))
+                {
+                    string id = "game/emergency/" + (++alias).ToString("D2", CultureInfo.InvariantCulture);
+                    try { using (var held = game.Open(name, true)) RootStatus(id, "retained-quarantine-contents-excluded"); }
+                    catch { RootStatus(id, "unsafe-or-unreadable"); }
                 }
                 alias = 0;
                 foreach (string name in Scan(game, RootMarkers, "game/generation-markers"))
                 {
-                    string kind = name.StartsWith("bap-transition-", StringComparison.Ordinal) || name.StartsWith("bap-v3-transition-", StringComparison.Ordinal) ? "transition" : name.StartsWith("BetterAstralParty.reinstall.", StringComparison.Ordinal) || name.StartsWith("BetterAstralParty.reinstall-v3.", StringComparison.Ordinal) ? "reinstall-completed" : "archived-version";
+                    string kind = name.StartsWith("bap-transition-", StringComparison.Ordinal) || name.StartsWith("bap-v3-transition-", StringComparison.Ordinal) || name.StartsWith("bap-v4-transition-", StringComparison.Ordinal) ? "transition" : name.StartsWith("BetterAstralParty.reinstall.", StringComparison.Ordinal) || name.StartsWith("BetterAstralParty.reinstall-v3.", StringComparison.Ordinal) || name.StartsWith("BetterAstralParty.reinstall-v4.", StringComparison.Ordinal) ? "reinstall-completed" : "archived-version";
                     string id = "game/" + kind + "/" + (++alias).ToString("D2", CultureInfo.InvariantCulture);
                     bool? present = File(game, name, id);
                     if (kind == "transition") Observe(id, "transition-marker-observed", present);
@@ -514,38 +553,56 @@ namespace BetterAstralParty.Diagnostics
             }
             internal void Backups(Fence game, string localLogs)
             {
-                if (String.IsNullOrWhiteSpace(localLogs)) { RootStatus("installer-backups", "not-selected"); return; }
+                Backups(game, localLogs, "v4");
+                Backups(game, localLogs, "v3");
+            }
+            private void Backups(Fence game, string localLogs, string generation)
+            {
+                var label = generation == "v3" ? "installer-backups" : "installer-backups-v4";
+                if (String.IsNullOrWhiteSpace(localLogs)) { RootStatus(label, "not-selected"); return; }
                 try
                 {
-                    string logs = Path.GetFullPath(localLogs).TrimEnd(Path.DirectorySeparatorChar), parent = Path.GetDirectoryName(logs);
+                    string logs = Fence.Canonical(localLogs), parent = Fence.Parent(logs);
                     if (!String.Equals(Path.GetFileName(logs), "Logs", StringComparison.OrdinalIgnoreCase)
                         || !String.Equals(Path.GetFileName(parent), "BetterAstralParty", StringComparison.OrdinalIgnoreCase))
-                    { RootStatus("installer-backups", "not-known-log-root"); return; }
+                    { RootStatus(label, "not-known-log-root"); return; }
                     string key;
                     using (var sha = SHA256.Create()) key = BitConverter.ToString(sha.ComputeHash(Utf8.GetBytes(game.Root.TrimEnd('\\').ToLowerInvariant()))).Replace("-", "");
-                    using (var backups = new Fence(Path.Combine(parent, "Backups", "v3", key)))
+                    using (var backups = new Fence(Path.Combine(parent, "Backups", generation, key)))
                     {
-                        RootStatus("installer-backups", "pinned-target-root");
-                        Observe("installer-backups/pending.json", "installer-pending-marker-observed", File(backups, "pending.json", "installer-backups/pending.json"));
-                        File(backups, "pending.json.lock", "installer-backups/pending.json.lock");
+                        RootStatus(label, "pinned-target-root");
+                        Observe(label + "/pending.json", "installer-pending-marker-observed", File(backups, "pending.json", label + "/pending.json"));
+                        File(backups, "pending.json.lock", label + "/pending.json.lock");
                         int alias = 0;
-                        foreach (string name in Scan(backups, GenerationNames, "installer-backups/generations"))
+                        foreach (string name in Scan(backups, GenerationNames, label + "/generations"))
                         {
-                            string id = "installer-backups/generation/" + (++alias).ToString("D2", CultureInfo.InvariantCulture);
+                            string id = label + "/generation/" + (++alias).ToString("D2", CultureInfo.InvariantCulture);
                             try { using (var held = backups.Open(name, true)) File(backups, name + "/completed.json", id + "/completed.json"); }
                             catch { RootStatus(id, "unsafe-or-unreadable"); }
                         }
+                        alias = 0;
+                        foreach (string name in Scan(backups, EmergencyBackupNames, label + "/emergency"))
+                        {
+                            string id = label + "/emergency/" + (++alias).ToString("D2", CultureInfo.InvariantCulture);
+                            try {
+                                using (var held = backups.Open(name, true))
+                                using (var emergency = new Fence(Path.Combine(backups.Root, name))) {
+                                    foreach (string marker in Scan(emergency, EmergencyMarkers, id + "/markers"))
+                                        File(emergency, marker, id + "/" + marker);
+                                }
+                            } catch { RootStatus(id, "unsafe-or-unreadable"); }
+                        }
                     }
                 }
-                catch (FileNotFoundException) { RootStatus("installer-backups", "missing"); }
-                catch (DirectoryNotFoundException) { RootStatus("installer-backups", "missing"); }
-                catch { RootStatus("installer-backups", "unsafe-or-unreadable"); }
+                catch (FileNotFoundException) { RootStatus(label, "missing"); }
+                catch (DirectoryNotFoundException) { RootStatus(label, "missing"); }
+                catch { RootStatus(label, "unsafe-or-unreadable"); }
             }
             internal string Json(bool gameValid)
             {
                 return "{\"schema\":1,\"contentsIncluded\":false,\"installationVerified\":false,\"gameMarkersValidated\":" + (gameValid ? "true" : "false")
                     + ",\"recoveryAuthenticated\":false,\"identities\":\"bundle-local-aliases\",\"observationsAreDiagnosis\":false,\"observedAt\":\"collection-time\",\"historyReconstructed\":false"
-                    + ",\"expectedLaunchFiles\":[\"game/AstralParty_INT.exe\",\"game/BetterAstralParty-Steam.ps1\",\"game/check-compatibility.ps1\",\"game/BetterAstralParty-Launcher.exe\"],\"hashReservedBytes\":" + reserved
+                    + ",\"expectedLaunchFiles\":[\"game/AstralParty_INT.exe\",\"game/BepInEx/plugins/BetterAstralParty/BetterAstralParty.dll\",\"game/BetterAstralParty.compatibility.json\",\"game/BetterAstralParty-Launcher.exe\"],\"hashReservedBytes\":" + reserved
                     + ",\"limits\":{\"directoryEntries\":512,\"matchingEntriesPerDirectory\":64,\"atomicFilesTotal\":64,\"fileBytes\":67108864,\"hashTotalBytes\":67108864},\"roots\":["
                     + String.Join(",", roots.ToArray()) + "],\"files\":[" + String.Join(",", files.ToArray()) + "],\"observations\":[" + String.Join(",", observations.ToArray()) + "]}\n";
             }
@@ -562,13 +619,12 @@ namespace BetterAstralParty.Diagnostics
                     hash.TransformBlock(buffer, 0, count, buffer, 0); read += count;
                 }
                 hash.TransformFinalBlock(buffer, 0, 0);
-                FileInformation after; var path = new StringBuilder(512);
-                uint pathLength = GetFinalPathNameByHandleW(file.Stream.SafeFileHandle, path, 512, 0);
+                FileInformation after; string path = FinalPath(file.Stream.SafeFileHandle);
                 if (!GetFileInformationByHandle(file.Stream.SafeFileHandle, out after)
                     || ((long)after.SizeHigh << 32 | after.SizeLow) != file.Length
                     || DateTime.FromFileTimeUtc(((long)after.WriteHigh << 32) | after.WriteLow) != file.Modified
-                    || (after.Attributes & 0x410) != 0 || after.Links != 1 || pathLength == 0 || pathLength >= 512
-                    || !String.Equals(path.ToString(), @"\\?\" + file.FullPath, StringComparison.OrdinalIgnoreCase)) return null;
+                    || (after.Attributes & 0x410) != 0 || after.Links != 1
+                    || !String.Equals(path, Fence.IoPath(file.FullPath), StringComparison.OrdinalIgnoreCase)) return null;
                 return BitConverter.ToString(hash.Hash).Replace("-", "");
             }
         }
@@ -580,7 +636,7 @@ namespace BetterAstralParty.Diagnostics
                 var matches = new List<KeyValuePair<string, DateTime>>(); int scanned = 0, rejected = 0;
                 try
                 {
-                    foreach (var candidate in Directory.EnumerateFileSystemEntries(root.Root))
+                    foreach (var candidate in Directory.EnumerateFileSystemEntries(Fence.IoPath(root.Root)))
                     {
                         if (++scanned > MaxDirectoryEntries) { rows.Add(new Row { Source = id, Status = "directory-scan-limit" }); break; }
                         string name = Path.GetFileName(candidate);
@@ -621,9 +677,7 @@ namespace BetterAstralParty.Diagnostics
                     FileInformation after;
                     if (!GetFileInformationByHandle(file.Stream.SafeFileHandle, out after)
                         || DateTime.FromFileTimeUtc(((long)after.WriteHigh << 32) | after.WriteLow) != file.Modified) row.Changing = true;
-                    var afterPath = new StringBuilder(512);
-                    if (GetFinalPathNameByHandleW(file.Stream.SafeFileHandle, afterPath, 512, 0) == 0
-                        || !String.Equals(afterPath.ToString(), @"\\?\" + file.FullPath, StringComparison.OrdinalIgnoreCase)) row.Changing = true;
+                    if (!String.Equals(FinalPath(file.Stream.SafeFileHandle), Fence.IoPath(file.FullPath), StringComparison.OrdinalIgnoreCase)) row.Changing = true;
                     if (used != bytes.Length) { row.Status = "changed-during-read"; return; }
                     string text;
                     if (bytes.Length >= 2 && bytes[0] == 0xff && bytes[1] == 0xfe) text = new UnicodeEncoding(false, false, true).GetString(bytes, 2, bytes.Length - 2);
@@ -665,9 +719,9 @@ namespace BetterAstralParty.Diagnostics
         private static readonly Regex RecordTime = Pattern(@"\A(?<time>\d{4}-\d{2}-\d{2}T[^|]{8,45}) \| (?<body>.*)\z");
         private static readonly Regex CombatPrefix = Pattern(@"\Acombat=[0-9a-f]{12}-[0-9]{1,6}; ");
         private static readonly Regex Number = Pattern(@"\A-?[0-9]{1,7}(?:\.[0-9]{1,6})?\z");
-        private static readonly Regex Version = Pattern(@"\A[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}(?:\.[0-9]{1,5}|-(?:rc|beta|alpha)\.[0-9]{1,5})?\z");
+        private static readonly Regex Version = Pattern(MinimalDiagnosticProjection.VersionPattern + @"|\A[0-9]{1,5}(?:\.[0-9]{1,5}){3}\z");
         private static readonly string[] ErrorTypes = { "System.NullReferenceException", "System.InvalidOperationException", "System.InvalidCastException", "System.ArgumentException", "System.ArgumentNullException", "System.IO.IOException", "System.IO.FileNotFoundException", "System.IO.DirectoryNotFoundException", "System.UnauthorizedAccessException", "System.TypeLoadException", "System.MissingFieldException", "System.MissingMethodException", "System.TimeoutException", "System.Security.SecurityException", "System.NotSupportedException", "System.ObjectDisposedException" };
-        private static readonly string[] Actions = { "Close", "Features", "General", "Language", "Diagnostics", "DiagnosticsOpen", "DiagnosticsCollect", "MuteUnfocused", "InputAttention", "UpdateAuth", "UpdateSignOut", "UpdateChannel", "UpdateCheck", "UpdateDownload", "AutoDownload", "AfterExit", "UpdateGet", "UpdateCancel", "Enabled", "Details", "KoMinimum", "Names", "CardPopups", "BattleStatus", "ShushuShield", "FieldBuffs", "HandLayout", "ScaleMinus", "ScalePlus", "OpacityMinus", "OpacityPlus" };
+        private static readonly string[] Actions = { "Close", "Features", "General", "Language", "Diagnostics", "DiagnosticsOpen", "DiagnosticsCollect", "MuteUnfocused", "InputAttention", "UpdateAuth", "UpdateSignOut", "UpdateChannel", "UpdateCheck", "UpdateDownload", "AutoDownload", "AfterExit", "UpdateGet", "UpdateCancel", "Enabled", "Details", "KoMinimum", "Names", "CardPopups", "BattleStatus", "ShushuShield", "FieldBuffs", "HandLayout", "ScaleMinus", "ScalePlus", "OpacityMinus", "OpacityPlus", "FieldZoom", "MatchFocus", "AutoThanks", "CardTargetButtons", "CharacterGuide", "CharacterRoles", "IndicatorFade", "IndicatorHide", "CounterSound", "CounterAnimation", "SuppressNotices", "PingFocus", "UpdateNotifications", "AutomaticChecks", "ShushuShieldRestrictions", "FinalDamage" };
         private static bool In(string value, string[] values) { return Array.IndexOf(values, value) >= 0; }
         private static string Fields(string eventName, string body, string numericKeys, string booleanKeys)
         {
@@ -684,8 +738,9 @@ namespace BetterAstralParty.Diagnostics
             }
             return seen.Count > 0 && result.Length > eventName.Length ? result.ToString() : null;
         }
-        private static string Project(string line, string source)
+        private static string Project(string line, string source, out bool fixedAction)
         {
+            fixedAction = false;
             // No unknown free text is exported. Values are parsed and reserialized from fixed fields.
             string time = ""; var timed = RecordTime.Match(line);
             if (timed.Success)
@@ -715,7 +770,7 @@ namespace BetterAstralParty.Diagnostics
                 if (Regex.IsMatch(line, @"\AfightStep=(?:[0-9]|1[0-9])\z")) projected = line;
                 foreach (var phase in new[] { "begin", "complete" })
                     foreach (var action in Actions)
-                        if (line == "settingsAction " + phase + "=" + action) projected = "settingsAction; phase=" + phase + "; action=" + action;
+                        if (line == "settingsAction " + phase + "=" + action) { projected = "settingsAction; phase=" + phase + "; action=" + action; fixedAction = true; }
                 if (line.StartsWith("performance ", StringComparison.Ordinal)) projected = Fields("performance", line.Substring(12), "frames,ui_avg_ms,ui_max_ms,gameui_max_ms,popup_max_ms,status_max_ms,managed_bytes_per_frame,game_frame_max_ms,game_frames_ge50ms", "");
                 if (line.StartsWith("performance_field ", StringComparison.Ordinal)) projected = Fields("performance_field", line.Substring(18), "tick_avg_ms,tick_max_ms,plates_max,effects_max", "native_layout_excluded");
                 if (line.StartsWith("performance_hand ", StringComparison.Ordinal)) projected = Fields("performance_hand", line.Substring(17), "tick_avg_ms,tick_max_ms,managed_bytes_per_frame", "native_layout_excluded");
@@ -725,7 +780,8 @@ namespace BetterAstralParty.Diagnostics
                 if (line.StartsWith("begin ", StringComparison.Ordinal)) projected = Fields("public-combat-begin", line.Substring(6), "role", "partial");
                 if (line.StartsWith("prediction ", StringComparison.Ordinal)) projected = Fields("public-prediction", line.Substring(11), "before,atk,def,attackDie,damage", "dodge");
                 if (line.StartsWith("damage.result ", StringComparison.Ordinal)) projected = Fields("public-hp-result", line.Substring(14), "before,predictedDamage,expectedHP,observedHP,expectedDisplayHP", "monsterDefeatPresentation,hpMismatch,overkillUnverifiable");
-                if (line.StartsWith("settings=", StringComparison.Ordinal)) projected = Fields("settings-subset", line.Substring(9), "scale,opacity", "advice,details,koMinimum,names,cardPopups,battleStatus,shushuShield,fieldBuffs,muteUnfocused");
+                if (line.StartsWith("settings=", StringComparison.Ordinal)) projected = Fields("settings-subset", line.Substring(9), "scale,opacity", "advice,details,koMinimum,names,cardPopups,battleStatus,shushuShield,fieldBuffs,fieldZoom,matchFocus,muteUnfocused");
+                if (line.StartsWith("settings.features=", StringComparison.Ordinal)) projected = Fields("settings-features", line.Substring(18), "", "autoThanks,cardTargetButtons,characterGuide,characterRoles,indicatorFade,indicatorHide,counterSound,counterAnimation,suppressNotices,pingFocus,updateNotifications,automaticChecks,shushuShieldRestrictions,finalDamage");
             }
             else if (source == "game/compatibility")
             {
@@ -736,6 +792,7 @@ namespace BetterAstralParty.Diagnostics
             else // Installer/launcher sources: fixed markers and strict metadata fields only.
             {
                 foreach (var code in new[] { "BAP-LAUNCH-FAILED", "BAP-INSTALL-FAILED" }) if (line == code || line == "Code: " + code) projected = "failure; code=" + code;
+                if (line == "BAP-LAUNCH-OBSERVATION") projected = "observation; code=BAP-LAUNCH-OBSERVATION";
                 if (line.StartsWith("Version: ", StringComparison.Ordinal) && Version.IsMatch(line.Substring(9))) projected = "failure; version=" + line.Substring(9);
                 if (line.StartsWith("ErrorType: ", StringComparison.Ordinal) && In(line.Substring(11), ErrorTypes)) projected = "failure; errorType=" + line.Substring(11);
                 foreach (var stage in new[] { "Compatibility validation", "File transaction", "Helper bootstrap", "Helper preparation", "Steam shortcut", "Uninstallation", "Preflight", "Bootstrap", "Backup", "Rollback", "Installation" })
@@ -881,9 +938,11 @@ namespace BetterAstralParty.Diagnostics
                     else
                     {
                         if (boundary) continuation = false;
-                        if (Secret.IsMatch(line) || Private.IsMatch(line) || GamePayload.IsMatch(line)) { row.Redacted++; continuation = true; }
+                        // Exact owned action names can exceed the heuristic token length; no free text is passed through.
+                        bool fixedAction; var projected = Project(line, row.Source, out fixedAction);
+                        if (Secret.IsMatch(line) || !fixedAction && Private.IsMatch(line) || GamePayload.IsMatch(line)) { row.Redacted++; continuation = true; }
                         else if (continuation && line.Length != 0) row.Redacted++;
-                        else clean = Project(line, row.Source);
+                        else clean = projected;
                     }
                     if (clean == null) { row.Dropped++; continue; }
                     if (!AppendRecord(result, clean, row, max, ref count)) break;
@@ -902,13 +961,13 @@ namespace BetterAstralParty.Diagnostics
             var leaf = Regex.Match(match.Value, @"(?:^|[\\/])(?<file>[A-Za-z0-9_.-]+\.(?:dll|exe|ps1|cs|cmd)|catalog_[A-Za-z0-9_.-]+\.(?:json|hash)|shortcuts\.vdf|BetterAstralParty-(?:Compatibility|LaunchError)\.log)\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(200));
             return "[path]" + (leaf.Success ? "/" + leaf.Groups["file"].Value : "");
         }
-        private static readonly Regex SteamHeader = Pattern(@"\ASteamDiagnostic: schema=1; reason=(?:ProcessObservationUnavailable|SteamOwnershipUnknown|SteamOtherSession|SteamRunning|ProcessListChanged|ProcessIdentityChanged|ProcessTerminationFailed|ConsentCancelled|ConsentUnavailable); phase=(?:ShutdownObservation|ShutdownConsent|ShutdownRecheck|ProcessIdentity|ProcessTermination|ShutdownCompletion|InstallPreflight|UninstallPreflight|ShortcutPreflight|ShortcutCommit|ShortcutRollback|Resume); utc=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z; observedCount=[0-9]{1,10}; omittedCount=[0-9]{1,10}\z");
+        private static readonly Regex SteamHeader = Pattern(@"\ASteamDiagnostic: schema=1; reason=(?:ProcessObservationUnavailable|SteamOwnershipUnknown|SteamOtherSession|SteamRunning|ProcessListChanged|ProcessIdentityChanged|ProcessTerminationFailed|ProcessCaptureFailed|ProcessTerminateOpenFailed|ProcessTerminateFailed|ProcessExitWaitFailed|ProcessExitTimeout|ConsentCancelled|ConsentUnavailable|HelperRunning|GameProcessesRemain|SteamGameProcessesRemain|InvalidSteamAppDirectory|SteamExecutableMissing|Unknown|OtherSession); phase=(?:ShutdownObservation|ShutdownConsent|ShutdownRecheck|ProcessIdentity|ProcessTermination|ShutdownCompletion|InstallPreflight|UninstallPreflight|ShortcutPreflight|ShortcutCommit|ShortcutRollback|ShortcutRollbackCommit|Resume|HelperWait|GameCompletion|GamePreflight); utc=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z; observedCount=[0-9]{1,10}; omittedCount=[0-9]{1,10}\z");
         private static readonly Regex SteamProcess = Pattern(@"\ASteamProcess: index=(?:[1-9]|[1-3][0-9]|4[0-8]); pid=[1-9][0-9]{0,9}; sessionMatch=(?:true|false|unknown); pathAvailable=(?:true|false); pathMatch=(?:true|false|unknown); startAvailable=(?:true|false); startedUtc=(?:unknown|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z)\z");
         private static readonly Regex DiagnosticCoverage = Pattern(@"\ADiagnosticCoverage: (?:exceptionDepth=[0-8]; exceptionChainOmitted=(?:true|false); textTruncated=(?:true|false); steamContext=(?:not-observed|included|context-limit|invalid-context)|log-text-limit)\z");
         private static readonly Regex SteamObservationProcess = Pattern(@"\ASteamObservationProcess: index=(?:[1-9]|[1-3][0-9]|4[0-8]); pid=[1-9][0-9]{0,9}; kind=(?:SteamClient|SteamWebHelper|SteamOverlay|SteamErrorReporter|Game|Launcher|UpdateHelper|Other); querySource=(?:Managed|Native|Unavailable); nativeError=[0-9]{1,10}; exitAvailable=(?:true|false); confirmedExit=(?:true|false)\z");
         private static readonly Regex SteamObservationCoverage = Pattern(@"\ASteamObservationCoverage: status=(?:included|invalid-context)\z");
         private static readonly Regex LaunchRoot = Pattern(@"\ALaunchRoot: source=LauncherDirectory; state=(?:File|Directory|Missing|Denied|Invalid|Unavailable|Linked); hresult=0x[A-F0-9]{8}\z");
-        private static readonly Regex LaunchFile = Pattern(@"\ALaunchFile: kind=(?:GameExecutable|EntryScript|CompatibilityScript|Launcher); state=(?:File|Directory|Missing|Denied|Invalid|Unavailable|Linked); hresult=0x[A-F0-9]{8}\z");
+        private static readonly Regex LaunchFile = Pattern(@"\ALaunchFile: kind=(?:GameExecutable|Plugin|CompatibilityManifest|EntryScript|CompatibilityScript|Launcher); state=(?:File|Directory|Missing|Denied|Invalid|Unavailable|Linked); hresult=0x[A-F0-9]{8}\z");
         private static readonly Regex LaunchFailure = Pattern(@"\ALaunchFailure: schema=1; phase=(?:SteamContext|LauncherSnapshot|UpdateGate|Compatibility|SharedLoader|GameStart|GameExit); errorType=(?:System\.IO\.(?:FileNotFoundException|DirectoryNotFoundException|IOException)|System\.(?:UnauthorizedAccessException|ArgumentException|InvalidOperationException|NotSupportedException)|System\.ComponentModel\.Win32Exception|System\.Security\.SecurityException|Unknown); hresult=0x[A-F0-9]{8}\z");
         private static void ErrorRejected(Row row, string reason)
         {
@@ -1056,16 +1115,21 @@ namespace BetterAstralParty.Diagnostics
             internal static string Canonical(string path)
             {
                 if (String.IsNullOrWhiteSpace(path) || !Regex.IsMatch(path, @"\A[A-Za-z]:[\\/]") || path.StartsWith(@"\\", StringComparison.Ordinal)) throw new ArgumentException("BAP-DIAGNOSTICS-UNSAFE-PATH");
-                foreach (var part in path.Substring(3).Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries))
-                    if (part == "." || part == ".." || part.EndsWith(".", StringComparison.Ordinal) || part.EndsWith(" ", StringComparison.Ordinal) || part.IndexOfAny(new[] { ':', '<', '>', '"', '|', '?', '*' }) >= 0) throw new ArgumentException("BAP-DIAGNOSTICS-UNSAFE-PATH");
-                string full = Path.GetFullPath(path).TrimEnd('\\', '/');
-                if (full.Length < 4 || full.Length > 230) throw new ArgumentException("BAP-DIAGNOSTICS-UNSAFE-PATH");
+                string full = path.Replace('/', '\\').TrimEnd('\\');
+                if (full.Length < 4 || full.Length > 32760) throw new ArgumentException("BAP-DIAGNOSTICS-UNSAFE-PATH");
+                foreach (var part in full.Substring(3).Split('\\')) {
+                    if (part.Length == 0 || part.Length > 255 || part == "." || part == ".." || part.EndsWith(".", StringComparison.Ordinal) || part.EndsWith(" ", StringComparison.Ordinal) || part.IndexOfAny(new[] { ':', '<', '>', '"', '|', '?', '*' }) >= 0
+                        || Regex.IsMatch(part, @"\A(CONIN\$|CONOUT\$|CON|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³])(?:\.|\z)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)) throw new ArgumentException("BAP-DIAGNOSTICS-UNSAFE-PATH");
+                    foreach (char c in part) if (c < 32) throw new ArgumentException("BAP-DIAGNOSTICS-UNSAFE-PATH");
+                }
                 return full;
             }
+            internal static string IoPath(string path) { return @"\\?\" + (Regex.IsMatch(path, @"\A[A-Za-z]:\\\z") ? path : Canonical(path)); }
+            internal static string Parent(string path) { int end = path.LastIndexOf('\\'); return path.Length == 3 ? null : end < 3 ? path.Substring(0, 3) : path.Substring(0, end); }
             private static void Pin(string path, List<SafeFileHandle> handles)
             {
                 var dirs = new List<string>(); string p = path;
-                while (!String.IsNullOrEmpty(p)) { dirs.Add(p); p = Path.GetDirectoryName(p); }
+                while (!String.IsNullOrEmpty(p)) { dirs.Add(p); p = Parent(p); }
                 // FILE_LIST_DIRECTORY is necessary: an access-zero handle does not enforce delete sharing.
                 dirs.Reverse(); foreach (var dir in dirs) handles.Add(OpenHandle(dir, true, 1, 3, 0));
             }
@@ -1078,7 +1142,7 @@ namespace BetterAstralParty.Diagnostics
                 var pinned = new List<SafeFileHandle>();
                 try
                 {
-                    string parent = Path.GetDirectoryName(full);
+                    string parent = Parent(full);
                     if (!String.Equals(parent, Root, StringComparison.OrdinalIgnoreCase)) Pin(parent, pinned);
                     var handle = OpenHandle(full, directory, directory ? 1u : 0x80000000u, 3, 0, !directory && !pinFile);
                     return new Opened(handle, full, directory, pinned);
@@ -1088,9 +1152,9 @@ namespace BetterAstralParty.Diagnostics
             internal static void CreateDirectories(string path)
             {
                 path = Canonical(path); var dirs = new List<string>(); string p = path;
-                while (!Directory.Exists(p)) { dirs.Add(p); p = Path.GetDirectoryName(p); if (String.IsNullOrEmpty(p)) throw new IOException("BAP-DIAGNOSTICS-ROOT-MISSING"); }
+                while (!Directory.Exists(IoPath(p))) { dirs.Add(p); p = Parent(p); if (String.IsNullOrEmpty(p)) throw new IOException("BAP-DIAGNOSTICS-ROOT-MISSING"); }
                 var handles = new List<SafeFileHandle>();
-                try { Pin(p, handles); dirs.Reverse(); foreach (var dir in dirs) { Directory.CreateDirectory(dir); handles.Add(OpenHandle(dir, true, 1, 3, 0)); } }
+                try { Pin(p, handles); dirs.Reverse(); foreach (var dir in dirs) { Directory.CreateDirectory(IoPath(dir)); handles.Add(OpenHandle(dir, true, 1, 3, 0)); } }
                 finally { foreach (var h in handles) h.Dispose(); }
             }
             internal void ProbeWrite()
@@ -1136,7 +1200,7 @@ namespace BetterAstralParty.Diagnostics
         {
             // Source file identity belongs to this handle; deletion sharing permits logger rotation.
             // Ancestor/output/version-resource handles stay pinned without delete sharing.
-            SafeFileHandle handle = CreateFileW(path, access, allowRotation ? 7u : 3u, IntPtr.Zero, disposition, 0x00200000u | (directory ? 0x02000000u : 0u) | extra, IntPtr.Zero);
+            SafeFileHandle handle = CreateFileW(Fence.IoPath(path), access, allowRotation ? 7u : 3u, IntPtr.Zero, disposition, 0x00200000u | (directory ? 0x02000000u : 0u) | extra, IntPtr.Zero);
             if (handle.IsInvalid)
             {
                 int error = Marshal.GetLastWin32Error(); handle.Dispose();
@@ -1147,17 +1211,27 @@ namespace BetterAstralParty.Diagnostics
             }
             try
             {
-                FileInformation info; var actual = new StringBuilder(512); uint size = GetFinalPathNameByHandleW(handle, actual, 512, 0);
+                FileInformation info; string actual = FinalPath(handle);
                 if (!GetFileInformationByHandle(handle, out info) || (info.Attributes & 0x400) != 0 || ((info.Attributes & 0x10) != 0) != directory
-                    || (!directory && info.Links != 1) || size == 0 || size >= 512 || !String.Equals(actual.ToString(), @"\\?\" + path, StringComparison.OrdinalIgnoreCase))
+                    || (!directory && info.Links != 1) || !String.Equals(actual, Fence.IoPath(path), StringComparison.OrdinalIgnoreCase))
                     throw new UnauthorizedAccessException("BAP-DIAGNOSTICS-LINK-OR-IDENTITY");
                 return handle;
             }
             catch { handle.Dispose(); throw; }
         }
+        private static string FinalPath(SafeFileHandle handle)
+        {
+            var path = new StringBuilder(512);
+            for (;;) {
+                uint length = GetFinalPathNameByHandleW(handle, path, (uint)path.Capacity, 0);
+                if (length == 0 || length > (length >= path.Capacity ? 32765 : 32764)) throw new IOException("BAP-DIAGNOSTICS-FINAL-PATH");
+                if (length < path.Capacity) return path.ToString();
+                path = new StringBuilder(checked((int)length + 1));
+            }
+        }
         private static void Rename(SafeFileHandle handle, string target)
         {
-            int lengthOffset = IntPtr.Size == 8 ? 16 : 8, nameOffset = lengthOffset + 4; byte[] name = Encoding.Unicode.GetBytes(target);
+            int lengthOffset = IntPtr.Size == 8 ? 16 : 8, nameOffset = lengthOffset + 4; byte[] name = Encoding.Unicode.GetBytes(Fence.IoPath(target));
             // Win32's rename buffer needs a terminating WCHAR as well as the byte length.
             int size = nameOffset + name.Length + 2;
             IntPtr buffer = Marshal.AllocHGlobal(size);

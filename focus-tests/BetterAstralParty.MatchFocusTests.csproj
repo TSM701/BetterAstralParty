@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs;MatchFocusPollingChecks.cs;MatchFocusPendingChecks.cs;MatchFocusRuntimeFixture.cs;MatchFocusNativeChecks.cs" />
+    <Compile Include="..\src\MatchFocus.cs" Link="MatchFocus.cs" />
+    <Compile Include="..\src\MatchFocusState.cs" Link="MatchFocusState.cs" />
+    <Compile Include="..\src\WindowsMatchFocus.cs" Link="WindowsMatchFocus.cs" />
+    <Compile Include="..\src\Compatibility.cs" Link="Compatibility.cs" />
+    <Compile Include="..\src\CombatAdvisor.cs" Link="CombatAdvisor.cs" />
+    <Compile Include="..\src\VisibleCombat.cs" Link="VisibleCombat.cs" />
+    <Reference Include="Mono.Cecil"><HintPath>..\.deps\bepinex\BepInEx\core\Mono.Cecil.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

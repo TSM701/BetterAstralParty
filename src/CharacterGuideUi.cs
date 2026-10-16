@@ -14,34 +14,52 @@ internal static class CharacterGuideUi
     private static RuntimeObject? _room, _popup, _content, _cardTemplate;
     private static RuntimeObject? _heroLoad;
     private static bool _heroBound;
-    private static IntPtr _hover;
+    private static bool _guideEnabled = true, _rolesEnabled = true;
+    private static IntPtr _hover, _hoverHero;
     private static float _scanAt, _hoverAt, _refreshAt, _scroll, _overflow;
     private static string _descriptionKey = "";
     private static IntPtr _config, _helper;
 
     internal static void Tick()
     {
-        if (!Compatibility.Allowed("CharacterGuide")) return;
         try
         {
-            var root = GameUi.Root;
-            if (root == null) return;
             if (_heroLoad != null && _heroLoad.Get<bool>("IsCompleted"))
             {
                 var load = _heroLoad; _heroLoad = null;
                 if (load.Call("GetResult") == null) throw new InvalidOperationException("Hero UI package load failed");
                 _scanAt = 0; // Consume newly available UI resources this frame.
             }
+            var guide = Plugin.CharacterGuide.Value && Compatibility.Allowed("CharacterGuide");
+            var roles = Plugin.CharacterRoles.Value && Compatibility.Allowed("CharacterRoles");
+            if (_rolesEnabled != roles)
+            {
+                ReadyStates.Clear(); _scanAt = 0;
+            }
+            _guideEnabled = guide; _rolesEnabled = roles;
+            if (!guide) { try { ClearGuide(); } catch (Exception ex) { BlockGuide(ex); } }
+            if (!roles) { try { ClearRoles(); } catch (Exception ex) { BlockRoles(ex); } }
+            if (!guide && !roles) { Players.Clear(); ReadyStates.Clear(); _room = null; _scanAt = 0; return; }
+            var root = GameUi.Root;
+            if (root == null) { Clear(); return; }
             if (Time.unscaledTime >= _scanAt)
             {
                 _scanAt = Time.unscaledTime + 0.2f;
                 Scan(root);
             }
-            RefreshReadyBadges();
-            Hover(root);
+            if (_rolesEnabled) { try { RefreshReadyBadges(); } catch (Exception ex) { BlockRoles(ex); } }
+            if (_guideEnabled) { try { Hover(root); } catch (Exception ex) { BlockGuide(ex); } }
         }
-        catch (Exception ex) { Compatibility.Block("CharacterGuide", ex, Clear); }
+        catch (Exception ex)
+        {
+            // Only shared package/room observation can affect both independent presentations.
+            BlockGuide(ex); BlockRoles(ex);
+            Players.Clear(); ReadyStates.Clear(); _room = null;
+        }
     }
+
+    private static void BlockGuide(Exception error) { _guideEnabled = false; Compatibility.Block("CharacterGuide", error, ClearGuide); }
+    private static void BlockRoles(Exception error) { _rolesEnabled = false; Compatibility.Block("CharacterRoles", error, ClearRoles); }
 
     private static RuntimeObject? Config(int id)
     {
@@ -71,6 +89,25 @@ internal static class CharacterGuideUi
 
     private static void Scan(RuntimeObject root)
     {
+        var room = GameUi.Find(root, "UIRoomHeroPanel");
+        if (_room?.Pointer != room?.Pointer)
+        {
+            try { RestoreSwapPositions(); } catch (Exception ex) { BlockRoles(ex); }
+            ReadyStates.Clear(); _room = room;
+            try { ClearGuide(); } catch (Exception ex) { BlockGuide(ex); }
+        }
+        Players.Clear();
+        if (room != null)
+            for (var slot = 1; slot <= 4; slot++)
+            {
+                var player = room.Field("com_player_" + slot)!;
+                if (VisibleCombatAdvisor.IsPve(player.Field("mapType")!.Value<int>())) Players.Add(player);
+            }
+        if (_rolesEnabled) { try { ScanRoles(root); } catch (Exception ex) { BlockRoles(ex); } }
+    }
+
+    private static void ScanRoles(RuntimeObject root)
+    {
         Seen.Clear();
         var hero = GameUi.Find(root, "UIHeroPanel");
         var list = hero?.Field("com_HeroList")?.Field("list_Hero");
@@ -81,20 +118,9 @@ internal static class CharacterGuideUi
                 if (item.TypeName != "UIHero_Button_Hero" || !GameUi.Visible(item)) continue;
                 AddBadge(item, Config(item.Field("HeroId")!.Value<int>())?.Get<int>("TagType") ?? 0, false);
             }
-        var room = GameUi.Find(root, "UIRoomHeroPanel");
-        if (_room?.Pointer != room?.Pointer)
-        {
-            RestoreSwapPositions();
-            Players.Clear(); ReadyStates.Clear(); _room = room; Hide();
-            GameUi.Dispose(_popup); _popup = null; _content = null; _descriptionKey = "";
-        }
-        if (room != null)
-            for (var slot = 1; slot <= 4; slot++)
+        foreach (var player in Players)
             {
-                var player = room.Field("com_player_" + slot)!;
-                if (!VisibleCombatAdvisor.IsPve(player.Field("mapType")!.Value<int>())) continue;
                 AlignSwapButton(player, root);
-                if (!Players.Any(p => p.Pointer == player.Pointer)) Players.Add(player);
                 // Prepare resources before the first selection, without blocking the game thread.
                 if (_cardTemplate == null && HeroUiReady())
                     _cardTemplate = NativeUi.Create("Hero", "Hero_Button_Hero");
@@ -120,8 +146,7 @@ internal static class CharacterGuideUi
             ReadyStates.Remove(player.Pointer);
             // Hide old role and texture together, including unknown/new roles and deselection.
             if (Badges.Remove(player.Pointer, out var old)) GameUi.Dispose(old.Panel);
-            if (_hover == player.Pointer) { Hide(); _descriptionKey = ""; }
-            if (chosen != 0)
+            if (chosen != 0 && _rolesEnabled)
             {
                 var config = hero?.Get("InfoConfig");
                 if (config == null || !AddBadge(player, config.Get<int>("TagType"), true)) continue;
@@ -289,11 +314,13 @@ internal static class CharacterGuideUi
                 if (GameUi.Visible(p) && p.Field("isChoose")!.Get<int>("selectedIndex") != 0
                     && Contains(p.Field("loader_Character")!, mouse, root)) { hovered = p; break; }
         if (hovered == null) { Hide(); return; }
-        if (_hover != hovered.Pointer) { Hide(); _hover = hovered.Pointer; _hoverAt = Time.unscaledTime; _refreshAt = 0; }
+        var hero = hovered.Field("selectHero");
+        if (_hover != hovered.Pointer || _hoverHero != (hero?.Pointer ?? IntPtr.Zero))
+        { Hide(); _hover = hovered.Pointer; _hoverHero = hero?.Pointer ?? IntPtr.Zero; _hoverAt = Time.unscaledTime; _refreshAt = 0; }
         var elapsed = Time.unscaledTime - _hoverAt;
         if (elapsed < 0.2f) return;
         if (!HeroUiReady()) return;
-        var config = hovered.Field("selectHero")?.Get("InfoConfig");
+        var config = hero?.Get("InfoConfig");
         if (config == null) { Hide(); return; }
         if (_popup == null || Time.unscaledTime >= _refreshAt)
         {
@@ -320,13 +347,15 @@ internal static class CharacterGuideUi
         if (_config == IntPtr.Zero) _config = RuntimeObject.FindClass("", "StaticConfigure");
         var table = RuntimeObject.StaticCall(_config, "get_PVENurturance")!.Get("BreakDict")!;
         if (_helper == IntPtr.Zero) _helper = RuntimeObject.FindClass("UI", "UIHelper");
+        var potentialStrings = RuntimeObject.EnumValue("UI", "UIStringType", "PVENurturance");
+        var characterStrings = RuntimeObject.EnumValue("UI", "UIStringType", "Character");
         for (var i = 0; i < breaks.Get<int>("Count"); i++)
         {
             var id = breaks.Call("get_Item", i)!.Value<int>();
             if (!table.Call("ContainsKey", id)!.Value<bool>()) continue;
             var potential = table.Call("get_Item", id)!;
-            var desc = RuntimeObject.StaticCall(_helper, "GetLocal", potential.Get<int>("DescriptionID"), 43)!.String();
-            var characterName = RuntimeObject.StaticCall(_helper, "GetLocal", config.Get<int>("NameID"), 10)!.String();
+            var desc = RuntimeObject.StaticCall(_helper, "GetLocal", potential.Get<int>("DescriptionID"), potentialStrings)!.String();
+            var characterName = RuntimeObject.StaticCall(_helper, "GetLocal", config.Get<int>("NameID"), characterStrings)!.String();
             names.Add((characterName, desc, 2, ""));
         }
         var key = string.Join("\n", names) + ModText.Revision;
@@ -413,15 +442,27 @@ internal static class CharacterGuideUi
     private static void Hide()
     {
         if (_popup != null && !_popup.Get<bool>("isDisposed")) _popup.Set("visible", false);
-        _hover = IntPtr.Zero;
+        _hover = _hoverHero = IntPtr.Zero;
+    }
+
+    private static void ClearGuide()
+    {
+        Hide();
+        GameUi.Dispose(_popup); _popup = null; _content = null; _descriptionKey = "";
+    }
+
+    private static void ClearRoles()
+    {
+        RestoreSwapPositions();
+        GameUi.Dispose(_cardTemplate); _cardTemplate = null;
+        foreach (var badge in Badges.Values) GameUi.Dispose(badge.Panel);
+        Badges.Clear();
     }
 
     internal static void Clear()
     {
-        RestoreSwapPositions();
-        GameUi.Dispose(_cardTemplate); _cardTemplate = null;
-        GameUi.Dispose(_popup); _popup = null; _content = null;
-        foreach (var badge in Badges.Values) GameUi.Dispose(badge.Panel);
-        Badges.Clear(); Players.Clear(); ReadyStates.Clear(); _room = null; _hover = IntPtr.Zero; _descriptionKey = "";
+        try { ClearRoles(); } catch (Exception ex) { BlockRoles(ex); }
+        try { ClearGuide(); } catch (Exception ex) { BlockGuide(ex); }
+        Players.Clear(); ReadyStates.Clear(); _room = null; _scanAt = 0;
     }
 }

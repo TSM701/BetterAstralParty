@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <AssemblyName>BetterAstralParty.Developer</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <StartupObject>BetterAstralParty.Development.Program</StartupObject>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="*.cs" Exclude="Bootstrap.cs" />
+    <Compile Include="../tools/DevelopmentPackageFiles.cs" />
+    <Compile Include="../tools/GaPackageContract.cs" />
+    <Compile Include="../tools/SignLocalInstall.cs" />
+    <Compile Include="../tools/SignRelease.cs" />
+    <Compile Include="../updater/*.cs" Exclude="../updater/UpdateHelperProgram.cs" />
+    <Compile Include="../src/Observability/*.cs" />
+    <Compile Include="../diagnostics/MinimalDiagnosticProjection.cs" />
+    <Reference Include="Mono.Cecil">
+      <HintPath>../.deps/bepinex/BepInEx/core/Mono.Cecil.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

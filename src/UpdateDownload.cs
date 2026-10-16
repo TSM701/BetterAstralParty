@@ -185,7 +185,9 @@ internal sealed class UpdateDownloads : IDisposable
         if (_requestIdentity != requestIdentity)
         { Stop(); _requestIdentity = requestIdentity; Set(Initial()); }
         if (!Configured) { Set(new(UpdateDownloadStatus.NotConfigured)); return; }
-        if (_feed != null && (request.Context.Repository != _feed.Repository || request.Context.RepositoryId != _feed.RepositoryId || request.Context.Channel != _feed.Channel))
+        if (_feed != null && (request.Context.Repository != _feed.Repository || request.Context.RepositoryId != _feed.RepositoryId || request.Context.Channel != _feed.Channel
+            || !ReleaseFeedPolicy.SupportsAutomaticSource(request.Context.CurrentVersion)
+            || !ReleaseFeedPolicy.SupportsAutomaticTarget(request.Context.ReleaseTag, _feed.Channel)))
         { Set(new(UpdateDownloadStatus.NotConfigured)); return; }
         if (_pending != null || Result.Status == UpdateDownloadStatus.Ready) return;
         if (now < _retryAt || now < _lastStarted.AddSeconds(60))
@@ -221,7 +223,9 @@ internal sealed class UpdateDownloads : IDisposable
         SyncBackoff(); SyncIdentity();
         var feed = _feed; var generation = _generation; var identity = _identity;
         if (!Configured || feed == null || request.Context.Repository != feed.Repository || request.Context.RepositoryId != feed.RepositoryId
-            || request.Context.Channel != feed.Channel || _pending != null || now < _retryAt || now < _lastStarted.AddSeconds(60))
+            || request.Context.Channel != feed.Channel || !ReleaseFeedPolicy.SupportsAutomaticSource(request.Context.CurrentVersion)
+            || !ReleaseFeedPolicy.SupportsAutomaticTarget(request.Context.ReleaseTag, feed.Channel)
+            || _pending != null || now < _retryAt || now < _lastStarted.AddSeconds(60))
             throw new InvalidOperationException("Transition prerequisites unavailable");
         _lastStarted = now;
         var authentication = feed.RequiresAuthentication ? _authentication : null;
@@ -233,6 +237,7 @@ internal sealed class UpdateDownloads : IDisposable
             var envelope = Envelope(await Asset(request.SignatureAssetId, MaxEnvelopeBytes, null, authentication, feed, identity, now, operation).ConfigureAwait(false));
             var verified = _trust.VerifyProposal(descriptor, envelope.KeyId, envelope.Signature, request.Context, operation.Token);
             Account(authentication, feed, identity, operation);
+            await CurrentPublicRelease(request, verified, feed, identity, now, operation).ConfigureAwait(false);
             return new ChannelTransitionProposal(verified, generation, feed.Identity);
         }, cancellation);
     }
@@ -318,14 +323,15 @@ internal sealed class UpdateDownloads : IDisposable
         if (Limited(response)) RememberBackoff(Backoff(response, now));
     }
     private async Task<byte[]> Asset(long assetId, long limit, long? expected, IReleaseAuthentication? authentication,
-        ReleaseFeed? feed, string identity, DateTimeOffset now, Operation operation, bool identityProof = false)
+        ReleaseFeed? feed, string identity, DateTimeOffset now, Operation operation, bool identityProof = false, Uri? metadataEndpoint = null)
     {
-        var endpoint = identityProof ? ReleaseFeedTransport.IdentityEndpoint(feed!)
-            : new Uri("https://api.github.com/repos/" + (feed?.Repository ?? Repository) + "/releases/assets/" + assetId.ToString(CultureInfo.InvariantCulture));
+        var endpoint = metadataEndpoint ?? (identityProof ? ReleaseFeedTransport.IdentityEndpoint(feed!)
+            : new Uri("https://api.github.com/repos/" + (feed?.Repository ?? Repository) + "/releases/assets/" + assetId.ToString(CultureInfo.InvariantCulture)));
         var destination = endpoint;
         for (var hop = 0; hop <= 1; hop++)
         {
             using var request = Request(destination, identityProof);
+            if (identityProof) request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
             Account(authentication, feed, identity, operation);
             if (hop == 0) Authorize(request, authentication, feed, identity, operation);
             var requestedDestination = destination;
@@ -368,6 +374,27 @@ internal sealed class UpdateDownloads : IDisposable
             return output.ToArray();
         }
         throw new DownloadFailure(UpdateDownloadStatus.Failed);
+    }
+    private async Task CurrentPublicRelease(UpdateDownloadRequest request, VerifiedUpdateDescriptor descriptor, ReleaseFeed? feed,
+        string identity, DateTimeOffset now, Operation operation)
+    {
+        if (feed == null || feed.RequiresAuthentication) return;
+        try {
+            var proof = await Asset(0, PublicReleaseEligibility.MaxRepositoryBytes, null, null, feed, identity, now, operation, true).ConfigureAwait(false);
+            PublicReleaseEligibility.Repository(proof, request.Context);
+            var metadata = await Asset(0, PublicReleaseEligibility.MaxReleaseBytes, null, null, feed, identity, now, operation, true,
+                PublicReleaseEligibility.ReleaseEndpoint(request.Context)).ConfigureAwait(false);
+            if (!PublicReleaseEligibility.Release(metadata, request.Context, descriptor, request.DescriptorAssetId, request.SignatureAssetId))
+                throw new DownloadFailure(UpdateDownloadStatus.Cancelled);
+        } catch (Exception error) {
+            if (error is OperationCanceledException && operation.Token.IsCancellationRequested) DiagnosticHub.Stage(DiagnosticFeature.Download, DiagnosticPhase.ReleaseMetadata, DiagnosticOutcome.Cancelled, targetVersion: request.Context.ReleaseTag);
+            else DiagnosticHub.Failure(DiagnosticFeature.Download, DiagnosticPhase.ReleaseMetadata,
+                error is InvalidDataException or UpdateValidationException ? DiagnosticCode.MetadataInvalid
+                    : error is DownloadFailure rejected ? rejected.Status == UpdateDownloadStatus.Cancelled ? DiagnosticCode.WrongTarget : DiagnosticHub.CodeForStatus(rejected.Status.ToString()) : DiagnosticCode.Transport,
+                error, targetVersion: request.Context.ReleaseTag);
+            // Classification can change or become temporarily unavailable without an update fault.
+            throw new DownloadFailure(UpdateDownloadStatus.Cancelled);
+        }
     }
     private static (string KeyId, byte[] Signature) Envelope(byte[] bytes)
     {
@@ -419,6 +446,8 @@ internal sealed class UpdateDownloads : IDisposable
             Enter(DiagnosticPhase.PayloadVerification);
             var payload = UpdatePackage.VerifyPayload(zip, verified, operation.Token);
             Account(authentication, feed, identity, operation);
+            Enter(DiagnosticPhase.ReleaseMetadata);
+            await CurrentPublicRelease(request, verified, feed, identity, now, operation).ConfigureAwait(false);
             DiagnosticHub.Stage(DiagnosticFeature.Download, diagnosticPhase, DiagnosticOutcome.Completed, diagnosticOperation, request.Context.ReleaseTag);
             return new(UpdateDownloadStatus.Ready, new DownloadedUpdate(DownloadStamp, descriptor, envelope.KeyId, envelope.Signature, payload));
         }

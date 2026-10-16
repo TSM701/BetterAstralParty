@@ -41,7 +41,7 @@ namespace BetterAstralParty.Updating
             var v = new string[keys.Length]; for (var i = 0; i < keys.Length; i++) { if (!lines[i+1].StartsWith(keys[i], StringComparison.Ordinal)) throw Bad(); v[i] = lines[i+1].Substring(keys[i].Length); }
             FaultPhase phase; FaultReason reason; long release, asset;
             if (!Regex.IsMatch(v[0], @"\A[0-9A-F]{8}:[0-9A-F]{16}\z") || !Regex.IsMatch(v[1], @"\A[0-9a-f]{32}\z")
-                || v[2] != "-" && !Regex.IsMatch(v[2], @"\Abap-v3-stage-[0-9a-f]{32}\z") || !Enum.TryParse(v[3], out phase) || !Enum.IsDefined(typeof(FaultPhase), phase)
+                || v[2] != "-" && !Regex.IsMatch(v[2], @"\A" + UpdateWorkPath.OptionalRootPattern + @"bap-v4-stage-[0-9a-f]{32}\z") || !Enum.TryParse(v[3], out phase) || !Enum.IsDefined(typeof(FaultPhase), phase)
                 || !Enum.TryParse(v[4], out reason) || !Enum.IsDefined(typeof(FaultReason), reason) || v[5] != ReleaseFeedPolicy.StableRepository && v[5] != ReleaseFeedPolicy.BetaRepository
                 || !long.TryParse(v[9], NumberStyles.None, CultureInfo.InvariantCulture, out release) || !long.TryParse(v[10], NumberStyles.None, CultureInfo.InvariantCulture, out asset)) throw Bad();
             long repositoryId = 0; ChannelTransitionIntent? transition = null;
@@ -63,7 +63,7 @@ namespace BetterAstralParty.Updating
     // Helper writes only these immutable mod-owned records, never the BepInEx configuration.
     internal static class UpdateFaults
     {
-        internal const string FailurePath = "BetterAstralParty.update-v3.failure", OperationPath = "BetterAstralParty.update-v3.operation", SaveFailurePath = "BetterAstralParty.update-v3.preferences-failed";
+        internal const string FailurePath = "BetterAstralParty.update-v4.failure", OperationPath = "BetterAstralParty.update-v4.operation", SaveFailurePath = "BetterAstralParty.update-v4.preferences-failed";
         internal static UpdateFault? ReadFile(WindowsFileFence fence, string path) {
             for (var attempt = 0; ; attempt++) try { using (var file = fence.OpenFile(path)) {
                 var value = UpdateFault.Parse(UpdateTicket.Read(file, UpdateTicket.MaxBytes)); if (value.Root != fence.RootIdentity.Text) throw new ApplySafetyException(ApplyFailure.RecoveryRequired); return value;
@@ -135,7 +135,8 @@ namespace BetterAstralParty.Updating
         }
 
         internal static bool OwnerAlive(WindowsFileFence fence, UpdateFault guard) {
-            if (guard.Schema < 2 || guard.GamePid == 0) throw new ApplySafetyException(ApplyFailure.ProcessUncertain);
+            if (guard.Schema < 2 || guard.GamePid == 0 && (guard.GameCreation != 0 || guard.GameSession != 0 || guard.LauncherPid == 0 || guard.LauncherCreation <= 0))
+                throw new ApplySafetyException(ApplyFailure.ProcessUncertain);
             bool Alive(uint pid, long creation, uint session, string image) {
                 if (pid == 0) return false;
                 try { using (var process = WindowsProcessGuard.Capture(pid, fence.Full(image), creation, session)) return !process.Exited; }

@@ -81,7 +81,8 @@ internal static class GameUi
                 _root = RuntimeObject.StaticField(_rootClass, "_inst");
                 if (_root == null) return;
                 RuntimeObject.RequireClasses("CoreUi", ("FairyGUI", "GTextField"), ("FairyGUI", "GComponent"), ("FairyGUI", "GGraph"));
-                UpdateHome();
+                try { UpdateHome(); }
+                catch (Exception ex) { FailHomeMenu(ex); }
                 if (Compatibility.Allowed("Enabled"))
                 {
                     try { UpdateFight(); }
@@ -89,8 +90,11 @@ internal static class GameUi
                 }
             }
             if (_root != null) CharacterNameUi.Tick(_root);
-            FollowHomeMenu();
-            HandleMenuInput();
+            if (Compatibility.Allowed("HomeMenu"))
+            {
+                try { FollowHomeMenu(); HandleMenuInput(); }
+                catch (Exception ex) { FailHomeMenu(ex); }
+            }
             if (Compatibility.Allowed("Enabled"))
             {
                 try
@@ -178,9 +182,16 @@ internal static class GameUi
 
     private static void UpdateHome()
     {
+        HomeAvailable = false;
         var home = Visible(_home) ? _home : Find(_root!, "UIHomePanel");
         HomeAvailable = home != null;
         Plugin.Diagnostics.State("home", HomeAvailable ? "visible" : "hidden");
+        if (!Compatibility.Allowed("HomeMenu"))
+        {
+            if (_home?.Pointer != home?.Pointer) _menuAnchor = null;
+            _home = home;
+            return;
+        }
         if (home == null)
         {
             if (_menu != null && !_menu.Get<bool>("isDisposed")) _menu.Set("visible", false);
@@ -279,6 +290,7 @@ internal static class GameUi
     // Only the mod-owned Activity clone's known title/tooltip; no native controller indices or callbacks.
     internal static void RefreshReleaseNotification()
     {
+        if (!Compatibility.Allowed("HomeMenu")) return;
         if (_menu == null || _menu.Get<bool>("isDisposed")) return;
         var version = Plugin.Updates.NotificationVersion;
         var state = (_menu.Pointer, ModText.Revision, version);
@@ -295,11 +307,31 @@ internal static class GameUi
     {
         // UpdateHome may already have created the menu in the new language this
         // frame. Do not destroy/reload its portrait and controls a second time.
-        if (_menuLanguageRevision != ModText.Revision) { Dispose(_menu); _menu = null; }
-        ClearAdvice();
-        CardPreviewUi.Reset();
-        BattleStatusUi.Clear();
-        FieldBuffUi.Clear("language");
+        try { if (_menuLanguageRevision != ModText.Revision) ClearHomeMenu(); }
+        catch (Exception ex) { FailHomeMenu(ex); }
+        try { ClearAdvice(); }
+        catch (Exception ex) { Compatibility.Block("Enabled", ex, ClearAdvice); }
+        try { CardPreviewUi.Reset(); }
+        catch (Exception ex) { Compatibility.Block("CardPopups", ex, CardPreviewUi.Reset); }
+        try { BattleStatusUi.Clear(); }
+        catch (Exception ex) { Compatibility.Block("BattleStatus", ex, BattleStatusUi.Clear); }
+        try { FieldBuffUi.Clear("language"); }
+        catch (Exception ex) { Compatibility.Block("FieldBuffs", ex, () => FieldBuffUi.Clear("compatibility")); }
+    }
+
+    private static void FailHomeMenu(Exception error) => Compatibility.Block("HomeMenu", error, ClearHomeMenu);
+
+    private static void ClearHomeMenu()
+    {
+        _menuState = null; _pressed = null;
+        if (_menu == null) return;
+        var menu = _menu;
+        try { menu.Set("touchable", false); }
+        finally
+        {
+            try { menu.Set("visible", false); }
+            finally { Dispose(menu); _menu = null; }
+        }
     }
 
     internal static void AddRoundedRect(RuntimeObject parent, float width, float height, float inset, Color color)
@@ -372,7 +404,7 @@ internal static class GameUi
     private static void UpdateFight()
     {
         HideAdvice(keepDice: true);
-        if (!Plugin.Enabled.Value && !Plugin.KoMinimum.Value) { Plugin.Diagnostics.EndCombat(); CardUi.Clear(); RemainingHpUi.Clear(); return; }
+        if (!Plugin.Enabled.Value && !Plugin.KoMinimum.Value && !Plugin.FinalDamage.Value) { Plugin.Diagnostics.EndCombat(); CardUi.Clear(); RemainingHpUi.Clear(); return; }
         if (HomeAvailable) RuntimeObject.RequireClasses("Enabled", ("GameLogic", "GameLogicManager"), ("Core.Scene", "BattleSceneController"));
         var fight = Visible(_fight) ? _fight : Find(_root!, "FightWindow");
         if (fight == null) { Plugin.Diagnostics.EndCombat(); Plugin.Diagnostics.State("fightStep", "hidden"); _lastAdvice = ""; CardUi.Clear(); RemainingHpUi.ResetCapture(); return; }

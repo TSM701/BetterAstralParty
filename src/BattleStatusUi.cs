@@ -5,6 +5,7 @@ namespace BetterAstralParty;
 // Public, already-synchronised data only. Never opens the player-info window (which can send an RPC).
 internal static class BattleStatusUi
 {
+    internal const string CounterFeature = "CounterIndicators";
     private static readonly List<Row> Rows = new();
     private static IntPtr _logicClass, _battleClass, _helperClass, _commonClass, _parent;
     private static RuntimeObject? _fight, _ui, _tooltip, _tooltipItem, _counter;
@@ -223,8 +224,7 @@ internal static class BattleStatusUi
             var director = RuntimeObject.StaticField(_battleClass, "inst")?.Field("directorManager");
             // Spectators can see DEFENSE before their local FightWindow reaches a choice step.
             // Follow the world-space header every frame, independently of the slower buff scan.
-            RefreshCounter(director?.Get("victim")?.Field("_UI"));
-            PositionCounter();
+            UpdateCounter(director?.Get("victim")?.Field("_UI"));
             // Do not spend another polling interval waiting to construct/bind the first spectator rows.
             if (Rows.Count != 2 || Rows.Any(row => row.NeedsData) || Time.unscaledTime >= _scanAt)
             {
@@ -274,6 +274,13 @@ internal static class BattleStatusUi
         Rows[0].ActorUi = atkUi;
         Rows[1].ActorUi = defUi;
         foreach (var row in Rows) row.Refresh();
+    }
+
+    private static void UpdateCounter(RuntimeObject? actorUi)
+    {
+        if (!Compatibility.Allowed(CounterFeature)) return;
+        try { RefreshCounter(actorUi); PositionCounter(); }
+        catch (Exception ex) { Compatibility.Block(CounterFeature, ex, ClearCounter, EncounterCounterUi.Clear); }
     }
 
     private static void RefreshCounter(RuntimeObject? actorUi)
@@ -334,7 +341,7 @@ internal static class BattleStatusUi
         }
     }
 
-    private static void ClearCounter()
+    internal static void ClearCounter()
     {
         GameUi.Dispose(_counterIcon);
         _counterIcon = _counterParent = _counterHeader = null;
@@ -434,7 +441,7 @@ internal static class BattleStatusUi
     private static string Local(RuntimeObject config, string property)
     {
         var id = config.Get<int>(property);
-        return id <= 0 ? "" : RuntimeObject.StaticCall(_helperClass, "GetLocal", id, 7)?.String() ?? "";
+        return id <= 0 ? "" : RuntimeObject.StaticCall(_helperClass, "GetLocal", id, RuntimeObject.EnumValue("UI", "UIStringType", "Buff"))?.String() ?? "";
     }
 
     private static void EnsureTooltip()

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <DefineConstants>$(DefineConstants);BAP_SAFETY_FIXTURE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="FrameworkParity.cs" />
+    <Compile Remove="ObservedGameProbe.cs" />
+    <Compile Include="../../tools/GameCompatibility.cs" />
+    <Compile Include="../../updater/*.cs" Exclude="../../updater/UpdateHelperProgram.cs" />
+    <Compile Include="../../src/Observability/*.cs" />
+  </ItemGroup>
+</Project>

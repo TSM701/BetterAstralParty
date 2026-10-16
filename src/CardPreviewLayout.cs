@@ -31,4 +31,18 @@ internal static class CardPreviewLayout
         if (map.TryGetValue(text, out var old) && old != id) map[text] = 0;
         else map[text] = id;
     }
+
+    internal static bool TryCardMessage(string text, int messageType, out int id)
+    {
+        id = 0;
+        if (text.Length > 128) return false;
+        var parts = text.Split(',');
+        if (parts.Length is not (2 or 3)) return false;
+        bool Number(string value, out int number) => int.TryParse(value.Trim(), System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out number) && number > 0;
+        if (!Number(parts[0], out var type) || type != messageType || !Number(parts[1], out var card)
+            || parts.Length == 3 && !Number(parts[2], out _)) return false;
+        id = card;
+        return true;
+    }
 }

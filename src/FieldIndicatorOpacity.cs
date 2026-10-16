@@ -8,7 +8,7 @@ internal static class FieldIndicatorOpacity
     internal static void Tick(float zoomOut)
     {
         var root = GameUi.Root;
-        if (!float.IsFinite(zoomOut) || zoomOut <= 0 || PvpSafety.Suspended || root == null) { Clear(); return; }
+        if (!Plugin.IndicatorFade.Value && !Plugin.IndicatorHide.Value || !float.IsFinite(zoomOut) || zoomOut <= 0 || PvpSafety.Suspended || root == null) { Clear(); return; }
         var logic = RuntimeObject.StaticField(RuntimeObject.FindClass("GameLogic", "GameLogicManager"), "_inst");
         var field = logic?.Get("battle")?.Field("battleInfo")?.Get("ui");
         if (!GameUi.Visible(field)) { Clear(); return; }
@@ -16,8 +16,8 @@ internal static class FieldIndicatorOpacity
         while (ancestor != null && ancestor.Pointer != root.Pointer) ancestor = ancestor.Get("parent");
         if (ancestor == null) { Clear(); return; }
         zoomOut = Math.Min(1f, zoomOut);
-        Hidden = Hidden ? zoomOut > .50f : zoomOut >= .60f;
-        var alpha = .6f * (1f - zoomOut * .5f);
+        Hidden = Plugin.IndicatorHide.Value && (Hidden ? zoomOut > .50f : zoomOut >= .60f);
+        var alpha = Plugin.IndicatorFade.Value ? .6f * (1f - zoomOut * .5f) : 1f;
         Monsters.Tick(field!.Field("com_AttrInfos"), alpha, Hidden);
         Players.Tick(field.Field("com_PlayerAttrInfos"), alpha, Hidden);
     }

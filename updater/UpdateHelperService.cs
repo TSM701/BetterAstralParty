@@ -50,7 +50,15 @@ namespace BetterAstralParty.Updating {
             } catch (Exception error) { RecoveryFailed(error,DiagnosticOperation.VerifiedGuid(guard.Operation),ticket.Context.ReleaseTag); }
             return Finish(fence,ticket,hash,HelperResult.RecoveryRequired,guard);
         }
+        private static HelperResult? Claimed(WindowsFileFence fence,string stage,string hash) {
+            try {using(var claim=fence.OpenFile(stage+"/helper.claim")) {
+                if(Encoding.ASCII.GetString(UpdateTicket.Read(claim,128))!=hash+"\n")throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
+                return HelperResult.AlreadyClaimed;
+            }}catch(ApplySafetyException error)when(error.NativeError==2){return null;}
+            catch(ApplySafetyException error)when(error.Failure==ApplyFailure.FileBusy && (error.NativeError==32 || error.NativeError==33)){return HelperResult.FilesBusy;}
+        }
         internal static HelperResult Run(string root, string stage, UpdateTrust trust, TimeSpan? maximumWait = null) {
+            UpdateWorkPath.RequireContained(stage,"stage");
             if (!trust.Configured) throw new UpdateValidationException(UpdateFailure.NotConfigured);
             using (var fence = new WindowsFileFence(root)) using (var ticketFile = fence.OpenFile(stage + "/handoff.ticket")) {
                 var ticketBytes = UpdateTicket.Read(ticketFile, UpdateTicket.MaxBytes); var ticket = UpdateTicket.Parse(ticketBytes); var hash = UpdateTrust.Hash(ticketBytes);
@@ -68,6 +76,8 @@ namespace BetterAstralParty.Updating {
                     if(lines[1]=="RecoveryRequired") return HelperResult.RecoveryRequired;
                     throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
                 }} catch(ApplySafetyException error) when(error.NativeError==2) { }
+                var existingClaim=Claimed(fence,stage,hash);
+                if(existingClaim.HasValue){RecordResult(ticket,null,existingClaim.Value,DiagnosticPhase.HelperQueue);return existingClaim.Value;}
                 var guard = UpdateFaults.ReadFile(fence, UpdateFaults.OperationPath);
                 if (guard != null && (guard.Stage != stage || !UpdateFaults.Same(guard.Context, ticket.Context) || guard.GamePid != ticket.GamePid || guard.GameCreation != ticket.GameCreation || guard.GameSession != ticket.GameSession || guard.LauncherPid != ticket.LauncherPid || guard.LauncherCreation != ticket.LauncherCreation || guard.LauncherSession != ticket.LauncherSession)) throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
                 guard ??= UpdateFaults.Begin(fence, ticket.Context, FaultPhase.Apply, ticket);
@@ -94,10 +104,16 @@ namespace BetterAstralParty.Updating {
                         DiagnosticHub.Stage(DiagnosticFeature.Helper,DiagnosticPhase.PayloadVerification,DiagnosticOutcome.Completed,DiagnosticOperation.VerifiedGuid(guard.Operation),ticket.Context.ReleaseTag);
                         phase = FaultPhase.Preparation;
                         diagnosticPhase = DiagnosticPhase.HelperQueue;
-                        try { UpdateTicket.Write(fence, stage + "/helper.claim", Encoding.ASCII.GetBytes(hash + "\n")); }
-                        catch (ApplySafetyException error) when (error.NativeError == 80 || error.NativeError == 183) { UpdateFaults.Complete(fence, guard); return HelperResult.AlreadyClaimed; }
+                        try {
+                            var claim=fence.OpenFile(stage+"/helper.claim",true,true); files.Add(claim);
+                            var claimedBytes=Encoding.ASCII.GetBytes(hash+"\n");claim.Stream.Write(claimedBytes,0,claimedBytes.Length);claim.Flush();
+                            // Retain exclusive ownership until this helper's terminal result; duplicates cannot retire its guard.
+                        } catch (ApplySafetyException error) when (error.NativeError == 80 || error.NativeError == 183 || error.NativeError == 32 || error.NativeError == 33) {
+                            var claimed=Claimed(fence,stage,hash);if(!claimed.HasValue)throw;
+                            RecordResult(ticket,guard,claimed.Value,DiagnosticPhase.HelperQueue);return claimed.Value;
+                        }
                         diagnosticPhase = DiagnosticPhase.WaitForExit;
-                        using (var game = WindowsProcessGuard.Capture(ticket.GamePid, fence.Full("AstralParty_INT.exe"), ticket.GameCreation, ticket.GameSession))
+                        using (var game = ticket.GamePid == 0 ? null : WindowsProcessGuard.Capture(ticket.GamePid, fence.Full("AstralParty_INT.exe"), ticket.GameCreation, ticket.GameSession))
                         using (var launcher = ticket.LauncherPid == 0 ? null : WindowsProcessGuard.Capture(ticket.LauncherPid, fence.Full("BetterAstralParty-Launcher.exe"), ticket.LauncherCreation, ticket.LauncherSession)) {
                             diagnosticPhase = DiagnosticPhase.HelperQueue;
                             UpdateFaults.HelperOwner(fence, guard);
@@ -106,13 +122,13 @@ namespace BetterAstralParty.Updating {
                             DiagnosticHub.Stage(DiagnosticFeature.Helper,DiagnosticPhase.WaitForExit,DiagnosticOutcome.Begin,DiagnosticOperation.VerifiedGuid(guard.Operation),ticket.Context.ReleaseTag);
                             var start = DateTime.UtcNow; var limit = maximumWait ?? TimeSpan.FromHours(4);
                             if (limit <= TimeSpan.Zero || limit > TimeSpan.FromHours(4)) throw new ApplySafetyException(ApplyFailure.InvalidState);
-                            while (!game.Exited || launcher != null && !launcher.Exited) {
+                            while (game != null && !game.Exited || launcher != null && !launcher.Exited) {
                                 ticket.Recheck(fence);
                                 if (signal.Cancelled || Cancelled(fence, ticket, hash)) return Stop(fence, ticket, hash, signal, guard);
                                 if (DateTime.UtcNow - start > limit) { UpdateFaults.Complete(fence, guard); DiagnosticHub.Stage(DiagnosticFeature.Helper,DiagnosticPhase.WaitForExit,DiagnosticOutcome.Unavailable,DiagnosticOperation.VerifiedGuid(guard.Operation),ticket.Context.ReleaseTag); return Finish(fence,ticket,hash,HelperResult.FilesBusy,guard); }
                                 Thread.Sleep(100);
                             }
-                            game.Dispose(); launcher?.Dispose();
+                            game?.Dispose(); launcher?.Dispose();
                             var leaseDue = DateTime.UtcNow.Add(limit); // A new game instance is a wait, never a failure/retry loop.
                             while (true) {
                                 if (signal.Cancelled || Cancelled(fence, ticket, hash)) return Stop(fence, ticket, hash, signal, guard);
@@ -125,10 +141,24 @@ namespace BetterAstralParty.Updating {
                             ticket.Recheck(fence);
                             if (signal.Cancelled || Cancelled(fence, ticket, hash)) return Stop(fence, ticket, hash, signal, guard);
                             DiagnosticHub.Stage(DiagnosticFeature.Helper,DiagnosticPhase.WaitForExit,DiagnosticOutcome.Completed,DiagnosticOperation.VerifiedGuid(guard.Operation),ticket.Context.ReleaseTag);
+                            diagnosticPhase = DiagnosticPhase.ReleaseMetadata;
+                            var eligible = false;
+                            try {
+                                DiagnosticHub.Stage(DiagnosticFeature.Helper, diagnosticPhase, DiagnosticOutcome.Begin, DiagnosticOperation.VerifiedGuid(guard.Operation), ticket.Context.ReleaseTag);
+                                eligible = PublicReleaseEligibility.Recheck(ticket.Context, descriptor);
+                                if (!eligible) DiagnosticHub.Failure(DiagnosticFeature.Helper, diagnosticPhase, DiagnosticCode.WrongTarget,
+                                    new InvalidDataException("Public release classification changed"), operation: DiagnosticOperation.VerifiedGuid(guard.Operation), targetVersion: ticket.Context.ReleaseTag);
+                            } catch (Exception error) {
+                                DiagnosticHub.Failure(DiagnosticFeature.Helper, diagnosticPhase, error is InvalidDataException || error is UpdateValidationException ? DiagnosticCode.MetadataInvalid : DiagnosticCode.Transport,
+                                    error, operation: DiagnosticOperation.VerifiedGuid(guard.Operation), targetVersion: ticket.Context.ReleaseTag);
+                            }
+                            if (!eligible) { UpdateFaults.Complete(fence, guard); return Finish(fence, ticket, hash, HelperResult.Cancelled, guard); }
+                            if (signal.Cancelled || Cancelled(fence, ticket, hash)) return Stop(fence, ticket, hash, signal, guard);
+                            DiagnosticHub.Stage(DiagnosticFeature.Helper, diagnosticPhase, DiagnosticOutcome.Completed, DiagnosticOperation.VerifiedGuid(guard.Operation), ticket.Context.ReleaseTag);
                             phase = FaultPhase.Apply;
                             diagnosticPhase = DiagnosticPhase.Apply;
                             DiagnosticHub.Stage(DiagnosticFeature.Helper,DiagnosticPhase.Apply,DiagnosticOutcome.Begin,DiagnosticOperation.VerifiedGuid(guard.Operation),ticket.Context.ReleaseTag);
-                            var work = "bap-v3-txn-" + Guid.NewGuid().ToString("N");
+                            var work = UpdateWorkPath.New("txn");
                             UpdateTicket.Write(fence, stage + "/helper.attempt", HelperRecoveryBinding.Attempt(hash, work));
                             attemptWork = work; // Durable before the transaction can create its plan or rename files.
                             var result = UpdateTransaction.Apply(fence, descriptorBytes, key, signature, zip, trust, ticket.Context
@@ -148,6 +178,9 @@ namespace BetterAstralParty.Updating {
                 } catch (ApplySafetyException error) when (error.Failure == ApplyFailure.ProcessBusy && UpdateRecovery.Scan(fence).TrueForAll(entry => !entry.Pending)) {
                     UpdateFaults.Complete(fence,guard); return Finish(fence,ticket,hash,HelperResult.FilesBusy,guard);
                 } catch(Exception error) {
+#if BAP_FIXTURE_HELPER
+                    Console.Error.WriteLine("BAP-FIXTURE-HELPER:"+diagnosticPhase+":"+error);
+#endif
                     DiagnosticHub.Failure(DiagnosticFeature.Helper,diagnosticPhase,DiagnosticCode.Unknown,error,
                         nativeCode:error is ApplySafetyException safety?safety.NativeError:0,validationCode:error is UpdateValidationException validation?(int)validation.Failure:0,
                         operation:DiagnosticOperation.VerifiedGuid(guard.Operation),applyCode:error is ApplySafetyException apply?(int)apply.Failure:0,targetVersion:ticket.Context.ReleaseTag);
@@ -157,6 +190,7 @@ namespace BetterAstralParty.Updating {
             }
         }
         internal static HelperResult Recover(string root, string stage, UpdateTrust trust) {
+            UpdateWorkPath.RequireContained(stage,"stage");
             if (!trust.Configured) throw new UpdateValidationException(UpdateFailure.NotConfigured);
             using (var fence = new WindowsFileFence(root)) using (var file = fence.OpenFile(stage + "/handoff.ticket")) {
                 var ticket = UpdateTicket.Parse(UpdateTicket.Read(file, UpdateTicket.MaxBytes)); ticket.Recheck(fence);

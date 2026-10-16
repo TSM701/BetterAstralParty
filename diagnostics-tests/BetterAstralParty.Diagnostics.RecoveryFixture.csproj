@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);BAP_SAFETY_FIXTURE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="RecoveryDiagnosticFixture.cs" />
+    <Compile Include="../diagnostics/DiagnosticBundle.cs;../diagnostics/MinimalDiagnosticProjection.cs" />
+    <Compile Include="../src/Observability/*.cs" />
+    <Compile Include="../updater/*.cs" Exclude="../updater/UpdateHelperProgram.cs" />
+  </ItemGroup>
+</Project>

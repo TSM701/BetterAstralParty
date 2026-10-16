@@ -1,19 +1,30 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Windows.Forms;
+using BetterAstralParty.Updating;
 
 internal static class SteamLauncher
 {
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
-        string root = AppDomain.CurrentDomain.BaseDirectory;
+        if (args.Length != 0 && args[0] == "--diagnostics") return BetterAstralParty.Installation.NativeDiagnosticEntry.Run(args);
+        if (args.Length != 0) return BetterAstralParty.Installation.NativeMaintenanceEntry.Run(args);
+        string root = WindowsPath.FromIo(AppDomain.CurrentDomain.BaseDirectory);
         int exitCode = 1;
         try
         {
             string details;
             exitCode = Run(root, out details);
+            if (exitCode != 0 && (details.IndexOf("phase=Compatibility;", StringComparison.Ordinal) >= 0 || details.IndexOf("phase=UpdateGate;", StringComparison.Ordinal) >= 0)) {
+                SaveFailure(CaptureLaunchContext(root) + details);
+                IDisposable? diagnostics = null;
+                try { diagnostics = BeginInstallerDiagnostics(root, System.Diagnostics.FileVersionInfo.GetVersionInfo(typeof(SteamLauncher).Assembly.Location).ProductVersion ?? "unknown"); } catch { }
+                using (diagnostics) LauncherRecoveryForm.Open(root);
+                return 0;
+            }
             if (exitCode != 0) throw new Exception("Launch exit code: " + exitCode + "\r\n" + details);
             return exitCode;
         }
@@ -30,7 +41,7 @@ internal static class SteamLauncher
     public static IDisposable GuardModLaunchVerified(string root,string? snapshotHash) {
         return new BetterAstralParty.Updating.UpdateLaunchGate.Lease(root, fence => {
             var assembly=typeof(SteamLauncher).Assembly;
-            if(assembly.Location.Length!=0 && !String.Equals(Path.GetFullPath(assembly.Location),fence.Full("BetterAstralParty-Launcher.exe"),StringComparison.OrdinalIgnoreCase))
+            if(assembly.Location.Length!=0 && !String.Equals(WindowsPath.FromIo(assembly.Location),fence.Full("BetterAstralParty-Launcher.exe"),StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Installed launcher required.");
             if(snapshotHash!=null){
                 if(!System.Text.RegularExpressions.Regex.IsMatch(snapshotHash,@"\A[0-9A-F]{64}\z"))throw new InvalidOperationException("Invalid launcher snapshot hash.");
@@ -42,18 +53,16 @@ internal static class SteamLauncher
                 installed=BetterAstralParty.Updating.InstallReceipt.Parse(BetterAstralParty.Updating.UpdateTicket.Read(receipt,16384));
             if(installed.Channels==null || installed.Channels.Root!=fence.RootIdentity.Text)
                 throw new InvalidOperationException("Installed receipt belongs to another game root.");
-            foreach(var path in BetterAstralParty.Updating.InstallReceipt.Owned) {
+            foreach(var path in new[]{BetterAstralParty.Updating.UpdateTrust.PluginPath,"BetterAstralParty-Launcher.exe"}) {
                 using(var file=path=="BetterAstralParty-Launcher.exe" ? fence.OpenLaunchImage(path) : fence.OpenFile(path)) {
                     if(file.Hash()!=installed.Files[path])throw new InvalidOperationException("Installed file changed: "+path);
                     if(path==BetterAstralParty.Updating.UpdateTrust.PluginPath) {
                         var metadata=BetterAstralParty.Updating.InstalledPluginMetadata.Read(BetterAstralParty.Updating.UpdateTicket.Read(file,(int)BetterAstralParty.Updating.UpdateTrust.MaxFileBytes));
-                        if(metadata.Version!=installed.Channels.ActiveVersion || metadata.UpdateProtocol!=3 || metadata.SettingsSchema!=1)
+                        if(metadata.Version!=installed.Channels.ActiveVersion || metadata.UpdateProtocol!=4 || metadata.SettingsSchema!=1)
                             throw new InvalidOperationException("Installed plugin does not match the supported receipt.");
                     }
                 }
             }
-            if(BetterAstralParty.Updating.HelperDelivery.Fingerprint(fence,BetterAstralParty.Updating.UpdateTrust.Production(),3)==null)
-                throw new InvalidOperationException("새 1.2.1 전체 패키지로 설치하세요. / Install the new complete 1.2.1 package.");
         });
     }
     public static IDisposable GuardMaintenance(string root) { return new BetterAstralParty.Updating.UpdateLaunchGate.Lease(root); }
@@ -144,8 +153,9 @@ internal static class SteamLauncher
                 var reason=safety.Data["BapRecoveryReason"] as string;
                 code=reason=="MaintenancePathTooLong"?BetterAstralParty.Observability.DiagnosticCode.LimitExceeded
                     : reason=="HighWaterRootMismatch" || reason=="HighWaterRepositoryMismatch"?BetterAstralParty.Observability.DiagnosticCode.WrongTarget
-                    : reason=="HighWaterProofMissing"?BetterAstralParty.Observability.DiagnosticCode.Prerequisite
+                    : reason=="HighWaterProofMissing" || reason=="LegacyFlatWorkPending"?BetterAstralParty.Observability.DiagnosticCode.Prerequisite
                     : reason!=null && reason.StartsWith("HighWater",StringComparison.Ordinal)?BetterAstralParty.Observability.DiagnosticCode.Integrity
+                    : safety.Failure==BetterAstralParty.Updating.ApplyFailure.CompatibilityRequired?BetterAstralParty.Observability.DiagnosticCode.CompatibilityBlocked
                     : BetterAstralParty.Observability.DiagnosticHub.CodeForStatus(safety.Failure.ToString());break;
             }
             if(cause is BetterAstralParty.Updating.UpdateValidationException invalid) {validation=(int)invalid.Failure;code=BetterAstralParty.Observability.DiagnosticHub.CodeForStatus(invalid.Failure.ToString());break;}
@@ -164,10 +174,18 @@ internal static class SteamLauncher
     public static string ReadVerifiedInstalledState(string root,string package,string version) {return BetterAstralParty.Updating.WholeInstallBridge.VerifiedInstalledState(root,package,version);}
     public static string PrepareWholeReceipt(string root,string package,string version,string observation,string loaderBefore) {return BetterAstralParty.Updating.WholeInstallBridge.PrepareReceipt(root,package,version,observation,loaderBefore);}
     public static IDisposable GuardWholeRecovery(string root,string package,string version) {return BetterAstralParty.Updating.WholeInstallBridge.GuardRecovery(root,package,version);}
+    public static IDisposable GuardOrdinaryRecovery(string root,string package,string version,string journalHash) {
+        try {return BetterAstralParty.Updating.WholeInstallBridge.GuardRecovery(root,package,version,journalHash);}
+        catch(Exception error) {RecordInstallerFailure("Recovery",error);throw;}
+    }
     public static IDisposable BeginWholeInstall(string root,string package,string version,string observation,string receipt) {return BetterAstralParty.Updating.WholeInstallBridge.BeginInstall(root,package,version,observation,receipt);}
     public static void RecoverWholeHelper(string root,string package,string version) {BetterAstralParty.Updating.WholeInstallBridge.Recover(root,package,version);}
     public static void InstallWholeHelper(string root,string package,string version,string observation,string receiptHash) {BetterAstralParty.Updating.WholeInstallBridge.Install(root,package,version,observation,receiptHash);}
-    public static void RestoreOrdinaryInstall(string root,string journalRoot,string journalHash,string[] allowedTargets,string expectedCurrent,bool completeOnly,string rootIdentity) {BetterAstralParty.Updating.OrdinaryInstallRecovery.Run(root,journalRoot,journalHash,allowedTargets,expectedCurrent,completeOnly,rootIdentity);}
+    public static void RestoreOrdinaryInstall(string root,string journalRoot,string journalHash,string[] allowedTargets,string expectedCurrent,bool completeOnly,string rootIdentity) {
+        RecordInstallerStage("Recovery","Begin");
+        try {BetterAstralParty.Updating.OrdinaryInstallRecovery.Run(root,journalRoot,journalHash,allowedTargets,expectedCurrent,completeOnly,rootIdentity);RecordInstallerStage("Recovery","Completed");}
+        catch(Exception error) {RecordInstallerFailure("Recovery",error);throw;}
+    }
     public static IDisposable BeginOwnedRemoval(string root,string journalRoot,string journalHash,string[] allowedTargets,string rootIdentity,bool allowLoader) {
         return new BetterAstralParty.Updating.OrdinaryInstallRecovery.OwnedRemovalLease(root,journalRoot,journalHash,allowedTargets,rootIdentity,allowLoader);
     }
@@ -177,41 +195,35 @@ internal static class SteamLauncher
         details = "";
         string phase = "SteamContext";
         try {
-            if (String.IsNullOrEmpty(Environment.GetEnvironmentVariable("SteamGameId")))
-                throw new InvalidOperationException("Open Astral Party - Mod from your Steam library.");
-            foreach (var name in new[] { "AstralParty_INT", "AstralParty_CN" }) {
-                var running = Process.GetProcessesByName(name);
-                try { if (running.Length != 0) throw new InvalidOperationException("Close Astral Party before launching the mod."); }
-                finally { foreach (var process in running) process.Dispose(); }
-            }
+            WindowsProcessGuard.AssertNoRunning(new[]{WindowsPath.Absolute(Path.Combine(root,"AstralParty_INT.exe"))});
             phase = "UpdateGate";
+            // The first automatic hop still runs the baseline helper; finish its signed delivery before the next game launch.
+            try { using(var recovery=new LauncherRecoveryClient(root)) recovery.CompleteInstalledHelper(CancellationToken.None).GetAwaiter().GetResult(); }
+            catch(Exception error) {
+                SaveFailure(LaunchFailure("HelperInstall",error));
+                using(var fence=new WindowsFileFence(root)) UpdateLaunchGate.Check(fence);
+                // A supported unchanged helper can retry delivery later; a pending mutation remains blocked.
+            }
             // The already running native host owns the lease; PowerShell never reloads this executable.
             using (var guardedLaunch = GuardModLaunchVerified(root, null)) {
                 phase = "Compatibility";
-                var checkStart = new ProcessStartInfo {
-                    FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"WindowsPowerShell\v1.0\powershell.exe"),
-                    Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"" + Path.Combine(root, "check-compatibility.ps1") + "\" -GameRoot \"" + root.TrimEnd(Path.DirectorySeparatorChar) + "\"",
-                    WorkingDirectory = root, UseShellExecute = false, CreateNoWindow = true,
-                    RedirectStandardOutput = true, RedirectStandardError = true
-                };
-                checkStart.EnvironmentVariables["PSModulePath"] = Path.Combine(Path.GetDirectoryName(checkStart.FileName)!, "Modules");
-                using (var check = Process.Start(checkStart) ?? throw new InvalidOperationException("Compatibility checker could not start")) {
-                    var stdout = check.StandardOutput.ReadToEndAsync();
-                    var stderr = check.StandardError.ReadToEndAsync();
-                    check.WaitForExit();
-                    var output = stdout.Result;
-                    var errorOutput = stderr.Result;
-                    if (check.ExitCode != 0) {
-                        details = LaunchFailure(phase, new InvalidOperationException("Compatibility check failed (exit " + check.ExitCode + "). " + errorOutput + " " + output));
-                        return check.ExitCode;
-                    }
+                var check = BetterAstralParty.Installation.GameCompatibility.Check(root, Path.Combine(root,"BetterAstralParty.compatibility.json"));
+                if (!check.Allowed) {
+                    try { SaveFailure(LaunchFailure(phase, new InvalidOperationException("Compatibility observation unavailable: " + string.Join("; ", check.Issues), check.Error)), true); } catch { }
                 }
+                try { if (check.Issues.Length + check.Warnings.Length != 0) BetterAstralParty.Installation.NativeMaintenanceEntry.SaveCompatibilityWarnings(root, check.Issues.Concat(check.Warnings).ToArray()); } catch { }
                 phase = "SharedLoader";
-                EnableSharedLoader(root, guardedLaunch);
+                try { EnableSharedLoader(root, guardedLaunch); }
+                catch (Exception error) when (error is not SharedLoaderRecoveryException && (error is IOException || error is InvalidDataException || error is UnauthorizedAccessException || error is System.Security.SecurityException || error is BetterAstralParty.Updating.ApplySafetyException || error is System.Text.DecoderFallbackException)) {
+                    // Preserve an unsupported foreign INI; only our still-valid launch lease may continue.
+                    using (var fence = new WindowsFileFence(root)) ((UpdateLaunchGate.Lease)guardedLaunch).Recheck(fence);
+                    try { SaveFailure(LaunchFailure(phase, error), true); } catch { }
+                    try { BetterAstralParty.Installation.NativeMaintenanceEntry.SaveCompatibilityWarnings(root, new[] { "공용 로더 설정을 변경하지 않고 게임을 실행합니다. / Shared loader configuration left unchanged; game launch continues." }); } catch { }
+                }
                 var start = new ProcessStartInfo {
-                    FileName = Path.Combine(root, "AstralParty_INT.exe"),
+                    FileName = WindowsPath.ForProcess(Path.Combine(root, "AstralParty_INT.exe")),
                     Arguments = "--doorstop-enabled true --bap-compatibility-checked",
-                    WorkingDirectory = root, UseShellExecute = false
+                    WorkingDirectory = WindowsPath.ForProcess(root), UseShellExecute = false
                 };
                 foreach (var name in new[] { "SteamAppId", "SteamGameId", "SteamOverlayGameId" }) start.EnvironmentVariables[name] = "2622000";
                 start.EnvironmentVariables["BAP_COMPATIBILITY_CHECKED"] = "1";
@@ -244,23 +256,23 @@ internal static class SteamLauncher
     internal static string CaptureLaunchContext(string root)
     {
         string full;
-        try { full = Path.GetFullPath(root); if (full.Length > 512) throw new ArgumentException(); }
+        try { full = WindowsPath.Absolute(root); }
         catch (Exception error) {
             return "LaunchRoot: source=LauncherDirectory; state=Invalid; hresult=0x" + error.HResult.ToString("X8") + "\r\n";
         }
         var text = new System.Text.StringBuilder("Game: ").Append(full).Append("\r\nLaunchRoot: source=LauncherDirectory; ")
             .Append(LaunchEntryState(full)).Append("\r\n");
-        string[] names = { "AstralParty_INT.exe", "BetterAstralParty-Steam.ps1", "check-compatibility.ps1", "BetterAstralParty-Launcher.exe" };
-        string[] kinds = { "GameExecutable", "EntryScript", "CompatibilityScript", "Launcher" };
+        string[] names = { "AstralParty_INT.exe", BetterAstralParty.Updating.UpdateTrust.PluginPath, "BetterAstralParty.compatibility.json", "BetterAstralParty-Launcher.exe" };
+        string[] kinds = { "GameExecutable", "Plugin", "CompatibilityManifest", "Launcher" };
         for (int i = 0; i < names.Length; i++)
-            text.Append("LaunchFile: kind=").Append(kinds[i]).Append("; ").Append(LaunchEntryState(Path.Combine(full, names[i]))).Append("\r\n");
+            text.Append("LaunchFile: kind=").Append(kinds[i]).Append("; ").Append(LaunchEntryState(Path.Combine(full, names[i].Replace('/', '\\')))).Append("\r\n");
         return text.ToString();
     }
     private static string LaunchEntryState(string path)
     {
         string state; int hresult = 0;
         try {
-            var attributes = File.GetAttributes(path);
+            var attributes = File.GetAttributes(WindowsPath.ForIo(path));
             state = (attributes & FileAttributes.ReparsePoint) != 0 ? "Linked"
                 : (attributes & FileAttributes.Directory) != 0 ? "Directory" : "File";
         }
@@ -272,7 +284,7 @@ internal static class SteamLauncher
         return "state=" + state + "; hresult=0x" + hresult.ToString("X8");
     }
 
-    internal static string? SaveFailure(string details)
+    internal static string? SaveFailure(string details, bool observation = false)
     {
         string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         if (!String.IsNullOrEmpty(profile)) details = System.Text.RegularExpressions.Regex.Replace(details,
@@ -282,9 +294,9 @@ internal static class SteamLauncher
             Path.Combine(Path.GetTempPath(), "BetterAstralParty") })
         {
             try {
-                Directory.CreateDirectory(directory);
+                Directory.CreateDirectory(WindowsPath.ForIo(directory));
                 string path = Path.Combine(directory, "Launch-" + Guid.NewGuid().ToString("N") + ".log");
-                File.WriteAllText(path, "BAP-LAUNCH-FAILED\r\nTime: " + DateTimeOffset.Now.ToString("o") + "\r\n" + details);
+                File.WriteAllText(WindowsPath.ForIo(path), (observation ? "BAP-LAUNCH-OBSERVATION" : "BAP-LAUNCH-FAILED") + "\r\nTime: " + DateTimeOffset.Now.ToString("o") + "\r\n" + details);
                 return path;
             } catch { /* A failed log write must not prevent the error dialog. */ }
         }

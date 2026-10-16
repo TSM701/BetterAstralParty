@@ -320,7 +320,7 @@ internal static class FieldBuffUi
         _popupList = list; _popupScroll = scroll;
         _popupTouchable = list.Get<bool>("touchable");
         _popupWheel = scroll.Get<bool>("mouseWheelEnabled");
-        // Native list already contains every public effect and a four-item scroll viewport.
+        // Native list already contains every public effect and owns its authored layout.
         // Its authored touchable=false prevented the existing ScrollPane from receiving the wheel.
         list.Set("touchable", true);
         scroll.Set("mouseWheelEnabled", true);

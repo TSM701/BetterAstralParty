@@ -41,8 +41,7 @@ internal sealed class MemoryReleaseAuthentication : IReleaseAuthentication, IDis
         _elapsed = elapsed ?? MonotonicClock(); _started = _elapsed(); _lifetime = lifetime; _token = token;
     }
     private static Func<TimeSpan> MonotonicClock() { var watch = Stopwatch.StartNew(); return () => watch.Elapsed; }
-    internal static bool ValidToken(string? token) => token is { Length: <= 256 }
-        && Regex.IsMatch(token, @"\Agithub_pat_[A-Za-z0-9_]{20,245}\z", RegexOptions.CultureInvariant);
+    internal static bool ValidToken(string? token) => ReleaseCredentialPolicy.ValidToken(token);
     public string CacheIdentity { get { lock (_gate) { Expire(); return _identity; } } }
     private void Expire() { if (_lifetime is not { } limit) return; var age = _elapsed() - _started; if (age < TimeSpan.Zero || age >= limit) { _token = null; _identity = ""; } }
     internal static bool Allowed(HttpRequestMessage request)

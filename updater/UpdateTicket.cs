@@ -38,7 +38,7 @@ namespace BetterAstralParty.Updating
             if (lines.Length != 16 || lines[0] != "BetterAstralParty.Handoff/v3" || lines[lines.Length - 1] != "") throw Bad();
             var keys = new[] { "root=", "stage=", "stage-id=", "descriptor=", "repository=", "channel=", "current=", "tag=", "release=", "asset=", "game=", "launcher=" }; var v = new string[keys.Length];
             for (var i = 0; i < keys.Length; i++) { if (!lines[i + 1].StartsWith(keys[i], StringComparison.Ordinal)) throw Bad(); v[i] = lines[i + 1].Substring(keys[i].Length); }
-            if (!Regex.IsMatch(v[0], @"\A[0-9A-F]{8}:[0-9A-F]{16}\z") || !Regex.IsMatch(v[1], @"\Abap-v3-stage-[0-9a-f]{32}\z") || !Regex.IsMatch(v[2], @"\A[0-9A-F]{8}:[0-9A-F]{16}\z") || !Regex.IsMatch(v[3], @"\A[0-9A-F]{64}\z")) throw Bad();
+            if (!Regex.IsMatch(v[0], @"\A[0-9A-F]{8}:[0-9A-F]{16}\z") || !Regex.IsMatch(v[1], @"\A" + UpdateWorkPath.OptionalRootPattern + @"bap-v4-stage-[0-9a-f]{32}\z") || !Regex.IsMatch(v[2], @"\A[0-9A-F]{8}:[0-9A-F]{16}\z") || !Regex.IsMatch(v[3], @"\A[0-9A-F]{64}\z")) throw Bad();
             long release, asset; if (!long.TryParse(v[8], NumberStyles.None, CultureInfo.InvariantCulture, out release) || !long.TryParse(v[9], NumberStyles.None, CultureInfo.InvariantCulture, out asset)) throw Bad();
             long repositoryId = 0; ChannelTransitionIntent? transition = null;
             {
@@ -49,7 +49,10 @@ namespace BetterAstralParty.Updating
             }
             var result = new UpdateTicket { RootId = v[0], Stage = v[1], StageId = v[2], DescriptorHash = v[3], Context = new UpdateContext(v[4], v[5], v[6], v[7], release, asset, UpdateTrust.PlatformId, repositoryId: repositoryId, transition: transition) };
             Process(v[10], out result.GamePid, out result.GameCreation, out result.GameSession); Process(v[11], out result.LauncherPid, out result.LauncherCreation, out result.LauncherSession);
-            if (result.GamePid == 0 || result.GameCreation <= 0 || result.LauncherPid == 0 && (result.LauncherCreation != 0 || result.LauncherSession != 0)) throw Bad();
+            // A launcher-only handoff has no game process; an exact live launcher is still required.
+            if (result.GamePid == 0 ? result.GameCreation != 0 || result.GameSession != 0 || result.LauncherPid == 0 || result.LauncherCreation <= 0
+                : result.GameCreation <= 0) throw Bad();
+            if (result.LauncherPid == 0 ? result.LauncherCreation != 0 || result.LauncherSession != 0 : result.LauncherCreation <= 0) throw Bad();
             var canonical = result.Bytes(); if (canonical.Length != bytes.Length) throw Bad(); for (var i = 0; i < bytes.Length; i++) if (canonical[i] != bytes[i]) throw Bad(); return result;
         }
         private static void Process(string text, out uint pid, out long creation, out uint session)

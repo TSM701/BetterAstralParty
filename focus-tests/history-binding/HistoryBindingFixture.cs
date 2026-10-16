@@ -13,6 +13,10 @@ using BetterAstralParty.Observability;
 using BetterAstralParty.Diagnostics;
 
 internal static class HistoryBindingFixture {
+    private static string[] WorkDirectories(string root, string kind)
+    { using var fence = new WindowsFileFence(root); var paths = new System.Collections.Generic.List<string>(); foreach (var relative in UpdateWorkPath.Directories(fence, kind)) paths.Add(fence.Full(relative)); return paths.ToArray(); }
+    private static string WorkRelative(string root, string path) => path.Substring(root.TrimEnd('\\').Length + 1).Replace('\\', '/');
+
     private const string KeyId = "history-binding-fixture";
     private static readonly List<object> Cases = new();
     private static string Base = "";
@@ -31,7 +35,7 @@ internal static class HistoryBindingFixture {
         internal readonly Dictionary<string, byte[]> Files = new(StringComparer.Ordinal);
         internal readonly byte[] Descriptor, Signature, Zip;
         internal readonly VerifiedUpdateDescriptor Verified;
-        internal Package(string version, string channel, byte[] plugin) {
+        internal Package(string version, string channel, byte[] plugin, bool publicScope = false) {
             Version = version; Channel = channel; Feed = ReleaseFeedPolicy.For(channel);
             foreach (var path in InstallReceipt.Owned)
                 Files[path] = path == UpdateTrust.PluginPath ? plugin : path == "BetterAstralParty-Launcher.exe" ? Inert : Encoding.ASCII.GetBytes("inert owned fixture " + version + " " + path);
@@ -42,9 +46,9 @@ internal static class HistoryBindingFixture {
                 }
                 Zip = memory.ToArray();
             }
-            var text = new StringBuilder("BetterAstralParty.UpdateDescriptor/v3\nrepository=" + Feed.Repository + "\nversion=" + version + "\nchannel=" + channel + "\nplatform=" + UpdateTrust.PlatformId
+            var text = new StringBuilder("BetterAstralParty.UpdateDescriptor/v4\nrepository=" + Feed.Repository + "\nversion=" + version + "\nchannel=" + (publicScope ? "Stable" : channel) + "\nplatform=" + UpdateTrust.PlatformId
                 + "\nrelease-id=123\nasset-id=456\nasset-name=BetterAstralParty-" + version + "-update.zip\nzip-bytes=" + Zip.Length + "\nzip-sha256=" + UpdateTrust.Hash(Zip)
-                + "\nfile-count=8\npurpose=release/" + channel + "\nrepository-id=" + Feed.RepositoryId + "\nsettings-schema=1\n");
+                + "\nfile-count=" + InstallReceipt.Owned.Length + "\npurpose=" + (publicScope ? ReleaseFeedPolicy.PublicPurpose : "release/" + channel) + "\nrepository-id=" + Feed.RepositoryId + "\nsettings-schema=1\n");
             foreach (var path in InstallReceipt.Owned) text.Append("file=").Append(path).Append('\t').Append(Files[path].Length).Append('\t').Append(UpdateTrust.Hash(Files[path])).Append('\n');
             Descriptor = Encoding.ASCII.GetBytes(text.ToString()); Signature = Key.SignData(Descriptor, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
             Verified = Trust.VerifyProposal(Descriptor, KeyId, Signature, new UpdateContext(Feed.Repository, channel, "0.0.0", version, 123, 456, UpdateTrust.PlatformId, repositoryId: Feed.RepositoryId));
@@ -89,11 +93,11 @@ internal static class HistoryBindingFixture {
         catch (ApplySafetyException error) { Check((string?)error.Data["BapRecoveryReason"] == reason, "exact refusal " + reason); Preserved(root, before, reason); return error; }
     }
     private static string Apply(string root, Package package, ChannelTransitionIntent? intent = null, Action<string>? boundary = null) {
-        var prior = Directory.GetDirectories(root, "bap-v3-txn-*").ToHashSet(StringComparer.Ordinal);
+        var prior = WorkDirectories(root, "txn").ToHashSet(StringComparer.Ordinal);
         using var fence = new WindowsFileFence(root); var current = Receipt(root).Channels!.ActiveVersion;
         var context = new UpdateContext(package.Feed.Repository, package.Channel, current, package.Version, 123, 456, UpdateTrust.PlatformId, repositoryId: package.Feed.RepositoryId, transition: intent);
         Check(UpdateTransaction.Apply(fence, package.Descriptor, KeyId, package.Signature, package.Zip, Trust, context, boundary) == TransactionResult.Committed, "real native apply committed " + package.Version);
-        return Path.GetFileName(Directory.GetDirectories(root, "bap-v3-txn-*").Single(path => !prior.Contains(path)));
+        return WorkRelative(root, WorkDirectories(root, "txn").Single(path => !prior.Contains(path)));
     }
     private static void RecoverTwice(string root, string work, Package package) {
         using var fence = new WindowsFileFence(root);
@@ -119,19 +123,21 @@ internal static class HistoryBindingFixture {
             Trust = new UpdateTrust(new[] { new TrustedUpdateKey(KeyId, key.ExportParameters(false)) });
             // Exercise production feed/metadata policy with only this in-memory fixture key.
             typeof(UpdateTrust).GetField("_production", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(Trust, true);
-            var initial = new Package("1.2.1", "Stable", File.ReadAllBytes(args[2]));
-            var beta = new Package("1.2.2-rc.1", "Beta", File.ReadAllBytes(args[3]));
-            var signed = new Package("1.2.3", "Stable", File.ReadAllBytes(args[4]));
-            var manual = new Package("1.2.4", "Stable", File.ReadAllBytes(args[5]));
-            var next = new Package("1.2.5", "Stable", File.ReadAllBytes(args[6]));
+            var initial = new Package("1.3.0", "Stable", File.ReadAllBytes(args[2]));
+            var beta = new Package("1.3.1-rc.1", "Beta", File.ReadAllBytes(args[3]));
+            var signed = new Package("1.3.2", "Stable", File.ReadAllBytes(args[4]));
+            var manual = new Package("1.3.3", "Stable", File.ReadAllBytes(args[5]));
+            var next = new Package("1.3.4", "Stable", File.ReadAllBytes(args[6]));
+            var publicRc = new Package("1.3.1-rc.1", "PreRelease", File.ReadAllBytes(args[3]), true);
+            var manualPre = new Package("1.3.3", "PreRelease", File.ReadAllBytes(args[5]), true);
             var diagnosticsRoot = Path.Combine(Base, "diagnostics"); Directory.CreateDirectory(diagnosticsRoot);
-            using var owner = DiagnosticOwner.Start(diagnosticsRoot, true, "1.2.1", new string('A', 32));
+            using var owner = DiagnosticOwner.Start(diagnosticsRoot, true, "1.3.0", new string('A', 32));
             Check(DiagnosticHub.Bind(owner), "real diagnostic owner bound");
             try {
                 Case("optional absent high-water", () => { var root = Fresh(initial, false); var before = Snapshot(root); using (Validate(root)) { } Preserved(root, before, "optional absence"); });
                 Case("exact version and descriptor pair", () => { var root = Fresh(initial); var before = Snapshot(root); using (Validate(root)) { } Preserved(root, before, "exact pair"); });
                 Case("same version wrong descriptor", () => { var root = Fresh(initial); using var f = new WindowsFileFence(root); Put(root, UpdateTransaction.HighWaterPath, Water(f.RootIdentity.Text, initial.Version, new string('B', 64))); Refused(root, "HighWaterUnbound"); });
-                Case("orphan older water needs proof", () => { var root = Fresh(initial); using var f = new WindowsFileFence(root); Put(root, UpdateTransaction.HighWaterPath, Water(f.RootIdentity.Text, "1.2.0", new string('A', 64))); Refused(root, "HighWaterProofMissing"); });
+                Case("orphan older water needs proof", () => { var root = Fresh(initial); using var f = new WindowsFileFence(root); Put(root, UpdateTransaction.HighWaterPath, Water(f.RootIdentity.Text, "1.3.0-rc.1", new string('A', 64))); Refused(root, "HighWaterProofMissing"); });
                 Case("wrong root", () => { var root = Fresh(initial); Put(root, UpdateTransaction.HighWaterPath, Water("00000000:0000000000000000", initial.Version, initial.Verified.DescriptorSha256)); Refused(root, "HighWaterRootMismatch"); });
                 Case("malformed water", () => { var root = Fresh(initial); Put(root, UpdateTransaction.HighWaterPath, new byte[] { 255, 13 }); Refused(root, "HighWaterInvalid"); });
                 Case("repository mismatch", () => { var root = Fresh(initial); var receipt = Receipt(root); var state = receipt.Channels!; var wrong = new ReceiptChannelState(state.Root, "Stable", state.Operation, state.StableRepositoryId + 1, state.StableVersion, state.StableDescriptor, 0, null, "-"); Put(root, InstallReceipt.Path, receipt.Updated(initial.Verified, wrong)); Refused(root, "HighWaterRepositoryMismatch"); });
@@ -152,6 +158,20 @@ internal static class HistoryBindingFixture {
                     var before = Snapshot(root); using (Validate(root)) { } Preserved(root, before, "manual newer row");
                     Check(File.ReadAllBytes(Path.Combine(root, UpdateTransaction.HighWaterPath)).SequenceEqual(water), "manual advance retains old history bytes");
                     var work = Apply(root, next); RecoverTwice(root, work, next);
+                });
+                Case("public RC history survives a newer PreRelease-only row", () => {
+                    var root = Fresh(initial); var work = Apply(root, publicRc, Approve(root, publicRc));
+                    var water = File.ReadAllBytes(Path.Combine(root, UpdateTransaction.HighWaterPath)); ManualAdvance(root, manualPre);
+                    var state = Receipt(root).Channels!;
+                    Check(new[] { "Stable", "PreRelease", "Beta" }.All(channel => state.VersionFor(channel) != publicRc.Version || state.DescriptorFor(channel) != publicRc.Verified.DescriptorSha256), "public RC validation cannot use an exact current channel-row shortcut");
+                    string stage; using (var fence = new WindowsFileFence(root)) stage = UpdateRecovery.Scan(fence).Single(entry => entry.Work == work).Stage;
+                    var before = Snapshot(root);
+                    using (Validate(root)) {
+                        try { using var replace = File.Open(Path.Combine(root, stage, "descriptor.bin"), FileMode.Open, FileAccess.Write, FileShare.None); throw new Exception("Public RC history was not read or leased"); }
+                        catch (IOException) { Check(true, "nonexact public RC history branch retains its authenticated descriptor lease"); }
+                    }
+                    Preserved(root, before, "public RC historical row");
+                    Check(File.ReadAllBytes(Path.Combine(root, UpdateTransaction.HighWaterPath)).SequenceEqual(water), "public RC historical validation preserves the retained watermark bytes");
                 });
                 Case("historical proof stays leased", () => {
                     var root = Fresh(initial); var work = Apply(root, signed); ManualAdvance(root, manual);
@@ -191,7 +211,7 @@ internal static class HistoryBindingFixture {
                     try { UpdateTransaction.Apply(fence, beta.Descriptor, KeyId, beta.Signature, beta.Zip, Trust, context); throw new Exception("Unapproved cross-channel apply accepted"); }
                     catch (UpdateValidationException error) { Check(error.Failure == UpdateFailure.WrongTarget, "higher selected-repository switch still requires explicit approval"); }
                     Preserved(root, before, "cross without approval");
-                    Check(Directory.GetDirectories(root, "bap-v3-*").Length == 0, "no stage or transaction created for unapproved cross-channel target");
+                    Check(WorkDirectories(root, "stage").Length == 0 && WorkDirectories(root, "txn").Length == 0, "no stage or transaction created for unapproved cross-channel target");
                 });
                 Case("copied other-channel water authenticates lineage after manual advancement", () => {
                     var root = Fresh(initial); Apply(root, signed); string oldId;
@@ -204,7 +224,7 @@ internal static class HistoryBindingFixture {
                 });
                 Case("copied lineage rejects changed original water evidence", () => {
                     var root = Fresh(initial); Apply(root, signed); var work = Apply(root, beta, Approve(root, beta)); ManualAdvance(root, manual);
-                    var oldWater = Path.Combine(root, work, "old-09"); var bytes = File.ReadAllBytes(oldWater); bytes[0] ^= 1; File.WriteAllBytes(oldWater, bytes); Refused(root, "HighWaterProofChanged");
+                    var oldWater = Path.Combine(root, work, "old-" + (InstallReceipt.Owned.Length + 1).ToString("D2", System.Globalization.CultureInfo.InvariantCulture)); var bytes = File.ReadAllBytes(oldWater); bytes[0] ^= 1; File.WriteAllBytes(oldWater, bytes); Refused(root, "HighWaterProofChanged");
                 });
                 Case("actual history recorder to actual ZIP privacy", () => {
                     Check(owner.Stop(DiagnosticEndReason.OwnerDisposed, 2000), "real typed diagnostics flushed");

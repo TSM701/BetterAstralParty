@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <AssemblyName>BetterAstralParty.Publisher</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="OperationalPublisher.cs" />
+    <Compile Include="UpdateDistribution.cs" />
+    <Compile Include="..\updater\*.cs" Exclude="..\updater\UpdateHelperProgram.cs" />
+  </ItemGroup>
+</Project>

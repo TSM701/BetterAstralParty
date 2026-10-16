@@ -6,14 +6,34 @@ using System.Text;
 using System.Text.RegularExpressions;
 namespace BetterAstralParty.Updating;
 
+internal sealed class SharedLoaderRecoveryException : IOException
+{
+    internal readonly string BackupPath;
+    internal SharedLoaderRecoveryException(string backupPath, Exception writeError, Exception rollbackError)
+        : base("공용 로더 설정 복원을 확인할 수 없어 게임 실행을 중단했습니다. 다음 백업으로 doorstop_config.ini를 복구한 뒤 다시 실행하세요. / Shared loader rollback could not be verified; launch stopped. Restore doorstop_config.ini from this retained backup before retrying: " + backupPath,
+            new AggregateException(writeError, rollbackError)) { BackupPath = backupPath; }
+    // Framework's outer Exception formatter can omit later AggregateException causes.
+    public override string ToString()
+    {
+        var causes = ((AggregateException)InnerException!).InnerExceptions;
+        return GetType().FullName + ": " + Message + "\r\n" + StackTrace
+            + "\r\nWrite cause: " + causes[0] + "\r\nRestore or cleanup cause: " + causes[1];
+    }
+}
+
 internal static class SharedLoaderConfiguration
 {
     internal const string BackupPrefix = "BepInEx/config/BetterAstralParty.loader-before-";
     private const string Ini = "doorstop_config.ini";
     private const int MaximumBytes = 64 * 1024;
+#if BAP_LOADER_FIXTURE
+    internal static Action<string>? FixtureBoundary = null;
+#endif
 
     internal static void Enable(string root, UpdateLaunchGate.Lease operation)
     {
+        var backupPath="";SharedLoaderRecoveryException? recoveryFailure=null;
+        try {
         using var fence = new WindowsFileFence(root);
         operation.Recheck(fence);
         using var file = fence.OpenFile(Ini, mutable: true);
@@ -22,25 +42,48 @@ internal static class SharedLoaderConfiguration
         if (parsed.Enabled) return; // Respect an intervening user/other-mod change.
         var updated = (byte[])original.Clone();
         parsed.Replacement.CopyTo(updated, parsed.Offset);
-        using var backup = fence.OpenFile(BackupPrefix + Guid.NewGuid().ToString("N") + ".bak", mutable: true, create: true);
+        backupPath = BackupPrefix + Guid.NewGuid().ToString("N") + ".bak";
+        using var backup = fence.OpenFile(backupPath, mutable: true, create: true);
         backup.Stream.Write(original, 0, original.Length); backup.Flush();
         if (backup.Hash() != UpdateTrust.Hash(original))
             throw new IOException("Shared-loader backup verification failed");
+#if BAP_LOADER_FIXTURE
+        FixtureBoundary?.Invoke("before-enable-write");
+#endif
+        file.Recheck();
+        file.Stream.Position = parsed.Offset;
         try
         {
-            file.Recheck();
-            file.Stream.Position = parsed.Offset;
             file.Stream.Write(parsed.Replacement, 0, parsed.Replacement.Length); file.Flush();
+#if BAP_LOADER_FIXTURE
+            FixtureBoundary?.Invoke("after-enable-write");
+#endif
             if (file.Hash() != UpdateTrust.Hash(updated))
                 throw new IOException("Shared-loader verification failed");
         }
-        catch
+        catch (Exception writeError)
         {
             // The exclusive retained handle still names the same file; keep the backup even after rollback.
-            file.Recheck(); file.Stream.Position = 0; file.Stream.Write(original, 0, original.Length); file.Flush();
-            if (file.Hash() != UpdateTrust.Hash(original))
-                throw new IOException("Shared-loader rollback requires the retained backup");
+            try {
+#if BAP_LOADER_FIXTURE
+                FixtureBoundary?.Invoke("before-enable-rollback");
+#endif
+                file.Recheck(); file.Stream.Position = 0; file.Stream.Write(original, 0, original.Length); file.Flush();
+#if BAP_LOADER_FIXTURE
+                FixtureBoundary?.Invoke("after-enable-rollback");
+#endif
+                if (file.Hash() != UpdateTrust.Hash(original)) throw new IOException("Shared-loader rollback verification failed");
+            } catch (Exception rollbackError) { recoveryFailure=new SharedLoaderRecoveryException(backupPath, writeError, rollbackError);throw recoveryFailure; }
             throw;
+        }
+        finally {
+#if BAP_LOADER_FIXTURE
+            FixtureBoundary?.Invoke("after-enable-attempt");
+#endif
+        }
+        } catch(Exception cleanupError) when(recoveryFailure!=null && !ReferenceEquals(cleanupError,recoveryFailure)) {
+            // Disposing a failed stream must not downgrade its uncertain write to an advisory I/O error.
+            throw new SharedLoaderRecoveryException(backupPath,recoveryFailure,cleanupError);
         }
     }
 

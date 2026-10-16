@@ -13,6 +13,7 @@
   <Compile Include="../../src/AutomaticUpdateSnapshot.cs" />
   <Compile Include="../../src/ReleaseFeedTransport.cs" />
   <Compile Include="../../updater/ReleaseFeedPolicy.cs" />
+  <Compile Include="../../updater/UpdateVersion.cs" />
   <Reference Include="SemanticVersioning"><HintPath>$(BepInExRoot)/BepInEx/core/SemanticVersioning.dll</HintPath></Reference>
  </ItemGroup>
 </Project>

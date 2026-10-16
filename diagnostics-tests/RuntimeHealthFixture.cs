@@ -26,8 +26,15 @@ internal static class RuntimeHealthFixture {
    Check(Flush(installer)&&installer.Recording&&!installer.StorageFailed,"actual installer owner uses separate secure store");
    Check(new[]{runtime.ProcessSession,helper.ProcessSession,installer.ProcessSession}.Distinct().Count()==3,"three production owners have separate process sessions");
    runtime.Stage(DiagnosticFeature.Settings,DiagnosticPhase.UiAction,DiagnosticOutcome.Begin);
+   var settingsPhases=Enum.GetValues<DiagnosticPhase>().Where(phase=>phase.ToString().StartsWith("Settings",StringComparison.Ordinal)).ToArray();
+   foreach(var phase in settingsPhases)runtime.Stage(DiagnosticFeature.Settings,phase,DiagnosticOutcome.Observed);
    helper.Stage(DiagnosticFeature.Helper,DiagnosticPhase.Recovery,DiagnosticOutcome.Begin);
    installer.Stage(DiagnosticFeature.Installer,DiagnosticPhase.Configuration,DiagnosticOutcome.Begin);
+   foreach(var channel in new[]{DiagnosticChannel.Stable,DiagnosticChannel.PreRelease,DiagnosticChannel.Beta})runtime.Settings(new DiagnosticSettings(15,DiagnosticLanguage.Korean,channel,DiagnosticHandMode.Hover,100,75));
+   var newActions=new[]{DiagnosticUiAction.AutoThanks,DiagnosticUiAction.CardTargetButtons,DiagnosticUiAction.CharacterGuide,DiagnosticUiAction.CharacterRoles,DiagnosticUiAction.IndicatorFade,DiagnosticUiAction.IndicatorHide,DiagnosticUiAction.CounterSound,DiagnosticUiAction.CounterAnimation,DiagnosticUiAction.SuppressNotices,DiagnosticUiAction.PingFocus,DiagnosticUiAction.UpdateNotifications,DiagnosticUiAction.AutomaticChecks,DiagnosticUiAction.ShushuShieldRestrictions,DiagnosticUiAction.FinalDamage,DiagnosticUiAction.FieldZoom,DiagnosticUiAction.MatchFocus};
+   foreach(var action in newActions)runtime.UiAction(action,DiagnosticOutcome.Completed,DiagnosticOperation.New());
+   var updateStates=new[]{DiagnosticUpdateState.NoCompatibleUpdate,DiagnosticUpdateState.CompatibilityRejected};
+   foreach(var state in updateStates)runtime.UpdateStatus(DiagnosticFeature.ReleaseCheck,state);
    Check(Flush(runtime)&&Flush(helper)&&Flush(installer),"actual owner records flush without shared files");
    var snapshot=Health(runtime);var first=Collect(root,"first",snapshot);using(first.Summary){
     var live=first.Summary.RootElement.GetProperty("liveHostHealth");var actual=live.GetProperty("runtime");
@@ -37,11 +44,25 @@ internal static class RuntimeHealthFixture {
     Check(actual.GetProperty("capturedUtc").GetString()!.EndsWith("Z")&&actual.GetProperty("modVersion").GetString()=="1.0.0-rc.2"&&actual.GetProperty("buildId").GetString()==new string('A',32),"capture UTC and controlled source/build identity");
     var alias=actual.GetProperty("processSession").GetString()!;Check(alias!=runtime.ProcessSession&&first.JsonLines.Contains(alias),"live health reuses runtime event ZIP-local session alias");
     Check(!first.Entire.Contains(runtime.ProcessSession)&&!first.Entire.Contains(helper.ProcessSession)&&!first.Entire.Contains(installer.ProcessSession),"raw owner process GUIDs never exported");
+    var channelRows=new HashSet<string>();var actionRows=new HashSet<string>();var stateRows=new HashSet<string>();foreach(var line in first.JsonLines.Split('\n').Where(line=>line.Length>0)){using var doc=JsonDocument.Parse(line);if(doc.RootElement.GetProperty("kind").GetString()=="Settings")channelRows.Add(doc.RootElement.GetProperty("settings").GetProperty("channel").GetString()!);actionRows.Add(doc.RootElement.GetProperty("ui_action").GetString()!);stateRows.Add(doc.RootElement.GetProperty("update_state").GetString()!);}
+    Check(new[]{"Stable","PreRelease","Beta"}.All(channelRows.Contains),"actual typed writer, fenced store and diagnostic ZIP preserve all three bounded channel values");
+    Check(newActions.All(action=>actionRows.Contains(action.ToString())),"actual typed writer, fenced store and diagnostic ZIP preserve all sixteen current bounded settings actions");
+    Check(updateStates.All(state=>stateRows.Contains(state.ToString())),"actual typed writer, fenced store and diagnostic ZIP preserve bounded compatibility update states");
+    var currentRecords=first.JsonLines.Split('\n').Where(line=>line.Length>0).ToArray();
+    Check(currentRecords.All(line=>OwnedDiagnosticRecord.Inspect(line,out _,out _,out _)),"owned record parser accepts the actual writer-to-ZIP action and update-state closure");
+    Check(settingsPhases.Length==21&&settingsPhases.All(phase=>currentRecords.Any(line=>line.Contains("\"phase\":\""+phase+"\"",StringComparison.Ordinal))),"detailed-OFF settings creation checkpoints survive actual background writer, fenced store and ZIP projection");
+    var settingsRecord=currentRecords.First(line=>line.Contains("\"phase\":\"SettingsModal\"",StringComparison.Ordinal));
+    Check(!OwnedDiagnosticRecord.TryProject(settingsRecord.Replace("\"SettingsModal\"","\"FAKE_PRIVATE_PHASE\"",StringComparison.Ordinal),out _),"settings checkpoint allowlist still rejects arbitrary phase strings");
+    var actionRecord=currentRecords.First(line=>line.Contains("\"ui_action\":\"FieldZoom\"",StringComparison.Ordinal));var stateRecord=currentRecords.First(line=>line.Contains("\"update_state\":\"NoCompatibleUpdate\"",StringComparison.Ordinal));
+    Check(!OwnedDiagnosticRecord.TryProject(actionRecord.Replace("\"FieldZoom\"","\"FAKE_UNKNOWN_ACTION\"",StringComparison.Ordinal),out _)&&!OwnedDiagnosticRecord.TryProject(stateRecord.Replace("\"NoCompatibleUpdate\"","\"FAKE_UNKNOWN_STATE\"",StringComparison.Ordinal),out _),"owned action/state additions do not accept unknown strings");
     Check(live.GetProperty("helper").GetProperty("availability").GetString()=="unavailable"&&live.GetProperty("installer").GetProperty("availability").GetString()=="unavailable","separate process live health remains unavailable");
     var second=Collect(root,"second",Health(runtime));using(second.Summary)Check(second.Summary.RootElement.GetProperty("liveHostHealth").GetProperty("runtime").GetProperty("processSession").GetString()!=alias,"new bundle refreshes health/event session aliases");
    }
    Check(!CreateHardLinkW(Path.Combine(Base,"live-hardlink.jsonl"),Path.Combine(Minimum(root),"events-current.jsonl"),IntPtr.Zero),"production owner data-only ACL prevents live hardlink creation");
    Check(runtime.Recording&&!runtime.StorageFailed&&Flush(runtime),"collector live read leaves secure writer usable");
+  }
+  using(var reopened=DiagnosticOwner.Start(root,false,"1.0.0-rc.2",new string('A',32))) {
+   Check(Flush(reopened)&&reopened.Recording&&!reopened.StorageFailed,"secure owner reopens controlled settings checkpoint records");
   }
   var old=Root("legacy");var directory=Minimum(old);Directory.CreateDirectory(directory);
   foreach(var leaf in new[]{"events-current.jsonl","events-previous.jsonl","session.state","writer.lock","custom-user.txt"})File.WriteAllText(Path.Combine(directory,leaf),"FAKE_UNVERIFIED_"+leaf);
@@ -55,6 +76,23 @@ internal static class RuntimeHealthFixture {
    }
   }
   Check(hashes.OrderBy(x=>x.Key).SequenceEqual(Hashes(directory).OrderBy(x=>x.Key)),"unknown legacy files all preserved without adoption or migration");
+  var local=Root("local-reopen");const string localVersion="1.3.0-rc.3.local.6";
+  using(var owner=DiagnosticOwner.Start(local,false,localVersion,new string('D',32))) {
+   Check(Flush(owner)&&owner.Recording&&!owner.StorageFailed,"local-version owner starts with secure storage");
+   owner.UpdateStatus(DiagnosticFeature.ReleaseCheck,DiagnosticUpdateState.NoCompatibleUpdate,localVersion);
+   owner.UiAction(DiagnosticUiAction.FieldZoom,DiagnosticOutcome.Completed,DiagnosticOperation.New());
+   Check(Flush(owner)&&owner.Stop(DiagnosticEndReason.OwnerDisposed),"local-version owner durably closes controlled local records");
+  }
+  using(var owner=DiagnosticOwner.Start(local,false,localVersion,new string('D',32))) {
+   Check(Flush(owner)&&owner.Recording&&!owner.StorageFailed,"local-version owner reopens its prior records without storage refusal");
+   var result=Collect(local,"local-reopened",Health(owner));using(result.Summary) {
+    var records=result.JsonLines.Split('\n').Where(line=>line.Length>0).Select(line=>JsonDocument.Parse(line).RootElement.Clone()).ToArray();
+    Check(records.All(row=>row.GetProperty("mod_version").GetString()==localVersion)&&records.Any(row=>row.GetProperty("target_version").GetString()==localVersion),"reopened local mod and target versions survive previous/current ZIP streams");
+    Check(records.Any(row=>row.GetProperty("kind").GetString()=="PreviousSession"&&row.GetProperty("outcome").GetString()=="Completed"),"local-version reopen retains verified completed prior-session outcome");
+    var record=result.JsonLines.Split('\n').First(line=>line.Length>0);
+    foreach(var invalid in new[]{"1.3.0-rc.3.local.0","1.3.0-rc.3.local.1000000","v1.3.0-rc.3.local.6","FAKE_PRIVATE_VERSION"}) Check(!OwnedDiagnosticRecord.TryProject(record.Replace(localVersion,invalid,StringComparison.Ordinal),out _),"owned record version rejects uncontrolled value: "+invalid);
+   }
+  }
   var absent=Collect(root,"unavailable",null);using(absent.Summary){
    var h=absent.Summary.RootElement.GetProperty("liveHostHealth").GetProperty("runtime");
    Check(h.GetProperty("availability").GetString()=="unavailable"&&h.GetProperty("recording").ValueKind==JsonValueKind.Null&&h.GetProperty("storageFailed").ValueKind==JsonValueKind.Null,"standalone collection does not infer live health from existing logs");

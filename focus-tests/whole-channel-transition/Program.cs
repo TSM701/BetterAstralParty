@@ -6,6 +6,10 @@ using BetterAstralParty.Updating;
 
 internal static class WholeChannelTransitionFixture
 {
+    private static string[] WorkDirectories(string root, string kind)
+    { using var fence = new WindowsFileFence(root); var paths = new System.Collections.Generic.List<string>(); foreach (var relative in UpdateWorkPath.Directories(fence, kind)) paths.Add(fence.Full(relative)); return paths.ToArray(); }
+    private static string WorkRelative(string root, string path) => path.Substring(root.TrimEnd('\\').Length + 1).Replace('\\', '/');
+
     private sealed class Interruption : Exception { }
     private static int _checks;
     private static void Check(bool value, string name)
@@ -138,7 +142,7 @@ internal static class WholeChannelTransitionFixture
                 label => { if (label == boundary) { hit = true; throw new Interruption(); } }); } catch (Interruption) { }
             Check(hit, name + ": exact automatic boundary interrupted");
         }
-        var work = Path.GetFileName(Directory.GetDirectories(root, "bap-v3-txn-*").Single());
+        var work = WorkRelative(root, WorkDirectories(root, "txn").Single());
         var committed = name != "rollback";
         for (var attempt = 0; attempt < 2; attempt++) {
             Check(UpdateTransaction.Recover(target, work, UpdateTrust.Production(), selection) == (committed ? TransactionResult.Committed : TransactionResult.RolledBack),
@@ -152,7 +156,7 @@ internal static class WholeChannelTransitionFixture
             Check(committed ? channels.BetaVersion == beta.Descriptor.Version && channels.BetaDescriptor == beta.Descriptor.DescriptorSha256
                 : Read(target, InstallReceipt.Path, 16384).SequenceEqual(oldReceipt), name + ": target Beta evidence or exact original receipt restored");
             foreach (var item in expected.Descriptor.Files) Check(receipt.Files[item.Path] == item.Sha256 && UpdateTrust.Hash(Read(target, item.Path)) == item.Sha256,
-                name + ": automatic resolved owned8 exact hash " + item.Path);
+                name + ": automatic resolved native-owned exact hash " + item.Path);
             Check(committed ? UpdateTransaction.ReadHighWater(target, out _) == beta.Descriptor.Version : Read(target, UpdateTransaction.HighWaterPath, 2048).SequenceEqual(water),
                 name + ": automatic global high-water follows commit or exact rollback");
             foreach (var item in preserved) Check(Read(target, item.Key).SequenceEqual(item.Value), name + ": automatic shared/user bytes preserved " + item.Key);
@@ -210,8 +214,8 @@ internal static class WholeChannelTransitionFixture
                 && receipt.Channels.StableRepositoryId == old.Channels!.StableRepositoryId && receipt.Channels.StableVersion == old.Channels.StableVersion
                 && receipt.Channels.StableDescriptor == old.Channels.StableDescriptor, name + ": Beta active receipt preserves Stable history and loader baseline");
             foreach (var item in beta.Descriptor.Files) Check(receipt.Files[item.Path] == item.Sha256 && UpdateTrust.Hash(Read(target, item.Path)) == item.Sha256,
-                name + ": exact active owned8 hash " + item.Path);
-            Check(HelperDelivery.Fingerprint(target, UpdateTrust.Production(), 3) == beta.Helper.Sha256, name + ": public-verified helper is exactly current");
+                name + ": exact active native-owned hash " + item.Path);
+            Check(HelperDelivery.Fingerprint(target, UpdateTrust.Production(), 4) == beta.Helper.Sha256, name + ": public-verified helper is exactly current");
             var removal = HelperDelivery.RemovedEvidence(target, UpdateTrust.Production(), Read(target, HelperDescriptor.Image), Read(target, HelperDelivery.Receipt, 1024));
             Check(removal.StartsWith("BetterAstralParty.RemovedHelperEvidence/v1\n", StringComparison.Ordinal), name + ": copied removal helper proof uses signed original object history");
             Reject(() => WholeInstallBridge.Validate(root, stable.Fence.Root, stable.Descriptor.Version), name + ": reverse older whole install remains blocked");
@@ -281,7 +285,7 @@ internal static class WholeChannelTransitionFixture
             Receipt = Encoding.ASCII.GetString(receipt), Channel = channels.Text().Split('\n'), Water = Encoding.ASCII.GetString(water).Split('\n'),
             WaterIdentity = waterIdentity, BackupRoot = backupRoot, BackupId = backupId, JournalSha256 = UpdateTrust.Hash(journal),
             Missing = missing, Preserved = preserved.Where(item => item.Key != ChannelTransitionIntent.SettingsPath).ToDictionary(item => item.Key, item => UpdateTrust.Hash(item.Value)),
-            Scope = "Constructed scratch-only completed removal journal with native held-file backups/removal; actual PowerShell removal/reinstall predicates must be checked separately."
+            Scope = "Constructed scratch-only completed removal journal with native held-file backups/removal; actual native removal/reinstall predicates are checked separately."
         }));
     }
     private static void PartialRepairCase(string scratch, string name, Package stable, Package beta, string[] missing, bool upgrade)
@@ -303,7 +307,7 @@ internal static class WholeChannelTransitionFixture
         var water = Encoding.ASCII.GetBytes("BetterAstralParty.HighWater/v1\nroot=" + target.RootIdentity.Text + "\nversion=" + initial.Descriptor.Version
             + "\ndescriptor=" + initial.Descriptor.DescriptorSha256 + "\n");
         Write(target, UpdateTransaction.HighWaterPath, water);
-        var helperBefore = HelperDelivery.Fingerprint(target, UpdateTrust.Production(), 3);
+        var helperBefore = HelperDelivery.Fingerprint(target, UpdateTrust.Production(), 4);
         foreach (var path in missing) Remove(target, path);
         var removalBefore = Snapshot(target);
         WholeInstallBridge.ValidatePartialRemoval(root);
@@ -318,7 +322,7 @@ internal static class WholeChannelTransitionFixture
         foreach (var file in beta.Descriptor.Files) Check(installed.Files[file.Path] == file.Sha256 && UpdateTrust.Hash(Read(target, file.Path)) == file.Sha256,
             name + ": exact repaired signed owned file " + file.Path);
         Check(InstalledPluginMetadata.Read(Read(target, UpdateTrust.PluginPath)).Version == beta.Descriptor.Version, name + ": actual plugin version preserved/replaced as requested");
-        Check(HelperDelivery.Fingerprint(target, UpdateTrust.Production(), 3) == beta.Helper.Sha256 && (upgrade || helperBefore == beta.Helper.Sha256),
+        Check(HelperDelivery.Fingerprint(target, UpdateTrust.Production(), 4) == beta.Helper.Sha256 && (upgrade || helperBefore == beta.Helper.Sha256),
             name + ": exact signed helper remains valid");
         Check(Read(target, UpdateTransaction.HighWaterPath, 2048).SequenceEqual(water), name + ": same-install high-water history is not retired");
         foreach (var item in preserved) Check(Read(target, item.Key).SequenceEqual(item.Value), name + ": shared/user/unknown bytes preserved " + item.Key);
@@ -343,8 +347,8 @@ internal static class WholeChannelTransitionFixture
                 "missing-helper-pair" => new[] { HelperDescriptor.Image, HelperDelivery.Receipt },
                 "wrong-channel-root" => new[] { "BetterAstralParty-Launcher.exe", InstallReceipt.Path },
                 "same-build-different-receipt-hash" => new[] { "BetterAstralParty-Launcher.exe", InstallReceipt.Path },
-                "pending-reinstall" => new[] { "BetterAstralParty.reinstall-v3.pending" },
-                "pending-operation" => new[] { "BetterAstralParty.update-v3.operation" },
+                "pending-reinstall" => new[] { "BetterAstralParty.reinstall-v4.pending" },
+                "pending-operation" => new[] { "BetterAstralParty.update-v4.operation" },
                 _ => new[] { "BetterAstralParty-Launcher.exe" }
             };
             var originals = paths.ToDictionary(path => path, path => File.Exists(target.Full(path)) ? Read(target, path) : null, StringComparer.Ordinal);
@@ -401,14 +405,14 @@ internal static class WholeChannelTransitionFixture
                 try { WholeInstallBridge.Validate(root, beta.Fence.Root, beta.Descriptor.Version); throw new Exception("Accepted missing/changed evidence"); }
                 catch(ApplySafetyException error) { Check(error.Failure==ApplyFailure.RecoveryRequired && (string?)error.Data["BapRecoveryReason"]==expected, kind+": specific recovery blocker retained without changing refusal"); }
             }
-            if (kind == "missing-plugin") {
+            if (kind is "missing-plugin" or "missing-helper-pair") {
                 WholeInstallBridge.ValidatePartialRemoval(root);
-                Check(true, kind + ": retained exact signed installed proof permits read-only partial removal");
+                Check(true, kind + ": retained installed ownership/history permits read-only partial removal");
             } else if (kind != "same-build-different-receipt-hash")
                 Reject(() => WholeInstallBridge.ValidatePartialRemoval(root), kind + ": production partial-removal validator rejects unsafe evidence");
             var after = Snapshot(target);
             Check(before.Count == after.Count && before.All(pair => after.TryGetValue(pair.Key, out var hash) && hash == pair.Value), kind +
-                (kind == "missing-plugin" ? ": validation makes no owned/history mutation" : ": rejection makes no owned/history mutation"));
+                (kind is "missing-plugin" or "missing-helper-pair" ? ": validation makes no owned/history mutation" : ": rejection makes no owned/history mutation"));
             foreach (var item in originals) {
                 if (hidden.TryGetValue(item.Key, out var hiddenPath)) { using var file = target.OpenFile(hiddenPath, true); file.RenameTo(target, item.Key); }
                 else if (item.Value == null) Remove(target, item.Key);
@@ -444,19 +448,6 @@ internal static class WholeChannelTransitionFixture
         }
         Check(true, "actual packaged launcher resource metadata checked without loading or executing it");
     }
-    private static Dictionary<string, System.Reflection.Assembly> FrozenInspectors(string artifacts)
-    {
-        var project = Directory.GetParent(artifacts)!.FullName;
-        var definitions = new[] {
-            ("1.1.3", "releases/1.1.3-public-20261011/BetterAstralParty-1.1.3", "24B5C52A2D7A471DA6F64478BEFB1993AD8219E7271303CD853DC983800645B4"),
-            ("1.1.4", "releases/1.1.4-public-20261012/BetterAstralParty-1.1.4", "C681E1F6F654657627A353E3F5A686B1E5E3958C3EC7BF53423B2BA217B0CE3D")
-        };
-        return definitions.ToDictionary(item => item.Item1, item => {
-            var bytes = File.ReadAllBytes(Path.Combine(project, item.Item2, "artifacts/BetterAstralParty-Launcher.exe"));
-            Check(UpdateTrust.Hash(bytes) == item.Item3, "archive: exact immutable inspector " + item.Item1);
-            return System.Reflection.Assembly.Load(bytes);
-        });
-    }
     private static Dictionary<string, string> ArchiveSnapshot(string root) => Directory.GetFiles(root, "*", SearchOption.AllDirectories)
         .ToDictionary(path => path.Substring(root.Length + 1).Replace('\\', '/'), path => UpdateTrust.Hash(File.ReadAllBytes(path)), StringComparer.Ordinal);
     private static void SameSnapshot(Dictionary<string, string> before, string root, string label)
@@ -464,19 +455,18 @@ internal static class WholeChannelTransitionFixture
         var after = ArchiveSnapshot(root);
         Check(before.Count == after.Count && before.All(pair => after.TryGetValue(pair.Key, out var hash) && hash == pair.Value), label);
     }
-    private static void FrozenProbes(string root, Dictionary<string, System.Reflection.Assembly> inspectors, bool expected, string label)
+    private static void CurrentProbes(string root, bool expected, string label)
     {
-        foreach (var item in inspectors)
-        foreach (var method in new[] { "CheckUpdateState", "GuardMaintenance", "ValidatePartialRemoval" }) {
-            var before = ArchiveSnapshot(root); var accepted = false; Exception? error = null; IDisposable? lease = null;
+        foreach (var kind in new[] { "LaunchGate", "MaintenanceLease", "PartialRemoval" }) {
+            var before = ArchiveSnapshot(root); var accepted = false; ApplySafetyException? failure = null;
             try {
-                var api = item.Value.GetType("SteamLauncher", true)!.GetMethod(method, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!;
-                lease = api.Invoke(null, new object[] { root }) as IDisposable; accepted = true;
-            } catch (System.Reflection.TargetInvocationException failure) { error = failure.GetBaseException(); }
-            finally { lease?.Dispose(); }
-            Check(accepted == expected && (expected || error != null && error.GetType().FullName == typeof(ApplySafetyException).FullName && error.Message == "Update safety: RecoveryRequired"),
-                label + ": frozen " + item.Key + "/" + method + (expected ? " accepts" : " refuses pending"));
-            SameSnapshot(before, root, label + ": frozen inspection is read-only " + item.Key + "/" + method);
+                if (kind == "LaunchGate") { using var target = new WindowsFileFence(root); UpdateLaunchGate.Check(target); }
+                else if (kind == "MaintenanceLease") { using var lease = new UpdateLaunchGate.Lease(root); }
+                else WholeInstallBridge.ValidatePartialRemoval(root);
+                accepted = true;
+            } catch (ApplySafetyException error) { failure = error; }
+            Check(accepted == expected && (expected || failure?.Failure == ApplyFailure.RecoveryRequired), label + ": current " + kind + (expected ? " accepts" : " refuses pending"));
+            SameSnapshot(before, root, label + ": current " + kind + " inspection preserves every file");
         }
     }
     private static string ArchiveRoot(string scratch, string name, Package beta)
@@ -487,17 +477,9 @@ internal static class WholeChannelTransitionFixture
             Write(fence, "AstralParty_INT.exe", Encoding.ASCII.GetBytes("inert archive fixture; never executed\n"));
             Write(fence, "BepInEx/plugins/OtherMod.dll", Encoding.ASCII.GetBytes("preserve unrelated mod\n"));
         }
-        InstallFresh(root, beta); return root;
-    }
-    private static void FrozenSeed(string root, Package package, System.Reflection.Assembly assembly)
-    {
-        var api = assembly.GetType("SteamLauncher", true)!;
-        object? Invoke(string method, params string[] arguments) => api.GetMethod(method, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!.Invoke(null, arguments.Cast<object>().ToArray());
-        var observation = (string)Invoke("ValidateWholeBridge", root, package.Fence.Root, package.Descriptor.Version)!;
-        var receipt = (string)Invoke("PrepareWholeReceipt", root, package.Fence.Root, package.Descriptor.Version, observation, "false")!;
-        using (var operation = (IDisposable)Invoke("BeginWholeInstall", root, package.Fence.Root, package.Descriptor.Version, observation, receipt)!)
-        using (var target = new WindowsFileFence(root)) CopyOwned(target, package, Encoding.ASCII.GetBytes(receipt));
-        Invoke("InstallWholeHelper", root, package.Fence.Root, package.Descriptor.Version, observation, UpdateTrust.Hash(Encoding.ASCII.GetBytes(receipt)));
+        InstallFresh(root, beta);
+        using (var fence = new WindowsFileFence(root)) if (!File.Exists(fence.Full("BetterAstralParty.update.lock"))) Write(fence, "BetterAstralParty.update.lock", Array.Empty<byte>());
+        return root;
     }
     private static (string Observation, byte[] Receipt, string Work) CurrentIntent(string root, Package beta, bool copy)
     {
@@ -506,7 +488,7 @@ internal static class WholeChannelTransitionFixture
         var receipt = Prepared(root, beta, observation);
         using (WholeInstallBridge.BeginInstall(root, beta.Fence.Root, beta.Descriptor.Version, observation, Encoding.ASCII.GetString(receipt)))
             if (copy) using (var target = new WindowsFileFence(root)) CopyOwned(target, beta, receipt);
-        var work = Directory.GetDirectories(root, "bap-v3-wholeintent-*").Select(Path.GetFileName)
+        var work = WorkDirectories(root, "wholeintent").Select(path => WorkRelative(root, path))
             .Single(name => File.ReadAllText(Path.Combine(root, name!, "plan")).StartsWith("BetterAstralParty.WholeInstallIntent/v2\n", StringComparison.Ordinal))!;
         return (observation, receipt, work);
     }
@@ -522,7 +504,7 @@ internal static class WholeChannelTransitionFixture
     }
     private static string ArchivedIntent(string root, string work, Dictionary<string, string> before, string terminal)
     {
-        var history = "bap-v3-wholehist-" + work.Substring("bap-v3-wholeintent-".Length);
+        var history = UpdateWorkPath.WholeHistory(work);
         Check(!Directory.Exists(Path.Combine(root, work)) && Directory.Exists(Path.Combine(root, history)), "archive: terminal directory leaves old scanning prefix");
         var after = IntentFacts(root, history);
         Check(before.All(pair => after.TryGetValue(pair.Key, out var fact) && fact == pair.Value), "archive: directory and all prior file IDs/hashes unchanged");
@@ -531,15 +513,14 @@ internal static class WholeChannelTransitionFixture
         using (var target = new WindowsFileFence(root)) { UpdateLaunchGate.Check(target); Check(!WholeInstallBridge.Pending(target), "archive: current native gate validates terminal history"); }
         return history;
     }
-    private static void TerminalArchiveCases(string scratch, string artifacts, Package beta)
+    private static void TerminalArchiveCases(string scratch, Package beta)
     {
-        var inspectors = FrozenInspectors(artifacts);
         foreach (var name in new[] { "normal", "recover-after-marker", "begin-after-marker", "cancelled" }) {
             var root = ArchiveRoot(scratch, name, beta);
             if (name == "cancelled") using (var target = new WindowsFileFence(root)) Remove(target, "BetterAstralParty-Launcher.exe");
             var current = CurrentIntent(root, beta, name != "cancelled");
             var facts = IntentFacts(root, current.Work);
-            FrozenProbes(root, inspectors, false, name + " pending v2");
+            CurrentProbes(root, false, name + " pending v2");
             using (var target = new WindowsFileFence(root)) Reject(() => UpdateLaunchGate.Check(target), name + ": current gate refuses pending v2");
             if (name == "cancelled") WholeInstallBridge.Recover(root, beta.Fence.Root, beta.Descriptor.Version);
             else if (name == "normal") WholeInstallBridge.Install(root, beta.Fence.Root, beta.Descriptor.Version, current.Observation, UpdateTrust.Hash(current.Receipt));
@@ -549,7 +530,7 @@ internal static class WholeChannelTransitionFixture
                     if (boundary == "before:whole-history-archive") { interrupted = true; throw new Interruption(); }
                 }); } catch (Interruption) { }
                 Check(interrupted && File.Exists(Path.Combine(root, current.Work, "committed")), name + ": interruption preserves completed v2 before archive");
-                FrozenProbes(root, inspectors, false, name + " completed v2 still visible");
+                CurrentProbes(root, true, name + " valid terminal marker before archive");
                 var before = ArchiveSnapshot(root);
                 WholeInstallBridge.Validate(root, beta.Fence.Root, beta.Descriptor.Version);
                 SameSnapshot(before, root, name + ": read-only validation does not archive terminal leftover");
@@ -561,7 +542,7 @@ internal static class WholeChannelTransitionFixture
                 }
             }
             var history = ArchivedIntent(root, current.Work, facts, name == "cancelled" ? "cancelled" : "committed");
-            FrozenProbes(root, inspectors, true, name + " archived terminal");
+            CurrentProbes(root, true, name + " archived terminal");
             if (name == "normal") {
                 var marker = Path.Combine(root, history, "committed"); var saved = File.ReadAllBytes(marker);
                 File.WriteAllText(marker, new string('0', 64) + "\n");
@@ -588,16 +569,20 @@ internal static class WholeChannelTransitionFixture
         var snapshot = ArchiveSnapshot(generations);
         WholeInstallBridge.ValidatePartialRemoval(generations);
         SameSnapshot(snapshot, generations, "archive: valid current generation proof is found past valid older different-receipt history without mutation");
-        var cancelled = Path.Combine(scratch, "acn"); // Frozen helper atomic marker names also obey the existing 240-character fence.
-        Directory.CreateDirectory(Path.Combine(cancelled, "BepInEx/plugins/BetterAstralParty"));
-        using (var target = new WindowsFileFence(cancelled)) Write(target, "AstralParty_INT.exe", Encoding.ASCII.GetBytes("inert frozen seed; never executed\n"));
-        FrozenSeed(cancelled, beta, inspectors["1.1.3"]);
-        Check(!Directory.GetFiles(cancelled, "signed-update.descriptor", SearchOption.AllDirectories).Any(), "archive: frozen v1 seed has no fabricated signed whole proof");
+        var cancelled = ArchiveRoot(scratch, "cancelled-without-committed-proof", beta);
         using (var target = new WindowsFileFence(cancelled)) Remove(target, "BetterAstralParty-Launcher.exe");
         var cancellation = CurrentIntent(cancelled, beta, false);
         var original = IntentFacts(cancelled, cancellation.Work);
         WholeInstallBridge.Recover(cancelled, beta.Fence.Root, beta.Descriptor.Version);
-        ArchivedIntent(cancelled, cancellation.Work, original, "cancelled");
+        var cancelledHistory = ArchivedIntent(cancelled, cancellation.Work, original, "cancelled");
+        // Keep prior evidence byte-for-byte outside the history scanner; cancellation alone grants no ownership.
+        using (var target = new WindowsFileFence(cancelled)) foreach (var directory in WorkDirectories(cancelled, "wholehist").Concat(WorkDirectories(cancelled, "wholeintent"))) {
+            var leaf = WorkRelative(cancelled, directory);
+            if (leaf == cancelledHistory) continue;
+            Check(File.Exists(Path.Combine(directory, "committed")), "archive: only committed prior proof is retained outside the scanner");
+            target.ArchiveDirectory(leaf, UpdateWorkPath.Root + "/fixture-retained-proof-" + Guid.NewGuid().ToString("N"), target.DirectoryIdentity(leaf).Text);
+        }
+        Check(WorkDirectories(cancelled, "wholeintent").Length == 0 && WorkDirectories(cancelled, "wholehist").SequenceEqual(new[] { WindowsPath.Absolute(Path.Combine(cancelled, cancelledHistory.Replace('/', '\\'))) }), "archive: cancelled-only ownership refusal has no surviving committed proof");
         using (var target = new WindowsFileFence(cancelled)) Remove(target, UpdateTrust.PluginPath);
         var cancelledSnapshot = ArchiveSnapshot(cancelled);
         Reject(() => WholeInstallBridge.ValidatePartialRemoval(cancelled), "archive: cancelled target proof alone never authorizes missing-core ownership");
@@ -624,11 +609,11 @@ internal static class WholeChannelTransitionFixture
     {
         foreach (var name in new[] { "collision", "wrong-id", "id-race", "reparse-race", "held-child" }) {
             var root = Path.Combine(scratch, "archive-directory-" + name); Directory.CreateDirectory(root);
-            var work = "bap-v3-wholeintent-" + Guid.NewGuid().ToString("N"); var history = "bap-v3-wholehist-" + work.Substring("bap-v3-wholeintent-".Length);
+            var work = UpdateWorkPath.New("wholeintent"); var history = UpdateWorkPath.WholeHistory(work);
             string identity;
             using (var target = new WindowsFileFence(root)) {
-                identity = target.CreatePrivateDirectory(work).Text; Write(target, work + "/plan", Encoding.ASCII.GetBytes("keep exact source fixture\n"));
-                if (name == "collision") { target.CreatePrivateDirectory(history); Write(target, history + "/unknown.keep", Encoding.ASCII.GetBytes("do not overwrite\n")); }
+                identity = UpdateWorkPath.Create(target, work).Text; Write(target, work + "/plan", Encoding.ASCII.GetBytes("keep exact source fixture\n"));
+                if (name == "collision") { UpdateWorkPath.Create(target, history); Write(target, history + "/unknown.keep", Encoding.ASCII.GetBytes("do not overwrite\n")); }
             }
             var source = Path.Combine(root, work); var moved = Path.Combine(root, "fixture-saved-source"); var other = Path.Combine(root, "fixture-other");
             Directory.CreateDirectory(other); File.WriteAllText(Path.Combine(other, "unknown.keep"), "preserve reparse target\n");
@@ -637,7 +622,7 @@ internal static class WholeChannelTransitionFixture
                 if (boundary != "archive-open" || name is not ("id-race" or "reparse-race")) return;
                 hit = true; Directory.Move(source, moved);
                 if (name == "reparse-race") ArchiveJunction(source, other);
-                else using (var peer = new WindowsFileFence(root)) { peer.CreatePrivateDirectory(work); Write(peer, work + "/unknown.keep", Encoding.ASCII.GetBytes("preserve replacement\n")); }
+                else using (var peer = new WindowsFileFence(root)) { UpdateWorkPath.Create(peer, work); Write(peer, work + "/unknown.keep", Encoding.ASCII.GetBytes("preserve replacement\n")); }
             })) {
                 using var child = name == "held-child" ? target.OpenLaunchImage(work + "/plan") : null;
                 Reject(() => target.ArchiveDirectory(work, history, name == "wrong-id" ? "00000000:0000000000000000" : identity), "archive directory: " + name + " refuses unsafe rename");
@@ -660,7 +645,7 @@ internal static class WholeChannelTransitionFixture
             || !Regex.IsMatch(Path.GetFileName(scratch), @"\Awct-[0-9a-f]{32}\z") || Directory.Exists(scratch) || File.Exists(scratch))
             throw new Exception("Only a new direct artifact scratch may be changed");
         using var stable = new Package(args[2]); using var beta = new Package(args[3]);
-        Check(stable.Descriptor.Channel == "Stable" && stable.Descriptor.Protocol == 3 && UpdateVersion.Parse(stable.Descriptor.Version).CompareTo(UpdateVersion.Parse("1.2.1-0")) >= 0 && stable.Descriptor.RepositoryId == ReleaseFeedPolicy.StableRepositoryId,
+        Check(stable.Descriptor.Channel == "Stable" && stable.Descriptor.Protocol == 4 && UpdateVersion.Parse(stable.Descriptor.Version).CompareTo(UpdateVersion.Parse("1.3.0-0")) >= 0 && stable.Descriptor.RepositoryId == ReleaseFeedPolicy.StableRepositoryId,
             "exact public supported Stable baseline signed baseline");
         Check(beta.Descriptor.Channel == "Beta" && beta.Descriptor.RepositoryId == ReleaseFeedPolicy.BetaRepositoryId
             && UpdateVersion.Parse(beta.Descriptor.Version).CompareTo(UpdateVersion.Parse(stable.Descriptor.Version)) > 0,
@@ -684,13 +669,14 @@ internal static class WholeChannelTransitionFixture
         Directory.CreateDirectory(scratch);
         try {
             if (archiveOnly) {
-                TerminalArchiveCases(scratch, artifacts, beta);
+                TerminalArchiveCases(scratch, beta);
                 DirectoryArchiveRefusals(scratch);
                 File.WriteAllText(Path.Combine(scratch, "native-results.json"), JsonSerializer.Serialize(new {
                     Passed = true, Checks = _checks, StableVersion = stable.Descriptor.Version, BetaVersion = beta.Descriptor.Version,
                     StableDescriptor = stable.Descriptor.DescriptorSha256, BetaDescriptor = beta.Descriptor.DescriptorSha256,
                     TerminalArchiveCases = 6, DirectoryArchiveRefusalCases = 5,
-                    Scope = "Production public-signature/native terminal archive and exact immutable1.1.3/1.1.4 inspector API tests; independent process approval cache; only owned scratch, no game/helper Main, operational install/removal, Steam, key or network."
+                    Retired = "Immutable 1.1.3/1.1.4 inspector parity and v1 frozen-seed compatibility; the fresh 1.3.0 baseline does not support those generations.",
+                    Scope = "Current protocol4 signed native terminal history, current launch/maintenance/partial-removal guards and exact file/directory identity preservation. Ephemeral fixture trust may be injected at compile time; no game/helper Main, operational install/removal, Steam, production key or network."
                 }));
                 Console.WriteLine("PASS: " + _checks + " isolated terminal archive/native assertions; evidence retained at " + scratch); return;
             }
@@ -698,7 +684,7 @@ internal static class WholeChannelTransitionFixture
                 Case(scratch, name, stable, beta);
             PartialRepairCase(scratch, "repair-launcher", stable, beta, new[] { "BetterAstralParty-Launcher.exe" }, false);
             PartialRepairCase(scratch, "repair-compatibility", stable, beta, new[] { "BetterAstralParty.compatibility.json" }, false);
-            PartialRepairCase(scratch, "repair-launch-script", stable, beta, new[] { "BetterAstralParty-Mod.cmd", "check-compatibility.ps1" }, false);
+            PartialRepairCase(scratch, "repair-launch-script", stable, beta, new[] { "BetterAstralParty-Mod.cmd", "AstralParty-Vanilla.cmd" }, false);
             PartialRepairCase(scratch, "repair-all-nonplugin", stable, beta, InstallReceipt.Owned.Where(path => path != UpdateTrust.PluginPath).ToArray(), true);
             PartialRefusals(scratch, beta);
             NoEmbeddedHelperCase(stable); NoEmbeddedHelperCase(beta);

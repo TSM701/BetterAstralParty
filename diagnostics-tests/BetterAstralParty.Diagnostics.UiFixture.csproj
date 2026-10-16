@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework><OutputType>Exe</OutputType>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>BAP_DIAGNOSTICS_FIXTURE</DefineConstants>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers><CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <NoWarn>CS0649;CS0414</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="UiFixture.cs;UiStubs.cs;ui-generated/ManagedUi.cs;ui-generated/Catalog.cs" />
+    <Compile Include="../src/DiagnosticActions.cs;../src/MenuLayout.cs;../diagnostics/DiagnosticBundle.cs" />
+    <Compile Include="../src/Observability/*.cs" />
+    <Compile Include="../updater/WindowsPath.cs" />
+    <Compile Include="../diagnostics/MinimalDiagnosticProjection.cs" Link="MinimalDiagnosticProjection.cs" />
+  </ItemGroup>
+</Project>

@@ -18,8 +18,8 @@ namespace BetterAstralParty.Observability
         private string _relative = "";
         public long Bytes { get; private set; }
         internal FileDiagnosticEventStore(string directory,string? privateParent=null) {
-            _directory=Path.GetFullPath(directory);_privateParent=privateParent==null?null:Path.GetFullPath(privateParent);
-            if(_privateParent!=null && _directory!=_privateParent && Path.GetDirectoryName(_directory)!=_privateParent)throw new IOException("Diagnostic private parent invalid");
+            _directory=DiagnosticFileFence.CanonicalPath(directory);_privateParent=privateParent==null?null:DiagnosticFileFence.CanonicalPath(privateParent);
+            if(_privateParent!=null && _directory!=_privateParent && DiagnosticFileFence.ParentPath(_directory)!=_privateParent)throw new IOException("Diagnostic private parent invalid");
         }
         private static void RequirePrivateDirectory(DiagnosticFileFence fence,string relative) {
             try {fence.AssertPrivateDirectory(relative);}
@@ -39,8 +39,11 @@ namespace BetterAstralParty.Observability
             if (_ownership != null) return;
             if (_refused) throw new IOException("Diagnostic store refused");
             // Only missing ancestors may be created. Existing ACLs are never repaired.
-            var parent = Path.GetDirectoryName(_privateParent ?? _directory)!;
-            while (!Directory.Exists(parent)) parent = Path.GetDirectoryName(parent) ?? throw new IOException("Diagnostic parent unavailable");
+            var parent = DiagnosticFileFence.ParentPath(_privateParent ?? _directory);
+            while (!DiagnosticFileFence.DirectoryExists(parent)) {
+                if(parent.Length==3)throw new IOException("Diagnostic parent unavailable");
+                parent = DiagnosticFileFence.ParentPath(parent);
+            }
             var fence = new DiagnosticFileFence(parent);
             DiagnosticFileFence.FileLease? ownership = null;
             try {

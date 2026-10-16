@@ -10,6 +10,7 @@ internal static class PingFocusGuard
 
     internal static void Tick()
     {
+        if (!Plugin.PingFocus.Value) { Reset(); return; }
         if (!Compatibility.Allowed("PingFocus")) return;
         try
         {

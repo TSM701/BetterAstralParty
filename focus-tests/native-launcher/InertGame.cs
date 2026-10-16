@@ -11,7 +11,7 @@ internal static class InertGame
         var root = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory);
         if (!root.StartsWith(FixtureBoundary.Root, StringComparison.OrdinalIgnoreCase)) return 90;
         var text = new StringBuilder("Args=" + string.Join("|", args) + "\n");
-        foreach (var name in new[] { "SteamAppId", "SteamGameId", "SteamOverlayGameId", "BAP_COMPATIBILITY_CHECKED", "BAP_UPDATER_LAUNCHER_PID", "BAP_UPDATER_LAUNCHER_CREATION", "BAP_UPDATER_LAUNCHER_SESSION" })
+        foreach (var name in new[] { "SteamAppId", "SteamGameId", "SteamOverlayGameId", "BAP_COMPATIBILITY_CHECKED", "BAP_UPDATER_LAUNCHER_PID", "BAP_UPDATER_LAUNCHER_CREATION", "BAP_UPDATER_LAUNCHER_SESSION", "PSModulePath" })
             text.Append(name).Append('=').Append(Environment.GetEnvironmentVariable(name) ?? "<absent>").Append('\n');
         File.WriteAllText(Path.Combine(root, "game-ready"), text.ToString());
         if (File.Exists(Path.Combine(root, "hold"))) {

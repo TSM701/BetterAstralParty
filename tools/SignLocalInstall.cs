@@ -46,25 +46,24 @@ namespace BetterAstralParty.GaSigning
             using var doc=JsonDocument.Parse(Read(files,PolicyPath,policyHash));var p=doc.RootElement;
             Fields(p,"schema","purpose","version","channel","keyName","keyId","maximumNativeSignCalls","rootIdentity","output","reservation","sourceManifestSha256","helperDescriptorSha256","updateDescriptorSha256","helperImageSha256","zipSha256","compiledFiles","toolFiles");
             Version=Text(p,"version");Channel=Text(p,"channel");SourceHash=Text(p,"sourceManifestSha256");HelperHash=Text(p,"helperDescriptorSha256");DescriptorHash=Text(p,"updateDescriptorSha256");ImageHash=Text(p,"helperImageSha256");ZipHash=Text(p,"zipSha256");
+            CheckScope(Version,Channel);
             Reservation="artifacts/automatic-update-development/signing-"+Version+".reserved.json";
             foreach(var digest in new[]{SourceHash,HelperHash,DescriptorHash,ImageHash,ZipHash})Hash(digest);
-            if(p.GetProperty("schema").GetInt32()!=1 || Text(p,"purpose")!="sign-local-install-once" || Channel!="Beta" && Channel!="Stable"
-                || UpdateVersion.Parse(Version).CompareTo(UpdateVersion.Parse("1.2.1-0"))<0 || !UpdateVersion.Parse(Version).IsLocalPrerelease
+            if(p.GetProperty("schema").GetInt32()!=1 || Text(p,"purpose")!="sign-local-install-once" || !ReleaseFeedPolicy.IsChannel(Channel)
+                || UpdateVersion.Parse(Version).CompareTo(UpdateVersion.Parse("1.3.0-0"))<0 || !UpdateVersion.Parse(Version).IsLocalPrerelease
                 || UpdateVersion.Parse(Version).Tag!=Version || Text(p,"keyName")!=KeyName || Text(p,"keyId")!=KeyId || p.GetProperty("maximumNativeSignCalls").GetInt32()!=2
                 || Text(p,"rootIdentity")!=files.RootIdentity || Text(p,"output")!=Output || Text(p,"reservation")!=Reservation)
                 throw new InvalidDataException("Exact local signing policy mismatch");
-            var expected=new[]{"tools/DevelopmentPackageFiles.cs","tools/GaPackageContract.cs","diagnostics/MinimalDiagnosticProjection.cs"}
-                .Concat(Directory.GetFiles(Path.Combine(root,"updater"),"*.cs").Select(x=>"updater/"+Path.GetFileName(x)).Where(x=>x!="updater/UpdateHelperProgram.cs"))
-                .Concat(Directory.GetFiles(Path.Combine(root,"src/Observability"),"*.cs").Select(x=>"src/Observability/"+Path.GetFileName(x)))
-                .Append("tools/SignLocalInstall.cs").ToHashSet(StringComparer.Ordinal);
+            var expected=BetterAstralParty.Development.PackagingSigning.CompiledPaths(root).ToHashSet(StringComparer.Ordinal);
             var rows=p.GetProperty("compiledFiles").EnumerateArray().ToArray();
             if(rows.Length!=expected.Count || !rows.Select(x=>Text(x,"path")).ToHashSet(StringComparer.Ordinal).SetEquals(expected))throw new InvalidDataException("Exact compile closure required");
             foreach(var row in rows){Fields(row,"path","sha256");Read(files,Text(row,"path"),Text(row,"sha256"));}
             using var snapshot=JsonDocument.Parse(Read(files,Stage+"/inputs/build-source.json",SourceHash));
             var source=snapshot.RootElement.EnumerateArray().ToDictionary(x=>Text(x,"path"),x=>Text(x,"sha256"),StringComparer.Ordinal);
-            foreach(var row in rows)if(source.TryGetValue(Text(row,"path"),out var hash) && hash!=Text(row,"sha256"))throw new InvalidDataException("Compile dependency differs from immutable build source");
+            foreach(var row in rows)if(!source.TryGetValue(Text(row,"path"),out var hash) || hash!=Text(row,"sha256"))throw new InvalidDataException("Compile dependency absent or different in immutable build source");
             var tools=p.GetProperty("toolFiles").EnumerateArray().ToArray();
-            if(tools.Length!=2 || !tools.Select(x=>Text(x,"path")).ToHashSet(StringComparer.Ordinal).SetEquals(new[]{"tools/SignLocalInstall.cs","tools/sign-local-install.ps1"}))throw new InvalidDataException("Exact tool closure required");
+            var expectedTools=BetterAstralParty.Development.PackagingSigning.ToolPaths(root).ToHashSet(StringComparer.Ordinal);
+            if(tools.Length!=expectedTools.Count || !tools.Select(x=>Text(x,"path")).ToHashSet(StringComparer.Ordinal).SetEquals(expectedTools))throw new InvalidDataException("Exact precompiled host closure required");
             foreach(var row in tools) {
                 Fields(row,"path","sha256");var path=Text(row,"path");var hash=Text(row,"sha256");Hash(hash);
                 if(expected.Contains(path)){if(files.SourceHash(path)!=hash)throw new InvalidDataException("Conflicting tool hashes");}else Read(files,path,hash);
@@ -82,13 +81,22 @@ namespace BetterAstralParty.GaSigning
             var proofEnvelope=DetachedSignature.Parse(h.ProofSignature);
             UpdateTrust.Production().VerifyDetached(h.Proof,proofEnvelope.KeyId,proofEnvelope.Signature);
             if(!GaPackageContract.PublicKeyIds().SequenceEqual(new[]{KeyId}) || DetachedSignature.Parse(h.ProofSignature).KeyId!=KeyId)throw new CryptographicException("Public key pin changed");
-            var owned=GaPackageContract.OwnedPaths();var sizes=new long[8];var hashes=new string[8];
+            var owned=GaPackageContract.OwnedPaths();var sizes=new long[owned.Length];var hashes=new string[owned.Length];
+            long expanded=0;
             using(var archive=new ZipArchive(new MemoryStream(h.Zip),ZipArchiveMode.Read)) {
-                if(archive.Entries.Count!=8 || !archive.Entries.Select(x=>x.FullName).ToHashSet(StringComparer.Ordinal).SetEquals(owned))throw new InvalidDataException("Exact owned8 ZIP required");
-                for(var i=0;i<owned.Length;i++){using var stream=archive.GetEntry(owned[i])!.Open();using var buffer=new MemoryStream();stream.CopyTo(buffer);var bytes=buffer.ToArray();sizes[i]=bytes.Length;hashes[i]=UpdateTrust.Hash(bytes);}
+                if(archive.Entries.Count!=owned.Length || !archive.Entries.Select(x=>x.FullName).ToHashSet(StringComparer.Ordinal).SetEquals(owned))throw new InvalidDataException("Exact current owned ZIP required");
+                for(var i=0;i<owned.Length;i++){
+                    var entry=archive.GetEntry(owned[i])!;
+                    if(entry.Length<=0 || entry.Length>UpdateTrust.MaxFileBytes || (expanded+=entry.Length)>UpdateTrust.MaxExpandedBytes)throw new InvalidDataException("Owned ZIP expansion bound");
+                    using var stream=entry.Open();var bytes=BetterAstralParty.Development.PackagingWhole.ReadEntry(stream,entry.Length);sizes[i]=bytes.Length;hashes[i]=UpdateTrust.Hash(bytes);
+                }
             }
             if(!GaPackageContract.PrepareLocalInstallDescriptor(Version,Channel,h.Zip,sizes,hashes).SequenceEqual(h.Descriptor))throw new InvalidDataException("Descriptor does not match actual ZIP");
             files.Recheck();return h;
+        }
+        private static void CheckScope(string version,string channel) {
+            var parsed=UpdateVersion.Parse(version);
+            if(!ReleaseFeedPolicy.IsChannel(channel)||parsed.CompareTo(UpdateVersion.Parse("1.3.0-0"))<0||!parsed.IsLocalPrerelease||parsed.Tag!=version)throw new InvalidDataException("Exact local prerelease channel scope required");
         }
         private static void Review(DevelopmentPackageFiles files,string policyHash,string reviewHash) {
             using var doc=JsonDocument.Parse(Read(files,ReviewPath,reviewHash));var r=doc.RootElement;
@@ -188,6 +196,8 @@ namespace BetterAstralParty.GaSigning
         }
         public static string SelfCheck() {
             var passed=0;
+            foreach(var channel in new[]{"Stable","PreRelease","Beta"}){CheckScope("1.3.0-rc.1.local.1",channel);passed++;}
+            foreach(var pair in new[]{("1.3.0-rc.1.local.1","Prerelease"),("1.3.0","PreRelease"),("1.2.1-rc.1.local.1","PreRelease")}){var rejected=false;try{CheckScope(pair.Item1,pair.Item2);}catch(Exception error)when(error is InvalidDataException||error is UpdateValidationException){rejected=true;}if(!rejected)throw new Exception("Nonlocal or unknown local channel accepted");passed++;}
             foreach(var size in new[]{(NteNotFound,0),(0,0)}){var calls=0;if(UiPolicy(_=>{calls++;return size;}).Length!=0 || calls!=1)throw new Exception("Default UI policy");passed++;}
             var header=new byte[32];header[0]=1;var calls2=0;
             if(!UiPolicy(b=>{calls2++;if(b!=null)header.CopyTo(b,0);return(0,32);}).SequenceEqual(header)||calls2!=2)throw new Exception("Present UI policy");passed++;

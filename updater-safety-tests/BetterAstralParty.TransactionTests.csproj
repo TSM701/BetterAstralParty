@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\updater\UpdateCompatibility.cs" Link="UpdateCompatibility.cs" />
+    <Compile Include="..\updater\CatalogInventory.cs" Link="CatalogInventory.cs" />
+    <Compile Include="CompatibilityFixtureData.cs" />
+    <Compile Include="TransactionFixture.cs" />
+    <Compile Include="UpdaterFixtureScope.cs" />
+    <Compile Include="..\updater\UpdateVersion.cs" Link="UpdateVersion.cs" />
+    <Compile Include="..\updater\UpdateTrust.cs" Link="UpdateTrust.cs" />
+    <Compile Include="..\updater\UpdatePackage.cs" Link="UpdatePackage.cs" />
+    <Compile Include="..\updater\WindowsFileFence.cs" Link="WindowsFileFence.cs" />
+    <Compile Include="..\updater\WindowsPath.cs" Link="WindowsPath.cs" />
+    <Compile Include="..\updater\WindowsPrivateSecurity.cs" Link="WindowsPrivateSecurity.cs" />
+    <Compile Include="..\updater\WindowsProcessGuard.cs" Link="WindowsProcessGuard.cs" />
+    <Compile Include="..\updater\UpdateStaging.cs" Link="UpdateStaging.cs" />
+    <Compile Include="..\updater\UpdateWorkPath.cs" Link="UpdateWorkPath.cs" />
+    <Compile Include="..\updater\InstalledPluginMetadata.cs" Link="InstalledPluginMetadata.cs" />
+    <Compile Include="..\updater\InstallReceipt.cs" Link="InstallReceipt.cs" />
+    <Compile Include="..\updater\UpdateTransaction.cs" Link="UpdateTransaction.cs" />
+    <Compile Include="..\updater\ChannelTransitionIntent.cs" Link="ChannelTransitionIntent.cs" />
+    <Compile Include="..\updater\ReceiptChannelState.cs" Link="ReceiptChannelState.cs" />
+    <Compile Include="..\updater\ReleaseFeedPolicy.cs" Link="ReleaseFeedPolicy.cs" />
+    <Compile Include="..\updater\ProductionUpdateKeys.cs" Link="ProductionUpdateKeys.cs" />
+    <Compile Include="..\updater\UpdateTicket.cs" Link="UpdateTicket.cs" />
+    <Compile Include="..\updater\UpdateFaults.cs" Link="UpdateFaults.cs" />
+    <Compile Include="..\updater\UpdateRecoveryPolicy.cs" Link="UpdateRecoveryPolicy.cs" />
+    <Compile Include="..\updater\UpdateRecovery.cs" Link="UpdateRecovery.cs" />
+    <Compile Include="..\updater\UpdateLaunchGate.cs" Link="UpdateLaunchGate.cs" />
+    <Compile Include="..\updater\AutomaticHelperUpgrade.cs" Link="AutomaticHelperUpgrade.cs" />
+    <Compile Include="..\updater\WholeInstallBridge.cs" Link="WholeInstallBridge.cs" />
+    <Compile Include="..\updater\OrdinaryInstallRecovery.cs" Link="OrdinaryInstallRecovery.cs" />
+    <Compile Include="..\updater\HelperDelivery.cs" Link="HelperDelivery.cs" />
+    <Compile Include="..\src\Observability\*.cs" />
+    <Compile Include="..\diagnostics\MinimalDiagnosticProjection.cs" />
+  </ItemGroup>
+  <PropertyGroup><DefineConstants>$(DefineConstants);BAP_SAFETY_FIXTURE</DefineConstants></PropertyGroup>
+</Project>

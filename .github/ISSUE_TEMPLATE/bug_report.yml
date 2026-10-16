@@ -15,7 +15,7 @@ body:
     attributes:
       label: "1. 모드 버전 / Mod version"
       description: "모드 설정에 표시된 버전 또는 받은 ZIP의 버전을 적어주세요. / Enter the version shown in mod settings or the downloaded ZIP."
-      placeholder: "예: 1.1.1 / e.g. 1.1.1"
+      placeholder: "예: 1.3.0 / e.g. 1.3.0"
     validations:
       required: true
   - type: textarea

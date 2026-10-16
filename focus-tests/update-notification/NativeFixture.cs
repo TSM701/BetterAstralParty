@@ -72,11 +72,13 @@ namespace BetterAstralParty
             }
         }
     }
+    internal sealed class BoolPreference { internal bool Value = true; }
     internal static class Plugin
     {
         internal const string Version = "1.0.0-rc.2";
         internal static readonly ReleaseUpdates Updates = new(Version, "Fixture/Repo");
         internal static readonly FixtureAutomatic Automatic = new();
+        internal static readonly BoolPreference UpdateNotifications = new();
     }
     internal sealed class RuntimeObject
     {

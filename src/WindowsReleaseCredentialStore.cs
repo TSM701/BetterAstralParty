@@ -73,7 +73,7 @@ internal sealed class WindowsReleaseCredentialStore : IReleaseCredentialStore
                 || credential.BlobSize is 0 or > 512 || credential.BlobSize % 2 != 0)
                 throw new InvalidOperationException("Invalid saved update credential");
             var token = Marshal.PtrToStringUni(credential.Blob, checked((int)credential.BlobSize / 2));
-            if (!MemoryReleaseAuthentication.ValidToken(token)) throw new InvalidOperationException("Invalid saved update credential");
+            if (!ReleaseCredentialPolicy.ValidToken(token)) throw new InvalidOperationException("Invalid saved update credential");
             return token;
         }
         finally
@@ -85,7 +85,7 @@ internal sealed class WindowsReleaseCredentialStore : IReleaseCredentialStore
     }
     public void Save(string token)
     {
-        if (!MemoryReleaseAuthentication.ValidToken(token)) throw new ArgumentException("Invalid update credential");
+        if (!ReleaseCredentialPolicy.ValidToken(token)) throw new ArgumentException("Invalid update credential");
         var bytes = Encoding.Unicode.GetBytes(token);
         var buffer = Marshal.AllocHGlobal(bytes.Length);
         try

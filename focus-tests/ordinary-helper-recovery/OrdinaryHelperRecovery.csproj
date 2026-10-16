@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><TreatWarningsAsErrors>true</TreatWarningsAsErrors><EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <DefineConstants>$(DefineConstants);BAP_SAFETY_FIXTURE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../updater/*.cs" Exclude="../../updater/UpdateHelperProgram.cs;../../updater/ProductionUpdateKeys.cs" />
+    <Compile Include="../../src/Observability/*.cs" />
+    <Compile Include="../../diagnostics/DiagnosticBundle.cs" />
+    <Compile Include="../../diagnostics/MinimalDiagnosticProjection.cs" />
+  </ItemGroup>
+</Project>

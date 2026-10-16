@@ -42,13 +42,17 @@ namespace BetterAstralParty.Updating
         }
         private static ApplySafetyException Bad() { return new ApplySafetyException(ApplyFailure.InvalidState); }
         internal static InstalledPluginMetadata Read(byte[] image)
+        { return Read(image, false); }
+        internal static InstalledPluginMetadata ReadMaintenance(byte[] image)
+        { return Read(image, true); }
+        private static InstalledPluginMetadata Read(byte[] image, bool maintenance)
         {
-            try { return Parse(image); }
+            try { return Parse(image, maintenance); }
             catch (ApplySafetyException) { throw; }
             catch (Exception error) when (error is OverflowException || error is DecoderFallbackException || error is ArgumentException || error is IndexOutOfRangeException)
             { throw Bad(); }
         }
-        private static InstalledPluginMetadata Parse(byte[] image)
+        private static InstalledPluginMetadata Parse(byte[] image, bool maintenance)
         {
             if (image == null || image.Length < 256 || image.LongLength > UpdateTrust.MaxFileBytes) throw Bad();
             var r = new Reader(image); if (r.U16(0) != 0x5a4d) throw Bad(); var pe = r.I32(60);
@@ -96,13 +100,16 @@ namespace BetterAstralParty.Updating
             var widths = new[] { 2 + sw + 3 * gw, coded(2, new[] { 0, 26, 35, 1 }) + 2 * sw,
                 4 + 2 * sw + tdor + idx(4) + idx(6), idx(4), 2 + sw + bw, idx(6), 8 + sw + bw + idx(8), idx(8), 4 + sw,
                 idx(2) + tdor, coded(3, new[] { 2, 1, 26, 6, 27 }) + sw + bw, 2 + hc + bw };
-            var starts = new int[12];
+            var attributeParent = coded(5, new[] { 6, 4, 1, 2, 8, 9, 10, 0, 14, 23, 20, 17, 26, 27, 32, 35, 38, 39, 40, 42, 44, 43 });
+            var attributeType = coded(3, new[] { 6, 10 });
+            if (maintenance) { Array.Resize(ref widths, 13); widths[12] = attributeParent + attributeType + bw; }
+            var starts = new int[maintenance ? 13 : 12];
             for (var i = 0; i < starts.Length; i++) { starts[i] = cursor; cursor = checked(cursor + rows[i] * widths[i]); if (cursor > t[0] + t[1]) throw Bad(); }
-            var firstField = 0; var lastField = 0;
+            var firstField = 0; var lastField = 0; var pluginRow = 0;
             for (var i = 0; i < rows[2]; i++) {
                 var p = starts[2] + i * widths[2];
                 if (r.String(s[0], s[1], r.Index(p + 4, sw)) == "Plugin" && r.String(s[0], s[1], r.Index(p + 4 + sw, sw)) == "BetterAstralParty") {
-                    if (firstField != 0) throw Bad(); firstField = r.Index(p + 4 + 2 * sw + tdor, idx(4));
+                    if (firstField != 0) throw Bad(); pluginRow = i + 1; firstField = r.Index(p + 4 + 2 * sw + tdor, idx(4));
                     lastField = i + 1 < rows[2] ? r.Index(p + widths[2] + 4 + 2 * sw + tdor, idx(4)) : rows[4] + 1;
                 }
             }
@@ -110,20 +117,77 @@ namespace BetterAstralParty.Updating
             var wanted = new Dictionary<int, string>(); var values = new Dictionary<string, string>(StringComparer.Ordinal);
             for (var i = firstField; i < lastField; i++) {
                 var p = starts[4] + (i - 1) * widths[4]; var name = r.String(s[0], s[1], r.Index(p + 2, sw));
-                if (name != "Version" && name != "Guid" && name != "UpdateProtocol" && name != "SettingsSchema") continue;
+                if (name != "Version" && name != "Guid" && name != "UpdateProtocol" && name != "SettingsSchema" && !(maintenance && (name == "Name" || name == "InstallBundleProtocol"))) continue;
                 if ((r.U16(p) & 0x50) != 0x50 || wanted.ContainsValue(name)) throw Bad();
                 var signature = r.Blob(bheap[0], bheap[1], r.Index(p + 2 + sw, bw));
-                if (signature.Length != 2 || signature[0] != 6 || signature[1] != 14) throw Bad(); wanted.Add(i, name);
+                if (signature.Length != 2 || signature[0] != 6 || signature[1] != (name == "InstallBundleProtocol" ? 8 : 14)) throw Bad(); wanted.Add(i, name);
             }
             foreach (var field in wanted) for (var i = 0; i < rows[11]; i++) {
                 var p = starts[11] + i * widths[11]; if (r.Index(p + 2, hc) != (field.Key << 2)) continue;
-                if (r.U16(p) != 14 || values.ContainsKey(field.Value)) throw Bad();
-                var blob = r.Blob(bheap[0], bheap[1], r.Index(p + 2 + hc, bw)); if ((blob.Length & 1) != 0) throw Bad();
-                values.Add(field.Value, new UnicodeEncoding(false, false, true).GetString(blob));
+                if (values.ContainsKey(field.Value)) throw Bad();
+                var blob = r.Blob(bheap[0], bheap[1], r.Index(p + 2 + hc, bw));
+                if (field.Value == "InstallBundleProtocol") {
+                    if (r.U16(p) != 8 || blob.Length != 4 || new Reader(blob).I32(0) != 1) throw Bad(); values.Add(field.Value, "1");
+                } else {
+                    if (r.U16(p) != 14 || (blob.Length & 1) != 0) throw Bad();
+                    values.Add(field.Value, new UnicodeEncoding(false, false, true).GetString(blob));
+                }
             }
             if (!values.ContainsKey("Guid") || !values.ContainsKey("Version") || values["Guid"] != Owner) throw Bad(); UpdateVersion.Parse(values["Version"]);
-            if (values.Count != 4 || !values.TryGetValue("UpdateProtocol", out var protocol) || protocol != "3" || !values.TryGetValue("SettingsSchema", out var schema) || schema != "1") throw Bad();
-            return new InstalledPluginMetadata(values["Version"], 3, 1);
+            if (values.Count != (maintenance ? 6 : 4) || !values.TryGetValue("UpdateProtocol", out var protocol) || protocol != "4" || !values.TryGetValue("SettingsSchema", out var schema) || schema != "1") throw Bad();
+            if (maintenance) {
+                if (!values.TryGetValue("Name", out var pluginName) || pluginName != "BetterAstralParty" || !values.ContainsKey("InstallBundleProtocol")) throw Bad();
+                Func<int, string> typeDefinition = row => {
+                    if (row < 1 || row > rows[2]) throw Bad(); var p = starts[2] + (row - 1) * widths[2];
+                    return r.String(s[0], s[1], r.Index(p + 4 + sw, sw)) + "." + r.String(s[0], s[1], r.Index(p + 4, sw));
+                };
+                Func<int, string> methodOwner = row => {
+                    if (row < 1 || row > rows[6]) throw Bad();
+                    for (var i = 0; i < rows[2]; i++) {
+                        var p = starts[2] + i * widths[2] + 4 + 2 * sw + tdor + idx(4);
+                        var first = r.Index(p, idx(6)); var last = i + 1 < rows[2] ? r.Index(p + widths[2], idx(6)) : rows[6] + 1;
+                        if (row >= first && row < last) return typeDefinition(i + 1);
+                    } throw Bad();
+                };
+                var count = 0;
+                for (var i = 0; i < rows[12]; i++) {
+                    var p = starts[12] + i * widths[12]; if (r.Index(p, attributeParent) != (pluginRow << 5 | 3)) continue;
+                    var constructor = r.Index(p + attributeParent, attributeType); var row = constructor >> 3;
+                    string owner, name; byte[] signature;
+                    if ((constructor & 7) == 2) {
+                        owner = methodOwner(row); var method = starts[6] + (row - 1) * widths[6];
+                        name = r.String(s[0], s[1], r.Index(method + 8, sw)); signature = r.Blob(bheap[0], bheap[1], r.Index(method + 8 + sw, bw));
+                    } else if ((constructor & 7) == 3) {
+                        if (row < 1 || row > rows[10]) throw Bad(); var member = starts[10] + (row - 1) * widths[10];
+                        var parentWidth = coded(3, new[] { 2, 1, 26, 6, 27 }); var parent = r.Index(member, parentWidth); var parentRow = parent >> 3;
+                        if ((parent & 7) == 0) owner = typeDefinition(parentRow);
+                        else if ((parent & 7) == 1) {
+                            if (parentRow < 1 || parentRow > rows[1]) throw Bad(); var reference = starts[1] + (parentRow - 1) * widths[1] + coded(2, new[] { 0, 26, 35, 1 });
+                            owner = r.String(s[0], s[1], r.Index(reference + sw, sw)) + "." + r.String(s[0], s[1], r.Index(reference, sw));
+                        } else if ((parent & 7) == 3) owner = methodOwner(parentRow);
+                        else throw Bad();
+                        name = r.String(s[0], s[1], r.Index(member + parentWidth, sw)); signature = r.Blob(bheap[0], bheap[1], r.Index(member + parentWidth + sw, bw));
+                    } else throw Bad();
+                    if (owner != "BepInEx.BepInPlugin") continue;
+                    if (++count != 1 || name != ".ctor" || signature.Length != 6 || signature[0] != 0x20 || signature[1] != 3
+                        || signature[2] != 1 || signature[3] != 14 || signature[4] != 14 || signature[5] != 14) throw Bad();
+                    var attribute = r.Blob(bheap[0], bheap[1], r.Index(p + attributeParent + attributeType, bw)); var a = new Reader(attribute); var at = 2;
+                    if (a.U16(0) != 1 || SerializedText(a, ref at) != Owner || SerializedText(a, ref at) != pluginName || SerializedText(a, ref at) != values["Version"]
+                        || at != attribute.Length - 2 || a.U16(at) != 0) throw Bad();
+                }
+                if (count != 1) throw Bad();
+            }
+            return new InstalledPluginMetadata(values["Version"], 4, 1);
+        }
+        private static string SerializedText(Reader reader, ref int at)
+        {
+            reader.Range(at, 1); var first = reader.B[at++]; int length;
+            if (first < 128) length = first;
+            else if (first < 192) { reader.Range(at, 1); length = ((first & 63) << 8) | reader.B[at++]; }
+            else if (first < 224) { reader.Range(at, 3); length = ((first & 31) << 24) | reader.B[at] << 16 | reader.B[at + 1] << 8 | reader.B[at + 2]; at += 3; }
+            else throw Bad();
+            if (length > 256) throw Bad(); reader.Range(at, length);
+            var result = new UTF8Encoding(false, true).GetString(reader.B, at, length); at += length; return result;
         }
     }
 }

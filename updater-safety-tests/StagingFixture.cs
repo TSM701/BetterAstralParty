@@ -11,8 +11,12 @@ using BetterAstralParty.Updating;
 
 internal static class StagingFixture
 {
+    private static string[] WorkDirectories(string root, string kind)
+    { using var fence = new WindowsFileFence(root); var paths = new System.Collections.Generic.List<string>(); foreach (var relative in UpdateWorkPath.Directories(fence, kind)) paths.Add(fence.Full(relative)); return paths.ToArray(); }
+    private static string WorkRelative(string root, string path) => path.Substring(root.TrimEnd('\\').Length + 1).Replace('\\', '/');
+
     private static int _checks;
-    private static readonly UpdateContext Context = new UpdateContext("TSM701/BetterAstralParty", "Stable", "1.2.1", "1.2.3", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId);
+    private static readonly UpdateContext Context = new UpdateContext("TSM701/BetterAstralParty", "Stable", "1.3.0", "1.3.2", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CreateHardLinkW(string newName, string existing, IntPtr security);
@@ -59,9 +63,9 @@ internal static class StagingFixture
                 }
                 Zip = output.ToArray();
             }
-            Descriptor = Encoding.ASCII.GetBytes("BetterAstralParty.UpdateDescriptor/v3\nrepository=TSM701/BetterAstralParty\nversion=1.2.3\nchannel=Stable\nplatform="
-                + UpdateTrust.PlatformId + "\nrelease-id=123\nasset-id=456\nasset-name=BetterAstralParty-1.2.3-update.zip\nzip-bytes=" + Zip.Length
-                + "\nzip-sha256=" + UpdateTrust.Hash(Zip) + "\nfile-count=8\npurpose=release/Stable\nrepository-id=" + ReleaseFeedPolicy.StableRepositoryId + "\nsettings-schema=1\n"
+            Descriptor = Encoding.ASCII.GetBytes("BetterAstralParty.UpdateDescriptor/v4\nrepository=TSM701/BetterAstralParty\nversion=1.3.2\nchannel=Stable\nplatform="
+                + UpdateTrust.PlatformId + "\nrelease-id=123\nasset-id=456\nasset-name=BetterAstralParty-1.3.2-update.zip\nzip-bytes=" + Zip.Length
+                + "\nzip-sha256=" + UpdateTrust.Hash(Zip) + "\nfile-count=5\npurpose=release/Stable\nrepository-id=" + ReleaseFeedPolicy.StableRepositoryId + "\nsettings-schema=1\n"
                 + string.Concat(InstallReceipt.Owned.Select(path => "file=" + path + "\t" + bytes.Length + "\t" + UpdateTrust.Hash(bytes) + "\n")));
             Signature = _signing.SignData(Descriptor, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
             Trust = new UpdateTrust(new[] { new TrustedUpdateKey("staging-fixture", _signing.ExportParameters(false)) });
@@ -99,7 +103,7 @@ internal static class StagingFixture
         using (var peer = new WindowsFileFence(root))
         using (var locked = UpdateStaging.VerifyLocked(peer, staged, package.Trust, Context))
         {
-            locked.Recheck(); Check(locked.Payload.Package.Descriptor.Version == "1.2.3", "fresh peer revalidates signature/context/package");
+            locked.Recheck(); Check(locked.Payload.Package.Descriptor.Version == "1.3.2", "fresh peer revalidates signature/context/package");
             using (var input = locked.Payload.OpenRead())
             using (var output = new MemoryStream())
             { input.CopyTo(output); Check(UpdateTrust.Hash(output.ToArray()) == UpdateTrust.Hash(package.Zip), "staged image equals verified caller-independent snapshot"); }
@@ -125,7 +129,7 @@ internal static class StagingFixture
         catch (ObjectDisposedException) { Check(true, "disposed verified lease cannot claim on-disk protection"); }
         var mismatch = new UpdateContext(Context.Repository, "Beta", Context.CurrentVersion, Context.ReleaseTag, Context.ReleaseId, Context.AssetId, Context.Platform);
         Reject(() => { using (UpdateStaging.VerifyLocked(fence, staged, package.Trust, mismatch)) { } }, "changed channel rejects staged package");
-        var highWater = new UpdateContext(Context.Repository, "Stable", Context.CurrentVersion, Context.ReleaseTag, Context.ReleaseId, Context.AssetId, Context.Platform, "1.2.3", ReleaseFeedPolicy.StableRepositoryId);
+        var highWater = new UpdateContext(Context.Repository, "Stable", Context.CurrentVersion, Context.ReleaseTag, Context.ReleaseId, Context.AssetId, Context.Platform, "1.3.2", ReleaseFeedPolicy.StableRepositoryId);
         Reject(() => { using (UpdateStaging.VerifyLocked(fence, staged, package.Trust, highWater)) { } }, "replay against highest-applied rejected");
         using (UpdateStaging.VerifyLocked(fence, staged, package.Trust, Context)) Check(true, "failed revalidation released all handles");
         Reject(() => { var fake = new StagedUpdate(new object(), staged.Directory, staged.DirectoryIdentity, staged.DescriptorSha256); }, "unverified record stamp denied");
@@ -156,7 +160,7 @@ internal static class StagingFixture
         Directory.Move(oldPath, moved); // Both known fixture paths are inside this freshly-created root.
         using (var fence = new WindowsFileFence(root))
         {
-            fence.CreatePrivateDirectory(original.Directory);
+            UpdateWorkPath.Create(fence, original.Directory);
             foreach (var name in new[] { "descriptor.bin", "signature.bin", "key-id.bin", "package.zip" })
                 File.Copy(Path.Combine(moved, name), Path.Combine(root, original.Directory, name));
             Reject(() => { using (UpdateStaging.VerifyLocked(fence, original, package.Trust, Context)) { } }, "replaced directory ID denied even for identical signed bytes");
@@ -173,7 +177,7 @@ internal static class StagingFixture
                 catch (OperationCanceledException) { Check(true, "mid-write cancellation returns no Ready stage"); }
             }
         }
-        var candidates = Directory.GetDirectories(root, "bap-v3-stage-*");
+        var candidates = WorkDirectories(root, "stage");
         Check(candidates.Length == 1 && Directory.GetFiles(candidates[0]).Length < 4, "cancelled private partial stage retained without complete candidate");
     }
     private static void PublicAcl(string path)
@@ -215,10 +219,9 @@ internal static class StagingFixture
         try
         {
             if (args.Length != 1) throw new Exception("Fixture needs fresh isolated base");
-            var baseDirectory = Path.GetFullPath(args[0]);
-            var authorized = Path.Combine(Path.GetFullPath(Environment.CurrentDirectory), "artifacts", "automatic-update-development", "staging-");
-            if (!baseDirectory.StartsWith(authorized, StringComparison.OrdinalIgnoreCase) || !baseDirectory.EndsWith("\\fixtures", StringComparison.OrdinalIgnoreCase)
-                || Directory.Exists(baseDirectory)) throw new Exception("Only a fresh authorized staging fixture directory is allowed");
+            var baseDirectory = UpdaterFixtureScope.Require(args[0]);
+            if (!baseDirectory.EndsWith("\\fixtures", StringComparison.OrdinalIgnoreCase) || Directory.Exists(baseDirectory))
+                throw new Exception("Only a fresh authorized staging fixture directory is allowed");
             var root = Path.Combine(baseDirectory, "cache"); Directory.CreateDirectory(Path.Combine(root, "existing"));
             File.WriteAllText(Path.Combine(root, "existing", "keep.txt"), "keep");
             using (var package = new Package())

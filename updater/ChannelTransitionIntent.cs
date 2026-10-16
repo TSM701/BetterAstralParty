@@ -16,7 +16,7 @@ namespace BetterAstralParty.Updating
             SourceChannel = source.ActiveChannel; SourceRepository = source.ActiveRepository; SourceRepositoryId = source.ActiveRepositoryId; Target = target; }
     }
     // An exact reviewed target and original root/receipt/configuration are retained in the
-    // ticket. Either explicit cross-channel direction may lower the installed
+    // ticket. Every explicit cross-channel direction may lower the installed
     // version; the destination's retained floor and exact replay identity remain.
     internal sealed class ChannelTransitionIntent
     {
@@ -31,7 +31,7 @@ namespace BetterAstralParty.Updating
         internal string Identity { get { return UpdateTrust.Hash(Bytes()); } }
         internal static ChannelTransitionReview Review(WindowsFileFence fence, VerifiedUpdateDescriptor target)
         {
-            if (target.Protocol != 3 || target.Channel != "Stable" && target.Channel != "Beta" || target.Repository != ReleaseFeedPolicy.For(target.Channel).Repository || target.SettingsSchema != 1) throw Prerequisite();
+            if (target.Protocol != 4 || !ReleaseFeedPolicy.IsChannel(target.Channel) || target.Repository != ReleaseFeedPolicy.For(target.Channel).Repository || target.SettingsSchema != 1) throw Prerequisite();
             using (var file = fence.OpenFile(InstallReceipt.Path)) using (var plugin = fence.OpenFile(UpdateTrust.PluginPath)) {
                 var receipt = InstallReceipt.Parse(UpdateTicket.Read(file, 16384)); var state = receipt.Channels;
                 if (state == null || state.Root != fence.RootIdentity.Text || state.ActiveChannel == target.Channel || state.ActiveRepositoryId <= 0
@@ -39,11 +39,11 @@ namespace BetterAstralParty.Updating
                 var sourceFeed = ReleaseFeedPolicy.For(state.ActiveChannel);
                 if (!sourceFeed.Configured || sourceFeed.RepositoryId != state.ActiveRepositoryId) throw Prerequisite();
                 var metadata = InstalledPluginMetadata.Read(UpdateTicket.Read(plugin, UpdateTrust.MaxFileBytes));
-                if (metadata.UpdateProtocol != 3 || metadata.SettingsSchema != 1 || metadata.Version != state.ActiveVersion || plugin.Hash() != receipt.Files[UpdateTrust.PluginPath]) throw Prerequisite();
+                if (metadata.UpdateProtocol != 4 || metadata.SettingsSchema != 1 || metadata.Version != state.ActiveVersion || plugin.Hash() != receipt.Files[UpdateTrust.PluginPath]) throw Prerequisite();
                 using var history=UpdateTransaction.ValidateHistory(fence,receipt);
                 var floor = state.Floor(new UpdateContext(target.Repository, target.Channel, metadata.Version, target.Version, target.ReleaseId, target.AssetId, target.Platform, repositoryId: target.RepositoryId));
                 if (floor != null) { var comparison = UpdateVersion.Parse(target.Version).CompareTo(UpdateVersion.Parse(floor));
-                    if (comparison < 0 || comparison == 0 && (target.Channel == "Stable" ? state.StableDescriptor : state.BetaDescriptor) != target.DescriptorSha256) throw new UpdateValidationException(UpdateFailure.NotNewer); }
+                    if (comparison < 0 || comparison == 0 && state.DescriptorFor(target.Channel) != target.DescriptorSha256) throw new UpdateValidationException(UpdateFailure.NotNewer); }
                 string? water; UpdateTransaction.ReadHighWater(fence, out water);
                 return new ChannelTransitionReview(fence.RootIdentity.Text, file.Hash(), SettingsHashAt(fence), water ?? "-", metadata.Version, state, target);
             }
@@ -72,7 +72,7 @@ namespace BetterAstralParty.Updating
             var state = receipt.Channels;
             if (fence.RootIdentity.Text != Root || state == null || state.Root != Root || state.ActiveChannel != SourceChannel || state.ActiveRepositoryId != SourceRepositoryId
                 || state.ActiveVersion != CurrentVersion || current != CurrentVersion || receiptHash != ReceiptHash || (waterHash ?? "-") != HighWaterHash
-                || settingsEvidence != SettingsHash || descriptor.Protocol != 3 || descriptor.RepositoryId != TargetRepositoryId || descriptor.Channel != TargetChannel
+                || settingsEvidence != SettingsHash || descriptor.Protocol != 4 || descriptor.RepositoryId != TargetRepositoryId || descriptor.Channel != TargetChannel
                 || descriptor.Version != TargetVersion || descriptor.ReleaseId != ReleaseId || descriptor.AssetId != AssetId || descriptor.DescriptorSha256 != DescriptorHash || descriptor.ZipSha256 != ZipHash)
                 throw Prerequisite();
             var sourceFeed = ReleaseFeedPolicy.For(SourceChannel);
@@ -81,7 +81,7 @@ namespace BetterAstralParty.Updating
         internal static string SettingsHashAt(WindowsFileFence fence)
         {
             try { using (var file = fence.OpenFile(SettingsPath)) { if (file.Stream.Length > 1024 * 1024) throw Prerequisite(); return file.Hash(); } }
-            catch (ApplySafetyException error) when (error.NativeError == 2) { return "-"; }
+            catch (ApplySafetyException error) when (error.NativeError == 2 || error.NativeError == 3) { fence.Recheck(); return "-"; }
         }
         internal static string? WaterHashAt(WindowsFileFence fence)
         {
@@ -94,7 +94,7 @@ namespace BetterAstralParty.Updating
         }
         internal void RequireStage(WindowsFileFence fence, UpdateTicket ticket)
         {
-            using (var file = fence.OpenFile("bap-v3-transition-" + Operation))
+            using (var file = fence.OpenFile(UpdateWorkPath.TransitionFor(ticket.Stage, Operation)))
                 if (Encoding.ASCII.GetString(UpdateTicket.Read(file, 256)) != Identity + "\nstage=" + ticket.Stage + "\n" || ticket.RootId != Root)
                     throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
         }
@@ -112,7 +112,7 @@ namespace BetterAstralParty.Updating
             if (!Regex.IsMatch(v[0], @"\A[0-9A-F]{8}:[0-9A-F]{16}\z") || !Regex.IsMatch(v[1], @"\A[0-9a-f]{32}\z")
                 || !Digest(v[2]) || v[3] != "-" && !Digest(v[3]) || v[4] != "-" && !Digest(v[4]) || !Digest(v[11]) || !Digest(v[12])) throw Prerequisite();
             _ = UpdateVersion.Parse(v[5]); var target = UpdateVersion.Parse(v[8]);
-            if (v[13] != "Stable" && v[13] != "Beta" || v[14] != "Stable" && v[14] != "Beta" || v[13] == v[14]
+            if (!ReleaseFeedPolicy.IsChannel(v[13]) || !ReleaseFeedPolicy.IsChannel(v[14]) || v[13] == v[14]
                 || v[14] == "Stable" && (target.Major == 0 || target.IsPrerelease)) throw Prerequisite();
             var result = new ChannelTransitionIntent(v[0], v[1], v[2], v[3], v[4], v[5], Number(v[6]), Number(v[7]), v[8], Number(v[9]), Number(v[10]), v[11], v[12], v[13], v[14]);
             if (result.SourceChannel == "Beta" && result.SourceRepositoryId != ReleaseFeedPolicy.BetaRepositoryId || result.TargetChannel == "Beta" && result.TargetRepositoryId != ReleaseFeedPolicy.BetaRepositoryId
