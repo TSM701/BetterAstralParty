@@ -32,7 +32,7 @@ PvP 방·경기가 감지되면 전투 추천·카드 정렬·추가 정보 표�
 
 ### 설치와 실행
 
-BetterAstralParty 1.2.x 이하 버전을 사용 중이라면, 게임과 모드 실행기를 종료하고 사용하던 패키지의 `Uninstall.cmd`로 먼저 제거하세요. 제거가 정상 완료되면 아래 순서로 1.3.0 이상을 새로 설치하세요. 이전 설치 체계에서 자동 업데이트하거나 새 패키지로 덮어쓰는 설치는 지원하지 않습니다. 제거 오류가 나면 임의로 파일을 삭제하지 말고 오류 로그와 함께 제보하세요. 처음 설치하는 사용자는 바로 아래 순서대로 진행하면 됩니다.
+BetterAstralParty 1.2.x 이하 버전을 사용 중이라면, 게임과 모드 실행기를 종료하고 사용하던 패키지의 `Uninstall.cmd`로 먼저 제거하세요. 제거가 정상 완료되면 아래 순서로 1.3.0 이상을 새로 설치하세요. 이전 설치 체계에서 자동 업데이트하거나 새 패키지로 덮어쓰는 설치는 지원하지 않습니다. 제거에 실패하면 새 패키지의 `Force-Uninstall.cmd`를 먼저 시도해주세요. 그래도 해결되지 않으면 번거로우시겠지만 보관할 데이터를 백업한 뒤 게임을 클린 설치하고 모드 설치를 다시 시도해주세요. 처음 설치하는 사용자는 바로 아래 순서대로 진행하면 됩니다.
 
 1. GitHub Releases에서 설치할 버전의 `BetterAstralParty-<버전>.zip` 전체 설치 ZIP을 받으세요. 소스 ZIP은 설치용이 아닙니다.
 2. 순정 Steam 클라이언트의 라이브러리에서 Astral Party를 열고 INT(Global) 게임을 먼저 한 번 실행하세요. Astral Party - Mod가 아닌 게임 자체를 실행해 업데이트와 데이터 다운로드를 마친 뒤 정상 종료하세요.
@@ -152,7 +152,7 @@ Steam 경로나 로그인 계정을 자동으로 찾지 못하면 바로가기 �
 
 완전 제거 후에는 전체 패키지의 `Install.cmd`로 재설치할 수 있습니다. 복구 안내가 나오면 로그와 백업을 보관하고 표시된 절차를 따르세요.
 
-정상 제거가 실패해 강제 제거가 필요하면 `Force-Uninstall.cmd`를 실행하고 삭제 목록을 확인하세요. 동의하면 표시된 BetterAstralParty 파일·설정·해당 설치의 복구 백업을 되돌릴 수 없게 삭제합니다. 공용 로더와 다른 모드는 보존하며, 남은 Astral Party - Mod 항목은 Steam에서 직접 제거할 수 있습니다.
+정상 제거가 실패하면 `Force-Uninstall.cmd`를 먼저 실행하고 삭제 목록을 확인하세요. 동의하면 표시된 BetterAstralParty 파일·설정·해당 설치의 복구 백업을 되돌릴 수 없게 삭제합니다. 공용 로더와 다른 모드는 보존하며, 남은 Astral Party - Mod 항목은 Steam에서 직접 제거할 수 있습니다. 그래도 해결되지 않으면 번거로우시겠지만 보관할 데이터를 백업한 뒤 게임을 클린 설치하고 모드 설치를 다시 시도해주세요.
 
 ### 문제 해결과 제보
 
@@ -200,7 +200,7 @@ Differences in another mod or an existing shared loader's configuration or versi
 
 ### Install and play
 
-If you use BetterAstralParty 1.2.x or earlier, close the game and mod launcher and uninstall using your previous package's `Uninstall.cmd` first. After removal completes successfully, install 1.3.0 or newer fresh using the steps below. Automatic updates and in-place installation from the previous installation generation are not supported. If removal fails, report the error log instead of deleting files manually. First-time users can follow the steps below directly.
+If you use BetterAstralParty 1.2.x or earlier, close the game and mod launcher and uninstall using your previous package's `Uninstall.cmd` first. After removal completes successfully, install 1.3.0 or newer fresh using the steps below. Automatic updates and in-place installation from the previous installation generation are not supported. If removal fails, first try `Force-Uninstall.cmd` from the new package. If that still does not resolve the issue, please back up any data you want to keep, perform a clean installation of the game, then try installing the mod again. First-time users can follow the steps below directly.
 
 1. Download the complete `BetterAstralParty-<version>.zip` installation package for your chosen version from GitHub Releases. Source ZIPs are not installation packages.
 2. In the Steam client, first launch Astral Party INT(Global) itself from your library, not Astral Party - Mod. Wait for game/data updates to finish, then exit normally.
@@ -320,7 +320,7 @@ Shared BepInEx files and current loader settings, other mods, Korean patches and
 
 After complete removal, run `Install.cmd` from a complete package to reinstall. If recovery is required, keep logs and backups and follow the displayed procedure.
 
-If normal removal fails and forced removal is needed, run `Force-Uninstall.cmd` and review the deletion list. After confirmation, it permanently deletes the listed BetterAstralParty files, settings and recovery backups for that installation. Shared loader files and other mods are preserved; remove any remaining Astral Party - Mod entry manually in Steam.
+If normal removal fails, first run `Force-Uninstall.cmd` and review the deletion list. After confirmation, it permanently deletes the listed BetterAstralParty files, settings and recovery backups for that installation. Shared loader files and other mods are preserved; remove any remaining Astral Party - Mod entry manually in Steam. If that still does not resolve the issue, please back up any data you want to keep, perform a clean installation of the game, then try installing the mod again.
 
 ### Troubleshooting and reports
 
