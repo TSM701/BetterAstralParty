@@ -195,12 +195,18 @@ internal static class DeveloperBootstrap
                 || !Guid.TryParseExact(args[1].Substring(JobPrefix.Length), "N", out parsed) || !Guid.TryParseExact(args[2], "N", out parsed))
                 throw new ArgumentException("Invalid developer worker handshake.");
             var expected = StartPrefix + args[2]; var input = new StringBuilder();
+            // Read bytes, not characters: under code page 65001 (GitHub Actions cmd) the owner's stdin writer
+            // prepends a UTF-8 BOM, which a non-UTF-8 worker decoder would merge into the first release character.
+            var stdin = Console.OpenStandardInput(); var position = 0; var bom = new byte[] { 0xEF, 0xBB, 0xBF };
             while (true) {
-                var character = Console.In.Read();
-                if (character < 0) throw new IOException("Developer worker was not released by its owner.");
-                if (character == '\n') break;
-                if (input.Length >= expected.Length + 1) throw new IOException("Invalid developer worker release.");
-                input.Append((char)character);
+                var value = stdin.ReadByte();
+                if (value < 0) throw new IOException("Developer worker was not released by its owner.");
+                if (position < 3 && input.Length == 0 && value == bom[position]) { position++; continue; }
+                if (position > 0 && position < 3 && input.Length == 0) throw new IOException("Invalid developer worker release.");
+                position = 3;
+                if (value == '\n') break;
+                if (value > 0x7F || input.Length >= expected.Length + 1) throw new IOException("Invalid developer worker release.");
+                input.Append((char)value);
             }
             if (input.ToString() != expected && input.ToString() != expected + "\r") throw new IOException("Invalid developer worker release.");
             // Close the query handle before SDK start so only the supervisor owns kill-on-close lifetime.
