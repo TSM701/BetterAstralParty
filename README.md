@@ -170,14 +170,6 @@ Steam 경로나 로그인 계정을 자동으로 찾지 못하면 바로가기 �
 
 BetterAstralParty 자체 코드는 MIT 라이선스로 제공합니다. 외부 구성 요소의 고지와 대응 소스 안내는 `THIRD-PARTY-NOTICES/`에서 확인하세요. 소스 빌드 방법은 공개 소스 묶음의 `docs/BUILD.md`에 있습니다.
 
-### 코드 서명 정책
-
-Windows 실행 파일의 무료 코드 서명은 [SignPath.io](https://about.signpath.io)가 제공하며, 인증서는 [SignPath Foundation](https://signpath.org)이 발급합니다.
-
-- 서명 대상: 이 저장소의 `Native build` GitHub Actions 워크플로로 빌드한 `BetterAstralParty-Launcher.exe`와 `BetterAstralParty-UpdateHelper.exe`입니다. 플러그인 DLL과 함께 들어 있는 외부 로더 파일은 이 인증서로 서명하지 않습니다.
-- 역할: 커밋·검토·서명 승인은 [TSM701](https://github.com/TSM701)이 맡습니다. 모든 서명은 릴리스마다 직접 승인한 뒤 진행합니다.
-- 개인정보: 업데이트 확인이 켜져 있으면 모드와 런처가 이 저장소의 GitHub 릴리스 정보와 업데이트 파일을 HTTPS로 요청합니다. 자동 업데이트 확인은 기본 ON이며 설정에서 끌 수 있습니다. 비공개 베타를 선택해 직접 입력한 토큰 외에는 계정·게임·개인 정보를 보내지 않으며, 진단 ZIP은 자동으로 업로드하지 않습니다.
-
 ## English
 
 A Korean/English quality-of-life mod for Astral Party INT(Global), focused on PvE information and decision support.
@@ -345,11 +337,3 @@ Include the mod version, reproduction steps, screenshots and relevant logs or di
 ### Source and licenses
 
 BetterAstralParty-owned code is provided under the MIT license. See `THIRD-PARTY-NOTICES/` for third-party notices and corresponding-source information. Build instructions are in `docs/BUILD.md` in the public source archive.
-
-### Code signing policy
-
-Free code signing for the Windows executables is provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
-
-- Signed files: `BetterAstralParty-Launcher.exe` and `BetterAstralParty-UpdateHelper.exe`, built from this repository by the `Native build` GitHub Actions workflow. The plugin DLL and bundled third-party loader files are not signed with this certificate.
-- Roles: [TSM701](https://github.com/TSM701) commits, reviews and approves signing. Every release is signed only after manual approval.
-- Privacy: while update checks are enabled, the mod and launcher request this repository's GitHub release information and update files over HTTPS. Automatic update checks are ON by default and can be turned off in the settings. No account, game or personal data is sent, except a token you enter yourself for Private Beta, and diagnostics ZIPs are never uploaded automatically.
