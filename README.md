@@ -7,9 +7,8 @@
 Astral Party INT(Global)의 PvE 정보 표시와 판단을 돕는 편의성 모드<br>
 A quality-of-life mod for Astral Party INT(Global) PvE
 
-[![Release](https://img.shields.io/github/v/release/TSM701/BetterAstralParty?label=release&color=ff4fa3)](https://github.com/TSM701/BetterAstralParty/releases)
-[![Downloads](https://img.shields.io/github/downloads/TSM701/BetterAstralParty/total?color=f7c948)](https://github.com/TSM701/BetterAstralParty/releases)
-[![License](https://img.shields.io/github/license/TSM701/BetterAstralParty?color=8bd3a8)](LICENSE)
+[![Release](https://img.shields.io/badge/release-1.4.0-ff4fa3)](https://github.com/TSM701/BetterAstralParty/releases)
+[![License](https://img.shields.io/badge/license-MIT-8bd3a8)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Windows%20x64-b9a7f5)
 
 [한국어](#한국어) · [English](#english)
