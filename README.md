@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src=".github/assets/banner.jpg" alt="BetterAstralParty" width="100%">
+<img src="https://raw.githubusercontent.com/TSM701/BetterAstralParty/main/.github/assets/banner.jpg" alt="BetterAstralParty" width="100%">
 
 # BetterAstralParty
 
