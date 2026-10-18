@@ -53,7 +53,7 @@ namespace BetterAstralParty.Updating
         internal static bool ValidStamp(object stamp) { return ReferenceEquals(stamp, Stamp); }
         private static string Name(string directory)
         {
-            if (!Regex.IsMatch(directory, @"\A" + UpdateWorkPath.OptionalRootPattern + @"bap-v4-stage-[0-9a-f]{32}\z")) throw new ApplySafetyException(ApplyFailure.UnsafePath);
+            if (!UpdateWorkPath.Is(directory, "stage")) throw new ApplySafetyException(ApplyFailure.UnsafePath);
             return directory;
         }
         private static void Write(WindowsFileFence fence, string path, Stream input, CancellationToken cancellation)

@@ -185,6 +185,7 @@ internal static class GameUi
         HomeAvailable = false;
         var home = Visible(_home) ? _home : Find(_root!, "UIHomePanel");
         HomeAvailable = home != null;
+        if (HomeAvailable) StartupGuard.HomeReached();
         Plugin.Diagnostics.State("home", HomeAvailable ? "visible" : "hidden");
         if (!Compatibility.Allowed("HomeMenu"))
         {

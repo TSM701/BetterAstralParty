@@ -11,9 +11,9 @@ public sealed class Plugin : BasePlugin
 {
     public const string Guid = "kr.betterastralparty.mod";
     public const string Name = "BetterAstralParty";
-    public const string Version = "1.3.0-rc.3.local.13";
+    public const string Version = "1.4.0-rc.1.local.4";
     public const int InstallBundleProtocol = 1;
-    public const string UpdateProtocol = "4";
+    public const string UpdateProtocol = "5";
     public const string SettingsSchema = "1";
 
     internal static ConfigEntry<bool> Enabled { get; private set; } = null!;
@@ -53,6 +53,24 @@ public sealed class Plugin : BasePlugin
     internal static ConfigEntry<bool> ApplyAfterExit { get; private set; } = null!;
     private static UpdatePreferencesBridge? _updatePreferences;
     internal static void PollUpdatePreferences() => _updatePreferences?.Poll(Automatic);
+    private static bool _channelAdoptionChecked;
+    // Once per session after installation inspection: a switch confirmed in the emergency window becomes the saved channel.
+    internal static void AdoptConfirmedChannel()
+    {
+        var snapshot = Automatic.Snapshot;
+        if (_channelAdoptionChecked || Automatic.Status == AutomaticUpdateStatus.CheckingInstallation || snapshot.InstalledChannel.Length == 0 || snapshot.InstalledVersion.Length == 0) return;
+        _channelAdoptionChecked = true;
+        try {
+            using var fence = new Updating.WindowsFileFence(System.IO.Path.GetDirectoryName(Paths.BepInExRootPath)!);
+            if (!Updating.ChannelTransitionIntent.ReadAdoption(fence, out var channel, out var version)) return;
+            var applied = channel.Length != 0 && channel == snapshot.InstalledChannel && version == snapshot.InstalledVersion;
+            // Unresolved update work may still apply the switch; keep the marker until it settles.
+            if (!applied && Automatic.Status is AutomaticUpdateStatus.RecoveryRequired or AutomaticUpdateStatus.FaultDisabled or AutomaticUpdateStatus.FaultStorageFailed) return;
+            if (applied && UpdateChannel.Value != channel) UpdateChannel.Value = channel;
+            Updating.ChannelTransitionIntent.RemoveAdoption(fence);
+            Logger.LogInfo(applied ? "[Update channel] Saved the channel confirmed in the emergency update window: " + channel : "[Update channel] Discarded an emergency channel choice that was not applied.");
+        } catch (Exception ex) { Logger.LogWarning("[Update channel] Emergency channel choice could not be applied: " + ex.GetType().Name); }
+    }
     internal static AutomaticUpdates Automatic { get; private set; } = new(Updating.UpdateDownloads.Production());
     internal static ReleaseUpdates Updates { get; } = ReleaseUpdates.Production(Version, ReleaseChannel.Stable);
     internal static PrivateReleaseSession? UpdateSession { get; private set; }
@@ -72,6 +90,7 @@ public sealed class Plugin : BasePlugin
             Log.LogInfo("BAP OFF for this launch; shared loader and other mods are unchanged.");
             return;
         }
+        StartupGuard.Begin(Version, Path.GetDirectoryName(Paths.BepInExRootPath)!);
         try
         {
             MinimalDiagnostics = DiagnosticOwner.Start(
@@ -107,9 +126,10 @@ public sealed class Plugin : BasePlugin
     {
         VisibleCombatAdvisor.PveClassifier = RuntimeObject.IsPve;
         LoadStage(DiagnosticPhase.BootstrapGate);
-        try {using var launchFence = new Updating.WindowsFileFence(Path.GetDirectoryName(Paths.BepInExRootPath)!); Updating.UpdateLaunchGate.Check(launchFence);}
-        catch (Exception ex) {DiagnosticHub.Failure(DiagnosticFeature.Loader, DiagnosticPhase.BootstrapGate, DiagnosticCode.Prerequisite, ex);Log.LogError("업데이트 복구가 필요해 모드 로드를 중단합니다. 게임과 모드 런처를 닫고 복구 안내를 확인하세요. / Mod load blocked: update recovery required. Close the game and mod launcher and follow the recovery guide.");return;}
+        Logger = Log;
+        if (!UpdateStartup.Recover(Path.GetDirectoryName(Paths.BepInExRootPath)!, Version, Updating.UpdateTrust.Production())) { StartupGuard.Stage("BootstrapGate", "Failed"); return; }
         DiagnosticHub.Stage(DiagnosticFeature.Loader, DiagnosticPhase.BootstrapGate, DiagnosticOutcome.Completed);
+        StartupGuard.Stage("BootstrapGate");
         LoadStage(DiagnosticPhase.Configuration);
         Enabled = Config.Bind("일반", "활성화", true, "PvE 공격·놓아주기, 방어·회피와 카드 사용을 추천합니다. / PvE advice for attacking, letting go, defending, dodging and playing cards.");
         FinalDamage = Config.Bind("화면", "최종 피해 표시", Enabled.Value, "전투의 최종 수치로 계산한 피해를 표시합니다. / Shows damage calculated from final combat values.");
@@ -146,7 +166,8 @@ public sealed class Plugin : BasePlugin
         UpdateChannel = Config.Bind("일반", "업데이트 채널", "Stable",
             "Stable: 릴리즈, PreRelease: 프리 릴리즈, Beta: 비공개 베타. 선택한 채널의 최신 버전을 확인합니다. 비공개 베타는 토큰이 필요합니다. / Checks the latest Release, Pre-release or Private Beta. Private Beta requires a token.");
         AutoDownload = Config.Bind("업데이트", "자동 다운로드", true, "검증한 새 버전을 자동으로 다운로드합니다. / Automatically downloads verified new versions.");
-        ApplyAfterExit = Config.Bind("업데이트", "종료 후 적용", true, "게임과 런처 종료 후 다운로드한 업데이트를 적용합니다. / Applies downloaded updates after the game and launcher exit.");
+        // Same key keeps each player's saved choice; protocol 5 applies in game and takes effect at the next launch.
+        ApplyAfterExit = Config.Bind("업데이트", "종료 후 적용", true, "다운로드한 업데이트를 바로 적용하고 다음 실행부터 사용합니다. / Applies downloaded updates now; they take effect at the next launch.");
         DiagnosticHub.Stage(DiagnosticFeature.Loader, DiagnosticPhase.Configuration, DiagnosticOutcome.Completed);
         LoadStage(DiagnosticPhase.UpdateReadiness);
         UpdateSession?.Dispose(); UpdateSession = null;
@@ -169,7 +190,16 @@ public sealed class Plugin : BasePlugin
             "오류·성능·공개 전투 계산의 상세 로그를 기록합니다. / Records detailed error, performance and public combat calculation logs.");
 
         DiagnosticHub.Stage(DiagnosticFeature.Loader, DiagnosticPhase.UpdateReadiness, DiagnosticOutcome.Completed);
-        Logger = Log;
+        StartupGuard.Stage("Updates");
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => StartupGuard.SessionEnd();
+        if (StartupGuard.SafeMode)
+        {
+            // Repeated failed starts: no game hooks or UI, only update check/download/apply.
+            Log.LogWarning($"안전 모드: 시작이 {StartupGuard.Failures}번 연속 실패해 모드 기능을 끄고 업데이트만 확인합니다. / Safe mode after {StartupGuard.Failures} failed starts: features off, updates only.");
+            AppDomain.CurrentDomain.ProcessExit += (_, _) => { UpdateSession?.ProcessExiting(); Updates.Dispose(); };
+            SafeModeUpdater.Start();
+            return;
+        }
         // Keep the saved key so upgrades preserve each user's existing choice.
         MuteUnfocused = Config.Bind("환경", "비활성 창 음소거", true,
             "다른 창으로 전환하면 소리를 끄고 게임으로 돌아오면 복원합니다. / Mutes when focus is lost and restores audio on return.");
@@ -237,6 +267,7 @@ public sealed class Plugin : BasePlugin
         PatchFeature("Notices", typeof(StartupNoticePatch), typeof(LauncherNoticePatch));
         Diagnostics.Write("patches complete");
         DiagnosticHub.Stage(DiagnosticFeature.Loader, DiagnosticPhase.PatchRegistration, Compatibility.Allowed("CoreUi") && Compatibility.Allowed("Notices") ? DiagnosticOutcome.Completed : DiagnosticOutcome.Partial);
+        StartupGuard.Stage("Patches", Compatibility.Allowed("CoreUi") && Compatibility.Allowed("Notices") ? "Completed" : "Partial");
         Log.LogInfo($"{Name} {Version} 로드됨 — Korean/English, INT/PvE");
     }
 

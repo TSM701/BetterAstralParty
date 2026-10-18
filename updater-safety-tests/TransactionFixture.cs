@@ -17,7 +17,7 @@ internal static class TransactionFixture
 
     private static int _checks;
     private const string AbsentOwned = "BetterAstralParty-Mod.cmd";
-    private static readonly UpdateContext Selection = new UpdateContext("TSM701/BetterAstralParty", "Stable", "99.0.0", "1.3.0", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId);
+    private static readonly UpdateContext Selection = new UpdateContext("TSM701/BetterAstralParty", "Stable", "99.0.0", "1.4.0", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId);
     private sealed class Interruption : Exception { }
     private static void Check(bool ok, string name) { if (!ok) throw new Exception(name); _checks++; }
     private static void Reject(Action action, string name)
@@ -38,8 +38,8 @@ internal static class TransactionFixture
             _signing = RSA.Create(3072);
 #endif
             foreach (var path in InstallReceipt.Owned) {
-                Old[path] = path == UpdateTrust.PluginPath ? oldPlugin : path == "BetterAstralParty-Launcher.exe" ? inert : Encoding.ASCII.GetBytes("old fixture " + path);
-                New[path] = path == UpdateTrust.PluginPath ? newPlugin : path == "BetterAstralParty-Launcher.exe" ? inert : Encoding.ASCII.GetBytes("new fixture " + path);
+                Old[path] = path == UpdateTrust.PluginPath ? oldPlugin :  Encoding.ASCII.GetBytes("old fixture " + path);
+                New[path] = path == UpdateTrust.PluginPath ? newPlugin :  Encoding.ASCII.GetBytes("new fixture " + path);
             }
             New["BetterAstralParty.compatibility.json"] = compatibility ?? CompatibilityFixtureData.Manifest(inert);
             OldReceipt = Receipt("ABCD1234:0000000000000100");
@@ -50,8 +50,8 @@ internal static class TransactionFixture
                 }
                 Zip = output.ToArray();
             }
-            var descriptor = new StringBuilder("BetterAstralParty.UpdateDescriptor/v4\nrepository=TSM701/BetterAstralParty\nversion=1.3.0\nchannel=Stable\nplatform=" + UpdateTrust.PlatformId
-                + "\nrelease-id=123\nasset-id=456\nasset-name=BetterAstralParty-1.3.0-update.zip\nzip-bytes=" + Zip.Length + "\nzip-sha256=" + UpdateTrust.Hash(Zip) + "\nfile-count=5\npurpose=release/Stable\nrepository-id=" + ReleaseFeedPolicy.StableRepositoryId + "\nsettings-schema=1\n");
+            var descriptor = new StringBuilder("BetterAstralParty.UpdateDescriptor/v5\nrepository=TSM701/BetterAstralParty\nversion=1.4.0\nchannel=Stable\nplatform=" + UpdateTrust.PlatformId
+                + "\nrelease-id=123\nasset-id=456\nasset-name=BetterAstralParty-1.4.0-update.zip\nzip-bytes=" + Zip.Length + "\nzip-sha256=" + UpdateTrust.Hash(Zip) + "\nfile-count=4\npurpose=release/Stable\nrepository-id=" + ReleaseFeedPolicy.StableRepositoryId + "\nsettings-schema=1\n");
             foreach (var path in InstallReceipt.Owned) descriptor.Append("file=").Append(path).Append('\t').Append(New[path].Length).Append('\t').Append(UpdateTrust.Hash(New[path])).Append('\n');
             Descriptor = Encoding.ASCII.GetBytes(descriptor.ToString()); Signature = _signing.SignData(Descriptor, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
             Trust = new UpdateTrust(new[] { new TrustedUpdateKey("transaction-fixture", _signing.ExportParameters(false)) });
@@ -60,7 +60,7 @@ internal static class TransactionFixture
         {
             var version = InstalledPluginMetadata.Read(Old[UpdateTrust.PluginPath]).Version;
             var channels = new ReceiptChannelState(root, "Stable", new string('a', 32), ReleaseFeedPolicy.StableRepositoryId, version, new string('A', 64), 0, null, "-");
-            var receipt = new StringBuilder("{\"schema\":1,\"baseline\":\"1.3.0\",\"owner\":\"" + InstalledPluginMetadata.Owner + "\",\"loaderBefore\":false,\"files\":[");
+            var receipt = new StringBuilder("{\"schema\":1,\"baseline\":\"1.4.0\",\"owner\":\"" + InstalledPluginMetadata.Owner + "\",\"loaderBefore\":false,\"files\":[");
             for (var i = 0; i < InstallReceipt.Owned.Length; i++) { var path = InstallReceipt.Owned[i]; if (i != 0) receipt.Append(','); receipt.Append("{\"path\":\"").Append(path).Append("\",\"sha256\":\"").Append(UpdateTrust.Hash(Old[path])).Append("\"}"); }
             return Encoding.ASCII.GetBytes(receipt.Append("],\"channelState\":\"").Append(channels.Encoded).Append("\"}\n").ToString());
         }
@@ -107,10 +107,10 @@ internal static class TransactionFixture
         Check(receipt.LoaderBefore == loaderBefore, "original loader baseline stays historical evidence");
         foreach (var path in InstallReceipt.Owned) Check(receipt.Files[path] == UpdateTrust.Hash((committed ? package.New : package.Old)[path]), "receipt matches result");
         var waterPath = Path.Combine(root, UpdateTransaction.HighWaterPath);
-        Check(committed ? File.ReadAllText(waterPath).Contains("version=1.3.0\n") : originalWater.Length == 0 ? !File.Exists(waterPath) : UpdateTrust.Hash(File.ReadAllBytes(waterPath)) == UpdateTrust.Hash(originalWater), "high-water matches commit/rollback");
+        Check(committed ? File.ReadAllText(waterPath).Contains("version=1.4.0\n") : originalWater.Length == 0 ? !File.Exists(waterPath) : UpdateTrust.Hash(File.ReadAllBytes(waterPath)) == UpdateTrust.Hash(originalWater), "high-water matches commit/rollback");
         Check(File.ReadAllText(Path.Combine(root, "user-settings.keep")) == "untouched", "unowned content preserved");
         foreach (var file in SharedFiles(loaderEnabled)) Check(File.Exists(Path.Combine(root, file.Key)) && UpdateTrust.Hash(File.ReadAllBytes(Path.Combine(root, file.Key))) == UpdateTrust.Hash(file.Value), "shared loader/other mod exact bytes preserved: " + file.Key);
-        Check(InstalledPluginMetadata.Read(File.ReadAllBytes(Path.Combine(root, UpdateTrust.PluginPath))).Version == (committed ? "1.3.0" : "1.3.0-dev"), "installed metadata result");
+        Check(InstalledPluginMetadata.Read(File.ReadAllBytes(Path.Combine(root, UpdateTrust.PluginPath))).Version == (committed ? "1.4.0" : "1.4.0-dev"), "installed metadata result");
     }
     private static void ChannelMatrix(string baseDirectory, Package package, byte[] inert)
     {
@@ -125,7 +125,7 @@ internal static class TransactionFixture
             if(publicScope) descriptor=Encoding.ASCII.GetBytes(Encoding.ASCII.GetString(descriptor)
                 .Replace("channel="+target.Channel+"\n","channel=Stable\n").Replace("purpose=release/"+target.Channel+"\n","purpose=release/Public\n"));
             var signature = package.Sign(descriptor);
-            var proposalContext = new UpdateContext(target.Repository, target.Channel, "1.3.0-dev", "1.3.0", 123, 456, UpdateTrust.PlatformId, repositoryId: target.RepositoryId);
+            var proposalContext = new UpdateContext(target.Repository, target.Channel, "1.4.0-dev", "1.4.0", 123, 456, UpdateTrust.PlatformId, repositoryId: target.RepositoryId);
             var proposal = package.Trust.VerifyProposal(descriptor, "transaction-fixture", signature, proposalContext);
             Check(proposal.PublicRelease==publicScope && proposal.Channel==target.Channel,"signed public scope keeps the explicitly selected transaction channel");
             foreach (var phase in new[] { "commit", "rollback", "forward" })
@@ -134,9 +134,9 @@ internal static class TransactionFixture
                 var root = Install(baseDirectory, "channel-" + label, package, inert);
                 using (var fence = new WindowsFileFence(root)) {
                     var channels = new ReceiptChannelState(fence.RootIdentity.Text, source.Channel, new string('a', 32),
-                        source.Channel == "Stable" ? source.RepositoryId : 0, source.Channel == "Stable" ? "1.3.0-dev" : null, source.Channel == "Stable" ? new string('A', 64) : "-",
-                        source.Channel == "Beta" ? source.RepositoryId : 0, source.Channel == "Beta" ? "1.3.0-dev" : null, source.Channel == "Beta" ? new string('A', 64) : "-",
-                        source.Channel == "PreRelease" ? source.RepositoryId : 0, source.Channel == "PreRelease" ? "1.3.0-dev" : null, source.Channel == "PreRelease" ? new string('A', 64) : "-");
+                        source.Channel == "Stable" ? source.RepositoryId : 0, source.Channel == "Stable" ? "1.4.0-dev" : null, source.Channel == "Stable" ? new string('A', 64) : "-",
+                        source.Channel == "Beta" ? source.RepositoryId : 0, source.Channel == "Beta" ? "1.4.0-dev" : null, source.Channel == "Beta" ? new string('A', 64) : "-",
+                        source.Channel == "PreRelease" ? source.RepositoryId : 0, source.Channel == "PreRelease" ? "1.4.0-dev" : null, source.Channel == "PreRelease" ? new string('A', 64) : "-");
                     var encoded = channels.Encoded;
                     if (source.Channel == "Stable" && phase == "commit") {
                         var prior = channels.Text().Replace("ChannelState/v2\n", "ChannelState/v1\n").Replace("PreRelease=0\t-\t-\n", "");
@@ -158,7 +158,7 @@ internal static class TransactionFixture
                 ChannelTransitionIntent intent;
                 using (var fence = new WindowsFileFence(root)) intent = ChannelTransitionIntent.Parse(ChannelTransitionIntent.Approve(ChannelTransitionIntent.Review(fence, proposal)).Bytes());
                 if (missingSettingsParent) Check(intent.SettingsHash == "-" && !Directory.Exists(configParent), "explicit channel review binds confirmed settings-parent absence: " + label);
-                var selected = new UpdateContext(target.Repository, target.Channel, "1.3.0-dev", "1.3.0", 123, 456, UpdateTrust.PlatformId, repositoryId: target.RepositoryId, transition: intent);
+                var selected = new UpdateContext(target.Repository, target.Channel, "1.4.0-dev", "1.4.0", 123, 456, UpdateTrust.PlatformId, repositoryId: target.RepositoryId, transition: intent);
                 if (phase == "commit") {
                     using var fence = new WindowsFileFence(root);
                     Check(UpdateTransaction.Apply(fence, descriptor, "transaction-fixture", signature, package.Zip, package.Trust, selected) == TransactionResult.Committed, "approved actual channel transaction commits: " + label);
@@ -184,8 +184,8 @@ internal static class TransactionFixture
                 Verify(root, package, committed, water);
                 var receipt = InstallReceipt.Parse(File.ReadAllBytes(Path.Combine(root, InstallReceipt.Path)));
                 var state = receipt.Channels ?? throw new Exception("Updated fixture channels missing");
-                Check(state.ActiveChannel == (committed ? target.Channel : source.Channel) && state.VersionFor(source.Channel) == "1.3.0-dev" && state.DescriptorFor(source.Channel) == new string('A', 64), "actual channel result retains the source floor/evidence: " + label);
-                Check(committed ? state.VersionFor(target.Channel) == "1.3.0" && state.DescriptorFor(target.Channel) == proposal.DescriptorSha256 && state.Text().StartsWith("BetterAstralParty.ChannelState/v2\n", StringComparison.Ordinal)
+                Check(state.ActiveChannel == (committed ? target.Channel : source.Channel) && state.VersionFor(source.Channel) == "1.4.0-dev" && state.DescriptorFor(source.Channel) == new string('A', 64), "actual channel result retains the source floor/evidence: " + label);
+                Check(committed ? state.VersionFor(target.Channel) == "1.4.0" && state.DescriptorFor(target.Channel) == proposal.DescriptorSha256 && state.Text().StartsWith("BetterAstralParty.ChannelState/v2\n", StringComparison.Ordinal)
                     : UpdateTrust.Hash(File.ReadAllBytes(Path.Combine(root, InstallReceipt.Path))) == UpdateTrust.Hash(originalReceipt), "actual channel commit adds the selected v2 row or restores the exact prior receipt: " + label);
                 foreach (var other in feeds) if (other.Channel != source.Channel && other.Channel != target.Channel) Check(state.VersionFor(other.Channel) == null && state.DescriptorFor(other.Channel) == "-", "unvisited third channel remains absent: " + label);
                 Check(missingSettingsParent ? !File.Exists(Path.Combine(root, ChannelTransitionIntent.SettingsPath))
@@ -218,6 +218,19 @@ internal static class TransactionFixture
             Verify(root, package, committed, water, enabled, baseline);
         }
         Console.WriteLine("Shared loader ON/OFF, historical false/true/null baseline and other mod bytes preserved across 18 commit/recovery cases.");
+    }
+    private static void InProcess(string baseDirectory, Package package, byte[] inert)
+    {
+        var root = Install(baseDirectory, "in-process", package, inert); var water = File.ReadAllBytes(Path.Combine(root, UpdateTransaction.HighWaterPath));
+        var plugin = Path.Combine(root, UpdateTrust.PluginPath);
+        // The real loader image lock: the plugin stays mapped by this process while the in-game update renames it aside.
+        System.Reflection.Assembly.LoadFrom(plugin); var locked = false; try { using (new FileStream(plugin, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete)) { } } catch (IOException) { locked = true; } catch (UnauthorizedAccessException) { locked = true; }
+        Check(locked, "loaded inert plugin image cannot be overwritten in place");
+        using (var fence = new WindowsFileFence(root))
+            Check(UpdateTransaction.Apply(fence, package.Descriptor, "transaction-fixture", package.Signature, package.Zip, package.Trust, Selection, inProcess: true) == TransactionResult.Committed, "in-process apply replaces a loaded plugin");
+        Verify(root, package, true, water);
+        Check(Directory.GetFiles(Path.Combine(root, "BetterAstralParty.Update"), "*", SearchOption.AllDirectories).Any(path => UpdateTrust.Hash(File.ReadAllBytes(path)) == UpdateTrust.Hash(package.Old[UpdateTrust.PluginPath])), "loaded original stays aside in contained work until a later start");
+        Console.WriteLine("In-process apply: loaded plugin renamed aside and replaced; next launch uses the new version.");
     }
     private static void Boundaries(string baseDirectory, Package package, byte[] inert)
     {
@@ -344,13 +357,13 @@ internal static class TransactionFixture
             var directory = UpdaterFixtureScope.Require(args[0]);
             if (!directory.EndsWith("\\fixtures", StringComparison.OrdinalIgnoreCase) || Directory.Exists(directory)) throw new Exception("Fresh isolated fixture root required");
             var oldPlugin = File.ReadAllBytes(args[1]); var newPlugin = File.ReadAllBytes(args[2]); var inert = File.ReadAllBytes(args[3]); Directory.CreateDirectory(directory);
-            Check(InstalledPluginMetadata.Read(oldPlugin).Version == "1.3.0-dev", "nonexecuting original metadata"); Check(InstalledPluginMetadata.Read(newPlugin).Version == "1.3.0", "nonexecuting replacement metadata");
+            Check(InstalledPluginMetadata.Read(oldPlugin).Version == "1.4.0-dev", "nonexecuting original metadata"); Check(InstalledPluginMetadata.Read(newPlugin).Version == "1.4.0", "nonexecuting replacement metadata");
             var malformed = (byte[])oldPlugin.Clone(); malformed[0] = 0; Reject(() => InstalledPluginMetadata.Read(malformed), "malformed PE");
             foreach (var length in new[] { 0, 64, oldPlugin.Length / 2 }) { var shortImage = new byte[length]; Buffer.BlockCopy(oldPlugin, 0, shortImage, 0, length); Reject(() => InstalledPluginMetadata.Read(shortImage), "truncated metadata"); }
-            if (!sharedOnly) { var probe = InstalledPluginMetadata.Read(File.ReadAllBytes(args[4])); Check(probe.UpdateProtocol == 4 && probe.SettingsSchema == 1 && UpdateVersion.Parse(probe.Version).CompareTo(UpdateVersion.Parse("1.3.0-0")) >= 0, "actual compiled supported DLL metadata read only"); }
+            if (!sharedOnly) { var probe = InstalledPluginMetadata.Read(File.ReadAllBytes(args[4])); Check(probe.UpdateProtocol == 5 && probe.SettingsSchema == 1 && UpdateVersion.Parse(probe.Version).CompareTo(UpdateVersion.Parse("1.4.0-0")) >= 0, "actual compiled supported DLL metadata read only"); }
             using (var package = new Package(oldPlugin, newPlugin, inert)) {
                 SharedLoaderPreservation(directory, package, inert);
-                if (!sharedOnly) { ChannelMatrix(directory, package, inert); Boundaries(directory, package, inert); RecoveryFailures(directory, package, inert); ChildRecovery(directory, package, inert); }
+                if (!sharedOnly) { ChannelMatrix(directory, package, inert); Boundaries(directory, package, inert); InProcess(directory, package, inert); RecoveryFailures(directory, package, inert); ChildRecovery(directory, package, inert); }
             }
             if (!sharedOnly) foreach (var metadata in new[] { new byte[] { 255 }, new byte[65537] }) {
                 using var package = new Package(oldPlugin, newPlugin, inert, metadata);

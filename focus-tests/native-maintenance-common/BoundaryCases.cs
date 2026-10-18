@@ -12,17 +12,17 @@ internal static partial class NativeCommonFixture
     {
         var game=Scratch+"\\bundle-game";Directory.CreateDirectory(Io(game));Write(game+"\\installed-state.keep",Encoding.UTF8.GetBytes("exact installed state"));Write(game+"\\OtherMod.keep",Encoding.UTF8.GetBytes("exact unrelated mod"));var before=Snapshot(game);
         foreach(var version in new[]{"1.3.0","1.3.0-0","1.3.0-rc.1.local.1"})Check(UpdateVersion.Parse(version).CompareTo(UpdateVersion.Parse("1.3.0-0"))>=0,"strict native version comparison preserves prerelease arrays");
-        foreach(var mode in new[]{"missing-launcher","missing-directory","changed-present-hash"})
+        foreach(var mode in new[]{"missing-setup","missing-directory","changed-present-hash"})
         {
-            var package=Scratch+"\\"+mode;Directory.CreateDirectory(Io(package));var bytes=Encoding.ASCII.GetBytes("inert bundle payload never execute");var first=package+"\\first.keep";Write(first,bytes);var launcher=package+"\\artifacts\\BetterAstralParty-Launcher.exe";
+            var package=Scratch+"\\"+mode;Directory.CreateDirectory(Io(package));var bytes=Encoding.ASCII.GetBytes("inert bundle payload never execute");var first=package+"\\first.keep";Write(first,bytes);var launcher=package+"\\artifacts\\BetterAstralParty-Setup.exe";
             if(mode!="missing-directory")Directory.CreateDirectory(WindowsPath.ForIo(WindowsPath.Parent(launcher)));if(mode=="changed-present-hash")Write(launcher,bytes);
-            var rows=new List<object>{new{path="first.keep",bytes=bytes.Length,sha256=UpdateTrust.Hash(bytes)},new{path="artifacts/BetterAstralParty-Launcher.exe",bytes=bytes.Length,sha256=new string('0',64)}};
+            var rows=new List<object>{new{path="first.keep",bytes=bytes.Length,sha256=UpdateTrust.Hash(bytes)},new{path="artifacts/BetterAstralParty-Setup.exe",bytes=bytes.Length,sha256=new string('0',64)}};
             for(var n=0;n<8;n++)rows.Add(new{path="later-"+n+".keep",bytes=0,sha256=new string('0',64)});
-            var manifest=package+"\\package-manifest.json";Write(manifest,MaintenanceJson.Write(new{schema=1,version="1.3.0",kind="inert incomplete fixture",files=rows}));Exception? failure=null;
+            var manifest=package+"\\package-manifest.json";Write(manifest,MaintenanceJson.Write(new{schema=1,version="1.4.0",kind="inert incomplete fixture",files=rows}));Exception? failure=null;
             try{using(var bundle=new NativeMaintenanceBundle(package,game)){} }catch(Exception error){failure=error;}
             Check(failure is InvalidDataException,"incomplete native bundle fails before metadata execution");var message=failure!.Message;
             if(mode=="changed-present-hash")Check(message.Contains("hash/size mismatch")&&!message.Contains("BAP-PACKAGE-INCOMPLETE"),"present changed bytes retain their distinct cause");
-            else Check(message.Contains("BAP-PACKAGE-INCOMPLETE")&&message.Contains("artifacts/BetterAstralParty-Launcher.exe")&&message.Contains("전체 ZIP")&&message.Contains("complete ZIP"),"missing package file names actionable bilingual full-archive fix");
+            else Check(message.Contains("BAP-PACKAGE-INCOMPLETE")&&message.Contains("artifacts/BetterAstralParty-Setup.exe")&&message.Contains("전체 ZIP")&&message.Contains("complete ZIP"),"missing package file names actionable bilingual full-archive fix");
             foreach(var file in new[]{manifest,first})using(var released=File.Open(Io(file),FileMode.Open,FileAccess.ReadWrite,FileShare.None))Check(released.CanWrite,"failed bundle releases all retained input leases");Unchanged(before,game,"missing bundle leaves installed and other-mod inventory exact");
         }
     }
@@ -35,14 +35,14 @@ internal static partial class NativeCommonFixture
             if(zone!=0)File.WriteAllText(WindowsPath.ForIo(path)+":Zone.Identifier",origin,Encoding.ASCII);
             using(var fence=new WindowsFileFence(directory))using(var held=fence.OpenLaunchImage("BetterAstralParty.dll"))
             {
-                var parsed=InstalledPluginMetadata.ReadMaintenance(UpdateTicket.Read(held,UpdateTrust.MaxFileBytes));Check(parsed.Version=="1.3.0"&&parsed.UpdateProtocol==4&&parsed.SettingsSchema==1,"native metadata parsing ignores download-origin execution policy, zone "+zone);
+                var parsed=InstalledPluginMetadata.ReadMaintenance(UpdateTicket.Read(held,UpdateTrust.MaxFileBytes));Check(parsed.Version=="1.4.0"&&parsed.UpdateProtocol==5&&parsed.SettingsSchema==1,"native metadata parsing ignores download-origin execution policy, zone "+zone);
                 Check(held.Hash()==sourceHash,"metadata input remains exact bytes");var denied=false;try{using(var writer=File.Open(Io(path),FileMode.Open,FileAccess.Write,FileShare.Read)){} }catch(IOException){denied=true;}Check(denied,"held native metadata input excludes concurrent writes");
             }
             Check(zone==0?!File.Exists(WindowsPath.ForIo(path)+":Zone.Identifier"):File.ReadAllText(WindowsPath.ForIo(path)+":Zone.Identifier")==origin,"download origin stream never cleared or fabricated");using(var released=File.Open(Io(path),FileMode.Open,FileAccess.ReadWrite,FileShare.None))Check(released.CanWrite,"metadata lease released after parse");
             using(var locked=File.Open(Io(path),FileMode.Open,FileAccess.ReadWrite,FileShare.None))using(var fence=new WindowsFileFence(directory))Reject(()=>{using(var held=fence.OpenLaunchImage("BetterAstralParty.dll")){}},"exclusive metadata source remains a bounded read refusal");
         }
         Reject(()=>InstalledPluginMetadata.ReadMaintenance(Encoding.ASCII.GetBytes("Not a managed image")),"malformed image rejected without execution");
-        var changed=(byte[])bytes.Clone();var literal=Encoding.ASCII.GetBytes("1.3.0");var offset=-1;for(var n=0;n<=changed.Length-literal.Length;n++)if(changed.Skip(n).Take(literal.Length).SequenceEqual(literal)){offset=n;break;}Check(offset>=0,"inert metadata version literal found");changed[offset+2]=(byte)'2';Reject(()=>InstalledPluginMetadata.ReadMaintenance(changed),"tampered serialized attribute must match the literal metadata version");
+        var changed=(byte[])bytes.Clone();var literal=Encoding.ASCII.GetBytes("1.4.0");var offset=-1;for(var n=0;n<=changed.Length-literal.Length;n++)if(changed.Skip(n).Take(literal.Length).SequenceEqual(literal)){offset=n;break;}Check(offset>=0,"inert metadata version literal found");changed[offset+2]=(byte)'2';Reject(()=>InstalledPluginMetadata.ReadMaintenance(changed),"tampered serialized attribute must match the literal metadata version");
         Check(!CoreResourceSatellite(typeof(NativeCommonFixture).Assembly)&&!CoreResourceSatellite(typeof(Enumerable).Assembly),"core satellite exception never admits the fixture or System.Core");
         var after=AppDomain.CurrentDomain.GetAssemblies();var newlyLoaded=after.Where(a=>!before.Contains(a.FullName)).Select(a=>a.FullName+"; GAC="+a.GlobalAssemblyCache+"; Location="+(a.IsDynamic?"dynamic":a.Location)).ToArray();
         Check(after.Where(a=>before.Contains(a.FullName)||!CoreResourceSatellite(a)).Select(a=>a.FullName).SequenceEqual(before),"incoming plugin and foreign metadata readers never loaded for execution; newlyLoaded="+string.Join(" | ",newlyLoaded));Check(UpdateTrust.Hash(File.ReadAllBytes(Io(image)))==sourceHash,"original inert source preserved");

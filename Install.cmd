@@ -26,14 +26,14 @@ if not exist "%BAP_BOOTLOG%" (
 )
 if not exist "%BAP_BOOTLOG%" >"%BAP_BOOTLOG%" echo BAP-BOOTSTRAP-START: Capture console errors if detailed logs are unavailable.
 :native
-if not exist "\\?\%BAP_ENTRYROOT%artifacts\BetterAstralParty-Launcher.exe" goto missing
+if not exist "\\?\%BAP_ENTRYROOT%artifacts\BetterAstralParty-Setup.exe" goto missing
 pushd "%BAP_ENTRYROOT%artifacts"
 if errorlevel 1 goto missing
 if exist "\\?\%BAP_ENTRYROOT%package-manifest.json" goto packaged
-"BetterAstralParty-Launcher.exe" --development --install %*
+"BetterAstralParty-Setup.exe" --development --install %*
 goto result
 :packaged
-"BetterAstralParty-Launcher.exe" --install %*
+"BetterAstralParty-Setup.exe" --install %*
 :result
 set "BAP_EXIT=%errorlevel%"
 popd
@@ -53,7 +53,7 @@ if "%BAP_PREVIEW%"=="1" (
     echo Native installer missing. No maintenance executed.
     exit /b 1
 )
->>"%BAP_BOOTLOG%" echo BAP-PACKAGE-INCOMPLETE: artifacts\BetterAstralParty-Launcher.exe missing.
+>>"%BAP_BOOTLOG%" echo BAP-PACKAGE-INCOMPLETE: artifacts\BetterAstralParty-Setup.exe missing.
 echo Native installer missing. Extract the complete official ZIP again.
 echo Bootstrap log: "%BAP_BOOTLOG%"
 pause

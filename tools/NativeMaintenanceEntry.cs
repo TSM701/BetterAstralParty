@@ -83,8 +83,8 @@ namespace BetterAstralParty.Installation
                 using (var bundle = new NativeMaintenanceBundle(_package, _game, recoveryPlan == null ? null : NativeSteamMaintenance.ResolveUserPath(recoveryPlan))) {
                     _version = bundle.Version;
                     Console.WriteLine("INT installation: " + _game);
-                    if (!_preview) diagnostics = SteamLauncher.BeginInstallerDiagnostics(_game, _version);
-                    SteamLauncher.ValidateMaintenancePaths(_game, NativeMaintenance.JournalRoot(_game));
+                    if (!_preview) diagnostics = SetupHost.BeginInstallerDiagnostics(_game, _version);
+                    SetupHost.ValidateMaintenancePaths(_game, NativeMaintenance.JournalRoot(_game));
                     if (_operation == "Installation") {
                         if (steamObservation != null) Observe(steamObservation);
                         NativeInstall.Run(bundle, updateOnly, steam, account, Consent, Console.WriteLine, restartSteam: values.ContainsKey("restartsteam"), checkOnly: _preview, observation: Observe);
@@ -98,7 +98,7 @@ namespace BetterAstralParty.Installation
                 SaveObservations();
                 return 0;
             } catch (Exception error) {
-                if (!_preview) { SteamLauncher.RecordInstallerFailure("BootstrapGate", error); var path = Failure(error); if (path != null) Console.WriteLine("Debug log: " + path); }
+                if (!_preview) { SetupHost.RecordInstallerFailure("BootstrapGate", error); var path = Failure(error); if (path != null) Console.WriteLine("Debug log: " + path); }
                 var action = RecoveryAction(error); if (action != null) Console.Error.WriteLine(action);
                 Console.Error.WriteLine(error.Message); return 1;
             } finally { NativeSteamMaintenance.WaitingDiagnostic = priorWaiting; diagnostics?.Dispose(); }
@@ -145,7 +145,7 @@ namespace BetterAstralParty.Installation
                       catch (InvalidDataException) when (emergency) { }
                     if (!emergency) continue;
                     fence.DirectoryIdentity("AstralParty_INT_Data");
-                    foreach (var path in InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path, HelperDescriptor.Image, HelperDelivery.Receipt, "BepInEx/config/kr.betterastralparty.mod.cfg" })) {
+                    foreach (var path in InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path, OrdinaryInstallRecovery.LegacyLauncher, OrdinaryInstallRecovery.LegacyHelper, OrdinaryInstallRecovery.LegacyHelperReceipt, "BepInEx/config/kr.betterastralparty.mod.cfg" })) {
                         try { using (var file = fence.OpenFile(path)) { file.Recheck(); fence.Recheck(); Observe("RemovalRoot: evidence=NativeDataAndExactResidue; originalExecutable=Absent"); return fence.Root; } }
                         catch (ApplySafetyException error) when (error.NativeError == 2 || error.NativeError == 3) { }
                     }
@@ -176,14 +176,14 @@ namespace BetterAstralParty.Installation
                 var package = fence.Full(relative);
                 var game = ResolveOperationGame(Get(values, "gameroot") ?? WindowsPath.Parent(project) + "\\8vJXnINT", null, project, !values.ContainsKey("install"), values.ContainsKey("force-uninstall"));
                 if (package.Equals(game, StringComparison.OrdinalIgnoreCase) || package.StartsWith(game + "\\", StringComparison.OrdinalIgnoreCase) || game.StartsWith(package + "\\", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Package and game directories must be separate.");
-                using (var manifest = fence.OpenFile(relative + "/package-manifest.json")) using (var image = fence.OpenLaunchImage(relative + "/artifacts/BetterAstralParty-Launcher.exe")) {
+                using (var manifest = fence.OpenFile(relative + "/package-manifest.json")) using (var image = fence.OpenLaunchImage(relative + "/" + NativeMaintenanceBundle.SetupPath)) {
                     var bytes = UpdateTicket.Read(manifest, 1024 * 1024);
                     if (manifest.Hash() != digest) throw new InvalidDataException("Pinned complete package changed.");
                     var inventory = MaintenanceJson.Read(bytes);
                     if (MaintenanceJson.Text(inventory, "version") != version) throw new InvalidDataException("Pinned package version changed.");
                     var matches = 0;
-                    foreach (var raw in MaintenanceJson.List(inventory, "files")) { var row = MaintenanceJson.Map(raw); if (MaintenanceJson.Text(row, "path") == "artifacts/BetterAstralParty-Launcher.exe") { if (MaintenanceJson.Text(row, "sha256") != image.Hash() || MaintenanceJson.Number(row, "bytes") != image.Stream.Length) throw new InvalidDataException("Pinned launcher changed."); matches++; } }
-                    if (matches != 1) throw new InvalidDataException("Pinned native maintenance launcher missing.");
+                    foreach (var raw in MaintenanceJson.List(inventory, "files")) { var row = MaintenanceJson.Map(raw); if (MaintenanceJson.Text(row, "path") == NativeMaintenanceBundle.SetupPath) { if (MaintenanceJson.Text(row, "sha256") != image.Hash() || MaintenanceJson.Number(row, "bytes") != image.Stream.Length) throw new InvalidDataException("Pinned setup tool changed."); matches++; } }
+                    if (matches != 1) throw new InvalidDataException("Pinned native setup tool missing.");
                     var forward = new List<string>(); for (var at = 0; at < args.Length; at++) {
                         var name = args[at].TrimStart('-');
                         if (name.Equals("development", StringComparison.OrdinalIgnoreCase)) continue;
@@ -192,7 +192,7 @@ namespace BetterAstralParty.Installation
                     }
                     forward.Add("-GameRoot"); forward.Add(game);
                     Console.WriteLine("개발 폴더 실행 기준 / Development maintenance baseline: " + version);
-                    using (var child = Process.Start(new ProcessStartInfo { FileName = WindowsPath.ForProcess(image.Path), Arguments = CommandLine(forward), WorkingDirectory = WindowsPath.ForProcess(package), UseShellExecute = false }) ?? throw new InvalidOperationException("Native maintenance launcher could not start.")) { child.WaitForExit(); pointer.Recheck(); manifest.Recheck(); image.Recheck(); return child.ExitCode; }
+                    using (var child = Process.Start(new ProcessStartInfo { FileName = WindowsPath.ForProcess(image.Path), Arguments = CommandLine(forward), WorkingDirectory = WindowsPath.ForProcess(package), UseShellExecute = false }) ?? throw new InvalidOperationException("Native setup tool could not start.")) { child.WaitForExit(); pointer.Recheck(); manifest.Recheck(); image.Recheck(); return child.ExitCode; }
                 }
             }
         }

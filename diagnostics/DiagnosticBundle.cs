@@ -65,11 +65,30 @@ namespace BetterAstralParty.Diagnostics
         internal const string Unavailable = "{\"availability\":\"unavailable\",\"source\":\"unavailable\",\"capturedUtc\":null,\"modulePresent\":null,\"requestedDetailed\":null,\"recording\":null,\"storageFailed\":null,\"dropped\":null,\"modVersion\":\"unknown\",\"buildId\":\"unknown\",\"processSession\":null}";
     }
 
+    // Machine-wide crash evidence outside the mod. Production callers opt in; fixtures inject synthetic sources.
+    public sealed class DiagnosticSources
+    {
+        public string CrashRoot = "";
+        public Func<IList<string>> WindowsEvents;
+        public string RuntimeStateRoot = "";
+        public static DiagnosticSources Production()
+        {
+            var temporary = Path.GetTempPath();
+            return new DiagnosticSources {
+                CrashRoot = Path.Combine(temporary, "feimo", "AstralParty_INT", "Crashes"),
+                WindowsEvents = DiagnosticBundle.QueryWindowsEvents,
+                RuntimeStateRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BetterAstralParty", "Runtime")
+            };
+        }
+    }
+
     public static class DiagnosticBundle
     {
         public const int MaxInputFileBytes = 2 * 1024 * 1024, MaxInputBytes = 8 * 1024 * 1024;
         public const int MaxOutputFileBytes = 512 * 1024, MaxOutputBytes = 4 * 1024 * 1024;
-        public const int MaxFiles = 24, MaxDirectoryEntries = 512, MaxRecentPerDirectory = 8, RecentDays = 7;
+        public const int MaxFiles = 40, MaxDirectoryEntries = 512, MaxRecentPerDirectory = 8, RecentDays = 7;
+        public const int MaxEngineInputBytes = 32 * 1024 * 1024, MaxEngineOutputBytes = 256 * 1024, MaxEngineLines = 2000;
+        public const int MaxCrashFolders = 4, MaxCrashTextBytes = 1024 * 1024, MaxWindowsEvents = 16, MaxPluginInventory = 128;
         public const int MaxCatalogs = 64, MaxCatalogFileBytes = 32 * 1024 * 1024, MaxCatalogBytes = 64 * 1024 * 1024;
         private const int MaxRecoveryDirectories = 64, MaxRecoveryFileBytes = 64 * 1024 * 1024, MaxRecoveryBytes = 64 * 1024 * 1024;
         private static readonly UTF8Encoding Utf8 = new UTF8Encoding(false, true);
@@ -92,11 +111,20 @@ namespace BetterAstralParty.Diagnostics
             "고정 minimal-v1 runtime/helper 현재·이전 JSONL의 단계·오류 위치·hook·writer 관측·회전도 포함합니다.\r\n" +
             "Redacted full text of up to 8 recent install/bootstrap/launcher errors per log folder,\r\n" +
             "and game compatibility/launch errors: messages, DLL names, HRESULT and stacks.\r\n" +
-            "BepInEx LogOutput and Unity Player/Player-prev: file metadata only, never contents.\r\n" +
+            "BepInEx LogOutput and Unity Player/Player-prev/crash Player logs: only error, exception, stack, crash\r\n" +
+            "and loader lines, redacted; other lines are dropped and counted.\r\n" +
+            "Unity crash folders: error.log text (redacted) and crash.dmp size only; dumps are never read.\r\n" +
+            "Windows Application Error/Hang and .NET Runtime events for AstralParty_INT.exe: module, version,\r\n" +
+            "exception code and offset only. plugin-inventory.json: other mods' file names, sizes, SHA-256, versions.\r\n" +
+            "BAP start stage markers (stages-*.log, safe-mode.state) record where an unfinished start stopped.\r\n" +
             "수집: 최근 7일 모드/계산 불일치/호환성/실행 오류/BepInEx/Unity 로그,\r\n" +
             "설치·초기 실행·런처·호환성 오류는 민감정보를 가린 본문을 포함합니다.\r\n" +
             "DLL 이름·오류 코드·단계·stack을 남기며, 로컬·임시 폴더별 최근 오류 최대 8개입니다.\r\n" +
-            "BepInEx·Unity 로그는 존재·크기·수정 시각만 포함하며 내용을 읽지 않습니다.\r\n" +
+            "BepInEx·Unity 로그와 튕김 폴더의 Player 로그는 오류·예외·스택·튕김·로더 줄만 가려서 포함하고\r\n" +
+            "나머지 줄은 버린 개수만 기록합니다. Unity 튕김 폴더는 error.log 본문(가림 처리)과 crash.dmp 크기만 기록하며\r\n" +
+            "덤프는 읽지 않습니다. Windows 이벤트 로그는 게임의 튕김·응답 없음 기록에서 모듈·버전·오류 코드·위치만 남깁니다.\r\n" +
+            "plugin-inventory.json에는 다른 모드의 파일 이름·크기·SHA-256·버전만 담습니다.\r\n" +
+            "BAP 시작 단계 표식(stages-*.log, safe-mode.state)은 끝나지 않은 실행이 멈춘 단계를 보여 줍니다.\r\n" +
             "catalog-inventory.json: top-level com.unity.addressables catalog*.json/hash filenames, sizes and SHA-256 only.\r\n" +
             "catalog-inventory.json에는 com.unity.addressables 최상위 catalog*.json/hash의 파일명·크기·SHA-256만 포함합니다. 원본 내용은 제외합니다.\r\n" +
             "Catalog hashing: 32 MiB/file, 64 MiB total; up to 64 names after scanning at most 512 entries.\r\n" +
@@ -108,14 +136,16 @@ namespace BetterAstralParty.Diagnostics
             "고정 실행 파일 관측은 ZIP 수집 시점의 상태이며 이전 실행 실패나 원인을 재구성하지 않습니다.\r\n" +
             "게임·로더 파일이 일부 없어도 목록을 수집합니다. 이 목록은 설치 정상 판정이나 복구 검증이 아닙니다.\r\n" +
             "Fixed paths and typed fields only; card/hand/chat payload, unknown text, full configs, credential stores,\r\n" +
-            "raw updater/backup state, dumps and arbitrary files are excluded. General runtime logs remain typed projections.\r\n" +
+            "raw updater/backup state, dumps and arbitrary files are excluded. Mod runtime logs remain typed projections.\r\n" +
             "고정 경로와 허용 필드만 요약합니다. 카드·손패·채팅·알 수 없는 텍스트·전체 설정·인증 저장소·\r\n" +
             "업데이트·백업 상태 원문·덤프·임의 파일은 제외합니다. 일반 게임 진단은 허용 필드만 요약합니다.\r\n" +
             "Legacy errors retain fixed feature/subfeature/error-class/site codes. Unsupported values become Unknown.\r\n" +
             "Only up to 16 exact owned stack anchors are mapped; missing/async/native sites may remain Unknown.\r\n" +
             "기존 오류의 고정 기능·분류·위치 코드를 남깁니다. 미등록 값과 확인하지 못한 위치는 Unknown입니다.\r\n" +
-            "Limits: 24 logs; 2 MiB input/file, 8 MiB input total; 512 KiB sanitized/file, 4 MiB sanitized total.\r\n" +
-            "용량 제한: 24개, 원본 파일당 2 MiB/총 8 MiB, 처리 후 파일당 512 KiB/총 4 MiB.\r\n" +
+            "Limits: 40 logs; 2 MiB input/file, 8 MiB input total; 512 KiB sanitized/file, 4 MiB sanitized total;\r\n" +
+            "engine logs: newest 32 MiB per file read from a line boundary, 256 KiB/2000 kept lines per file.\r\n" +
+            "용량 제한: 40개, 원본 파일당 2 MiB/총 8 MiB, 처리 후 파일당 512 KiB/총 4 MiB.\r\n" +
+            "게임 로그는 파일당 최근 32 MiB를 줄 경계부터 읽고 256 KiB·2000줄까지만 남깁니다.\r\n" +
             "Oversized inputs are skipped, never tailed, to avoid fragments of secrets.\r\n" +
             "너무 큰 원본은 제외합니다. 잘린 토큰 조각을 피하기 위해 끝부분만 읽지 않습니다.\r\n" +
             "Missing, old, locked, linked, invalid text and limited files are recorded in summary.json.\r\n" +
@@ -180,8 +210,14 @@ namespace BetterAstralParty.Diagnostics
         public static BundleResult Collect(string gameRoot, string localLogs, string fallbackLogs,
             string unityLogs, string primaryHub, string fallbackHub, string hostVersion, string runningPluginVersion, LiveDiagnosticHealth liveHealth)
         {
+            return Collect(gameRoot, localLogs, fallbackLogs, unityLogs, primaryHub, fallbackHub, hostVersion, runningPluginVersion, liveHealth, null);
+        }
+        public static BundleResult Collect(string gameRoot, string localLogs, string fallbackLogs,
+            string unityLogs, string primaryHub, string fallbackHub, string hostVersion, string runningPluginVersion, LiveDiagnosticHealth liveHealth, DiagnosticSources sources)
+        {
             var rows = new List<Row>(); var payloads = new List<Payload>();
-            long raw = 0; int output = 0; DateTime now = DateTime.UtcNow;
+            long raw = 0, engineRaw = 0; int output = 0; DateTime now = DateTime.UtcNow;
+            string plugins = PluginInventoryUnavailable;
             var identities = new MinimalDiagnosticProjection.ProjectionContext();
             string version = "unknown"; bool gameValid = false; string recovery;
             var inventory = new RecoveryInventory();
@@ -214,7 +250,8 @@ namespace BetterAstralParty.Diagnostics
                     for (int i = 0; i < paths.Length; ++i) Read(game, paths[i], ids[i], now, rows, payloads, ref raw, ref output, identities);
                     if (gameValid)
                     {
-                        Read(game, "BepInEx/LogOutput.log", "loader/log-output", now, rows, payloads, ref raw, ref output);
+                        ReadEngine(game, "BepInEx/LogOutput.log", "loader/log-output", now, rows, payloads, ref engineRaw, ref output);
+                        plugins = PluginInventory(game);
                         try
                         {
                             using (var dll = game.Open("BepInEx/plugins/BetterAstralParty/BetterAstralParty.dll", false, true))
@@ -239,9 +276,15 @@ namespace BetterAstralParty.Diagnostics
             {
                 if (unity != null)
                 {
-                    Read(unity, "Player.log", "unity/player", now, rows, payloads, ref raw, ref output);
-                    Read(unity, "Player-prev.log", "unity/player-previous", now, rows, payloads, ref raw, ref output);
+                    ReadEngine(unity, "Player.log", "unity/player", now, rows, payloads, ref engineRaw, ref output);
+                    ReadEngine(unity, "Player-prev.log", "unity/player-previous", now, rows, payloads, ref engineRaw, ref output);
                 }
+            }
+            if (sources != null)
+            {
+                ReadCrashes(sources.CrashRoot, now, rows, payloads, ref engineRaw, ref output, identities);
+                ReadWindowsEvents(sources.WindowsEvents, now, rows, payloads, ref output, identities);
+                ReadStageLadder(sources.RuntimeStateRoot, now, rows, payloads, ref raw, ref output);
             }
             string catalogs = CatalogInventory(unityLogs);
             byte[] zip;
@@ -253,6 +296,7 @@ namespace BetterAstralParty.Diagnostics
                     Add(archive, "summary.json", Utf8.GetBytes(Summary(rows, gameValid, version, hostVersion, runningPluginVersion, now, liveHealth, identities)));
                     Add(archive, "catalog-inventory.json", Utf8.GetBytes(catalogs));
                     Add(archive, "recovery-inventory.json", Utf8.GetBytes(recovery));
+                    Add(archive, "plugin-inventory.json", Utf8.GetBytes(plugins));
                     foreach (var payload in payloads) Add(archive, payload.Row.Entry, payload.Bytes);
                 }
                 zip = memory.ToArray();
@@ -399,13 +443,13 @@ namespace BetterAstralParty.Diagnostics
             private readonly List<string> files = new List<string>(), roots = new List<string>(), observations = new List<string>();
             private long reserved; private int atomicCount;
             private static readonly Regex WorkNames = Pattern(@"\Abap-(?:v[34]-)?(helper|helperbridge|helperauto|wholeintent|wholehist|txn|stage)-[a-f0-9]{32}\z");
-            private static readonly Regex ContainedWorkNames = Pattern(@"\Abap-v4-(helper|helperbridge|helperauto|wholeintent|wholehist|txn|stage)-[a-f0-9]{32}\z");
+            private static readonly Regex ContainedWorkNames = Pattern(@"\Abap-v[45]-(helper|helperbridge|helperauto|wholeintent|wholehist|txn|stage)-[a-f0-9]{32}\z");
             private static readonly Regex ContainedTransitions = Pattern(@"\Abap-v4-transition-[a-f0-9]{32}\z");
             private static readonly Regex GenerationNames = Pattern(@"\A[a-f0-9]{32}\z");
             private static readonly Regex EmergencyNames = Pattern(@"\ABetterAstralParty-emergency-[a-f0-9]{32}\z");
             private static readonly Regex EmergencyBackupNames = Pattern(@"\Aemergency-[a-f0-9]{32}\z");
             private static readonly Regex EmergencyMarkers = Pattern(@"\A(?:emergency(?:-completed)?\.json|[0-9]{2}\.(?:detaching|detached)\.json)\z");
-            private static readonly Regex RootMarkers = Pattern(@"\A(?:bap-(?:v[34]-)?transition-|BetterAstralParty\.reinstall(?:-v[34])?\.completed-|BetterAstralParty\.update(?:-v[34])?\.version\.uninstalled-)[a-f0-9]{32}\z");
+            private static readonly Regex RootMarkers = Pattern(@"\A(?:bap-(?:v[34]-)?transition-|BetterAstralParty\.reinstall(?:-v[345])?\.completed-|BetterAstralParty\.update(?:-v[345])?\.version\.uninstalled-)[a-f0-9]{32}\z");
             private static readonly Regex AtomicMarkers = Pattern(@"\A(plan|descriptor|signature|image|receipt|committed)-pending-[a-f0-9]{32}\z");
             private static readonly Regex HelperAtomicMarkers = Pattern(@"\A(plan|descriptor|signature|image|receipt|committed|ordinary-repair)-pending-[a-f0-9]{32}\z");
             private static readonly Regex HelperAutoAtomicMarkers = Pattern(@"\A(plan|descriptor|signature|image|receipt|committed|incoming-(?:descriptor|signature|image)|old-image|old-receipt)-pending-[a-f0-9]{32}\z");
@@ -505,9 +549,9 @@ namespace BetterAstralParty.Diagnostics
                 RootStatus("game", "pinned-selected-root");
                 string[] owned = { "AstralParty_INT.exe", "AstralParty-Vanilla.cmd", "BepInEx/plugins/BetterAstralParty/BetterAstralParty.dll", "BetterAstralParty-Launcher.exe",
                     "BetterAstralParty-Mod.cmd", "BetterAstralParty-Steam.ps1", "BetterAstralParty.compatibility.json", "check-compatibility.ps1", "steam-shortcut.ps1",
-                    "BetterAstralParty-UpdateHelper.exe", "BetterAstralParty.helper.receipt", "BetterAstralParty.install.json", "BetterAstralParty.update-v4.version", "BetterAstralParty.update-v3.version", "BetterAstralParty.update.version", "BetterAstralParty.update.lock" };
+                    "BetterAstralParty-UpdateHelper.exe", "BetterAstralParty.helper.receipt", "BetterAstralParty.install.json", "BetterAstralParty.update-v5.version", "BetterAstralParty.update-v4.version", "BetterAstralParty.update-v3.version", "BetterAstralParty.update.version", "BetterAstralParty.update.lock" };
                 foreach (string path in owned) File(game, path, "game/" + path);
-                string[] pending = { "BetterAstralParty.reinstall-v4.pending", "BetterAstralParty.update-v4.failure", "BetterAstralParty.update-v4.operation", "BetterAstralParty.update-v4.preferences-failed", "BetterAstralParty.update-v4.failed", "BetterAstralParty.reinstall-v3.pending", "BetterAstralParty.update-v3.failure", "BetterAstralParty.update-v3.operation", "BetterAstralParty.update-v3.preferences-failed", "BetterAstralParty.update-v3.failed", "BetterAstralParty.reinstall.pending", "BetterAstralParty.update.failure", "BetterAstralParty.update.operation",
+                string[] pending = { "BetterAstralParty.reinstall-v5.pending", "BetterAstralParty.update-v5.failure", "BetterAstralParty.update-v5.operation", "BetterAstralParty.update-v5.preferences-failed", "BetterAstralParty.reinstall-v4.pending", "BetterAstralParty.update-v4.failure", "BetterAstralParty.update-v4.operation", "BetterAstralParty.update-v4.preferences-failed", "BetterAstralParty.update-v4.failed", "BetterAstralParty.reinstall-v3.pending", "BetterAstralParty.update-v3.failure", "BetterAstralParty.update-v3.operation", "BetterAstralParty.update-v3.preferences-failed", "BetterAstralParty.update-v3.failed", "BetterAstralParty.reinstall.pending", "BetterAstralParty.update.failure", "BetterAstralParty.update.operation",
                     "BetterAstralParty.update.preferences-failed", "BetterAstralParty.update.failed" };
                 foreach (string path in pending) Observe("game/" + path, "root-marker-observed", File(game, path, "game/" + path));
                 int alias = 0, workRemaining = MaxRecoveryDirectories;
@@ -545,7 +589,7 @@ namespace BetterAstralParty.Diagnostics
                 alias = 0;
                 foreach (string name in Scan(game, RootMarkers, "game/generation-markers"))
                 {
-                    string kind = name.StartsWith("bap-transition-", StringComparison.Ordinal) || name.StartsWith("bap-v3-transition-", StringComparison.Ordinal) || name.StartsWith("bap-v4-transition-", StringComparison.Ordinal) ? "transition" : name.StartsWith("BetterAstralParty.reinstall.", StringComparison.Ordinal) || name.StartsWith("BetterAstralParty.reinstall-v3.", StringComparison.Ordinal) || name.StartsWith("BetterAstralParty.reinstall-v4.", StringComparison.Ordinal) ? "reinstall-completed" : "archived-version";
+                    string kind = name.StartsWith("bap-transition-", StringComparison.Ordinal) || name.StartsWith("bap-v3-transition-", StringComparison.Ordinal) || name.StartsWith("bap-v4-transition-", StringComparison.Ordinal) ? "transition" : name.StartsWith("BetterAstralParty.reinstall.", StringComparison.Ordinal) || name.StartsWith("BetterAstralParty.reinstall-v3.", StringComparison.Ordinal) || name.StartsWith("BetterAstralParty.reinstall-v4.", StringComparison.Ordinal) || name.StartsWith("BetterAstralParty.reinstall-v5.", StringComparison.Ordinal) ? "reinstall-completed" : "archived-version";
                     string id = "game/" + kind + "/" + (++alias).ToString("D2", CultureInfo.InvariantCulture);
                     bool? present = File(game, name, id);
                     if (kind == "transition") Observe(id, "transition-marker-observed", present);
@@ -553,12 +597,13 @@ namespace BetterAstralParty.Diagnostics
             }
             internal void Backups(Fence game, string localLogs)
             {
+                Backups(game, localLogs, "v5");
                 Backups(game, localLogs, "v4");
                 Backups(game, localLogs, "v3");
             }
             private void Backups(Fence game, string localLogs, string generation)
             {
-                var label = generation == "v3" ? "installer-backups" : "installer-backups-v4";
+                var label = generation == "v3" ? "installer-backups" : "installer-backups-" + generation;
                 if (String.IsNullOrWhiteSpace(localLogs)) { RootStatus(label, "not-selected"); return; }
                 try
                 {
@@ -653,6 +698,372 @@ namespace BetterAstralParty.Diagnostics
                     Read(root, matches[i].Key, id + "/" + (i + 1).ToString("D2", CultureInfo.InvariantCulture), now, rows, payloads, ref raw, ref output, identities);
                 if (matches.Count > MaxRecentPerDirectory) rows.Add(new Row { Source = id, Status = "recent-file-limit", Input = matches.Count - MaxRecentPerDirectory });
             }
+        }
+        // Engine/loader logs: only error, exception, stack, crash and loader lines survive, then redaction.
+        private static readonly Regex EngineKeep = Pattern(@"(?:\A\[(?:Error|Fatal|Warning)\s*:|\A\[(?:Message|Info)\s*:\s*(?:BepInEx|Preloader|Il2CppInterop|Doorstop|Chainloader|HarmonyX|BetterAstralParty)\s*\]|Exception\b|\ACrash!!!|\A\s*={5,}\s*(?:OUTPUTTING STACK TRACE|END OF STACKTRACE)|\AERROR:|[Aa]ccess violation|\AReceived signal|\A(?:Read from|Write to) location|\AUnloading \d+ unused Assets)");
+        private static readonly Regex EngineStack = Pattern(@"\A(?:\s+at |\s*--- End of|\s*\(Filename:|\s*0x[0-9A-Fa-f]{8,16} |\s*\[0x[0-9A-Fa-f]+\]|\s+\S+\.(?:dll|exe)!|\s*#[0-9]{1,3} )");
+        private static readonly Regex EngineBlockEnd = Pattern(@"\A\s*={5,}\s*END OF STACKTRACE");
+        private static byte[] FilterEngine(TextReader reader, Row row, int max)
+        {
+            var result = new StringBuilder(); int count = 0, lines = 0, frames = 0; bool attached = false, crash = false;
+            string line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                if (line.Length > 16384) { row.Dropped++; attached = false; continue; }
+                line = Ansi.Replace(line.Normalize(NormalizationForm.FormKC), "");
+                bool keep, stack = EngineStack.IsMatch(line);
+                if (line.StartsWith("Crash!!!", StringComparison.Ordinal)) crash = true;
+                if (crash) { keep = true; if (EngineBlockEnd.IsMatch(line)) crash = false; }
+                else if (stack) keep = attached && ++frames <= 64;
+                else { keep = EngineKeep.IsMatch(line); attached = keep; frames = 0; }
+                if (!keep) { row.Dropped++; continue; }
+                string clean;
+                if (ErrorSecret.IsMatch(line) || GamePayload.IsMatch(line)) { row.Redacted++; clean = "[redacted]"; }
+                else
+                {
+                    string paths = ErrorPath.Replace(line, ErrorPathAlias);
+                    clean = ErrorPrivate.Replace(paths, "[redacted]");
+                    if (clean != line) row.Redacted++;
+                }
+                if (clean.Length > 2048) { clean = clean.Substring(0, 2048); row.Truncated = true; }
+                foreach (char c in clean) if (Char.IsControl(c) && c != '\t') { clean = "[redacted]"; break; }
+                if (++lines > MaxEngineLines || !AppendRecord(result, clean, row, max, ref count)) { row.Truncated = true; break; }
+            }
+            return Utf8.GetBytes(result.ToString());
+        }
+        private static void ReadEngine(Fence root, string relative, string id, DateTime now, List<Row> rows, List<Payload> payloads, ref long engineRaw, ref int totalOutput)
+        {
+            var row = new Row { Source = id, Content = "filtered-error-lines", SourceKind = "engine-log" }; rows.Add(row);
+            try
+            {
+                using (var file = root.Open(relative, false))
+                {
+                    row.Input = file.Length; row.Modified = file.Modified.ToString("O", CultureInfo.InvariantCulture);
+                    if (file.Modified < now.AddDays(-RecentDays)) { row.Status = "older-than-7-days"; return; }
+                    if (file.Modified > now.AddDays(1)) { row.Status = "invalid-future-time"; return; }
+                    if (payloads.Count >= MaxFiles || totalOutput >= MaxOutputBytes) { row.Status = "bundle-limit"; return; }
+                    // The newest part matters for crashes; reading starts on a line boundary, never mid-line.
+                    long start = Math.Max(0, file.Length - MaxEngineInputBytes);
+                    if (engineRaw + (file.Length - start) > 2L * MaxEngineInputBytes) { row.Status = "bundle-limit"; return; }
+                    engineRaw += file.Length - start;
+                    file.Stream.Position = start;
+                    using (var reader = new StreamReader(new LimitedStream(file.Stream, file.Length - start), new UTF8Encoding(false, false), true, 16384))
+                    {
+                        if (start > 0) { reader.ReadLine(); row.Truncated = true; }
+                        var clean = FilterEngine(reader, row, Math.Min(MaxEngineOutputBytes, MaxOutputBytes - totalOutput));
+                        row.ReadBytes = file.Length - start;
+                        if (clean.Length == 0) { row.Status = "no-error-lines"; return; }
+                        row.Output = clean.Length; row.Entry = "logs/" + id.Replace('/', '-') + ".log"; row.Status = "included";
+                        payloads.Add(new Payload(row, clean)); totalOutput += clean.Length;
+                    }
+                }
+            }
+            catch (FileNotFoundException) { row.Status = "missing"; }
+            catch (DirectoryNotFoundException) { row.Status = "missing"; }
+            catch (RegexMatchTimeoutException) { row.Status = "filter-timeout"; }
+            catch (ArgumentException) { row.Status = "unsafe-or-invalid-text"; }
+            catch (UnauthorizedAccessException) { row.Status = "unsafe-or-denied"; }
+            catch (IOException) { row.Status = "locked-or-unreadable"; }
+            catch { row.Status = "read-failed"; }
+        }
+        // Bounded view so a growing log cannot extend the read past the snapshot length.
+        private sealed class LimitedStream : Stream
+        {
+            private readonly Stream inner; private long left;
+            internal LimitedStream(Stream source, long length) { inner = source; left = length; }
+            public override int Read(byte[] buffer, int offset, int count)
+            {
+                if (left <= 0) return 0;
+                int read = inner.Read(buffer, offset, (int)Math.Min(count, left)); left -= read; return read;
+            }
+            public override bool CanRead { get { return true; } }
+            public override bool CanSeek { get { return false; } }
+            public override bool CanWrite { get { return false; } }
+            public override long Length { get { throw new NotSupportedException(); } }
+            public override long Position { get { throw new NotSupportedException(); } set { throw new NotSupportedException(); } }
+            public override void Flush() { }
+            public override long Seek(long offset, SeekOrigin origin) { throw new NotSupportedException(); }
+            public override void SetLength(long value) { throw new NotSupportedException(); }
+            public override void Write(byte[] buffer, int offset, int count) { throw new NotSupportedException(); }
+        }
+        // Unity crash reports name the Windows account that ran the game.
+        private static readonly Regex CrashRunBy = Pattern(@"(?im)\brun by [^\r\n]*");
+        private static readonly Regex CrashFolder =Pattern(@"\ACrash_[0-9_-]{8,40}\z");
+        // Unity crash handler folders: error.log text and the session Player.log; dumps contribute metadata only.
+        private static void ReadCrashes(string crashRoot, DateTime now, List<Row> rows, List<Payload> payloads, ref long engineRaw, ref int totalOutput, MinimalDiagnosticProjection.ProjectionContext identities)
+        {
+            if (String.IsNullOrEmpty(crashRoot)) return;
+            using (var root = TryRoot(crashRoot, rows, "crash-root"))
+            {
+                if (root == null) return;
+                var folders = new List<KeyValuePair<string, DateTime>>(); int scanned = 0;
+                try
+                {
+                    foreach (var candidate in Directory.EnumerateDirectories(Fence.IoPath(root.Root)))
+                    {
+                        if (++scanned > MaxDirectoryEntries) { rows.Add(new Row { Source = "crash", Status = "directory-scan-limit" }); break; }
+                        string name = Path.GetFileName(candidate);
+                        if (!CrashFolder.IsMatch(name)) continue;
+                        try { using (var folder = root.Open(name, true)) if (folder.Modified >= now.AddDays(-RecentDays) && folder.Modified <= now.AddDays(1)) folders.Add(new KeyValuePair<string, DateTime>(name, folder.Modified)); }
+                        catch { rows.Add(new Row { Source = "crash", Status = "unsafe-or-locked-candidates", RejectedCandidates = 1 }); }
+                    }
+                }
+                catch { rows.Add(new Row { Source = "crash", Status = "enumeration-unavailable" }); return; }
+                folders.Sort((a, b) => { int date = b.Value.CompareTo(a.Value); return date == 0 ? StringComparer.Ordinal.Compare(a.Key, b.Key) : date; });
+                if (folders.Count == 0) rows.Add(new Row { Source = "crash", Status = "no-recent-crash-folders" });
+                for (int i = 0; i < Math.Min(folders.Count, MaxCrashFolders); ++i)
+                {
+                    string id = "crash/" + (i + 1).ToString("D2", CultureInfo.InvariantCulture), folder = folders[i].Key;
+                    var errorRow = new Row { Source = id + "/error-log", Content = "redacted-error-text", SourceKind = "unity-crash" }; rows.Add(errorRow);
+                    try
+                    {
+                        using (var file = root.Open(folder + "/error.log", false))
+                        {
+                            errorRow.Input = file.Length; errorRow.Modified = file.Modified.ToString("O", CultureInfo.InvariantCulture);
+                            if (file.Length > MaxCrashTextBytes) errorRow.Status = "input-file-limit";
+                            else if (payloads.Count >= MaxFiles || totalOutput >= MaxOutputBytes) errorRow.Status = "bundle-limit";
+                            else
+                            {
+                                var bytes = new byte[(int)file.Length]; int used = 0;
+                                while (used < bytes.Length) { int n = file.Stream.Read(bytes, used, bytes.Length - used); if (n == 0) break; used += n; }
+                                errorRow.ReadBytes = used;
+                                string text = bytes.Length >= 2 && bytes[0] == 0xff && bytes[1] == 0xfe ? new UnicodeEncoding(false, false, false).GetString(bytes, 2, used - 2) : new UTF8Encoding(false, false).GetString(bytes, 0, used);
+                                var clean = SanitizeError(CrashRunBy.Replace(text.Replace("\0", ""), "run by [redacted]"), errorRow, Math.Min(64 * 1024, MaxOutputBytes - totalOutput), identities);
+                                if (clean.Length == 0) errorRow.Status = "no-allowed-records";
+                                else { errorRow.Output = clean.Length; errorRow.Entry = "logs/" + id.Replace('/', '-') + "-error.log"; errorRow.Status = "included"; payloads.Add(new Payload(errorRow, clean)); totalOutput += clean.Length; }
+                            }
+                        }
+                    }
+                    catch (FileNotFoundException) { errorRow.Status = "missing"; }
+                    catch (RegexMatchTimeoutException) { errorRow.Status = "filter-timeout"; }
+                    catch (UnauthorizedAccessException) { errorRow.Status = "unsafe-or-denied"; }
+                    catch (IOException) { errorRow.Status = "locked-or-unreadable"; }
+                    catch { errorRow.Status = "read-failed"; }
+                    ReadEngine(root, folder + "/Player.log", id + "/player", now, rows, payloads, ref engineRaw, ref totalOutput);
+                    var dump = new Row { Source = id + "/dump", Content = "metadata-only", SourceKind = "unity-crash" }; rows.Add(dump);
+                    try { using (var file = root.Open(folder + "/crash.dmp", false)) { dump.Input = file.Length; dump.Modified = file.Modified.ToString("O", CultureInfo.InvariantCulture); dump.Status = "metadata-only"; } }
+                    catch (FileNotFoundException) { dump.Status = "missing"; }
+                    catch { dump.Status = "unavailable"; }
+                }
+                if (folders.Count > MaxCrashFolders) rows.Add(new Row { Source = "crash", Status = "recent-file-limit", Input = folders.Count - MaxCrashFolders });
+            }
+        }
+        private static readonly Regex EventProvider = Pattern(@"<Provider\s+Name=['""]([^'""<>]{1,128})['""]");
+        private static readonly Regex EventNumber = Pattern(@"<EventID(?:\s[^>]{0,64})?>([0-9]{1,5})</EventID>");
+        private static readonly Regex EventTime = Pattern(@"<TimeCreated\s+SystemTime=['""]([0-9T:.\-+Z]{10,40})['""]");
+        private static readonly Regex EventData = Pattern(@"<Data(?:\s+Name=['""]([A-Za-z0-9_]{1,64})['""])?\s*(?:/>|>([^<]{0,32768})</Data>)");
+        private static readonly Regex HexCode = Pattern(@"\A(?:0x)?[0-9A-Fa-f]{1,16}\z");
+        private static readonly Regex ModuleName = Pattern(@"\A[A-Za-z0-9_.+-]{1,96}\.(?:dll|exe|DLL|EXE)\z");
+        private static readonly Regex FileVersionText = Pattern(@"\A[0-9]{1,5}(?:\.[0-9]{1,5}){1,3}\z");
+        private static string Field(Dictionary<string, string> data, string[] order, string name, int index)
+        {
+            string value;
+            if (data.TryGetValue(name, out value)) return value;
+            return index < order.Length ? order[index] : "";
+        }
+        private static string Allowed(string value, Regex pattern) { return value != null && pattern.IsMatch(value) ? value : "unknown"; }
+        // Windows Application Error/Hang and .NET Runtime records for the game process only; typed fields, never dumps.
+        private static string ProjectWindowsEvent(string xml, DateTime now, Row row, MinimalDiagnosticProjection.ProjectionContext identities)
+        {
+            // EvtRender output is flat, well-formed XML; fixed patterns avoid an XML/DTD parser dependency.
+            if (xml == null || xml.Length > 262144) return null;
+            var data = new Dictionary<string, string>(StringComparer.Ordinal); var order = new List<string>();
+            var provider = EventProvider.Match(xml); var id = EventNumber.Match(xml); var created_ = EventTime.Match(xml);
+            if (!provider.Success || !id.Success || !created_.Success) return null;
+            string eventId = id.Groups[1].Value, time = created_.Groups[1].Value;
+            foreach (Match item in EventData.Matches(xml))
+            {
+                string name = item.Groups[1].Value, value = System.Net.WebUtility.HtmlDecode(item.Groups[2].Value);
+                order.Add(value); if (name.Length != 0 && !data.ContainsKey(name)) data.Add(name, value);
+            }
+            string providerName = System.Net.WebUtility.HtmlDecode(provider.Groups[1].Value);
+            DateTime created;
+            if (!DateTime.TryParse(time, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out created) || created < now.AddDays(-RecentDays)) return null;
+            var values = order.ToArray(); string utc = created.ToString("O", CultureInfo.InvariantCulture);
+            if ((providerName == "Application Error" && eventId == "1000") || (providerName == "Application Hang" && eventId == "1002"))
+            {
+                if (!String.Equals(Field(data, values, "AppName", 0), "AstralParty_INT.exe", StringComparison.OrdinalIgnoreCase)) return null;
+                bool hang = providerName == "Application Hang";
+                string module = hang ? "" : Field(data, values, "ModuleName", 3), modulePath = hang ? "" : Field(data, values, "ModulePath", 11);
+                string kind = modulePath.Length == 0 ? "unknown" : Regex.IsMatch(modulePath, @"(?i)\\Windows\\(?:System32|SysWOW64|WinSxS)\\") ? "windows" : Regex.IsMatch(modulePath, @"(?i)\\steamapps\\common\\") ? "game-folder" : "other";
+                return "{\"provider\":" + Quote(providerName) + ",\"eventId\":" + eventId + ",\"utc\":" + Quote(utc)
+                    + ",\"appVersion\":" + Quote(Allowed(Field(data, values, "AppVersion", 1), FileVersionText))
+                    + ",\"module\":" + Quote(hang ? "n/a" : Allowed(module, ModuleName)) + ",\"moduleVersion\":" + Quote(hang ? "n/a" : Allowed(Field(data, values, "ModuleVersion", 4), FileVersionText))
+                    + ",\"exceptionCode\":" + Quote(hang ? "n/a" : Allowed(Field(data, values, "ExceptionCode", 6), HexCode)) + ",\"faultOffset\":" + Quote(hang ? "n/a" : Allowed(Field(data, values, "FaultingOffset", 7), HexCode))
+                    + ",\"modulePathKind\":" + Quote(kind) + "}";
+            }
+            if (providerName == ".NET Runtime" && (eventId == "1025" || eventId == "1026"))
+            {
+                string text = String.Join("\n", values);
+                if (text.IndexOf("AstralParty_INT.exe", StringComparison.OrdinalIgnoreCase) < 0) return null;
+                var lines = text.Replace("\r", "").Split('\n'); if (lines.Length > 80) { Array.Resize(ref lines, 80); row.Truncated = true; }
+                var clean = Utf8.GetString(SanitizeError(String.Join("\n", lines) + "\n", row, 16384, identities));
+                return "{\"provider\":" + Quote(providerName) + ",\"eventId\":" + eventId + ",\"utc\":" + Quote(utc) + ",\"text\":" + Quote(clean) + "}";
+            }
+            return null;
+        }
+        private static void ReadWindowsEvents(Func<IList<string>> source, DateTime now, List<Row> rows, List<Payload> payloads, ref int totalOutput, MinimalDiagnosticProjection.ProjectionContext identities)
+        {
+            if (source == null) return;
+            var row = new Row { Source = "windows/application-events", Content = "typed-event-fields", SourceKind = "windows-event-log" }; rows.Add(row);
+            try
+            {
+                var records = source(); var kept = new List<string>();
+                foreach (var xml in records)
+                {
+                    row.Input++;
+                    string projected = null;
+                    try { projected = ProjectWindowsEvent(xml, now, row, identities); } catch { row.Dropped++; continue; }
+                    if (projected == null) { row.Dropped++; continue; }
+                    if (kept.Count >= MaxWindowsEvents) { row.Truncated = true; break; }
+                    kept.Add(projected); row.Projected++;
+                }
+                if (kept.Count == 0) { row.Status = "no-matching-events"; return; }
+                var bytes = Utf8.GetBytes(String.Join("\n", kept.ToArray()) + "\n");
+                if (payloads.Count >= MaxFiles || totalOutput + bytes.Length > MaxOutputBytes) { row.Status = "bundle-limit"; return; }
+                row.Output = bytes.Length; row.Entry = "logs/windows-application-events.jsonl"; row.Status = "included";
+                payloads.Add(new Payload(row, bytes)); totalOutput += bytes.Length;
+            }
+            catch { row.Status = "unavailable"; }
+        }
+        // Stage ladder written by the plugin: fixed tokens only, so it is reserialized line by line.
+        private static readonly Regex StageLine = Pattern(@"\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?Z (?:session=[0-9a-f]{32} )?(?:version=[0-9A-Za-z.+-]{1,64} )?stage=[A-Za-z]{1,40}(?: outcome=[A-Za-z]{1,24})?(?: count=[0-9]{1,6})?\z");
+        private static void ReadStageLadder(string runtimeRoot, DateTime now, List<Row> rows, List<Payload> payloads, ref long raw, ref int totalOutput)
+        {
+            if (String.IsNullOrEmpty(runtimeRoot)) return;
+            using (var root = TryRoot(runtimeRoot, rows, "runtime-root"))
+            {
+                if (root == null) return;
+                foreach (var name in new[] { "stages-current.log", "stages-previous.log", "safe-mode.state" })
+                {
+                    var row = new Row { Source = "runtime/" + name.Replace(".log", "").Replace(".state", "-state"), Content = "fixed-stage-tokens" }; rows.Add(row);
+                    try
+                    {
+                        using (var file = root.Open(name, false))
+                        {
+                            row.Input = file.Length; row.Modified = file.Modified.ToString("O", CultureInfo.InvariantCulture);
+                            if (file.Length > 256 * 1024) { row.Status = "input-file-limit"; continue; }
+                            if (payloads.Count >= MaxFiles || totalOutput >= MaxOutputBytes) { row.Status = "bundle-limit"; continue; }
+                            var bytes = new byte[(int)file.Length]; int used = 0;
+                            while (used < bytes.Length) { int n = file.Stream.Read(bytes, used, bytes.Length - used); if (n == 0) break; used += n; }
+                            raw += used; row.ReadBytes = used;
+                            var result = new StringBuilder();
+                            foreach (var line in Encoding.ASCII.GetString(bytes, 0, used).Replace("\r", "").Split('\n'))
+                            {
+                                if (line.Length == 0) continue;
+                                if (StageLine.IsMatch(line) || name == "safe-mode.state" && Regex.IsMatch(line, @"\A[a-z-]{1,32}=[0-9A-Za-z.+:-]{0,64}\z", RegexOptions.CultureInvariant)) { result.Append(line).Append('\n'); row.Projected++; }
+                                else row.Dropped++;
+                            }
+                            var clean = Utf8.GetBytes(result.ToString());
+                            if (clean.Length == 0) { row.Status = "no-allowed-records"; continue; }
+                            row.Output = clean.Length; row.Entry = "logs/" + row.Source.Replace('/', '-') + ".log"; row.Status = "included";
+                            payloads.Add(new Payload(row, clean)); totalOutput += clean.Length;
+                        }
+                    }
+                    catch (FileNotFoundException) { row.Status = "missing"; }
+                    catch (UnauthorizedAccessException) { row.Status = "unsafe-or-denied"; }
+                    catch (IOException) { row.Status = "locked-or-unreadable"; }
+                    catch { row.Status = "read-failed"; }
+                }
+            }
+        }
+        private const string PluginInventoryUnavailable = "{\"schema\":1,\"status\":\"unavailable\",\"contentsIncluded\":false,\"plugins\":[]}\n";
+        private static readonly Regex InventoryName = Pattern(@"\A[A-Za-z0-9 _.+()\[\]-]{1,96}\z");
+        // Other mods by file name, size, SHA-256 and declared version; contents are never read beyond hashing.
+        private static string PluginInventory(Fence game)
+        {
+            var entries = new List<string>(); int scanned = 0; bool limited = false;
+            foreach (var top in new[] { "BepInEx/plugins", "BepInEx/patchers" })
+            {
+                var pending = new List<KeyValuePair<string, int>> { new KeyValuePair<string, int>(top, 0) };
+                while (pending.Count > 0 && !limited)
+                {
+                    var current = pending[0]; pending.RemoveAt(0);
+                    string[] children;
+                    try { using (game.Open(current.Key, true)) { } children = Directory.GetFileSystemEntries(Fence.IoPath(Path.Combine(game.Root, current.Key.Replace('/', '\\')))); }
+                    catch { continue; }
+                    Array.Sort(children, StringComparer.Ordinal);
+                    foreach (var child in children)
+                    {
+                        if (++scanned > MaxDirectoryEntries) { limited = true; break; }
+                        string name = Path.GetFileName(child), relative = current.Key + "/" + name;
+                        if (!InventoryName.IsMatch(name)) continue;
+                        if (Directory.Exists(child)) { if (current.Value < 3) pending.Add(new KeyValuePair<string, int>(relative, current.Value + 1)); continue; }
+                        if (!name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)) continue;
+                        if (entries.Count >= MaxPluginInventory) { limited = true; break; }
+                        try
+                        {
+                            using (var file = game.Open(relative, false, true))
+                            {
+                                string hash = file.Length <= 32 * 1024 * 1024 ? CatalogHash(file) : null;
+                                string version = "unknown";
+                                try { var info = FileVersionInfo.GetVersionInfo(file.FullPath); if (FileVersionText.IsMatch(info.FileVersion ?? "")) version = info.FileVersion; } catch { }
+                                entries.Add("{\"path\":" + Quote(relative.Substring("BepInEx/".Length)) + ",\"bytes\":" + file.Length.ToString(CultureInfo.InvariantCulture)
+                                    + ",\"sha256\":" + (hash == null ? "null" : Quote(hash)) + ",\"fileVersion\":" + Quote(version) + "}");
+                            }
+                        }
+                        catch { entries.Add("{\"path\":" + Quote(relative.Substring("BepInEx/".Length)) + ",\"status\":\"unreadable\"}"); }
+                    }
+                }
+            }
+            string loader = "unknown";
+            try { using (var core = game.Open("BepInEx/core/BepInEx.Core.dll", false, true)) { var info = FileVersionInfo.GetVersionInfo(core.FullPath); var text = info.ProductVersion ?? ""; if (Regex.IsMatch(text, @"\A[0-9A-Za-z.+-]{1,64}\z", RegexOptions.CultureInvariant)) loader = text; } }
+            catch { }
+            return "{\"schema\":1,\"status\":\"collected\",\"contentsIncluded\":false,\"limited\":" + (limited ? "true" : "false") + ",\"loaderVersion\":" + Quote(loader)
+                + ",\"windowsBuild\":" + Quote(WindowsBuild()) + ",\"plugins\":[" + String.Join(",", entries.ToArray()) + "]}\n";
+        }
+        [StructLayout(LayoutKind.Sequential)]
+        private struct OsVersionInfo { internal int Size, Major, Minor, Build, Platform; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] internal string ServicePack; }
+        [DllImport("ntdll.dll", CharSet = CharSet.Unicode)]
+        private static extern int RtlGetVersion(ref OsVersionInfo info);
+        private static string WindowsBuild()
+        {
+            try { var info = new OsVersionInfo { Size = Marshal.SizeOf(typeof(OsVersionInfo)) }; if (RtlGetVersion(ref info) == 0) return info.Major + "." + info.Minor + "." + info.Build; }
+            catch { }
+            return "unknown";
+        }
+        [DllImport("wevtapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr EvtQuery(IntPtr session, string path, string query, int flags);
+        [DllImport("wevtapi.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool EvtNext(IntPtr results, int size, [Out] IntPtr[] events, int timeout, int flags, out int returned);
+        [DllImport("wevtapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool EvtRender(IntPtr context, IntPtr fragment, int flags, int size, IntPtr buffer, out int used, out int properties);
+        [DllImport("wevtapi.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool EvtClose(IntPtr handle);
+        // Newest-first Application log query, bounded to the providers the projection accepts.
+        public static IList<string> QueryWindowsEvents()
+        {
+            var result = new List<string>();
+            const string query = "*[System[(Provider[@Name='Application Error'] or Provider[@Name='Application Hang'] or Provider[@Name='.NET Runtime']) and TimeCreated[timediff(@SystemTime) <= 604800000]]]";
+            IntPtr handle = EvtQuery(IntPtr.Zero, "Application", query, 0x1 | 0x200);
+            if (handle == IntPtr.Zero) return result;
+            try
+            {
+                var batch = new IntPtr[16];
+                while (result.Count < 64)
+                {
+                    int returned;
+                    if (!EvtNext(handle, batch.Length, batch, 1000, 0, out returned) || returned == 0) break;
+                    for (int i = 0; i < returned; ++i)
+                    {
+                        try
+                        {
+                            int used, properties;
+                            EvtRender(IntPtr.Zero, batch[i], 1, 0, IntPtr.Zero, out used, out properties);
+                            if (used <= 0 || used > 262144) continue;
+                            IntPtr buffer = Marshal.AllocHGlobal(used);
+                            try { if (EvtRender(IntPtr.Zero, batch[i], 1, used, buffer, out used, out properties)) result.Add(Marshal.PtrToStringUni(buffer)); }
+                            finally { Marshal.FreeHGlobal(buffer); }
+                        }
+                        finally { EvtClose(batch[i]); }
+                    }
+                }
+            }
+            finally { EvtClose(handle); }
+            return result;
         }
         private static void Read(Fence root, string relative, string id, DateTime now, List<Row> rows, List<Payload> payloads, ref long raw, ref int totalOutput, MinimalDiagnosticProjection.ProjectionContext identities = null)
         {
@@ -1043,7 +1454,7 @@ namespace BetterAstralParty.Diagnostics
         {
             string host = Regex.IsMatch(hostVersion ?? "", @"\A[0-9]{1,5}(?:\.[0-9]{1,5}){1,3}\z") ? hostVersion : "unknown";
             string plugin = Version.IsMatch(runningPluginVersion ?? "") ? runningPluginVersion : "unknown";
-            var json = new StringBuilder("{\n\"schema\":1,\"collectorVersion\":\"6\",\"createdUtc\":").Append(Quote(now.ToString("O", CultureInfo.InvariantCulture)));
+            var json = new StringBuilder("{\n\"schema\":1,\"collectorVersion\":\"7\",\"createdUtc\":").Append(Quote(now.ToString("O", CultureInfo.InvariantCulture)));
             json.Append(",\"environment\":{\"osVersion\":").Append(Quote(Environment.OSVersion.Version.ToString()))
                 .Append(",\"runtimeVersion\":").Append(Quote(Environment.Version.ToString())).Append(",\"hostVersion\":").Append(Quote(host))
                 .Append(",\"os64Bit\":").Append(Environment.Is64BitOperatingSystem ? "true" : "false")
@@ -1051,12 +1462,12 @@ namespace BetterAstralParty.Diagnostics
                 .Append(",\"gameRootValidated\":").Append(gameValid ? "true" : "false").Append(",\"pluginVersion\":").Append(Quote(plugin))
                 .Append(",\"pluginVersionSource\":").Append(Quote(plugin == "unknown" ? "unknown" : "running-plugin"))
                 .Append(",\"pluginFileProductVersion\":").Append(Quote(fileProductVersion)).Append("},\n")
-                .Append("\"limits\":{\"recentDays\":7,\"maxLogs\":24,\"inputFileBytes\":2097152,\"inputTotalBytes\":8388608,\"outputFileBytes\":524288,\"outputTotalBytes\":4194304},\n")
-                .Append("\"privacy\":{\"configurationIncluded\":false,\"rawDumpsIncluded\":false,\"credentialStoresAccessed\":false,\"gamePayloadIncluded\":false,\"uploaded\":false,\"completeAnonymisation\":false},\n")
+                .Append("\"limits\":{\"recentDays\":7,\"maxLogs\":40,\"engineInputFileBytes\":33554432,\"engineOutputFileBytes\":262144,\"engineLines\":2000,\"crashFolders\":4,\"windowsEvents\":16,\"pluginInventory\":128,\"inputFileBytes\":2097152,\"inputTotalBytes\":8388608,\"outputFileBytes\":524288,\"outputTotalBytes\":4194304},\n")
+                .Append("\"privacy\":{\"configurationIncluded\":false,\"rawDumpsIncluded\":false,\"credentialStoresAccessed\":false,\"gamePayloadIncluded\":false,\"memoryDumpsRead\":false,\"engineLogContent\":\"filtered-redacted-error-lines\",\"windowsEvents\":\"typed-game-crash-fields\",\"uploaded\":false,\"completeAnonymisation\":false},\n")
                 .Append("\"catalogInventory\":{\"zipEntry\":\"catalog-inventory.json\",\"contentKind\":\"filename-size-sha256-only\",\"contentsIncluded\":false,\"logQuotaShared\":false},\n")
                 .Append("\"recoveryInventory\":{\"zipEntry\":\"recovery-inventory.json\",\"contentKind\":\"presence-size-sha256-only\",\"contentsIncluded\":false,\"authenticated\":false,\"logQuotaShared\":false},\n")
                 .Append("\"structuredProjection\":{\"schema\":\"bap.minimal-diagnostic/v1\",\"identities\":\"bundle-local-aliases\",\"maxSessionAliases\":64,\"maxOperationAliases\":512,\"unknownEvents\":\"omitted-and-counted-by-fixed-reason\",\"snapshotsAreNewEvents\":false},\n")
-                .Append("\"scope\":{\"writerHealth\":\"unknown\",\"requestedRecording\":\"unknown\",\"sessionCorrelation\":\"not-reconstructed\",\"crossSourceOrder\":\"unknown\",\"combatVerification\":\"public-hp-comparison-only\",\"missingMeans\":\"not-observed\",\"engineLogs\":\"metadata-only\"},\n\"files\":[");
+                .Append("\"scope\":{\"writerHealth\":\"unknown\",\"requestedRecording\":\"unknown\",\"sessionCorrelation\":\"not-reconstructed\",\"crossSourceOrder\":\"unknown\",\"combatVerification\":\"public-hp-comparison-only\",\"missingMeans\":\"not-observed\",\"engineLogs\":\"filtered-error-lines\"},\n\"files\":[");
             // Only a live owner snapshot can provide current writer health; historical logs cannot.
             json.Length -= "\"files\":[".Length;
             json.Append("\"liveHostHealth\":{\"runtime\":")

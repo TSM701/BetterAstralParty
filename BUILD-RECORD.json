@@ -1,15 +1,13 @@
 {
   "schema": 1,
   "configuration": "Release",
-  "sourceManifestSha256": "1A8ACC67FBA4655DB7E99918B343F755BA13F42CC1FCED425882F7DE9CAA7576",
+  "sourceManifestSha256": "512B60263DA88C2A4781CAB6F564C17261D80750F4DFDED639B3E6BF4738027C",
   "checks": [
     "sdk-path-safety",
     "source-mode",
     "settings-input",
     "settings-scroll",
     "shared-loader",
-    "shared-loader-enable",
-    "automatic-helper-upgrade",
     "install-bundle-missing",
     "install-reader-origin",
     "update-runtime-isolation",
@@ -18,9 +16,6 @@
     "field-free-camera",
     "field-camera-return",
     "recovery-diagnostics",
-    "launcher-recovery",
-    "handoff-start-failure",
-    "ordinary-helper-recovery",
     "catalog-compatibility",
     "install-recovery-diagnostics",
     "diagnostics-bundle",
@@ -30,10 +25,8 @@
     "steam-observation",
     "uninstall-steam-boundary",
     "install-log",
-    "native-launcher",
     "maintenance-history",
     "release-updates-and-readiness",
-    "launch-failure-diagnostics",
     "maintenance-preservation",
     "uninstall-updated-receipt",
     "install-safety",
@@ -99,7 +92,6 @@
     "startup-notice",
     "uninstall",
     "whole-channel-transition",
-    "terminal-whole-history",
     "diagnostics-zip",
     "diagnostics-structured",
     "diagnostics-long-path",
@@ -113,7 +105,6 @@
     "updater-primitives",
     "updater-transaction",
     "updater-apply-boundary",
-    "updater-helper",
     "update-generation"
   ],
   "validationScope": "full",
@@ -121,39 +112,34 @@
     "--release-updates-only",
     "--settings-only"
   ],
-  "versionOverride": "1.3.0",
+  "versionOverride": "1.4.0",
   "generatedPlugin": {
     "path": "version-override/Plugin.cs",
-    "bytes": 29128,
-    "sha256": "EB4E683DD1A55EF5DCAA8D9F23ABF1B250F28CA27C740278C7AE5730A269A858"
+    "bytes": 31146,
+    "sha256": "56A8D581ED6821E2AF52868E099C3D5FD3A36E5576C9527830B7783C449E24E0"
   },
   "files": [
     {
       "path": "plugin/BetterAstralParty.dll",
-      "bytes": 954880,
-      "sha256": "8A54242A179D818B5FFBCA09B207663541B49F76DCB967C9AECB2974854DD503"
+      "bytes": 878080,
+      "sha256": "BCC47734B4A6185ECEE0DA6DE21B0E1CB810A603AB13899747953DF39DB960C3"
     },
     {
-      "path": "launcher/BetterAstralParty-Launcher.exe",
-      "bytes": 673280,
-      "sha256": "92D9DC1EE195CD523F374AA8E8EA9CA4FECBCF4DD12D10FBC18FCD356EE4A3F5"
-    },
-    {
-      "path": "helper/BetterAstralParty-UpdateHelper.exe",
-      "bytes": 329728,
-      "sha256": "6DB4C4D378940B6D79DFB074E1AC47D4DC074204E831923F36AB6231AF71E3F9"
+      "path": "setup/BetterAstralParty-Setup.exe",
+      "bytes": 536576,
+      "sha256": "B2E500704EEE2749A64F87EEA20D3B30EEC6F5BD147AFDB8FAB62C25747D88EA"
     }
   ],
   "compatibility": {
     "path": "compatibility/BetterAstralParty.compatibility.json",
-    "bytes": 11013,
-    "sha256": "556E5C15AA3A02407FBDDD89085D9953E18B806269CBA7F41BD4613E169383F7"
+    "bytes": 11009,
+    "sha256": "1AAFB642C8180CFE52B4C9E1D14CFD404358438497CCB7129BA314A6536174E7"
   },
   "nativeInput": {
-    "path": "artifacts/game330-catalog-hotfix-20261015-r1/runtime/AstralParty.Runtime.dll.dll",
-    "bytes": 11496448,
-    "sha256": "01651C176333C93ABB9C26135DAA8477113E7A1DA190DE9F04B2FC5100C4E395",
-    "explicitOverride": true
+    "path": ".research/extracted/AstralParty.Runtime.dll.dll",
+    "bytes": 11195904,
+    "sha256": "DDEFD944846C612CC8935BCEF33170BAA8F3EE3974CBF2EC0F8F001678CED341",
+    "explicitOverride": false
   },
   "installationPerformed": false,
   "releaseCreated": false

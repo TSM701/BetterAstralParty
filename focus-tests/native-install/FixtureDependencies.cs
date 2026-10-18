@@ -11,14 +11,14 @@ using System.Web.Script.Serialization;
 internal static class FixtureControl
 {
     internal static readonly List<string> Events = new List<string>();
-    internal static bool NeedsShortcut, Pending, Generation, FailConfig, FailHelper, FailComplete, LockHeld;
+    internal static bool NeedsShortcut, Pending, Generation, FailConfig, FailRemoval, FailComplete, LockHeld, PendingUpdate;
     internal static bool CompatibilityAllowed = true;
     internal static Exception? CompatibilityError, LastFailure, PlanFailure;
     internal static string? LastFailurePhase;
     internal static Action? PendingRestore;
     internal static BetterAstralParty.Installation.NativeMaintenanceBundle? Bundle;
     internal const string Identity = "00000001:0000000000000001", Observation = "one-process-observation";
-    internal static void Reset() { Events.Clear(); NeedsShortcut = Pending = Generation = FailConfig = FailHelper = FailComplete = LockHeld = false; CompatibilityAllowed = true; CompatibilityError = LastFailure = PlanFailure = null; LastFailurePhase = null; PendingRestore = null; }
+    internal static void Reset() { Events.Clear(); NeedsShortcut = Pending = Generation = FailConfig = FailRemoval = FailComplete = LockHeld = PendingUpdate = false; CompatibilityAllowed = true; CompatibilityError = LastFailure = PlanFailure = null; LastFailurePhase = null; PendingRestore = null; }
     internal sealed class Lease : IDisposable { private readonly Action _close; internal Lease(Action close) { _close = close; } public void Dispose() { _close(); } }
 }
 namespace BetterAstralParty.Updating
@@ -35,7 +35,27 @@ namespace BetterAstralParty.Updating
         internal const string PluginPath = "BepInEx/plugins/BetterAstralParty/BetterAstralParty.dll";
         internal static string Hash(byte[] bytes) { using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", ""); }
     }
-    internal static class UpdateTransaction { internal const string HighWaterPath = "BetterAstralParty.update-v4.version"; }
+    internal static class UpdateTransaction { internal const string HighWaterPath = "BetterAstralParty.update-v5.version"; }
+    internal static class UpdateWorkPath { internal const string Root = "BetterAstralParty.Update"; }
+    internal static class LegacyWork {
+        internal static List<string> Finished(string game) { FixtureControl.Events.Add("legacy-work-plan"); return new List<string>(); }
+        internal static int Remove(string game, Action<string> output) { FixtureControl.Events.Add("legacy-work-clean"); return 0; }
+    }
+    internal static class OrdinaryInstallRecovery { internal const string LegacyLauncher = "BetterAstralParty-Launcher.exe", LegacyHelper = "BetterAstralParty-UpdateHelper.exe", LegacyHelperReceipt = "BetterAstralParty.helper.receipt"; }
+    // 1.3.x receipt substitute: baseline 1.3.0 is the only legacy shape the takeover accepts.
+    internal sealed class LegacyReceipt
+    {
+        internal bool? LoaderBefore;
+        internal readonly Dictionary<string, string> Files = new Dictionary<string, string>(StringComparer.Ordinal);
+        internal static bool Is(byte[] bytes) { try { Parse(bytes); return true; } catch (InvalidDataException) { return false; } }
+        internal static LegacyReceipt Parse(byte[] bytes) {
+            var map = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(Encoding.UTF8.GetString(bytes));
+            if ((string)map["baseline"] != "1.3.0") throw new InvalidDataException("not a 1.3.x receipt");
+            var result = new LegacyReceipt { LoaderBefore = map["loaderBefore"] as bool? };
+            foreach (var row in ((System.Collections.IEnumerable)map["files"]).Cast<object>().Cast<Dictionary<string, object>>()) result.Files.Add((string)row["path"], (string)row["sha256"]);
+            return result;
+        }
+    }
     internal sealed class InstalledPluginMetadata
     {
         internal string Version = "";
@@ -49,6 +69,7 @@ namespace BetterAstralParty.Updating
         internal readonly Dictionary<string, string> Files = new Dictionary<string, string>(StringComparer.Ordinal);
         internal static InstallReceipt Parse(byte[] bytes) {
             var map = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(Encoding.UTF8.GetString(bytes));
+            if ((string)map["baseline"] != "1.4.0") throw new InvalidDataException("unsupported receipt baseline");
             var result = new InstallReceipt { LoaderBefore = map["loaderBefore"] as bool? };
             foreach (var row in ((System.Collections.IEnumerable)map["files"]).Cast<object>().Cast<Dictionary<string, object>>()) result.Files.Add((string)row["path"], (string)row["sha256"]);
             return result;
@@ -67,6 +88,7 @@ namespace BetterAstralParty.Updating
             internal readonly FileStream Stream; internal readonly string Path;
             internal FileLease(string path, bool mutable, bool create) { Path = path; Stream = new FileStream(path, create ? FileMode.CreateNew : FileMode.Open, mutable ? FileAccess.ReadWrite : FileAccess.Read, FileShare.None); }
             internal string Hash() { var position = Stream.Position; Stream.Position = 0; using (var sha = SHA256.Create()) { var value = BitConverter.ToString(sha.ComputeHash(Stream)).Replace("-", ""); Stream.Position = position; return value; } }
+            internal void RemoveOrdinaryRecoveryTarget(string relative) { if (FixtureControl.FailRemoval) throw new IOException("fixture legacy removal failure"); Stream.Dispose(); File.Delete(Path); FixtureControl.Events.Add("remove:" + relative); }
             internal void Flush() { Stream.Flush(true); if (FixtureControl.FailConfig && Path.EndsWith("BepInEx.cfg", StringComparison.Ordinal)) throw new IOException("fixture config commit interrupted"); }
             public void Dispose() { Stream.Dispose(); }
         }
@@ -85,18 +107,17 @@ namespace BetterAstralParty.Installation
     {
         internal static readonly Dictionary<string, string> OwnedSources = new Dictionary<string, string> {
             {"AstralParty-Vanilla.cmd","tools/AstralParty-Vanilla.cmd"}, {Updating.UpdateTrust.PluginPath,"artifacts/BetterAstralParty.dll"},
-            {"BetterAstralParty-Launcher.exe","artifacts/BetterAstralParty-Launcher.exe"}, {"BetterAstralParty-Mod.cmd","tools/BetterAstralParty-Mod.cmd"},
+            {"BetterAstralParty-Mod.cmd","tools/BetterAstralParty-Mod.cmd"},
             {"BetterAstralParty.compatibility.json","artifacts/BetterAstralParty.compatibility.json"} };
-        internal readonly string GameRoot, PackageRoot, Version = "1.3.1", ManifestHash = new string('A', 64), RootIdentity = FixtureControl.Identity;
+        internal readonly string GameRoot, PackageRoot, Version = "1.4.1", ManifestHash = new string('A', 64), RootIdentity = FixtureControl.Identity;
         internal readonly Updating.WindowsFileFence Source;
         internal readonly Dictionary<string, string> Hashes = new Dictionary<string, string>(), Expected = new Dictionary<string, string>();
         internal Dictionary<string, object?>? Recovery = null;
-        internal string? Mode, Observation;
+        internal string? Mode;
         internal Dictionary<string, string?>? Observed;
         internal NativeMaintenanceBundle(string root) {
             GameRoot = System.IO.Path.Combine(root,"Game"); PackageRoot = System.IO.Path.Combine(root,"Package"); Directory.CreateDirectory(GameRoot); Directory.CreateDirectory(PackageRoot); Source = new Updating.WindowsFileFence(PackageRoot);
             foreach (var row in OwnedSources) { var bytes = Encoding.UTF8.GetBytes(row.Key == Updating.UpdateTrust.PluginPath ? Version : "inert:" + row.Key); WriteSource(row.Value, bytes); Expected.Add(row.Key, Updating.UpdateTrust.Hash(bytes)); }
-            WriteSource("helper-bootstrap/BetterAstralParty-UpdateHelper.exe", Encoding.UTF8.GetBytes("inert helper"));
             WriteSource(".deps/bepinex/doorstop_config.ini", Encoding.UTF8.GetBytes("[General]\r\nenabled=true\r\n"));
             WriteSource(".deps/bepinex/BepInEx/core/inert.dll", Encoding.UTF8.GetBytes("inert shared core"));
             FixtureControl.Bundle = this;
@@ -120,6 +141,7 @@ namespace BetterAstralParty.Installation
         }
         internal static string JournalRoot(string game) { return System.IO.Path.Combine(System.IO.Path.GetDirectoryName(game)!,"Backups"); }
         internal static string JournalPath(string game) { return System.IO.Path.Combine(JournalRoot(game),"pending.json"); }
+        internal static string LegacyJournalPath(string game) { return System.IO.Path.Combine(JournalRoot(game),"legacy-v4-pending.json"); }
         internal static InstallLock AcquireInstallLock(NativeMaintenanceBundle bundle) { FixtureControl.Events.Add("ordinary-lock"); return new InstallLock(JournalRoot(bundle.GameRoot)); }
         internal static bool RecoverPending(NativeMaintenanceBundle bundle, Func<string,string?> consent, Action<string> output, bool whatIf=false) { FixtureControl.Events.Add(whatIf?"preview-pending":"ordinary-recovery"); if (!FixtureControl.Pending) return true; if(whatIf)return false; if(!FixtureControl.LockHeld)throw new InvalidOperationException("Fixture recovery requires the ordinary lock"); if(consent("저장된 작업 복원 / Restore fixture pending maintenance? [y/N]")!="y")throw new OperationCanceledException("Fixture recovery cancelled"); FixtureControl.PendingRestore?.Invoke(); FixtureControl.Pending=false; File.Delete(JournalPath(bundle.GameRoot)); return true; }
         internal static void AssertTarget(string root,string absolute) { if(!absolute.StartsWith(root+"\\",StringComparison.OrdinalIgnoreCase))throw new InvalidDataException(); }
@@ -139,7 +161,7 @@ namespace BetterAstralParty.Installation
     internal sealed class SteamSessionState { internal bool Restart; }
     internal static class NativeSteamMaintenance {
         internal static System.Action<System.Exception>? WaitingDiagnostic = null;
-        internal static void StopGame(string root,Func<string,string?> consent,Action<string> output) { FixtureControl.Events.Add("game-stop"); }
+        internal static void WaitGameClosed(string root,Func<string,string?> consent,Action<string> output) { FixtureControl.Events.Add("game-stop"); }
         internal static void AssertGameStopped(string root) { FixtureControl.Events.Add("game-recheck"); }
         internal static bool PlanRegister(string steam,uint account,string game,Action<Exception>? unavailable=null) {
             FixtureControl.Events.Add("shortcut-plan");
@@ -152,7 +174,7 @@ namespace BetterAstralParty.Installation
         internal static void ResumeSteam(SteamSessionState state,Action<string> output) { if(state.Restart)FixtureControl.Events.Add("steam-resume"); }
     }
     internal static class NativeReinstallGeneration {
-        internal sealed class Plan { internal readonly string Version = "1.3.0"; }
+        internal sealed class Plan { internal readonly string Version = "1.4.0"; }
         internal static Plan? Review(string game,string package,string version,string manifest,string backups) { FixtureControl.Events.Add("generation-review"); return FixtureControl.Generation?new Plan():null; }
         internal static void Retire(Plan plan,string game,string package,string version,string manifest,string backups,Updating.WindowsFileFence.FileLease held) { FixtureControl.Events.Add("generation-retire"); FixtureControl.Generation=false; }
     }
@@ -165,25 +187,22 @@ namespace BetterAstralParty.Installation
         internal static Result Check(string game,string manifest,string? loader=null) { FixtureControl.Events.Add("compatibility"); return new Result(); }
     }
 }
-internal static class SteamLauncher
+internal static class SetupHost
 {
     internal static void RecordInstallerStage(string phase,string outcome) { FixtureControl.Events.Add("stage:"+phase+":"+outcome); }
     internal static void RecordInstallerFailure(string phase,Exception error) { FixtureControl.Events.Add("error:"+phase); FixtureControl.LastFailurePhase = phase; FixtureControl.LastFailure = error; }
-    internal static string ValidateHelperBootstrap(string root,string version,string expected) { FixtureControl.Events.Add("helper-validate"); return expected; }
     internal static void ValidateWholeInputs(string game,string package,string version) { FixtureControl.Events.Add("inputs-validate"); }
-    internal static void RecoverWholeHelper(string game,string package,string version) { FixtureControl.Events.Add("whole-recover"); }
-    internal static string ValidateWholeBridge(string game,string package,string version) { FixtureControl.Events.Add("whole-observe"); return FixtureControl.Observation; }
-    internal static string ValidateReviewedWholeBridge(string game,string package,string version,string review) { FixtureControl.Events.Add("whole-reviewed"); return FixtureControl.Observation; }
+    internal static bool HasPendingUpdate(string game) { FixtureControl.Events.Add("update-check"); return FixtureControl.PendingUpdate; }
+    internal static string RecoverPendingUpdate(string game) { FixtureControl.Events.Add("update-recover"); FixtureControl.PendingUpdate = false; return "RolledBack"; }
     internal static string ReadInstallerState(string game) {
+        FixtureControl.Events.Add("state-observe");
         var path=System.IO.Path.Combine(game,BetterAstralParty.Updating.UpdateTransaction.HighWaterPath);var bytes=File.Exists(path)?File.ReadAllBytes(path):null;
         return "BetterAstralParty.InstallerState/v1\nroot="+FixtureControl.Identity+"\nversion="+(bytes==null?"":Encoding.UTF8.GetString(bytes))+"\nwater-sha="+(bytes==null?"":BetterAstralParty.Updating.UpdateTrust.Hash(bytes))+"\n";
     }
-    internal static string ReadVerifiedInstalledState(string game,string package,string version) { return "BetterAstralParty.VerifiedInstalledState/v1\nroot="+FixtureControl.Identity+"\nversion=1.3.0\nupdate-protocol=4\nsettings-schema=1\n"; }
-    internal static string PrepareWholeReceipt(string game,string package,string version,string observation,string before) {
-        if(observation!=FixtureControl.Observation)throw new InvalidOperationException(); FixtureControl.Events.Add("receipt-prepare"); var bundle=FixtureControl.Bundle!;
-        return new JavaScriptSerializer().Serialize(new {schema=1,baseline="1.3.0",owner="kr.betterastralparty.mod",loaderBefore=before=="null"?(bool?)null:before=="true",channelState="fixture",files=bundle.Expected.Select(row=>new {path=row.Key,sha256=row.Value}).ToArray()});
+    internal static string PrepareWholeReceipt(string game,string package,string version,string before) {
+        FixtureControl.Events.Add("receipt-prepare"); var bundle=FixtureControl.Bundle!;
+        return new JavaScriptSerializer().Serialize(new {schema=1,baseline="1.4.0",owner="kr.betterastralparty.mod",loaderBefore=before=="null"?(bool?)null:before=="true",channelState="fixture",files=bundle.Expected.Select(row=>new {path=row.Key,sha256=row.Value}).ToArray()});
     }
-    internal static IDisposable BeginWholeInstall(string game,string package,string version,string observation,string receipt) { if(observation!=FixtureControl.Observation)throw new InvalidOperationException(); FixtureControl.Events.Add("whole-begin"); return new FixtureControl.Lease(()=>FixtureControl.Events.Add("whole-unlock")); }
-    internal static void InstallWholeHelper(string game,string package,string version,string observation,string hash) { if(observation!=FixtureControl.Observation)throw new InvalidOperationException(); FixtureControl.Events.Add("helper-commit"); if(FixtureControl.FailHelper)throw new IOException("fixture helper failure"); }
-    internal static string? CheckOwnedHelper(string game) { return FixtureControl.Bundle!.Hashes["helper-bootstrap/BetterAstralParty-UpdateHelper.exe"]+":"+new string('C',64); }
+    internal static byte[]? PrepareHighWater(string game,string package,string version) { FixtureControl.Events.Add("water-prepare"); return Encoding.UTF8.GetBytes(version); }
+    internal static IDisposable GuardMaintenance(string game) { FixtureControl.Events.Add("guard"); return new FixtureControl.Lease(()=>FixtureControl.Events.Add("guard-release")); }
 }

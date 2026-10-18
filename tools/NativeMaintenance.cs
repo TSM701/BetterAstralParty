@@ -48,7 +48,12 @@ namespace BetterAstralParty.Installation
 #endif
             if (string.IsNullOrWhiteSpace(local)) throw new InvalidOperationException("Local application-data directory unavailable.");
             var key = UpdateTrust.Hash(Encoding.UTF8.GetBytes(WindowsPath.Absolute(gameRoot).TrimEnd('\\').ToLowerInvariant()));
-            return WindowsPath.Absolute(local.TrimEnd('\\') + "\\BetterAstralParty\\Backups\\v4\\" + key);
+            return WindowsPath.Absolute(local.TrimEnd('\\') + "\\BetterAstralParty\\Backups\\v5\\" + key);
+        }
+        // 1.3.x (protocol 4) journals; an unfinished one blocks takeover instead of being replayed.
+        internal static string LegacyJournalPath(string gameRoot)
+        {
+            var root = JournalRoot(gameRoot); return WindowsPath.Parent(WindowsPath.Parent(root)) + "\\v4\\" + WindowsPath.Leaf(root) + "\\pending.json";
         }
         internal static string JournalPath(string gameRoot) { return JournalRoot(gameRoot) + "\\pending.json"; }
         internal static bool HasPending(NativeMaintenanceBundle bundle)
@@ -73,7 +78,7 @@ namespace BetterAstralParty.Installation
         }
         internal static InstallLock AcquireInstallLock(NativeMaintenanceBundle bundle)
         {
-            var root = JournalRoot(bundle.GameRoot); SteamLauncher.ValidateMaintenancePaths(bundle.GameRoot, root);
+            var root = JournalRoot(bundle.GameRoot); SetupHost.ValidateMaintenancePaths(bundle.GameRoot, root);
 #if BAP_SAFETY_FIXTURE
             var local = WindowsPath.Parent(bundle.GameRoot);
 #else
@@ -86,7 +91,7 @@ namespace BetterAstralParty.Installation
         {
             var names = new List<string>(bundle.Expected.Keys);
             names.AddRange(new[] { "BepInEx/config/BepInEx.cfg", "doorstop_config.ini", InstallReceipt.Path,
-                "BetterAstralParty-UpdateHelper.exe", "BetterAstralParty.helper.receipt", "BepInEx/config/kr.betterastralparty.mod.cfg",
+                UpdateTransaction.HighWaterPath, OrdinaryInstallRecovery.LegacyLauncher, OrdinaryInstallRecovery.LegacyHelper, OrdinaryInstallRecovery.LegacyHelperReceipt, "BepInEx/config/kr.betterastralparty.mod.cfg",
                 "BepInEx/BetterAstralParty-Diagnostics/current.log", "BepInEx/BetterAstralParty-Diagnostics/previous.log",
                 "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch.log", "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log",
                 "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log" });
@@ -184,15 +189,15 @@ namespace BetterAstralParty.Installation
             if (whatIf) { output("WhatIf: verified pending maintenance requires recovery: " + txn.JournalPath); return false; }
             output("미완료 설치·제거 기록이 있습니다. / Unfinished installation/removal found: " + txn.JournalPath);
             if (consent("저장된 작업 전 파일을 복원할까요? 이후 변경 내용은 덮어씁니다. / Restore saved pre-maintenance files? Later edits will be replaced. [y/N]") != "y") throw new InvalidOperationException("Recovery cancelled; retain journal and backups.");
-            NativeSteamMaintenance.StopGame(bundle.GameRoot, consent, output);
-            using (SteamLauncher.GuardOrdinaryRecovery(bundle.GameRoot, bundle.PackageRoot, bundle.Version, txn.JournalHash)) {
-                bundle.AssertRoot(); SteamLauncher.RestoreOrdinaryInstall(bundle.GameRoot, txn.JournalRoot, txn.JournalHash, targets, "", false, bundle.RootIdentity);
+            NativeSteamMaintenance.WaitGameClosed(bundle.GameRoot, consent, output);
+            using (SetupHost.GuardOrdinaryRecovery(bundle.GameRoot)) {
+                bundle.AssertRoot(); SetupHost.RestoreOrdinaryInstall(bundle.GameRoot, txn.JournalRoot, txn.JournalHash, targets, "", false, bundle.RootIdentity);
             }
             return true;
         }
         internal static void CompleteTransaction(NativeMaintenanceBundle bundle, Transaction txn, string[] targets)
-        { bundle.AssertRoot(); SteamLauncher.RestoreOrdinaryInstall(bundle.GameRoot, txn.JournalRoot, txn.JournalHash, targets, "", true, bundle.RootIdentity); }
+        { bundle.AssertRoot(); SetupHost.RestoreOrdinaryInstall(bundle.GameRoot, txn.JournalRoot, txn.JournalHash, targets, "", true, bundle.RootIdentity); }
         internal static void RestoreTransaction(NativeMaintenanceBundle bundle, Transaction txn, string[] targets, Dictionary<string, string?> expectedCurrent)
-        { bundle.AssertRoot(); SteamLauncher.RestoreOrdinaryInstall(bundle.GameRoot, txn.JournalRoot, txn.JournalHash, targets, Encoding.UTF8.GetString(MaintenanceJson.Write(expectedCurrent)), false, bundle.RootIdentity); }
+        { bundle.AssertRoot(); SetupHost.RestoreOrdinaryInstall(bundle.GameRoot, txn.JournalRoot, txn.JournalHash, targets, Encoding.UTF8.GetString(MaintenanceJson.Write(expectedCurrent)), false, bundle.RootIdentity); }
     }
 }

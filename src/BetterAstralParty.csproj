@@ -32,11 +32,9 @@
     <Compile Include="..\updater\UpdateCompatibility.cs" Link="Updating\UpdateCompatibility.cs" />
     <Compile Include="..\updater\CatalogInventory.cs" Link="Updating\CatalogInventory.cs" />
     <Compile Include="..\updater\UpdateLaunchGate.cs" Link="Updating\UpdateLaunchGate.cs" />
-    <Compile Include="..\updater\AutomaticHelperUpgrade.cs" Link="Updating\AutomaticHelperUpgrade.cs" />
     <Compile Include="..\updater\UpdateVersion.cs" Link="Updating\UpdateVersion.cs" />
     <Compile Include="..\updater\UpdateTrust.cs" Link="Updating\UpdateTrust.cs" />
     <Compile Include="..\updater\ProductionUpdateKeys.cs" Link="Updating\ProductionUpdateKeys.cs" />
-    <Compile Include="..\updater\HelperDelivery.cs" Link="Updating\HelperDelivery.cs" />
     <Compile Include="..\updater\UpdatePackage.cs" Link="Updating\UpdatePackage.cs" />
     <Compile Include="..\updater\WindowsFileFence.cs" Link="Updating\WindowsFileFence.cs" />
     <Compile Include="..\updater\WindowsPath.cs" Link="Updating\WindowsPath.cs" />
@@ -47,9 +45,8 @@
     <Compile Include="..\updater\InstalledPluginMetadata.cs" Link="Updating\InstalledPluginMetadata.cs" />
     <Compile Include="..\updater\InstallReceipt.cs" Link="Updating\InstallReceipt.cs" />
     <Compile Include="..\updater\UpdateTicket.cs" Link="Updating\UpdateTicket.cs" />
-    <Compile Include="..\updater\UpdateCancelSignal.cs" Link="Updating\UpdateCancelSignal.cs" />
     <Compile Include="..\updater\UpdateRecoveryPolicy.cs" Link="Updating\UpdateRecoveryPolicy.cs" />
-    <Compile Include="..\updater\WholeInstallBridge.cs" Link="Updating\WholeInstallBridge.cs" />
+    <Compile Include="..\updater\InstallProof.cs" Link="Updating\InstallProof.cs" />
     <Compile Include="..\updater\OrdinaryInstallRecovery.cs" Link="Updating\OrdinaryInstallRecovery.cs" />
     <Compile Include="..\updater\UpdateRecovery.cs" Link="Updating\UpdateRecovery.cs" />
     <Compile Include="..\updater\UpdateRetention.cs" Link="Updating\UpdateRetention.cs" />

@@ -17,7 +17,7 @@ internal static partial class NativeMaintenanceIntegrationFixture
     private static readonly List<string> Output = new List<string>();
     private static readonly string Scratch = FixtureBoundary.Root.TrimEnd('\\');
     private static readonly string Game = Scratch + "\\game", Steam = Scratch + "\\steam";
-    private static readonly string Package = WindowsPath.Parent(WindowsPath.Parent(WindowsPath.FromIo(typeof(SteamLauncher).Assembly.Location)));
+    private static readonly string Package = WindowsPath.Parent(WindowsPath.Parent(WindowsPath.FromIo(typeof(SetupHost).Assembly.Location)));
     private static string Full(string root, string relative) { var path = WindowsPath.Absolute(root + "\\" + relative.Replace('/', '\\')); Scope(path); return path; }
     private static void Scope(string path) { if (!path.StartsWith(Scratch + "\\", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Fixture path outside fresh artifact root."); }
     private static void Check(bool value, string name) { if (!value) throw new InvalidOperationException("FAIL: " + name); _checks++; Output.Add("PASS: " + name); }
@@ -83,7 +83,6 @@ internal static partial class NativeMaintenanceIntegrationFixture
         var zip = GaPackageContract.PreviewUpdateZip(payload);
         Write(Full(Package, "update-proof/update.zip"), zip);
         Write(Full(Package, "update-proof/update.descriptor"), GaPackageContract.PrepareLocalInstallDescriptor(FixtureBoundary.Version, FixtureBoundary.Channel, zip, payload.Select(bytes => (long)bytes.Length).ToArray(), payload.Select(UpdateTrust.Hash).ToArray()));
-        Write(Full(Package, "helper-bootstrap/helper.descriptor"), GaPackageContract.PrepareHelper(FixtureBoundary.Version, Read(Full(Package, "helper-bootstrap/BetterAstralParty-UpdateHelper.exe"))));
         Check(InstalledPluginMetadata.ReadMaintenance(Read(Full(Package, "artifacts/BetterAstralParty.dll"))).Version == FixtureBoundary.Version, "strict actual maintenance metadata accepts synthetic BepInPlugin");
     }
     private static void Rebind()
@@ -125,13 +124,13 @@ internal static partial class NativeMaintenanceIntegrationFixture
     }
     private static void Authenticate()
     {
-        var files = Directory.GetFiles(WindowsPath.ForIo(Package), "*", SearchOption.AllDirectories).Select(WindowsPath.FromIo).Where(path => !path.EndsWith("BetterAstralParty-Launcher.exe", StringComparison.Ordinal)).ToDictionary(path => path, Read, StringComparer.Ordinal);
+        var files = Directory.GetFiles(WindowsPath.ForIo(Package), "*", SearchOption.AllDirectories).Select(WindowsPath.FromIo).Where(path => !path.EndsWith("BetterAstralParty-Setup.exe", StringComparison.Ordinal)).ToDictionary(path => path, Read, StringComparer.Ordinal);
         Action restore = () => { foreach (var file in files) Write(file.Key, file.Value); };
         var before = State();
         try
         {
             using (var bundle = new NativeMaintenanceBundle(Package, Game)) Check(bundle.Version == FixtureBoundary.Version && bundle.Expected.Count == InstallReceipt.Owned.Length && new HashSet<string>(bundle.Expected.Keys, StringComparer.Ordinal).SetEquals(InstallReceipt.Owned), "real complete package authentication and self-binding");
-            foreach (var strict in new[] { "artifacts/BetterAstralParty.dll", "artifacts/BetterAstralParty.compatibility.json", "helper-bootstrap/helper.descriptor", "helper-bootstrap/helper.signature", "update-proof/update.descriptor", "update-proof/update.signature", ".deps/bepinex/doorstop_config.ini", ".deps/bepinex/dotnet/runtimeconfig.json", ".deps/bepinex/BepInEx/core/README.txt", "docs/readme.txt.exe", "docs/settings.json", "THIRD-PARTY-NOTICES/settings.json" })
+            foreach (var strict in new[] { "artifacts/BetterAstralParty.dll", "artifacts/BetterAstralParty.compatibility.json", "artifacts/BetterAstralParty-Setup.exe", "update-proof/update.descriptor", "update-proof/update.signature", ".deps/bepinex/doorstop_config.ini", ".deps/bepinex/dotnet/runtimeconfig.json", ".deps/bepinex/BepInEx/core/README.txt", "docs/readme.txt.exe", "docs/settings.json", "THIRD-PARTY-NOTICES/settings.json" })
                 Check(!NativeMaintenanceFiles.IsDocumentation(strict), "executable, configuration and proof paths remain strict: " + strict);
             foreach (var name in DocumentationPaths()) {
                 var path = Full(Package, name);
@@ -144,7 +143,7 @@ internal static partial class NativeMaintenanceIntegrationFixture
                 File.Delete(WindowsPath.ForIo(path)); using (var bundle = new NativeMaintenanceBundle(Package, Game)) Check(bundle.Hashes.ContainsKey(name), "missing document is not an execution prerequisite: " + name);
                 restore(); Same(before, "document authentication preserves game/profile/recovery: " + name);
             }
-            foreach (var scenario in new[] { "schema", "malformed-json", "duplicate-key", "duplicate-case-key", "duplicate-row", "escape-row", "build-identity", "metadata", "update-signature", "helper-signature", "owned-hash", "loader-config", "loader-config-missing", "compatibility-manifest", "helper-image", "helper-descriptor", "proof-descriptor", "document-manifest-hash" })
+            foreach (var scenario in new[] { "schema", "malformed-json", "duplicate-key", "duplicate-case-key", "duplicate-row", "escape-row", "build-identity", "metadata", "update-signature", "owned-hash", "loader-config", "loader-config-missing", "compatibility-manifest", "proof-descriptor", "document-manifest-hash" })
             {
                 restore(); var path = Full(Package, "package-manifest.json"); var manifest = MaintenanceJson.Read(Read(path)); var rows = MaintenanceJson.List(manifest, "files");
                 if (scenario == "schema") manifest["schema"] = 2;
@@ -154,13 +153,11 @@ internal static partial class NativeMaintenanceIntegrationFixture
                 else if (scenario == "escape-row") MaintenanceJson.Map(rows[0])["path"] = "../outside";
                 else if (scenario == "build-identity") manifest["buildIdentity"] = new string('0', 64);
                 else if (scenario == "metadata") { Write(Full(Package, "artifacts/BetterAstralParty.dll"), new byte[512]); Rebind(); }
-                else if (scenario.EndsWith("signature", StringComparison.Ordinal)) { var signaturePath = Full(Package, scenario == "update-signature" ? "update-proof/update.signature" : "helper-bootstrap/helper.signature"); var envelope = DetachedSignature.Parse(Read(signaturePath)); envelope.Signature[0] ^= 1; Write(signaturePath, new DetachedSignature(envelope.KeyId, envelope.Signature).Bytes()); Rebind(); }
+                else if (scenario.EndsWith("signature", StringComparison.Ordinal)) { var signaturePath = Full(Package, "update-proof/update.signature"); var envelope = DetachedSignature.Parse(Read(signaturePath)); envelope.Signature[0] ^= 1; Write(signaturePath, new DetachedSignature(envelope.KeyId, envelope.Signature).Bytes()); Rebind(); }
                 else if (scenario == "owned-hash") Text(Full(Package, "tools/BetterAstralParty-Mod.cmd"), "tampered fixture payload");
                 else if (scenario == "loader-config") Text(Full(Package, ".deps/bepinex/doorstop_config.ini"), "tampered configuration");
                 else if (scenario == "loader-config-missing") File.Delete(WindowsPath.ForIo(Full(Package, ".deps/bepinex/doorstop_config.ini")));
                 else if (scenario == "compatibility-manifest") Text(Full(Package, "artifacts/BetterAstralParty.compatibility.json"), "tampered configuration");
-                else if (scenario == "helper-image") Text(Full(Package, "helper-bootstrap/BetterAstralParty-UpdateHelper.exe"), "tampered executable");
-                else if (scenario == "helper-descriptor") Text(Full(Package, "helper-bootstrap/helper.descriptor"), "tampered helper descriptor");
                 else if (scenario == "proof-descriptor") Text(Full(Package, "update-proof/update.descriptor"), "tampered update descriptor");
                 else if (scenario == "document-manifest-hash") rows.Select(MaintenanceJson.Map).Single(row => MaintenanceJson.Text(row, "path") == "README.md")["sha256"] = new string('0', 64);
                 if (scenario == "schema" || scenario.EndsWith("row", StringComparison.Ordinal) || scenario == "build-identity" || scenario == "document-manifest-hash") Json(path, manifest);
@@ -168,7 +165,6 @@ internal static partial class NativeMaintenanceIntegrationFixture
                     if (scenario == "loader-config" || scenario == "loader-config-missing") incoming.Bytes(".deps/bepinex/doorstop_config.ini", 1024 * 1024);
                     else if (scenario == "owned-hash") incoming.Bytes("tools/BetterAstralParty-Mod.cmd", 1024 * 1024);
                     else if (scenario == "compatibility-manifest") incoming.Bytes("artifacts/BetterAstralParty.compatibility.json", 1024 * 1024);
-                    else if (scenario == "helper-signature" || scenario == "helper-image" || scenario == "helper-descriptor") WholeInstallBridge.ValidateInputs(Game, Package, FixtureBoundary.Version);
                 } }, "authentication rejects consumed invalid input " + scenario);
                 Same(before, "authentication rejection preserves selected game, profile and backup tree: " + scenario);
             }
@@ -181,7 +177,7 @@ internal static partial class NativeMaintenanceIntegrationFixture
     private static void UnusedPackageInputs()
     {
         var before = State();
-        foreach (var name in new[] { "Install.cmd", "Uninstall.cmd", "Force-Uninstall.cmd", "update-proof/update.zip", "artifacts/BetterAstralParty.dll", "artifacts/BetterAstralParty.compatibility.json", "tools/BetterAstralParty-Mod.cmd", "helper-bootstrap/helper.descriptor", "helper-bootstrap/helper.signature", "helper-bootstrap/BetterAstralParty-UpdateHelper.exe", ".deps/bepinex/doorstop_config.ini", ".deps/bepinex/winhttp.dll", ".deps/bepinex/BepInEx/core/BepInEx.Core.dll" })
+        foreach (var name in new[] { "Install.cmd", "Uninstall.cmd", "Force-Uninstall.cmd", "update-proof/update.zip", "artifacts/BetterAstralParty.dll", "artifacts/BetterAstralParty.compatibility.json", "tools/BetterAstralParty-Mod.cmd", ".deps/bepinex/doorstop_config.ini", ".deps/bepinex/winhttp.dll", ".deps/bepinex/BepInEx/core/BepInEx.Core.dll" })
         foreach (var mode in new[] { "missing", "changed", "locked" }) {
             var path = Full(Package, name); var original = Read(path);
             try {
@@ -221,7 +217,6 @@ internal static partial class NativeMaintenanceIntegrationFixture
             Check(journals.Length > 0 && journals.All(path => MaintenanceJson.List(MaintenanceJson.Read(Read(WindowsPath.FromIo(path))), "Entries").Select(MaintenanceJson.Map).All(row => !new[] { Full(Game, "changelog.txt"), Full(Game, "README.md") }.Contains(MaintenanceJson.Text(row, "Target"), StringComparer.OrdinalIgnoreCase))), "new actual install transactions do not read or back up loader documentation");
             var receipt = InstallReceipt.Parse(bundle.ReadTarget(InstallReceipt.Path, 16384)!);
             Check(receipt.Channels?.ActiveVersion == FixtureBoundary.Version && receipt.Channels.ActiveChannel == FixtureBoundary.Channel, "installed receipt binds actual version and channel");
-            var fingerprint = SteamLauncher.CheckOwnedHelper(Game); Check(fingerprint != null && fingerprint.StartsWith(bundle.Hashes["helper-bootstrap/BetterAstralParty-UpdateHelper.exe"] + ":", StringComparison.Ordinal), "actual signed helper ownership fingerprint");
             Check(NativeSteamMaintenance.PlanRemove(Steam, 1, Game), "selected synthetic profile owns exactly the native shortcut");
             if (loader == null) Check(Encoding.UTF8.GetString(Read(Full(Game, "doorstop_config.ini"))).Contains("enabled=true"), "new approved shared loader defaults ON");
             else Check(loader.SequenceEqual(Read(Full(Game, "doorstop_config.ini"))), "existing shared loader bytes preserved");
@@ -233,9 +228,9 @@ internal static partial class NativeMaintenanceIntegrationFixture
     {
         using (var bundle = new NativeMaintenanceBundle(Package, Game)) using (var game = new WindowsFileFence(Game))
         {
-            var proof = WholeInstallBridge.VerifyUpdateProof(bundle.Bytes("update-proof/update.descriptor", UpdateTrust.MaxDescriptorBytes), bundle.Bytes("update-proof/update.signature", 1024));
+            var proof = InstallProof.VerifyUpdateProof(bundle.Bytes("update-proof/update.descriptor", UpdateTrust.MaxDescriptorBytes), bundle.Bytes("update-proof/update.signature", 1024));
             Text(game.Full(UpdateTransaction.HighWaterPath), "BetterAstralParty.HighWater/v1\nroot=" + game.RootIdentity.Text + "\nversion=" + proof.Version + "\ndescriptor=" + proof.DescriptorSha256 + "\n");
-            SteamLauncher.ValidateInstalledHistory(Game); Check(true, "known historical Stable high-water fixture passes actual history validation");
+            SetupHost.ValidateInstalledHistory(Game); Check(true, "known historical Stable high-water fixture passes actual history validation");
         }
         Text(Full(Game, "doorstop_config.ini"), "[General]\r\nenabled=false\r\nunrelated=preserved\r\n");
         Text(Full(Game, "BepInEx/config/BepInEx.cfg"), "[Logging]\r\nUnityLogListening=false\r\nCustom=preserved\r\n");
@@ -275,12 +270,14 @@ internal static partial class NativeMaintenanceIntegrationFixture
     }
     private static void Uninstall(bool preview)
     {
+        if (preview) LegacyWorkSeed(Game);
         var before = State(); using (var bundle = new NativeMaintenanceBundle(Package, Game)) Check(NativeUninstall.Run(bundle, Steam, 1, "Keep", preview, Consent, Say) == 0, "actual native uninstall result");
         if (preview) { Same(before, "actual uninstall WhatIf has zero writes"); return; }
-        foreach (var name in InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path, HelperDescriptor.Image, HelperDelivery.Receipt })) Check(!File.Exists(WindowsPath.ForIo(Full(Game, name))), "actual uninstall removes verified owned/provenance target: " + name);
+        foreach (var name in InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path })) Check(!File.Exists(WindowsPath.ForIo(Full(Game, name))), "actual uninstall removes verified owned/provenance target: " + name);
         Check(!NativeSteamMaintenance.PlanRemove(Steam, 1, Game), "actual uninstall removes only matching native shortcut");
+        LegacyWorkCleaned(Game, "uninstall");
         var shortcuts = NativeSteamMaintenance.ReadShortcuts(Read(Full(Steam, "userdata/1/config/shortcuts.vdf"))); Check(((OrderedDictionary)shortcuts["shortcuts"]!).Contains("99"), "unrelated Steam shortcut survives native removal");
-        Check(Read(Full(Game, UpdateTransaction.HighWaterPath)).SequenceEqual(Read(Full(Scratch, "expected-water.bin"))), "uninstall retains historical Stable high-water bytes");
+        Check(Read(Full(Game, UpdateTransaction.HighWaterPath)).SequenceEqual(Read(Full(Scratch, "expected-water.bin"))), "uninstall retains the upgraded high-water bytes");
         Preserved();
     }
     private static void GameUpdatedUninstall(bool preview)
@@ -311,7 +308,7 @@ internal static partial class NativeMaintenanceIntegrationFixture
                 foreach (var row in updated) Check(Read(row.Key).SequenceEqual(row.Value), "ordinary uninstall preserves updated native game/catalog bytes: " + WindowsPath.Leaf(row.Key));
                 if (preview) Same(before, "updated-game uninstall WhatIf creates no files/directories/locks or target changes");
                 else {
-                    foreach (var name in InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path, HelperDescriptor.Image, HelperDelivery.Receipt })) Check(!File.Exists(WindowsPath.ForIo(Full(Game, name))), "updated-game uninstall removes only verified owned/provenance target: " + name);
+                    foreach (var name in InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path })) Check(!File.Exists(WindowsPath.ForIo(Full(Game, name))), "updated-game uninstall removes only verified owned/provenance target: " + name);
                     Check(!NativeSteamMaintenance.PlanRemove(Steam, 1, Game), "updated-game uninstall removes only matching BetterAstralParty shortcut");
                     var shortcuts = NativeSteamMaintenance.ReadShortcuts(Read(Full(Steam, "userdata/1/config/shortcuts.vdf")));
                     Check(((OrderedDictionary)shortcuts["shortcuts"]!).Contains("99"), "updated-game uninstall preserves unrelated Steam shortcut");
@@ -372,7 +369,7 @@ internal static partial class NativeMaintenanceIntegrationFixture
                     reasons.Add(text); typeof(NativeMaintenanceEntry).GetMethod("Observe", flags)!.Invoke(null, new object[] { text });
                 }) == 0, "actual authenticated ordinary file removal without Steam shortcut cleanup: " + kind);
             }
-            foreach (var name in InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path, HelperDescriptor.Image, HelperDelivery.Receipt }))
+            foreach (var name in InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path }))
                 Check(!File.Exists(WindowsPath.ForIo(Full(Game, name))), "optional Steam ordinary removal removes only owned target: " + kind + "/" + name);
             Check(Read(shortcutsPath).SequenceEqual(shortcutBytes), "missing Steam/root/account or absent owned shortcut leaves every profile byte unchanged: " + kind);
             var afterBackups = Snapshot(NativeMaintenance.JournalRoot(Game));
@@ -429,7 +426,7 @@ internal static partial class NativeMaintenanceIntegrationFixture
                     reasons.Add(text); typeof(NativeMaintenanceEntry).GetMethod("Observe", flags)!.Invoke(null, new object[] { text });
                 }) == 0, "actual ordinary owned removal does not depend on foreign configuration compatibility: " + choice + "/" + kind);
             Check(original == null ? !File.Exists(WindowsPath.ForIo(loader)) : Read(loader).SequenceEqual(original), "actual ordinary remover preserves absent/malformed/locked foreign config: " + choice + "/" + kind);
-            foreach (var name in InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path, HelperDescriptor.Image, HelperDelivery.Receipt }))
+            foreach (var name in InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path }))
                 Check(!File.Exists(WindowsPath.ForIo(Full(Game, name))), "foreign-config independent removal deletes only verified mod target: " + choice + "/" + kind + "/" + name);
             var latest = Directory.GetFiles(WindowsPath.ForIo(NativeMaintenance.JournalRoot(Game)), "completed.json", SearchOption.AllDirectories).Where(path => !beforeJournals.Contains(path))
                 .Select(path => MaintenanceJson.Read(Read(WindowsPath.FromIo(path)))).ToArray();
@@ -452,19 +449,20 @@ internal static partial class NativeMaintenanceIntegrationFixture
     private static void Reinstall(bool preview)
     {
         Install(false, preview); if (preview) return; Preserved();
-        Check(!File.Exists(WindowsPath.ForIo(Full(Game, UpdateTransaction.HighWaterPath))), "complete removal permits a new installation generation");
+        Check(Directory.GetFiles(WindowsPath.ForIo(Game), "BetterAstralParty.reinstall-v5.completed-*", SearchOption.TopDirectoryOnly).Length == 1
+            && Encoding.ASCII.GetString(Read(Full(Game, UpdateTransaction.HighWaterPath))).Contains("\nversion=" + FixtureBoundary.Version + "\n"), "complete removal permits a new installation generation with a fresh high-water record");
         Check(Directory.GetFiles(WindowsPath.ForIo(Game), UpdateTransaction.HighWaterPath + ".uninstalled-*", SearchOption.TopDirectoryOnly).Any(path => Read(WindowsPath.FromIo(path)).SequenceEqual(Read(Full(Scratch, "expected-water.bin")))), "generation retains exact archived historical high-water bytes");
     }
     private static void RemovalWithoutGame()
     {
         Install(false, false);
         var ownedBytes = InstallReceipt.Owned.ToDictionary(path => path, path => Read(Full(Game, path)), StringComparer.Ordinal);
-        var retainedReceipt = Read(Full(Game, InstallReceipt.Path)); var retainedHelper = Read(Full(Game, HelperDescriptor.Image)); var retainedHelperReceipt = Read(Full(Game, HelperDelivery.Receipt));
-        Text(Full(Game, "BetterAstralParty-Launcher.exe"), "modified installed launcher; never execute");
+        var retainedReceipt = Read(Full(Game, InstallReceipt.Path));
+        Text(Full(Game, "BetterAstralParty-Mod.cmd"), "modified installed launch script; never execute");
         using (var bundle = new NativeMaintenanceBundle(Package, Game)) NativeUninstall.Run(bundle, Steam, 1, "Keep", false, Consent, Say);
-        Check(InstallReceipt.Owned.Where(path => path != "BetterAstralParty-Launcher.exe").All(path => !File.Exists(WindowsPath.ForIo(Full(Game, path)))), "modified installed launcher does not block independent verified removal");
-        Check(Encoding.UTF8.GetString(Read(Full(Game, "BetterAstralParty-Launcher.exe"))) == "modified installed launcher; never execute"
-            && Read(Full(Game, InstallReceipt.Path)).SequenceEqual(retainedReceipt) && Read(Full(Game, HelperDescriptor.Image)).SequenceEqual(retainedHelper) && Read(Full(Game, HelperDelivery.Receipt)).SequenceEqual(retainedHelperReceipt), "modified launcher and its complete provenance are preserved rather than guessed or deleted");
+        Check(InstallReceipt.Owned.Where(path => path != "BetterAstralParty-Mod.cmd").All(path => !File.Exists(WindowsPath.ForIo(Full(Game, path)))), "modified installed launch script does not block independent verified removal");
+        Check(Encoding.UTF8.GetString(Read(Full(Game, "BetterAstralParty-Mod.cmd"))) == "modified installed launch script; never execute"
+            && Read(Full(Game, InstallReceipt.Path)).SequenceEqual(retainedReceipt), "modified launch script and its receipt are preserved rather than guessed or deleted");
         foreach (var row in ownedBytes) Write(Full(Game, row.Key), row.Value);
         var image = Full(Game, "AstralParty_INT.exe"); var original = Read(image);
         try {
@@ -480,16 +478,15 @@ internal static partial class NativeMaintenanceIntegrationFixture
                 Json(receiptPath, json);
                 Reject(() => NativeMaintenanceEntry.ResolveOperationGame(Game, null, Package, true), "normal removal discovery rejects another-root receipt");
             } finally { Write(receiptPath, receiptBytes); }
-            foreach (var missing in new[] { "BetterAstralParty.compatibility.json", HelperDescriptor.Image, HelperDelivery.Receipt }) File.Delete(WindowsPath.ForIo(Full(Game, missing)));
+            foreach (var missing in new[] { "BetterAstralParty.compatibility.json" }) File.Delete(WindowsPath.ForIo(Full(Game, missing)));
             var before = State();
             using (var bundle = new NativeMaintenanceBundle(Package, Game)) NativeUninstall.Run(bundle, Steam, 1, "Keep", true, Consent, Say);
             Same(before, "missing-game normal removal preview has zero writes");
-            var unusedPlugin = Full(Package, "artifacts/BetterAstralParty.dll"); var unusedHelper = Full(Package, "helper-bootstrap/BetterAstralParty-UpdateHelper.exe");
-            var pluginBytes = Read(unusedPlugin); var helperBytes = Read(unusedHelper);
+            var unusedPlugin = Full(Package, "artifacts/BetterAstralParty.dll"); var pluginBytes = Read(unusedPlugin);
             try {
-                File.Delete(WindowsPath.ForIo(unusedPlugin)); File.Delete(WindowsPath.ForIo(unusedHelper));
+                File.Delete(WindowsPath.ForIo(unusedPlugin));
                 using (var bundle = new NativeMaintenanceBundle(Package, Game)) NativeUninstall.Run(bundle, Steam, 1, "Keep", false, Consent, Say);
-            } finally { Write(unusedPlugin, pluginBytes); Write(unusedHelper, helperBytes); }
+            } finally { Write(unusedPlugin, pluginBytes); }
             Check(!File.Exists(WindowsPath.ForIo(image)) && InstallReceipt.Owned.All(path => !File.Exists(WindowsPath.ForIo(Full(Game, path)))), "normal removal succeeds without creating or requiring a game executable");
         } finally { Write(image, original); }
         var force = EmergencySeed("missing-game-executable", out var steam); File.Delete(WindowsPath.ForIo(Full(force, "AstralParty_INT.exe"))); Text(Full(force, InstallReceipt.Path), "damaged receipt");
@@ -499,6 +496,78 @@ internal static partial class NativeMaintenanceIntegrationFixture
         Check(!File.Exists(WindowsPath.ForIo(Full(force, "AstralParty_INT.exe"))) && !File.Exists(WindowsPath.ForIo(Full(force, InstallReceipt.Path))), "force removal succeeds without a placeholder game image");
         var unknown = Full(Scratch, "unknown-removal-root"); Directory.CreateDirectory(WindowsPath.ForIo(unknown)); Text(Full(unknown, "BetterAstralParty-unrelated.keep"), "not ownership");
         Reject(() => NativeMaintenanceEntry.ResolveOperationGame(unknown, null, Package, true, true), "a mod-like name alone never identifies a deletion root");
+    }
+    // Two finished 1.3.x work folders and one without a plan, which cleanup must keep.
+    private static void LegacyWorkSeed(string game)
+    {
+        // The updater creates its work container with a private ACL; seed it the same way.
+        if (!Directory.Exists(WindowsPath.ForIo(Full(game, UpdateWorkPath.Root)))) using (var fence = new WindowsFileFence(game)) fence.CreatePrivateDirectory(UpdateWorkPath.Root);
+        foreach (var kind in new[] { "helper", "wholeintent" }) {
+            var work = Full(game, UpdateWorkPath.Root + "/bap-v4-" + kind + "-" + Guid.NewGuid().ToString("N"));
+            Text(Full(work, "plan"), "inert finished 1.3.x plan"); Text(Full(work, "committed"), "inert marker"); Text(Full(work, "old-plugin"), "inert 1.3.x plugin backup");
+        }
+        Text(Full(game, UpdateWorkPath.Root + "/bap-v4-stage-" + new string('e', 32) + "/descriptor"), "inert stage without a plan");
+    }
+    private static void LegacyWorkCleaned(string game, string name)
+    {
+        var left = Directory.GetDirectories(WindowsPath.ForIo(Full(game, UpdateWorkPath.Root)), "bap-v4-*").Select(path => WindowsPath.Leaf(WindowsPath.FromIo(path))).ToArray();
+        Check(left.Length == 1 && left[0] == "bap-v4-stage-" + new string('e', 32), name + ": finished 1.3.x work removed, folder without a plan kept");
+    }
+    // A finished 1.3.x installation in its own roots: five owned files, its helper pair, the v4 high-water and the launcher shortcut.
+    private static string LegacySeed(string name, out string steam)
+    {
+        var game = Full(Scratch, name + "-game"); steam = Full(Scratch, name + "-steam");
+        Text(Full(game, "AstralParty_INT.exe"), "inert synthetic game image; never execute");
+        Text(Full(game, "BepInEx/plugins/OtherMod/Other.dll"), "unrelated mod retained");
+        Text(Full(game, "BepInEx/config/kr.betterastralparty.mod.cfg"), "1.3.x player setting");
+        Text(Full(game, "doorstop_config.ini"), "[General]\r\nenabled=true\r\nunrelated=preserved\r\n");
+        foreach (var path in LegacyReceipt.Owned) Text(Full(game, path), "inert 1.3.x owned file: " + path);
+        string identity; using (var fence = new WindowsFileFence(game)) identity = fence.RootIdentity.Text;
+        Text(Full(game, OrdinaryInstallRecovery.LegacyHelper), "inert 1.3.x update helper");
+        Text(Full(game, OrdinaryInstallRecovery.LegacyHelperReceipt), "BetterAstralParty.HelperReceipt/v1\nroot=" + identity + "\nsha256=" + UpdateTrust.Hash(Read(Full(game, OrdinaryInstallRecovery.LegacyHelper))) + "\n");
+        Text(Full(game, NativeInstall.LegacyHighWater), "inert 1.3.x high-water"); LegacyWorkSeed(game);
+        Json(Full(game, InstallReceipt.Path), new Dictionary<string, object?> { ["schema"] = 1, ["baseline"] = LegacyReceipt.Baseline, ["owner"] = InstalledPluginMetadata.Owner, ["loaderBefore"] = true,
+            ["files"] = LegacyReceipt.Owned.Select(path => new Dictionary<string, string> { ["path"] = path, ["sha256"] = UpdateTrust.Hash(Read(Full(game, path))) }).ToArray(), ["channelState"] = "inert-protocol4-state" });
+        var shortcuts = NativeSteamMaintenance.EmptyShortcuts(); var items = (OrderedDictionary)shortcuts["shortcuts"]!;
+        var unrelated = new OrderedDictionary(StringComparer.OrdinalIgnoreCase); unrelated.Add("appid", 987654U); unrelated.Add("AppName", "Unrelated fixture shortcut"); unrelated.Add("exe", "inert-other.exe"); unrelated.Add("LaunchOptions", "other"); items.Add("99", unrelated);
+        var legacy = new OrderedDictionary(StringComparer.OrdinalIgnoreCase); legacy.Add("appid", 0x80001234U); legacy.Add("AppName", "Astral Party - Mod"); legacy.Add("exe", "\"" + Full(game, NativeSteamMaintenance.LegacyEntry) + "\""); legacy.Add("LaunchOptions", ""); items.Add("7", legacy);
+        Write(Full(steam, "userdata/1/config/shortcuts.vdf"), NativeSteamMaintenance.WriteShortcuts(shortcuts));
+        return game;
+    }
+    private static string? TakeoverConsent(string prompt) => prompt.StartsWith("1.3.x", StringComparison.Ordinal) ? "y" : Consent(prompt);
+    // The real file fences, journal and rollback run here; native-install covers the decision matrix with substitutes.
+    private static void Takeover()
+    {
+        var game = LegacySeed("takeover", out var steam);
+        using (var bundle = new NativeMaintenanceBundle(Package, game)) {
+            NativeInstall.Run(bundle, false, steam, 1, TakeoverConsent, Say);
+            foreach (var file in bundle.Expected) Check(bundle.TargetHash(file.Key) == file.Value, "takeover installs the authenticated 1.4 payload: " + file.Key);
+            var receipt = InstallReceipt.Parse(bundle.ReadTarget(InstallReceipt.Path, 16384)!);
+            Check(receipt.LoaderBefore == true && receipt.Channels?.ActiveVersion == FixtureBoundary.Version, "takeover writes a protocol-5 receipt and keeps the first loader baseline");
+        }
+        foreach (var gone in new[] { OrdinaryInstallRecovery.LegacyLauncher, OrdinaryInstallRecovery.LegacyHelper, OrdinaryInstallRecovery.LegacyHelperReceipt, NativeInstall.LegacyHighWater })
+            Check(!File.Exists(WindowsPath.ForIo(Full(game, gone))), "takeover removes owned 1.3.x file: " + gone);
+        Check(File.Exists(WindowsPath.ForIo(Full(game, UpdateTransaction.HighWaterPath))), "takeover writes the v5 high-water");
+        LegacyWorkCleaned(game, "takeover");
+        Check(Encoding.UTF8.GetString(Read(Full(game, "BepInEx/config/kr.betterastralparty.mod.cfg"))) == "1.3.x player setting" && Encoding.UTF8.GetString(Read(Full(game, "BepInEx/plugins/OtherMod/Other.dll"))) == "unrelated mod retained"
+            && Encoding.UTF8.GetString(Read(Full(game, "doorstop_config.ini"))).Contains("unrelated=preserved"), "takeover keeps settings, shared loader and other mods");
+        var shortcuts = NativeSteamMaintenance.ReadShortcuts(Read(Full(steam, "userdata/1/config/shortcuts.vdf"))); bool legacy;
+        var owned = NativeSteamMaintenance.OwnedShortcutKeys(shortcuts, game, out legacy); var entry = (OrderedDictionary)((OrderedDictionary)shortcuts["shortcuts"]!)[owned[0]]!;
+        Check(owned.SequenceEqual(new[] { "7" }) && !legacy && (uint)entry["appid"]! == 0x80001234U && ((OrderedDictionary)shortcuts["shortcuts"]!).Contains("99"), "launcher shortcut converted in place to Mod.cmd with the same app ID; unrelated shortcut kept");
+        // The shortcut write is the last step, after every legacy removal. Steam reported running only while the
+        // journal is open fails that write inside the transaction and forces the real journal rollback.
+        var failing = LegacySeed("takeover-rollback", out var failingSteam);
+        var before = Snapshot(failing); foreach (var pair in Snapshot(failingSteam)) before.Add(pair.Key, pair.Value);
+        var observer = NativeSteamMaintenance.SteamStatusObserver;
+        NativeSteamMaintenance.SteamStatusObserver = () => new SteamProcessStatus { State = File.Exists(WindowsPath.ForIo(NativeMaintenance.JournalPath(failing))) ? "Running" : "Stopped" };
+        try { using (var bundle = new NativeMaintenanceBundle(Package, failing))
+            try { NativeInstall.Run(bundle, false, failingSteam, 1, TakeoverConsent, Say); throw new InvalidOperationException("Takeover accepted a held shortcuts file."); }
+            catch (Exception error) when (!error.Message.StartsWith("Takeover accepted", StringComparison.Ordinal)) { Check(Equals(error.Data["BapInstallStage"], "Steam shortcut registration"), "takeover stops at the shortcut write after legacy removal; stage=" + error.Data["BapInstallStage"]); } }
+        finally { NativeSteamMaintenance.SteamStatusObserver = observer; }
+        Check(Directory.GetFiles(WindowsPath.ForIo(NativeMaintenance.JournalRoot(failing)), "restored.json", SearchOption.AllDirectories).Length == 1, "failure happened inside the journal and was rolled back by it");
+        var after = Snapshot(failing); foreach (var pair in Snapshot(failingSteam)) after.Add(pair.Key, pair.Value);
+        var changed = before.Where(row => !after.TryGetValue(row.Key, out var hash) || hash != row.Value).Select(row => row.Key).Concat(after.Keys.Where(key => !before.ContainsKey(key) && key != Full(failing, "BetterAstralParty.update.lock"))).ToArray(); // The maintenance lock file is kept, as after any install.
+        Check(changed.Length == 0, "failed takeover restores the exact 1.3.x game and Steam bytes; changed=" + string.Join(";", changed.Take(5)));
     }
     private static int Main(string[] args)
     {
@@ -513,12 +582,14 @@ internal static partial class NativeMaintenanceIntegrationFixture
                 case "seed": Seed(); break; case "prepare": Prepare(); break; case "rebind": Rebind(); break; case "auth": Authenticate(); break; case "unused-inputs": UnusedPackageInputs(); break;
                 case "documents-edited": Documents(false); break; case "documents-missing": Documents(true); break;
                 case "preview": Install(false, true); break; case "install": Install(false, false); break; case "water": HistoricalWater(); break;
-                case "pending": Pending(); break; case "upgrade-preview": Install(true, true); break; case "upgrade": Install(true, false); Preserved(); Check(Encoding.UTF8.GetString(Read(Full(Game, "BepInEx/config/kr.betterastralparty.mod.cfg"))) == "user setting preserved on update", "UpdateOnly retains mod user settings"); break;
+                case "pending": Pending(); break; case "upgrade-preview": Install(true, true); break; case "upgrade": Install(true, false); Preserved(); Check(Encoding.UTF8.GetString(Read(Full(Game, "BepInEx/config/kr.betterastralparty.mod.cfg"))) == "user setting preserved on update", "UpdateOnly retains mod user settings");
+                    Check(Encoding.ASCII.GetString(Read(Full(Game, UpdateTransaction.HighWaterPath))).Contains("\nversion=" + FixtureBoundary.Version + "\n"), "newer signed whole upgrade advances the high-water");
+                    Write(Full(Scratch, "expected-water.bin"), Read(Full(Game, UpdateTransaction.HighWaterPath))); break;
                 case "changed-owned": ChangedOwned(); break; case "uninstall-preview": Uninstall(true); break; case "uninstall": Uninstall(false); break;
                 case "game-updated-uninstall-preview": GameUpdatedUninstall(true); break; case "game-updated-uninstall": GameUpdatedUninstall(false); break;
                 case "optional-steam-uninstall": OptionalSteamUninstall(); break;
                 case "missing-game-removal": RemovalWithoutGame(); break;
-                case "emergency": Emergency(); break;
+                case "emergency": Emergency(); break; case "takeover": Takeover(); break;
                 case "reinstall-preview": Reinstall(true); break; case "reinstall": Reinstall(false); break; default: throw new ArgumentException("Unknown inert fixture mode.");
             }
             Json(Full(Scratch, "results/" + FixtureBoundary.Channel + "-" + args[0] + ".json"), new { Passed = true, Mode = args[0], Version = FixtureBoundary.Version, Checks = _checks, ActualNativeAuthInstallUninstallAndSteamApis = true, Facades = false, Output });

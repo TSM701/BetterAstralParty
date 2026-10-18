@@ -6,13 +6,17 @@ namespace BetterAstralParty;
 internal static class ModText
 {
     internal static string ChannelName(string channel) => channel switch { "Stable" => Text("릴리즈"), "PreRelease" => Text("프리 릴리즈"), "Beta" => Text("비공개 베타"), _ => "—" };
+    // Switch Channel row state: the target when confirmable, otherwise why there is nothing to confirm.
+    internal static string SwitchState(bool required, bool waiting, string? target) => target != null ? target
+        : !required ? Korean ? "필요 없음" : "Not Needed" : waiting ? Korean ? "새 버전 대기" : "Waiting for a Release" : Korean ? "확인 중" : "Checking";
+    internal static string InstalledChannelSuffix(string channel) => " (" + (Korean ? "설치: " : "Installed: ") + ChannelName(channel) + ")";
     internal static string ChannelTransitionTitle => Korean ? "채널 전환 확인" : "Confirm Channel Switch";
     internal static string ChannelTransitionConfirm => Korean ? "종료 후 전환" : "Switch After Exit";
     internal static string ChannelTransitionUnavailable => Korean ? "채널 전환 승인을 중단했습니다. 업데이트 설정에서 대상과 설치 상태를 다시 확인하세요. 원인은 진단 로그에 기록됩니다."
         : "Channel switch approval stopped. Recheck the target and installation in Update Settings. The reason is recorded in diagnostics.";
     internal static string ChannelTransitionDetails(string source, string current, string target, string version, string repository) => Korean
-        ? $"현재: {ChannelName(source)} {current}\n대상: {ChannelName(target)} {version}\n저장소: {repository}\n\n선택한 채널의 서명된 최신 대상을 확인했습니다. 승인하면 다운로드하여 게임 종료 후 한 번 적용합니다. 설정은 보존하며 저장된 자동 다운로드·종료 후 적용 선택은 바꾸지 않습니다. 다음 실행부터 대상 버전을 사용합니다.\n\n대상이나 설치 상태가 바뀌면 다시 확인해야 합니다."
-        : $"Installed: {ChannelName(source)} {current}\nTarget: {ChannelName(target)} {version}\nRepository: {repository}\n\nThe signed latest target from the selected channel has been checked. Confirm to download and apply once after the game exits. Settings and saved automatic-download/apply choices are preserved. The target version is used on the next launch.\n\nA changed target or installation requires a new review.";
+        ? $"현재: {ChannelName(source)} {current}\n대상: {ChannelName(target)} {version}\n저장소: {repository}\n\n선택한 채널의 서명된 최신 대상을 확인했습니다. 승인하면 다운로드하여 한 번 적용합니다. 설정은 보존하며 저장된 자동 다운로드·자동 적용 선택은 바꾸지 않습니다. 다음 실행부터 대상 버전을 사용합니다.\n\n대상이나 설치 상태가 바뀌면 다시 확인해야 합니다."
+        : $"Installed: {ChannelName(source)} {current}\nTarget: {ChannelName(target)} {version}\nRepository: {repository}\n\nThe signed latest target from the selected channel has been checked. Confirm to download and apply it once. Settings and saved automatic-download/apply choices are preserved. The target version is used on the next launch.\n\nA changed target or installation requires a new review.";
     internal static string SessionTitle(string action) => Korean ? (action == "UpdateAuth" ? "업데이트 인증" : "업데이트 로그아웃") : (action == "UpdateAuth" ? "Connect Updates" : "Sign Out of Updates");
     internal static string SessionDetails(ReleaseSessionStatus status) => (Korean ? "비공개 베타 인증: " : "Private Beta access: ") + (Korean ? status switch {
         ReleaseSessionStatus.NotConfigured => "업데이트 인증이 준비되지 않았습니다.",
@@ -64,8 +68,9 @@ internal static class ModText
         ["현재 업데이트 상태"] = "Current Update Status",
         ["업데이트 채널"] = "Update Channel",
         ["자동 다운로드"] = "Auto Download",
-        ["종료 후 적용"] = "Apply After Exit",
+        ["자동 적용"] = "Apply Automatically",
         ["업데이트 받기"] = "Get Update",
+        ["채널 전환"] = "Switch Channel",
         ["업데이트 취소"] = "Cancel Update",
         ["업데이트 확인"] = "Check Updates",
         ["다운로드 페이지"] = "Download Page",
@@ -94,7 +99,8 @@ internal static class ModText
         ["공개 릴리즈의 최신 버전을 확인합니다."] = "Checks the latest public release.",
         ["공개 프리 릴리즈의 최신 버전을 확인합니다."] = "Checks the latest public pre-release.",
         ["비공개 베타의 최신 버전을 확인합니다.\n토큰 인증이 필요합니다."] = "Checks the latest private beta.\nToken authentication is required.",
-        ["선택한 채널의 최신 버전을 확인합니다.\n채널 전환은 대상을 확인한 뒤 승인합니다."] = "Checks the selected channel's latest version.\nReview the target before switching.",
+        ["선택한 채널의 최신 버전을 확인합니다.\n설치된 채널과 다르면 채널 전환에서 승인합니다."] = "Checks the selected channel's latest version.\nIf it differs from the installed channel, approve it in Switch Channel.",
+        ["선택한 채널의 대상 버전을 확인하고\n설치된 채널을 전환합니다."] = "Reviews the selected channel's target version\nand switches the installed channel.",
         ["선택한 채널의 새 버전을 확인합니다."] = "Checks for updates on the selected channel.",
         ["선택한 채널의 GitHub 릴리스 목록을 엽니다."] = "Opens GitHub releases for the selected channel.",
         ["모드 안내 언어를 게임 메뉴에 맞춥니다."] = "Uses the game menu language for mod text.",
@@ -122,7 +128,7 @@ internal static class ModText
         ["새 버전을 주기적으로 확인하지 않습니다."] = "Does not check for updates periodically.",
         ["새 버전 알림 팝업을 표시하지 않습니다."] = "Hides new-version notification popups.",
         ["새 버전을 자동으로 다운로드하지 않습니다."] = "Does not download new versions automatically.",
-        ["게임 종료 후 업데이트를 자동 적용하지 않습니다."] = "Does not apply updates automatically after exit.",
+        ["검증한 업데이트를 자동으로 적용하지 않습니다."] = "Does not apply verified updates automatically.",
         ["슈슈 쉴드 방어 제한"] = "Shushu Defense Restrictions",
         ["자동 감사합니다"] = "Automatic Thanks",
         ["캐릭터 역할 표시"] = "Character Roles",
@@ -149,9 +155,9 @@ internal static class ModText
         ["주기적으로 새 버전을 확인합니다."] = "Periodically checks for new versions.",
         ["새 버전 알림과 변경 내역을 표시합니다."] = "Shows new-version alerts and release notes.",
         ["검증된 새 버전을 자동으로 받습니다."] = "Automatically downloads verified new versions.",
-        ["게임과 런처 종료 후 검증한 업데이트를 적용합니다."] = "Applies verified updates after the game and launcher exit.",
+        ["검증한 업데이트를 바로 적용하고\n다음 실행부터 새 버전을 사용합니다."] = "Applies verified updates right away;\nthe new version runs from the next launch.",
         ["선택한 채널의 검증된 업데이트를 받습니다.\n비공개 베타만 토큰 인증이 필요합니다."] = "Downloads verified updates for the selected channel.\nOnly Private Beta needs a token.",
-        ["다운로드 또는 종료 후 적용 대기를 취소합니다."] = "Cancels a download or queued post-exit update.",
+        ["다운로드 또는 적용 대기를 취소합니다."] = "Cancels a download or a pending apply.",
         ["공격·놓아주기, 방어·회피 및\n카드 사용 추천을 표시하지 않습니다."] = "Hides attack/let-go, defense/dodge\nand card recommendations.",
         ["추천에 마우스를 올려도\n피해·전투불능 확률을 표시하지 않습니다."] = "Hides damage and KO chances\nwhen hovering over advice.",
         ["KO·생존 최소 조건 인디케이터를\n표시하지 않습니다."] = "Hides the minimum KO/survival\ncondition indicator.",
@@ -298,11 +304,13 @@ internal static class ModText
         return Phrases.Replace(text, match => English[match.Value]);
     }
 
+    internal static string AutomaticStatus(AutomaticUpdateStatus status, bool transitionWaiting) => transitionWaiting && status == AutomaticUpdateStatus.TransitionRequired
+        ? Korean ? "채널 전환 대기" : "Channel Switch Waiting" : AutomaticStatus(status);
     internal static string AutomaticStatus(AutomaticUpdateStatus status) => Korean ? status switch
     {
         AutomaticUpdateStatus.NotConfigured => "업데이트 미설정", AutomaticUpdateStatus.Idle => "대기",
         AutomaticUpdateStatus.MissingAssets => "수동 다운로드 필요", AutomaticUpdateStatus.Downloading => "다운로드 중",
-        AutomaticUpdateStatus.Preparing => "검증 중", AutomaticUpdateStatus.Ready => "준비됨", AutomaticUpdateStatus.Queued => "종료 후 적용 대기",
+        AutomaticUpdateStatus.Preparing => "검증 중", AutomaticUpdateStatus.Ready => "준비됨", AutomaticUpdateStatus.Queued => "적용 중",
         AutomaticUpdateStatus.Cancelling => "취소 기록 중", AutomaticUpdateStatus.CancelFailed => "취소 기록 실패",
         AutomaticUpdateStatus.CheckingInstallation => "설치 상태 확인 중", AutomaticUpdateStatus.RecoveryRequired => "복구 필요",
         AutomaticUpdateStatus.FilesBusy => "업데이트 파일 사용 중", AutomaticUpdateStatus.AlreadyClaimed => "처리된 업데이트 요청",
@@ -313,7 +321,7 @@ internal static class ModText
     {
         AutomaticUpdateStatus.NotConfigured => "Not Configured", AutomaticUpdateStatus.Idle => "Idle",
         AutomaticUpdateStatus.MissingAssets => "Manual Download Required", AutomaticUpdateStatus.Downloading => "Downloading",
-        AutomaticUpdateStatus.Preparing => "Verifying", AutomaticUpdateStatus.Ready => "Ready", AutomaticUpdateStatus.Queued => "Waiting for Exit",
+        AutomaticUpdateStatus.Preparing => "Verifying", AutomaticUpdateStatus.Ready => "Ready", AutomaticUpdateStatus.Queued => "Applying",
         AutomaticUpdateStatus.Cancelling => "Recording Cancellation", AutomaticUpdateStatus.CancelFailed => "Cancellation Record Failed",
         AutomaticUpdateStatus.CheckingInstallation => "Checking Installation", AutomaticUpdateStatus.RecoveryRequired => "Recovery Required",
         AutomaticUpdateStatus.FilesBusy => "Update Files In Use", AutomaticUpdateStatus.AlreadyClaimed => "Request Already Claimed",
@@ -321,21 +329,23 @@ internal static class ModText
         AutomaticUpdateStatus.RetryWaiting => "Retry Waiting", AutomaticUpdateStatus.FaultDisabled => "Disabled After Failure", AutomaticUpdateStatus.FaultStorageFailed => "Failure/Settings Storage Needs Attention", AutomaticUpdateStatus.Reactivating => "Re-enabling Updates",
         AutomaticUpdateStatus.TransitionRequired => "Confirm Channel Transition", AutomaticUpdateStatus.Committed => "Applied", _ => "Update Failed"
     };
-    internal static string AutomaticDetails(AutomaticUpdateStatus status, string? recoveryStage = null, Updating.UpdateFault? fault = null, ReleaseChannel? channel = null) => AutomaticStatus(status) + "\n" + (status == AutomaticUpdateStatus.NotConfigured
+    internal static string AutomaticDetails(AutomaticUpdateStatus status, string? recoveryStage = null, Updating.UpdateFault? fault = null, ReleaseChannel? channel = null, bool transitionWaiting = false) => AutomaticStatus(status, transitionWaiting) + "\n" + (transitionWaiting && status == AutomaticUpdateStatus.TransitionRequired
+        ? Korean ? "선택한 채널에는 설치된 버전보다 새 버전이 아직 없습니다. 새 버전이 나오면 이곳에서 전환을 확인할 수 있습니다." : "The selected channel has no version newer than the installed one yet. When one is released, you can confirm the switch here."
+        : status == AutomaticUpdateStatus.NotConfigured
         ? channel is ReleaseChannel.Stable or ReleaseChannel.PreRelease
             ? Korean ? "업데이트 설정과 설치 상태를 확인하세요. 공개 채널은 토큰이 필요 없습니다." : "Check update settings and installation. Public channels need no token."
             : Korean ? "업데이트 설정과 설치 상태를 확인하세요. 비공개 베타는 토큰 인증이 필요합니다." : "Check update settings and installation. Private Beta requires a token."
-        : status == AutomaticUpdateStatus.TransitionRequired ? Korean ? "대상 채널과 버전을 확인한 뒤 전환을 승인하세요." : "Review the target channel and version, then confirm the switch."
-        : status == AutomaticUpdateStatus.RecoveryRequired ? Korean ? "미완료 업데이트를 확인했습니다. 게임과 모드 런처를 종료한 후 복구 안내에 따라 도우미의 --recover 명령을 실행하세요. 백업은 보존됩니다." : "An unfinished update needs recovery. Close the game and mod launcher, then follow the helper --recover guide. Backups are preserved."
+        : status == AutomaticUpdateStatus.TransitionRequired ? Korean ? "대상 채널과 버전을 확인한 뒤 전환을 승인하세요. 업데이트 채널을 설치된 채널로 되돌리면 그 채널의 업데이트를 계속 받습니다." : "Review the target channel and version, then confirm the switch. Select the installed channel again to keep receiving its updates."
+        : status == AutomaticUpdateStatus.RecoveryRequired ? Korean ? "미완료 업데이트를 확인했습니다. 게임을 다시 시작하면 자동으로 복구합니다. 계속 이 상태이면 게임을 닫고 Install.cmd를 다시 실행하세요. 백업은 보존됩니다." : "An unfinished update needs recovery. Restarting the game recovers it automatically. If this stays, close the game and run Install.cmd again. Backups are preserved."
         : status == AutomaticUpdateStatus.FaultStorageFailed ? Korean ? "실패 기록이나 설정을 저장하지 못했습니다. 자동 실행을 차단했습니다. 저장 위치와 복구 상태를 확인한 뒤 상태를 다시 확인하세요." : "Failure evidence or settings could not be saved. Automatic execution is blocked. Check storage and recovery, then recheck installation."
         : status == AutomaticUpdateStatus.CancelFailed ? Korean ? "취소 완료를 확인하지 못했습니다. 업데이트를 다시 실행하지 말고 복구 안내를 확인하세요." : "Cancellation completion could not be confirmed. Check recovery guidance before retrying."
-        : status == AutomaticUpdateStatus.Cancelling ? Korean ? "도우미에 취소 신호를 보냈으며 디스크 기록을 확인 중입니다." : "The helper was signaled; cancellation persistence is being confirmed."
+        : status == AutomaticUpdateStatus.Cancelling ? Korean ? "취소를 기록하고 있습니다." : "Recording the cancellation."
         : status == AutomaticUpdateStatus.ManualUpgradeRequired ? Korean ? "설치를 자동으로 변경할 수 없습니다. 수동 업그레이드가 필요합니다." : "This installation requires a manual upgrade."
         : Korean ? "다운로드·적용 상태를 표시합니다." : "Shows download and apply status.")
-        + (fault == null ? "" : "\n" + (Korean ? "자동 다운로드와 종료 후 적용을 OFF로 저장합니다. 원인을 해결하고 ‘다시 사용’을 선택하면 두 옵션을 ON으로 복원합니다.\n실패 단계/원인: " : "Both options are saved OFF. Resolve the cause, then select Re-enable Updates to restore both ON.\nFailure phase/reason: ") + FaultPhaseText(fault.Phase) + "/" + FaultReasonText(fault.Reason)
+        + (fault == null ? "" : "\n" + (Korean ? "자동 다운로드와 자동 적용을 OFF로 저장합니다. 원인을 해결하고 ‘다시 사용’을 선택하면 두 옵션을 ON으로 복원합니다.\n실패 단계/원인: " : "Both options are saved OFF. Resolve the cause, then select Re-enable Updates to restore both ON.\nFailure phase/reason: ") + FaultPhaseText(fault.Phase) + "/" + FaultReasonText(fault.Reason)
             + (fault.PreferencesSaveFailed ? Korean ? "\n설정 저장에 실패했습니다. 실패 표지가 자동 실행을 계속 차단합니다." : "\nSettings could not be saved. Persistent failure evidence still blocks automatic execution." : ""))
         + (status == AutomaticUpdateStatus.RetryWaiting ? Korean ? "\n최대 두 번 시도합니다. 대기 중에는 네트워크 요청을 보내지 않습니다." : "\nAt most two attempts. No network requests while waiting." : "")
-        + (status == AutomaticUpdateStatus.RecoveryRequired && recoveryStage is { Length: > 0 } ? "\nBetterAstralParty-UpdateHelper.exe --recover \"" + (Korean ? "게임 INT 폴더" : "game INT folder") + "\" " + recoveryStage : "");
+        + (status == AutomaticUpdateStatus.Committed ? Korean ? "\n게임을 다시 시작하면 새 버전을 사용합니다." : "\nRestart the game to use the new version." : "");
 
     private static string FaultPhaseText(Updating.FaultPhase phase) => Korean ? phase switch {
         Updating.FaultPhase.Download => "다운로드", Updating.FaultPhase.Verification => "서명/파일 검증", Updating.FaultPhase.Preparation => "준비", Updating.FaultPhase.Apply => "적용", _ => "복구"
@@ -370,10 +380,10 @@ internal static class ModText
         var guidance = !matchingTarget ? Korean ? "이 릴리스와 일치하는 작업 상태가 없습니다. 업데이트 설정에서 현재 작업을 확인하세요." : "No operation status matches this release. Check the current operation in Update Settings." : automatic switch
         {
             AutomaticUpdateStatus.Downloading or AutomaticUpdateStatus.Preparing or AutomaticUpdateStatus.RetryWaiting =>
-                Korean ? "준비가 끝나면 종료 후 적용 여부에 따라 대기합니다." : "Preparation continues with your current apply-after-exit setting.",
+                Korean ? "준비가 끝나면 자동 적용 설정에 따라 바로 적용합니다." : "When ready, it applies right away if automatic apply is on.",
             AutomaticUpdateStatus.TransitionRequired => Korean ? "채널 전환은 업데이트 설정에서 별도로 확인하고 승인해야 합니다." : "Review and confirm a channel transition separately in Update Settings.",
             AutomaticUpdateStatus.Ready => Korean ? "다운로드가 준비되었습니다. 업데이트 설정을 확인하세요." : "The download is ready. Check Update Settings.",
-            AutomaticUpdateStatus.Queued => Korean ? "게임과 모드 런처의 종료를 기다립니다. 적용 후 게임은 직접 실행하세요." : "Waiting for the game and mod launcher to close. Start the game yourself after the update.",
+            AutomaticUpdateStatus.Queued => Korean ? "업데이트를 적용하고 있습니다. 다음 실행부터 새 버전을 사용합니다." : "Applying the update. The new version runs from the next launch.",
             AutomaticUpdateStatus.Cancelled or AutomaticUpdateStatus.Cancelling => Korean ? "취소 상태는 업데이트 설정에서 확인할 수 있습니다." : "Check the cancellation status in Update Settings.",
             AutomaticUpdateStatus.FaultDisabled or AutomaticUpdateStatus.FaultStorageFailed or AutomaticUpdateStatus.RecoveryRequired or AutomaticUpdateStatus.CancelFailed or AutomaticUpdateStatus.Failed =>
                 Korean ? "업데이트 설정에서 실패 또는 복구 상태를 확인하세요." : "Check Update Settings for failure or recovery status.",
@@ -387,12 +397,17 @@ internal static class ModText
             + (release.Notes.Length == 0 ? Text("변경 사항 없음") : ReleaseUpdates.PlainText(release.Notes, ReleaseUpdates.MaxNotes));
     }
 
+    // A lower or equal release on another channel is a switch target, not a new version.
+    internal static string CheckStatus(ReleaseUpdateResult result) => result.Status == ReleaseUpdateStatus.Available && result.Release is { TransitionCandidate: true } target
+        ? (Korean ? "전환 대상 " : "Switch target ") + target.Version : UpdateStatus(result.Status);
+    // The player's own clock, minutes only: checks run hours apart.
+    internal static string LocalTime(DateTimeOffset time) => time.ToLocalTime().ToString("MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
     internal static string UpdateDetails(ReleaseUpdateResult result, string current)
     {
-        var body = Text("현재 버전") + ": " + current + "\n" + UpdateStatus(result.Status);
+        var body = Text("현재 버전") + ": " + current + "\n" + CheckStatus(result);
         if (result.Failure is { } failure) body += " · " + UpdateStatus(failure);
-        if (result.CheckedAt is { } time) body += "\n" + Text("마지막 확인") + ": " + time.UtcDateTime.ToString("u", System.Globalization.CultureInfo.InvariantCulture);
-        if (result.RetryAt is { } retryAt) body += "\n" + Text("다음 확인") + ": " + retryAt.UtcDateTime.ToString("u", System.Globalization.CultureInfo.InvariantCulture);
+        if (result.CheckedAt is { } time) body += "\n" + Text("마지막 확인") + ": " + LocalTime(time);
+        if (result.RetryAt is { } retryAt) body += "\n" + Text("다음 확인") + ": " + LocalTime(retryAt);
         if (result.Release is not { } release) return body;
         body += "\n" + Text("새 버전") + ": " + release.Version;
         return body;

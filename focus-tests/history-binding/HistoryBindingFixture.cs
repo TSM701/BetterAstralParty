@@ -38,7 +38,7 @@ internal static class HistoryBindingFixture {
         internal Package(string version, string channel, byte[] plugin, bool publicScope = false) {
             Version = version; Channel = channel; Feed = ReleaseFeedPolicy.For(channel);
             foreach (var path in InstallReceipt.Owned)
-                Files[path] = path == UpdateTrust.PluginPath ? plugin : path == "BetterAstralParty-Launcher.exe" ? Inert : Encoding.ASCII.GetBytes("inert owned fixture " + version + " " + path);
+                Files[path] = path == UpdateTrust.PluginPath ? plugin :  Encoding.ASCII.GetBytes("inert owned fixture " + version + " " + path);
             Files["BetterAstralParty.compatibility.json"] = CompatibilityFixtureData.Manifest(Inert);
             using (var memory = new MemoryStream()) {
                 using (var zip = new ZipArchive(memory, ZipArchiveMode.Create, true)) foreach (var file in Files) {
@@ -46,7 +46,7 @@ internal static class HistoryBindingFixture {
                 }
                 Zip = memory.ToArray();
             }
-            var text = new StringBuilder("BetterAstralParty.UpdateDescriptor/v4\nrepository=" + Feed.Repository + "\nversion=" + version + "\nchannel=" + (publicScope ? "Stable" : channel) + "\nplatform=" + UpdateTrust.PlatformId
+            var text = new StringBuilder("BetterAstralParty.UpdateDescriptor/v5\nrepository=" + Feed.Repository + "\nversion=" + version + "\nchannel=" + (publicScope ? "Stable" : channel) + "\nplatform=" + UpdateTrust.PlatformId
                 + "\nrelease-id=123\nasset-id=456\nasset-name=BetterAstralParty-" + version + "-update.zip\nzip-bytes=" + Zip.Length + "\nzip-sha256=" + UpdateTrust.Hash(Zip)
                 + "\nfile-count=" + InstallReceipt.Owned.Length + "\npurpose=" + (publicScope ? ReleaseFeedPolicy.PublicPurpose : "release/" + channel) + "\nrepository-id=" + Feed.RepositoryId + "\nsettings-schema=1\n");
             foreach (var path in InstallReceipt.Owned) text.Append("file=").Append(path).Append('\t').Append(Files[path].Length).Append('\t').Append(UpdateTrust.Hash(Files[path])).Append('\n');
@@ -123,21 +123,21 @@ internal static class HistoryBindingFixture {
             Trust = new UpdateTrust(new[] { new TrustedUpdateKey(KeyId, key.ExportParameters(false)) });
             // Exercise production feed/metadata policy with only this in-memory fixture key.
             typeof(UpdateTrust).GetField("_production", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(Trust, true);
-            var initial = new Package("1.3.0", "Stable", File.ReadAllBytes(args[2]));
-            var beta = new Package("1.3.1-rc.1", "Beta", File.ReadAllBytes(args[3]));
-            var signed = new Package("1.3.2", "Stable", File.ReadAllBytes(args[4]));
-            var manual = new Package("1.3.3", "Stable", File.ReadAllBytes(args[5]));
-            var next = new Package("1.3.4", "Stable", File.ReadAllBytes(args[6]));
-            var publicRc = new Package("1.3.1-rc.1", "PreRelease", File.ReadAllBytes(args[3]), true);
-            var manualPre = new Package("1.3.3", "PreRelease", File.ReadAllBytes(args[5]), true);
+            var initial = new Package("1.4.0", "Stable", File.ReadAllBytes(args[2]));
+            var beta = new Package("1.4.1-rc.1", "Beta", File.ReadAllBytes(args[3]));
+            var signed = new Package("1.4.2", "Stable", File.ReadAllBytes(args[4]));
+            var manual = new Package("1.4.3", "Stable", File.ReadAllBytes(args[5]));
+            var next = new Package("1.4.4", "Stable", File.ReadAllBytes(args[6]));
+            var publicRc = new Package("1.4.1-rc.1", "PreRelease", File.ReadAllBytes(args[3]), true);
+            var manualPre = new Package("1.4.3", "PreRelease", File.ReadAllBytes(args[5]), true);
             var diagnosticsRoot = Path.Combine(Base, "diagnostics"); Directory.CreateDirectory(diagnosticsRoot);
-            using var owner = DiagnosticOwner.Start(diagnosticsRoot, true, "1.3.0", new string('A', 32));
+            using var owner = DiagnosticOwner.Start(diagnosticsRoot, true, "1.4.0", new string('A', 32));
             Check(DiagnosticHub.Bind(owner), "real diagnostic owner bound");
             try {
                 Case("optional absent high-water", () => { var root = Fresh(initial, false); var before = Snapshot(root); using (Validate(root)) { } Preserved(root, before, "optional absence"); });
                 Case("exact version and descriptor pair", () => { var root = Fresh(initial); var before = Snapshot(root); using (Validate(root)) { } Preserved(root, before, "exact pair"); });
                 Case("same version wrong descriptor", () => { var root = Fresh(initial); using var f = new WindowsFileFence(root); Put(root, UpdateTransaction.HighWaterPath, Water(f.RootIdentity.Text, initial.Version, new string('B', 64))); Refused(root, "HighWaterUnbound"); });
-                Case("orphan older water needs proof", () => { var root = Fresh(initial); using var f = new WindowsFileFence(root); Put(root, UpdateTransaction.HighWaterPath, Water(f.RootIdentity.Text, "1.3.0-rc.1", new string('A', 64))); Refused(root, "HighWaterProofMissing"); });
+                Case("orphan older water needs proof", () => { var root = Fresh(initial); using var f = new WindowsFileFence(root); Put(root, UpdateTransaction.HighWaterPath, Water(f.RootIdentity.Text, "1.4.0-rc.1", new string('A', 64))); Refused(root, "HighWaterProofMissing"); });
                 Case("wrong root", () => { var root = Fresh(initial); Put(root, UpdateTransaction.HighWaterPath, Water("00000000:0000000000000000", initial.Version, initial.Verified.DescriptorSha256)); Refused(root, "HighWaterRootMismatch"); });
                 Case("malformed water", () => { var root = Fresh(initial); Put(root, UpdateTransaction.HighWaterPath, new byte[] { 255, 13 }); Refused(root, "HighWaterInvalid"); });
                 Case("repository mismatch", () => { var root = Fresh(initial); var receipt = Receipt(root); var state = receipt.Channels!; var wrong = new ReceiptChannelState(state.Root, "Stable", state.Operation, state.StableRepositoryId + 1, state.StableVersion, state.StableDescriptor, 0, null, "-"); Put(root, InstallReceipt.Path, receipt.Updated(initial.Verified, wrong)); Refused(root, "HighWaterRepositoryMismatch"); });

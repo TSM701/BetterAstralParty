@@ -21,7 +21,7 @@ internal static partial class TestCommands
         var zip = Encoding.ASCII.GetBytes("inert staged ZIP for transport verification only"); var hash = PackagingBoundary.Digest(zip);
         foreach (var channel in new[] { "Stable", "PreRelease", "Beta" }) foreach (var mode in new[] { "valid", "no-digest", "redirect", "anonymous", "regular-beta" }) {
             if (mode == "anonymous" && channel == "Beta" || mode == "regular-beta" && channel != "Beta") continue;
-            var identity = new PackagingReleaseIdentity(channel == "Stable" ? "1.3.0" : "1.3.0-rc.9", channel, 123, 456);
+            var identity = new PackagingReleaseIdentity(channel == "Stable" ? "1.4.0" : "1.4.0-rc.9", channel, 123, 456);
             using var handler = RemoteHandler(identity, zip, mode); using var client = new HttpClient(handler);
             var evidence = PackagingBoundary.Parse(PackagingBoundary.Bytes(PackagingRemote.Verify(client, identity, zip.LongLength, hash, mode == "anonymous" ? null : "FAKE_READ_ONLY_FIXTURE_TOKEN").GetAwaiter().GetResult()));
             Check(PackagingBoundary.Number(evidence, "schema") == 1 && PackagingBoundary.Text(evidence, "channel") == channel && PackagingBoundary.Text(evidence, "zipSha256") == hash && evidence.GetProperty("repositoryId").GetInt64() == identity.Feed.RepositoryId && handler.Count >= 7, "actual bounded read-only remote verifier emits exact signing-consumer evidence: " + channel + "/" + mode);
@@ -30,14 +30,14 @@ internal static partial class TestCommands
         }
         foreach (var channel in new[]{"Stable","PreRelease","Beta"}) foreach (var mode in new[] { "repository-id", "repository-name", "visibility", "release-id", "tag", "prerelease", "changed-prerelease", "asset-id", "asset-name", "asset-state", "asset-size", "asset-origin", "digest", "duplicate-name", "duplicate-id", "binary", "changed", "untrusted-redirect", "json-redirect", "http-error", "oversized-json", "duplicate-json" }) {
             if(channel=="Beta"&&mode=="prerelease")continue;
-            var identity = new PackagingReleaseIdentity(channel=="Stable"?"1.3.0":"1.3.0-rc.9", channel, 123, 456); using var handler = RemoteHandler(identity, zip, mode); using var client = new HttpClient(handler);
+            var identity = new PackagingReleaseIdentity(channel=="Stable"?"1.4.0":"1.4.0-rc.9", channel, 123, 456); using var handler = RemoteHandler(identity, zip, mode); using var client = new HttpClient(handler);
             RefuseDistribution(() => PackagingRemote.Verify(client, identity, zip.LongLength, hash, "FAKE_READ_ONLY_FIXTURE_TOKEN").GetAwaiter().GetResult(), "remote provenance/content rejection: " +channel+"/"+mode);
         }
-        var betaIdentity=new PackagingReleaseIdentity("1.3.0-rc.9","Beta",123,456);using(var handler=RemoteHandler(betaIdentity,zip,"valid"))using(var client=new HttpClient(handler)){RefuseDistribution(()=>PackagingRemote.Verify(client,betaIdentity,zip.LongLength,hash).GetAwaiter().GetResult(),"private beta requires explicit credential before transport");Check(handler.Count==0,"missing private credential sends no request");}
-        new PackagingReleaseIdentity("1.3.0","PreRelease",1,2).Validate();Check(true,"public pre-release classification follows GitHub flag rather than requiring a semver suffix");
-        foreach (var identity in new[] { new PackagingReleaseIdentity("1.2.1", "Stable", 1, 2), new PackagingReleaseIdentity("1.3.0-rc.1", "Stable", 1, 2), new PackagingReleaseIdentity("1.3.0-rc.1.local.1", "Beta", 1, 2), new PackagingReleaseIdentity("1.3.0", "LocalInstall", 1, 2), new PackagingReleaseIdentity("1.3.0", "Stable", 0, 2) }) RefuseDistribution(identity.Validate, "unsupported/local or missing-server remote identity");
+        var betaIdentity=new PackagingReleaseIdentity("1.4.0-rc.9","Beta",123,456);using(var handler=RemoteHandler(betaIdentity,zip,"valid"))using(var client=new HttpClient(handler)){RefuseDistribution(()=>PackagingRemote.Verify(client,betaIdentity,zip.LongLength,hash).GetAwaiter().GetResult(),"private beta requires explicit credential before transport");Check(handler.Count==0,"missing private credential sends no request");}
+        new PackagingReleaseIdentity("1.4.0","PreRelease",1,2).Validate();Check(true,"public pre-release classification follows GitHub flag rather than requiring a semver suffix");
+        foreach (var identity in new[] { new PackagingReleaseIdentity("1.3.1", "Stable", 1, 2), new PackagingReleaseIdentity("1.4.0-rc.1", "Stable", 1, 2), new PackagingReleaseIdentity("1.4.0-rc.1.local.1", "Beta", 1, 2), new PackagingReleaseIdentity("1.4.0", "LocalInstall", 1, 2), new PackagingReleaseIdentity("1.4.0", "Stable", 0, 2) }) RefuseDistribution(identity.Validate, "unsupported/local or missing-server remote identity");
         var artifact = DistributionStage(context, stage); var local = Path.Combine(artifact, "inert-update.zip"); File.WriteAllBytes(local, zip); var retained = Path.Combine(artifact, "retained"); Directory.CreateDirectory(retained); File.WriteAllText(Path.Combine(retained, "keep.txt"), "retained");
-        var arguments = new Dictionary<string, string> { ["StageDirectory"] = retained, ["LocalZipPath"] = local, ["LocalZipSha256"] = hash, ["Version"] = "1.3.0", ["Channel"] = "Stable", ["ReleaseId"] = "123", ["AssetId"] = "456" };
+        var arguments = new Dictionary<string, string> { ["StageDirectory"] = retained, ["LocalZipPath"] = local, ["LocalZipSha256"] = hash, ["Version"] = "1.4.0", ["Channel"] = "Stable", ["ReleaseId"] = "123", ["AssetId"] = "456" };
         RefuseDistribution(() => PackagingRemote.Run(context.Root, arguments), "existing remote evidence stage refused before credential or network access"); Check(File.ReadAllText(Path.Combine(retained, "keep.txt")) == "retained", "prior remote evidence retained");
         arguments["StageDirectory"] = Path.Combine(artifact, "fresh"); arguments["LocalZipSha256"] = new string('A', 64); RefuseDistribution(() => PackagingRemote.Run(context.Root, arguments), "changed local ZIP refused before network access"); Check(!Directory.Exists(arguments["StageDirectory"]), "rejected remote input creates no output");
         context.WriteJsonCreateNew(Path.Combine(stage, "remote-verification-matrix.json"), new { actualVerifier = true, syntheticHttpOnly = true, liveCredentialRead = false, liveNetworkUsed = false, githubWrites = 0 });
@@ -63,7 +63,7 @@ internal static partial class TestCommands
                 var asset = Asset(call); var rows = new List<Dictionary<string, object?>> { asset };
                 if (mode == "duplicate-name") rows.Add(new(asset) { ["id"] = 789 }); if (mode == "duplicate-id") rows.Add(new(asset) { ["name"] = "other.zip" });
                 var prerelease=identity.Channel!="Stable"&&mode!="regular-beta";if(mode=="prerelease"||mode=="changed-prerelease"&&call>4)prerelease=!prerelease;
-                body = new { id = mode == "release-id" ? 999 : identity.ReleaseId, tag_name = mode == "tag" ? "1.3.1" : identity.Version, prerelease, draft = true, assets = rows };
+                body = new { id = mode == "release-id" ? 999 : identity.ReleaseId, tag_name = mode == "tag" ? "1.4.1" : identity.Version, prerelease, draft = true, assets = rows };
             } else body = Asset(call);
             var bytes = mode == "oversized-json" ? new byte[4 * 1024 * 1024 + 1] : mode == "duplicate-json" ? Encoding.UTF8.GetBytes("{\"id\":1,\"id\":2}") : PackagingBoundary.Bytes(body);
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) };

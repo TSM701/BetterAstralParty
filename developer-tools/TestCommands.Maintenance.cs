@@ -7,11 +7,11 @@ namespace BetterAstralParty.Development;
 
 internal static partial class TestCommands
 {
-    internal static readonly string[] MaintenanceNames = ["maintenance-frontends", "maintenance-paths", "long-paths", "maintenance-preservation", "maintenance-history", "history-binding", "native-maintenance-integration", "native-reinstall-generation", "failure-context", "install-log", "install-bundle-missing", "install-reader-origin", "install-recovery-diagnostics", "launch-failure-diagnostics", "native-launcher", "install-safety", "install-transaction", "install-transaction-long-ps7", "install-transaction-long-ps5", "install-transaction-root1100-ps7", "install-transaction-root1100-ps5", "install-transaction-target1100-ps7", "install-transaction-target1100-ps5", "steam-session", "steam-shortcut", "steam-observation", "find-game", "uninstall-steam-boundary", "uninstall", "uninstall-updated-receipt", "maintenance-package-integration", "whole-channel-transition", "terminal-whole-history"];
+    internal static readonly string[] MaintenanceNames = ["maintenance-frontends", "maintenance-paths", "long-paths", "maintenance-preservation", "maintenance-history", "history-binding", "native-maintenance-integration", "native-reinstall-generation", "failure-context", "install-log", "install-bundle-missing", "install-reader-origin", "install-recovery-diagnostics", "install-safety", "install-transaction", "install-transaction-long-ps7", "install-transaction-long-ps5", "install-transaction-root1100-ps7", "install-transaction-root1100-ps5", "install-transaction-target1100-ps7", "install-transaction-target1100-ps5", "steam-session", "steam-shortcut", "steam-observation", "find-game", "uninstall-steam-boundary", "uninstall", "uninstall-updated-receipt", "maintenance-package-integration", "whole-channel-transition"];
     private static string CompileFrameworkOnly(DevContext context, string stage, string entry, string[] sourcePaths, Action<string> pin, string target = "exe", string defines = "NETFRAMEWORK;BAP_SAFETY_FIXTURE", string? output = null)
     {
-        if (sourcePaths.Any(path => Path.GetFileName(path) == "PublicReleaseEligibility.cs") && !sourcePaths.Any(path => Path.GetFileName(path) == "LauncherRecoveryJson.cs"))
-            sourcePaths = sourcePaths.Append("tools/LauncherRecoveryJson.cs").ToArray();
+        if (sourcePaths.Any(path => Path.GetFileName(path) == "PublicReleaseEligibility.cs") && !sourcePaths.Any(path => Path.GetFileName(path) == "MaintenanceJsonReader.cs"))
+            sourcePaths = sourcePaths.Append("tools/MaintenanceJsonReader.cs").ToArray();
         Directory.CreateDirectory(stage); var image = output ?? Path.Combine(stage, entry + (target is "exe" or "winexe" ? ".exe" : ".dll")); Directory.CreateDirectory(Path.GetDirectoryName(image)!);
         Check(!File.Exists(image), "Framework fixture output is create-new");
         var framework = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Microsoft.NET", "Framework64", "v4.0.30319");
@@ -30,12 +30,10 @@ internal static partial class TestCommands
             case "history-binding": MaintenanceHistoryBinding(context, stage, pin); break;
             case "maintenance-history": MaintenanceHistory(context, stage, pin); break;
             case "native-reinstall-generation": NativeReinstallMatrix(context,stage,scratch,pin);break;
-            case "whole-channel-transition": case "terminal-whole-history": WholeNativeHistory(context,name,stage,pin);break;
+            case "whole-channel-transition": WholeNativeHistory(context,name,stage,pin);break;
             case "maintenance-paths": case "long-paths": MaintenancePaths(context, stage, pin); break;
             case "install-log": case "install-recovery-diagnostics": NativeDiagnostics(context, Path.Combine(stage,"native-maintenance-diagnostics-fixture"), pin); break;
             case "failure-context": NativeDiagnostics(context,Path.Combine(stage,"native-maintenance-diagnostics-fixture"),pin,true);break;
-            case "launch-failure-diagnostics": LaunchFailureDiagnostics(context,stage,pin);break;
-            case "native-launcher": NativeLauncherMatrix(context,stage,pin);break;
             case "install-bundle-missing": CommonMaintenanceScenario(context,stage,scratch,pin,"bundle-missing");break;
             case "install-reader-origin": CommonMaintenanceScenario(context,stage,scratch,pin,"reader-origin");break;
             case "install-safety": CommonMaintenanceScenario(context,stage,scratch,pin,"safety");break;
@@ -53,7 +51,7 @@ internal static partial class TestCommands
     }
     private static void CommonMaintenanceScenario(DevContext context,string stage,string scratch,Action<string> pin,string mode)
     {
-        var source=new[]{"tools/NativeMaintenance.cs","tools/NativeMaintenanceFiles.cs","tools/NativeMaintenanceBundle.cs","tools/NativeMaintenanceEntry.cs","tools/LauncherRecoveryJson.cs","focus-tests/native-maintenance-common/Program.cs","focus-tests/native-maintenance-common/BoundaryCases.cs","focus-tests/native-maintenance-common/Facades.cs","focus-tests/native-maintenance-common/Globals.cs"}.Concat(UpdateSources(context)).ToArray();
+        var source=new[]{"tools/NativeMaintenance.cs","tools/NativeMaintenanceFiles.cs","tools/NativeMaintenanceBundle.cs","tools/NativeMaintenanceEntry.cs","tools/MaintenanceJsonReader.cs","focus-tests/native-maintenance-common/Program.cs","focus-tests/native-maintenance-common/BoundaryCases.cs","focus-tests/native-maintenance-common/Facades.cs","focus-tests/native-maintenance-common/Globals.cs"}.Concat(UpdateSources(context)).ToArray();
         var image=CompileFrameworkOnly(context,Path.Combine(stage,"native-common"),"NativeCommonFixture",source,pin);var arguments=new List<string>{scratch,Path.Combine(context.Root,"artifacts"),mode};
         if(mode=="reader-origin")arguments.Add(CompileFrameworkOnly(context,Path.Combine(stage,"metadata"),"Metadata",["focus-tests/native-reinstall-generation/MetadataPlugin.cs"],pin,target:"library",defines:""));
         Ensure(context.Run(image,arguments,cwd:stage,env:new Dictionary<string,string?>{["LOCALAPPDATA"]=Path.Combine(stage,"inert-profile")}),"actual native maintenance semantic matrix "+mode);
@@ -78,7 +76,7 @@ internal static partial class TestCommands
         foreach (var label in new[] { "plain", "가 spaces", "brackets [1] (2)", "amp&ersand", "bang!folder", "percent%folder" }) foreach (var development in new[] { false, true }) foreach (var entry in sources.Keys) foreach (var delayed in new[] { "off", "on" }) {
             var previews = label == "plain" && delayed == "off" ? new[] { "", "-WhatIf", "--WhatIf", "-CheckOnly", "--CheckOnly" } : [""];
             foreach (var preview in previews) foreach (var status in preview.Length == 0 && label == "plain" && delayed == "off" ? new[] { 0, 7, -1 } : preview.Length != 0 ? new[] { 0, 7 } : [0]) {
-                var root = Path.Combine(stage, "frontend-" + ++number, label); Directory.CreateDirectory(Path.Combine(root, "artifacts")); File.WriteAllBytes(Path.Combine(root, entry), sources[entry]); File.Copy(stub, Path.Combine(root, "artifacts/BetterAstralParty-Launcher.exe"), false);
+                var root = Path.Combine(stage, "frontend-" + ++number, label); Directory.CreateDirectory(Path.Combine(root, "artifacts")); File.WriteAllBytes(Path.Combine(root, entry), sources[entry]); File.Copy(stub, Path.Combine(root, "artifacts/BetterAstralParty-Setup.exe"), false);
                 if (!development) File.WriteAllText(Path.Combine(root, "package-manifest.json"), "{}");
                 var resultPath = Path.Combine(root, "inert-result.json"); var game = Path.Combine(cwd, "selected game [1] (2)"); var relative = label == "bang!folder" && delayed == "on"; var invocation = relative ? entry : Path.Combine(root, entry); var caller = relative ? root : cwd;
                 var environment = new Dictionary<string, string?> { ["LOCALAPPDATA"] = Path.Combine(root, "local-data"), ["TEMP"] = Path.Combine(root, "temp-data"), ["BAP_ENTRY_RESULT"] = resultPath, ["BAP_FIXTURE_EXIT"] = status.ToString(System.Globalization.CultureInfo.InvariantCulture), ["BAP_EXIT"] = "parent-value" };
@@ -93,7 +91,7 @@ internal static partial class TestCommands
             var root = Path.Combine(stage, "missing-exe-" + ++number); Directory.CreateDirectory(root); File.WriteAllBytes(Path.Combine(root, entry), sources[entry]); if (!development) File.WriteAllText(Path.Combine(root, "package-manifest.json"), "{}");
             var local = Path.Combine(root, "local-data"); var temporary = Path.Combine(root, "temp-data");
             var code = RunFrontendCommand("\"\"" + Path.Combine(root, entry) + "\" " + preview + " <nul\"", "off", cwd, new Dictionary<string, string?> { ["LOCALAPPDATA"] = local, ["TEMP"] = temporary });
-            Check(code != 0 && (preview.Length == 0 || !Directory.Exists(local) && !Directory.Exists(temporary)), "Missing launcher fails without preview writes: " + number);
+            Check(code != 0 && (preview.Length == 0 || !Directory.Exists(local) && !Directory.Exists(temporary)), "Missing setup fails without preview writes: " + number);
         }
         context.WriteJsonCreateNew(Path.Combine(stage, "frontend-matrix.json"), new { cases = number, actualInstallerExecuted = false, actualGameOrSteamTouched = false, parentDelayedExpansionTested = true });
     }

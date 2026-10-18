@@ -19,17 +19,17 @@ internal static class PackagingPreparation
         if (PackagingBoundary.Number(record, "schema") != 1 || PackagingBoundary.Text(record, "configuration") != "Release" || PackagingBoundary.Text(record, "sourceManifestSha256") != sourceHash || PackagingBoundary.Flag(record, "installationPerformed") || PackagingBoundary.Flag(record, "releaseCreated")) throw new InvalidDataException("Full source-bound Release build required.");
         var source = PackagingBoundary.Parse(sourceBytes); var sourceRows = PackagingBoundary.Rows(PackagingBoundary.Parse(PackagingBoundary.Bytes(new { files = source })), 1, 4096);
         foreach (var row in sourceRows.Values) boundary.Capture(row.path, row.sha256, row.bytes);
-        var buildRows = PackagingBoundary.Rows(record, 3, 3); var replacements = new Dictionary<string, string>(StringComparer.Ordinal) {
-            ["artifacts/BetterAstralParty.dll"] = "plugin/BetterAstralParty.dll", ["artifacts/BetterAstralParty-Launcher.exe"] = "launcher/BetterAstralParty-Launcher.exe", ["helper-bootstrap/BetterAstralParty-UpdateHelper.exe"] = "helper/BetterAstralParty-UpdateHelper.exe"
+        var buildRows = PackagingBoundary.Rows(record, 2, 2); var replacements = new Dictionary<string, string>(StringComparer.Ordinal) {
+            ["artifacts/BetterAstralParty.dll"] = "plugin/BetterAstralParty.dll", ["artifacts/BetterAstralParty-Setup.exe"] = "setup/BetterAstralParty-Setup.exe"
         };
-        if (!buildRows.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(replacements.Values)) throw new InvalidDataException("Exact plugin/launcher/helper build outputs required.");
+        if (!buildRows.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(replacements.Values)) throw new InvalidDataException("Exact plugin/setup build outputs required.");
         foreach (var row in buildRows.Values) boundary.Capture(build + '/' + row.path, row.sha256, row.bytes);
         var compatibility = record.GetProperty("compatibility"); var compatibilityPath = PackagingBoundary.Text(compatibility, "path");
         if (compatibilityPath != "compatibility/BetterAstralParty.compatibility.json") throw new InvalidDataException("Exact source-bound compatibility output required.");
         var compatibilityBytes = boundary.Capture(build + '/' + compatibilityPath, PackagingBoundary.Text(compatibility, "sha256"), compatibility.GetProperty("bytes").GetInt64());
         var version = PackagingImage.PluginVersion(boundary.Capture(build + "/plugin/BetterAstralParty.dll")); var parsed = UpdateVersion.Parse(version);
         BuildVersion.ValidateBuild(boundary, build, record, sourceRows, version);
-        if (parsed.CompareTo(UpdateVersion.Parse("1.3.0-0")) < 0) throw new InvalidDataException("Fresh 1.3.0 baseline required.");
+        if (parsed.CompareTo(UpdateVersion.Parse(ReleaseFeedPolicy.Baseline + "-0")) < 0) throw new InvalidDataException("Fresh 1.4.0 baseline required.");
         if (scope == "LocalInstall" && (!parsed.IsLocalPrerelease || parsed.CompareTo(UpdateVersion.Parse(PackagingBoundary.Text(pointer, "version"))) <= 0)) throw new InvalidDataException("Distinct increasing local prerelease required.");
         if (scope == "Release" && parsed.IsLocalPrerelease) throw new InvalidDataException("Local prereleases cannot be remote release inputs.");
         var upstreamHash = PackagingCommands.Required(args, "UpstreamSha256"); var archiveBytes = boundary.Capture(upstream, upstreamHash);

@@ -13,7 +13,7 @@ internal static class DownloadFixture
     private static int _checks;
     private static readonly DateTimeOffset Now = new(2026, 10, 2, 7, 0, 0, TimeSpan.Zero);
     private static readonly UpdateDownloadRequest Request = new(new UpdateContext(UpdateDownloads.Repository, "Stable",
-        "1.3.0-dev", "1.3.0", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId), 457, 458);
+        "1.4.0-dev", "1.4.0", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId), 457, 458);
     private static readonly Uri Cdn = new("https://release-assets.githubusercontent.com/github-production-release-asset/1401226962/12345678-abcd-1234-abcd-123456789abc?fixture=signed-placeholder");
     private static void Check(bool value, string message) { _checks++; if (!value) throw new Exception("Download fixture: " + message); }
     private sealed class Auth : IReleaseAuthentication
@@ -71,10 +71,10 @@ internal static class DownloadFixture
                 }
             }
             Zip = output.ToArray();
-            Descriptor = Encoding.ASCII.GetBytes("BetterAstralParty.UpdateDescriptor/v4\nrepository=" + UpdateDownloads.Repository
-                + "\nversion=1.3.0\nchannel=Stable\nplatform=" + UpdateTrust.PlatformId
-                + "\nrelease-id=123\nasset-id=456\nasset-name=BetterAstralParty-1.3.0-update.zip\nzip-bytes=" + Zip.Length
-                + "\nzip-sha256=" + UpdateTrust.Hash(Zip) + "\nfile-count=5\npurpose=release/Stable\nrepository-id=" + ReleaseFeedPolicy.StableRepositoryId + "\nsettings-schema=1\n"
+            Descriptor = Encoding.ASCII.GetBytes("BetterAstralParty.UpdateDescriptor/v5\nrepository=" + UpdateDownloads.Repository
+                + "\nversion=1.4.0\nchannel=Stable\nplatform=" + UpdateTrust.PlatformId
+                + "\nrelease-id=123\nasset-id=456\nasset-name=BetterAstralParty-1.4.0-update.zip\nzip-bytes=" + Zip.Length
+                + "\nzip-sha256=" + UpdateTrust.Hash(Zip) + "\nfile-count=4\npurpose=release/Stable\nrepository-id=" + ReleaseFeedPolicy.StableRepositoryId + "\nsettings-schema=1\n"
                 + string.Concat(InstallReceipt.Owned.Select(path => "file=" + path + "\t" + payload.Length + "\t" + UpdateTrust.Hash(payload) + "\n")));
             Signature = _signing.SignData(Descriptor, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
             Envelope = Encoding.ASCII.GetBytes("BetterAstralParty.UpdateSignature/v1\nkey-id=download-fixture\nsignature=" + Convert.ToBase64String(Signature) + "\n");
@@ -98,7 +98,7 @@ internal static class DownloadFixture
     private static HttpResponseMessage PublicRepositoryIdentity() => Body(Encoding.UTF8.GetBytes(
         "{\"id\":" + ReleaseFeedPolicy.StableRepositoryId + ",\"full_name\":\"" + ReleaseFeedPolicy.StableRepository + "\",\"private\":false}"));
     private static byte[] Metadata(bool prerelease) => Encoding.UTF8.GetBytes("{\"id\":123,\"draft\":false,\"prerelease\":" + (prerelease ? "true" : "false")
-        + ",\"tag_name\":\"1.3.0\",\"html_url\":\"https://github.com/" + ReleaseFeedPolicy.StableRepository + "/releases/tag/1.3.0\",\"assets\":[{\"id\":456,\"name\":\"BetterAstralParty-1.3.0-update.zip\"},"
+        + ",\"tag_name\":\"1.4.0\",\"html_url\":\"https://github.com/" + ReleaseFeedPolicy.StableRepository + "/releases/tag/1.4.0\",\"assets\":[{\"id\":456,\"name\":\"BetterAstralParty-1.4.0-update.zip\"},"
         + "{\"id\":457,\"name\":\"" + ReleaseFeedPolicy.UpdateManifestAsset + "\"},{\"id\":458,\"name\":\"" + ReleaseFeedPolicy.UpdateSignatureAsset + "\"}]}");
     private static HttpResponseMessage Redirect(Uri uri) { var response = new HttpResponseMessage(HttpStatusCode.Found); response.Headers.Location = uri; return response; }
     private static TaskCompletionSource<HttpResponseMessage> Gate() => new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -224,21 +224,21 @@ internal static class DownloadFixture
         { client.Start(Request, Now); Check((await Complete(client)).Status == UpdateDownloadStatus.Failed && again.Count == 2, "second redirect rejected"); }
         await Expect(fixture, (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { RequestMessage = new HttpRequestMessage(HttpMethod.Get, "https://example.invalid/"), Content = new ByteArrayContent(fixture.Descriptor) }), UpdateDownloadStatus.Failed, "unexpected automatic redirect detected");
         var betaDescriptor = Encoding.ASCII.GetBytes(Encoding.ASCII.GetString(fixture.Descriptor)
-            .Replace("version=1.3.0\n", "version=1.3.0-rc.1\n").Replace("channel=Stable", "channel=Beta")
+            .Replace("version=1.4.0\n", "version=1.4.0-rc.1\n").Replace("channel=Stable", "channel=Beta")
             .Replace("repository=" + ReleaseFeedPolicy.StableRepository + "\n", "repository=" + ReleaseFeedPolicy.BetaRepository + "\n")
             .Replace("repository-id=" + ReleaseFeedPolicy.StableRepositoryId, "repository-id=" + ReleaseFeedPolicy.BetaRepositoryId).Replace("purpose=release/Stable", "purpose=release/Beta")
-            .Replace("BetterAstralParty-1.3.0-update.zip", "BetterAstralParty-1.3.0-rc.1-update.zip"));
+            .Replace("BetterAstralParty-1.4.0-update.zip", "BetterAstralParty-1.4.0-rc.1-update.zip"));
         var betaEnvelope = fixture.SignEnvelope(betaDescriptor);
-        var betaRequest = new UpdateDownloadRequest(new UpdateContext(ReleaseFeedPolicy.BetaRepository, "Beta", "1.3.0-dev", "1.3.0-rc.1", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.BetaRepositoryId), 457, 458);
+        var betaRequest = new UpdateDownloadRequest(new UpdateContext(ReleaseFeedPolicy.BetaRepository, "Beta", "1.4.0-dev", "1.4.0-rc.1", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.BetaRepositoryId), 457, 458);
         var betaHandler = new Handler { Reply = (r, _) => Task.FromResult(r.RequestUri!.AbsolutePath.EndsWith("/457", StringComparison.Ordinal) ? Body(betaDescriptor)
             : r.RequestUri.AbsolutePath.EndsWith("/458", StringComparison.Ordinal) ? Body(betaEnvelope) : Body(fixture.Zip)) };
         using (var client = new UpdateDownloads(fixture.Trust, new Auth(), betaHandler))
-        { client.Start(betaRequest, Now); var beta = await Complete(client); Check(beta.Status == UpdateDownloadStatus.Ready && beta.Update!.Payload.Package.Descriptor.Version == "1.3.0-rc.1", "Beta RC signed download accepted"); }
-        var stableRequest = new UpdateDownloadRequest(new UpdateContext(UpdateDownloads.Repository, "Stable", "1.3.0-dev", "1.3.0-rc.1", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId), 457, 458);
+        { client.Start(betaRequest, Now); var beta = await Complete(client); Check(beta.Status == UpdateDownloadStatus.Ready && beta.Update!.Payload.Package.Descriptor.Version == "1.4.0-rc.1", "Beta RC signed download accepted"); }
+        var stableRequest = new UpdateDownloadRequest(new UpdateContext(UpdateDownloads.Repository, "Stable", "1.4.0-dev", "1.4.0-rc.1", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId), 457, 458);
         await Expect(fixture, (r, _) => Task.FromResult(r.RequestUri!.AbsolutePath.EndsWith("/457", StringComparison.Ordinal) ? Body(betaDescriptor) : Body(betaEnvelope)), UpdateDownloadStatus.VerificationFailed, "Stable rejects Beta signed descriptor", stableRequest);
         var preDescriptor = Encoding.ASCII.GetBytes(Encoding.ASCII.GetString(fixture.Descriptor).Replace("channel=Stable\n", "channel=PreRelease\n").Replace("purpose=release/Stable\n", "purpose=release/PreRelease\n"));
         var preEnvelope = fixture.SignEnvelope(preDescriptor);
-        var preRequest = new UpdateDownloadRequest(new UpdateContext(ReleaseFeedPolicy.StableRepository, "PreRelease", "1.3.0-dev", "1.3.0", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId), 457, 458);
+        var preRequest = new UpdateDownloadRequest(new UpdateContext(ReleaseFeedPolicy.StableRepository, "PreRelease", "1.4.0-dev", "1.4.0", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId), 457, 458);
         using var preHandler = new Handler { Reply = (r, _) => Task.FromResult(PublicRepositoryRequest(r) ? PublicRepositoryIdentity() : r.RequestUri!.AbsolutePath.EndsWith("/457", StringComparison.Ordinal) ? Body(preDescriptor)
             : r.RequestUri.AbsolutePath.EndsWith("/458", StringComparison.Ordinal) ? Body(preEnvelope) : r.RequestUri.AbsolutePath.EndsWith("/releases/123", StringComparison.Ordinal) ? Body(Metadata(true)) : Body(fixture.Zip)) };
         var neverPrivate = new Auth { ThrowIdentity = true, ThrowAuthorize = true };
@@ -265,7 +265,7 @@ internal static class DownloadFixture
         var descriptor = Encoding.ASCII.GetBytes(Encoding.ASCII.GetString(fixture.Descriptor).Replace("purpose=release/Stable\n", "purpose=" + ReleaseFeedPolicy.PublicPurpose + "\n"));
         var envelope = fixture.SignEnvelope(descriptor);
         foreach (var channel in new[] { "Stable", "PreRelease" }) foreach (var prerelease in new[] { false, true }) {
-            var feed = ReleaseFeedPolicy.For(channel); var context = new UpdateContext(feed.Repository, channel, "1.3.0-dev", "1.3.0", 123, 456, UpdateTrust.PlatformId, repositoryId: feed.RepositoryId);
+            var feed = ReleaseFeedPolicy.For(channel); var context = new UpdateContext(feed.Repository, channel, "1.4.0-dev", "1.4.0", 123, 456, UpdateTrust.PlatformId, repositoryId: feed.RepositoryId);
             var request = new UpdateDownloadRequest(context, 457, 458); var privateSpy = new Auth { ThrowIdentity = true, ThrowAuthorize = true };
             using var handler = new Handler { Reply = (r, _) => Task.FromResult(PublicRepositoryRequest(r) ? PublicRepositoryIdentity()
                 : r.RequestUri!.AbsolutePath.EndsWith("/457", StringComparison.Ordinal) ? Body(descriptor)
@@ -281,7 +281,7 @@ internal static class DownloadFixture
                 var verified = result.Update.Payload.Package.Descriptor;
                 var text = Encoding.UTF8.GetString(Metadata(prerelease));
                 foreach (var invalid in new[] { text.Replace("\"id\":123", "\"id\":124"), text.Replace("\"id\":456", "\"id\":999"), text.Replace("\"id\":457", "\"id\":459"),
-                    text.Replace("\"id\":123", "\"id\":123,\"id\":123"), text.Replace("\"id\":123", "\"id\":123.0"), text.Replace("1.3.0", "1.3.1"), text.Replace("\"draft\":false", "\"draft\":null") }) {
+                    text.Replace("\"id\":123", "\"id\":123,\"id\":123"), text.Replace("\"id\":123", "\"id\":123.0"), text.Replace("1.4.0", "1.4.1"), text.Replace("\"draft\":false", "\"draft\":null") }) {
                     try { PublicReleaseEligibility.Release(Encoding.UTF8.GetBytes(invalid), context, verified, 457, 458); throw new Exception("Ambiguous/mismatched public metadata accepted"); }
                     catch (Exception error) when (error is InvalidDataException or UpdateValidationException or System.Text.Json.JsonException) { Check(true, "release ID, tag, ZIP/metadata assets and strict unique keys are revalidated"); }
                 }
@@ -325,9 +325,9 @@ internal static class DownloadFixture
         var wrong = Encoding.ASCII.GetBytes(Encoding.ASCII.GetString(fixture.Descriptor).Replace("asset-id=456", "asset-id=459"));
         var wrongEnvelope = fixture.SignEnvelope(wrong);
         await Expect(fixture, (r, _) => Task.FromResult(r.RequestUri!.AbsolutePath.EndsWith("/457", StringComparison.Ordinal) ? Body(wrong) : Body(wrongEnvelope)), UpdateDownloadStatus.VerificationFailed, "signed mismatched asset target");
-        var downgrade = new UpdateDownloadRequest(new UpdateContext(UpdateDownloads.Repository, "Stable", "1.3.1", "1.3.0", 123, 456, UpdateTrust.PlatformId), 457, 458);
+        var downgrade = new UpdateDownloadRequest(new UpdateContext(UpdateDownloads.Repository, "Stable", "1.4.1", "1.4.0", 123, 456, UpdateTrust.PlatformId), 457, 458);
         await Expect(fixture, (r, _) => Task.FromResult(fixture.Valid(r)), UpdateDownloadStatus.VerificationFailed, "download context downgrade", downgrade);
-        var highWater = new UpdateDownloadRequest(new UpdateContext(UpdateDownloads.Repository, "Stable", "1.3.0-dev", "1.3.0", 123, 456, UpdateTrust.PlatformId, "1.3.0"), 457, 458);
+        var highWater = new UpdateDownloadRequest(new UpdateContext(UpdateDownloads.Repository, "Stable", "1.4.0-dev", "1.4.0", 123, 456, UpdateTrust.PlatformId, "1.4.0"), 457, 458);
         await Expect(fixture, (r, _) => Task.FromResult(fixture.Valid(r)), UpdateDownloadStatus.VerificationFailed, "highest-applied replay refused", highWater);
         var signatureBlocked = new Handler { Reply = (r, _) => Task.FromResult(r.RequestUri!.AbsolutePath.EndsWith("/457", StringComparison.Ordinal) ? Body(tampered) : fixture.Valid(r)) };
         using (var client = new UpdateDownloads(fixture.Trust, new Auth(), signatureBlocked))
@@ -389,7 +389,7 @@ internal static class DownloadFixture
         using (var client = new UpdateDownloads(fixture.Trust, new Auth(), contextHandler))
         {
             client.Start(Request, Now); await Until(() => contextHandler.Count == 1, "context blocked request");
-            var changed = new UpdateDownloadRequest(new UpdateContext(UpdateDownloads.Repository, "Stable", "1.3.0-dev", "1.3.1", 124, 459, UpdateTrust.PlatformId), 460, 461);
+            var changed = new UpdateDownloadRequest(new UpdateContext(UpdateDownloads.Repository, "Stable", "1.4.0-dev", "1.4.1", 124, 459, UpdateTrust.PlatformId), 460, 461);
             client.Start(changed, Now.AddSeconds(1)); Check(client.Result.Status == UpdateDownloadStatus.RateLimited && contextHandler.Count == 1, "active release replacement clears worker/retains cooldown");
             var late = new Response(HttpStatusCode.OK) { Content = new ByteArrayContent(fixture.Descriptor) }; contextGate.SetResult(late);
             await Until(() => late.WasDisposed, "context late disposal"); client.Poll(); Check(client.Result.Update == null, "old release result ignored");
@@ -397,7 +397,7 @@ internal static class DownloadFixture
         var readyHandler = fixture.Handler(); using (var client = new UpdateDownloads(fixture.Trust, new Auth(), readyHandler))
         {
             client.Start(Request, Now); await Complete(client);
-            var other = new UpdateDownloadRequest(new UpdateContext(UpdateDownloads.Repository, "Beta", "1.3.0-dev", "1.3.0", 123, 456, UpdateTrust.PlatformId), 457, 458);
+            var other = new UpdateDownloadRequest(new UpdateContext(UpdateDownloads.Repository, "Beta", "1.4.0-dev", "1.4.0", 123, 456, UpdateTrust.PlatformId), 457, 458);
             client.Start(other, Now.AddSeconds(1)); Check(client.Result.Status == UpdateDownloadStatus.RateLimited && client.Result.Update == null && readyHandler.Count == 3, "channel change clears ready/cooldown retained");
             client.Start(other, Now.AddSeconds(61)); Check((await Complete(client)).Status == UpdateDownloadStatus.VerificationFailed && client.Result.Update == null, "failed new context never returns old ready binary");
         }

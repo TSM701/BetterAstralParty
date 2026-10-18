@@ -9,22 +9,28 @@ internal static class NativeUninstallFixture
     private static void Check(bool value, string name) { if (!value) throw new Exception(name); _checks++; }
     private static void Write(string root, string relative, string text)
     { var path = Path.Combine(root, relative); Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, text, new UTF8Encoding(false)); }
-    private static NativeMaintenanceBundle Seed(string scratch, string name, bool installed = true, bool? loader = false)
+    private static NativeMaintenanceBundle Seed(string scratch, string name, bool installed = true, bool? loader = false, bool legacy = false)
     {
         var root = Path.Combine(scratch, name); Directory.CreateDirectory(root); Write(root, "AstralParty_INT.exe", "inert game image");
         var bundle = new NativeMaintenanceBundle(root);
         if (installed)
         {
-            foreach (var relative in InstallReceipt.Owned) Write(root, relative, "installed previous build: " + relative);
-            var channels = new ReceiptChannelState(bundle.RootIdentity, "Stable", new string('a', 32), ReleaseFeedPolicy.StableRepositoryId, "1.3.0", new string('B', 64), 0, null, "-");
-            var files = InstallReceipt.Owned.Select(relative => new { path = relative, sha256 = bundle.TargetHash(relative) }).ToArray();
-            File.WriteAllBytes(Path.Combine(root, InstallReceipt.Path), JsonSerializer.SerializeToUtf8Bytes(new { schema = 1, baseline = "1.3.0", owner = InstalledPluginMetadata.Owner, loaderBefore = loader, files, channelState = channels.Encoded }));
+            var owned = legacy ? LegacyReceipt.Owned : InstallReceipt.Owned; var baseline = legacy ? LegacyReceipt.Baseline : InstallReceipt.Baseline;
+            foreach (var relative in owned) Write(root, relative, "installed previous build: " + relative);
+            var channels = new ReceiptChannelState(bundle.RootIdentity, "Stable", new string('a', 32), ReleaseFeedPolicy.StableRepositoryId, baseline, new string('B', 64), 0, null, "-");
+            var files = owned.Select(relative => new { path = relative, sha256 = bundle.TargetHash(relative) }).ToArray();
+            File.WriteAllBytes(Path.Combine(root, InstallReceipt.Path), JsonSerializer.SerializeToUtf8Bytes(new { schema = 1, baseline, owner = InstalledPluginMetadata.Owner, loaderBefore = loader, files, channelState = channels.Encoded }));
         }
         Reset(); return bundle;
     }
+    private static void HelperPair(NativeMaintenanceBundle bundle, bool receipt = true)
+    {
+        Write(bundle.GameRoot, OrdinaryInstallRecovery.LegacyHelper, "inert 1.3.x helper");
+        if (receipt) Write(bundle.GameRoot, OrdinaryInstallRecovery.LegacyHelperReceipt, "BetterAstralParty.HelperReceipt/v1\nroot=" + bundle.RootIdentity + "\nsha256=" + bundle.TargetHash(OrdinaryInstallRecovery.LegacyHelper) + "\n");
+    }
     private static void Reset()
     {
-        SteamLauncher.Helper = null; SteamLauncher.AfterHelper = null; SteamLauncher.History = SteamLauncher.Stages = SteamLauncher.Failures = 0;
+        SetupHost.History = SetupHost.Stages = SetupHost.Failures = 0;
         NativeSteamMaintenance.Shortcut = false; NativeSteamMaintenance.StopGames = NativeSteamMaintenance.StopSteams = NativeSteamMaintenance.Removes = NativeSteamMaintenance.Rollbacks = NativeSteamMaintenance.Resumes = 0;
         NativeSteamMaintenance.AccountQueries = NativeSteamMaintenance.Plans = 0;
         NativeSteamMaintenance.RemoveFailure = NativeSteamMaintenance.AccountFailure = NativeSteamMaintenance.PlanFailure = null; NativeMaintenance.Pending = false; NativeMaintenance.CompletionFailure = NativeMaintenance.RestoreFailure = null;
@@ -53,34 +59,33 @@ internal static class NativeUninstallFixture
             var plan = NativeUninstall.PlanFiles(bundle, receipt, _ => { });
             Check(plan.Targets.Count == InstallReceipt.Owned.Length + 1 && !plan.Retained && plan.MissingOwned.Count == 0, "current receipt supersedes differing incoming build hashes");
             Write(bundle.GameRoot, UpdateTrust.PluginPath, "modified plugin retained");
-            Write(bundle.GameRoot, HelperDescriptor.Image, "inert helper"); Write(bundle.GameRoot, HelperDelivery.Receipt, "inert helper receipt");
-            SteamLauncher.Helper = bundle.TargetHash(HelperDescriptor.Image) + ":" + bundle.TargetHash(HelperDelivery.Receipt);
             plan = NativeUninstall.PlanFiles(bundle, receipt, _ => { });
             Check(plan.Retained && plan.Targets.Count == InstallReceipt.Owned.Length - 1 && !plan.Targets.Contains(Path.Combine(bundle.GameRoot, InstallReceipt.Path)), "modified owned file retains receipt");
-            Check(!plan.Targets.Contains(Path.Combine(bundle.GameRoot, HelperDescriptor.Image)) && !plan.Targets.Contains(Path.Combine(bundle.GameRoot, HelperDelivery.Receipt)), "modified owned file keeps verified helper provenance");
-            bundle = Seed(scratch, "unverified-helper"); receipt = NativeUninstall.ReadReceipt(bundle)!; Write(bundle.GameRoot, HelperDescriptor.Image, "unverified helper");
-            plan = NativeUninstall.PlanFiles(bundle, receipt, _ => { }); Check(plan.Retained && plan.Targets.Count == InstallReceipt.Owned.Length, "unverified helper retains receipt and helper bytes");
+            bundle = Seed(scratch, "current-with-helper"); receipt = NativeUninstall.ReadReceipt(bundle)!; HelperPair(bundle);
+            plan = NativeUninstall.PlanFiles(bundle, receipt, _ => { }); Check(plan.Retained && !plan.Targets.Contains(Path.Combine(bundle.GameRoot, OrdinaryInstallRecovery.LegacyHelper)), "a 1.4.0 receipt never claims a helper; helper and receipt retained");
+            bundle = Seed(scratch, "legacy-helper", legacy: true); receipt = NativeUninstall.ReadReceipt(bundle)!; HelperPair(bundle);
+            plan = NativeUninstall.PlanFiles(bundle, receipt, _ => { });
+            Check(receipt.Legacy && !plan.Retained && plan.Targets.Count == LegacyReceipt.Owned.Length + 3 && plan.Targets.Contains(Path.Combine(bundle.GameRoot, OrdinaryInstallRecovery.LegacyHelperReceipt)), "1.3.x receipt removes its five files plus the verified helper pair");
+            bundle = Seed(scratch, "legacy-unverified-helper", legacy: true); receipt = NativeUninstall.ReadReceipt(bundle)!; HelperPair(bundle, false);
+            plan = NativeUninstall.PlanFiles(bundle, receipt, _ => { }); Check(plan.Retained && plan.Targets.Count == LegacyReceipt.Owned.Length, "unverified helper retains receipt and helper bytes");
             bundle = Seed(scratch, "missing-owned"); receipt = NativeUninstall.ReadReceipt(bundle)!; File.Delete(Path.Combine(bundle.GameRoot, "BetterAstralParty-Mod.cmd"));
             plan = NativeUninstall.PlanFiles(bundle, receipt, _ => { }); Check(plan.MissingOwned.Count == 1 && plan.Hashes[plan.MissingOwned[0]] == null, "missing owned absence retained in transaction plan");
-            bundle = Seed(scratch, "helper-race"); receipt = NativeUninstall.ReadReceipt(bundle)!; Write(bundle.GameRoot, HelperDescriptor.Image, "verified helper"); Write(bundle.GameRoot, HelperDelivery.Receipt, "verified helper receipt");
-            SteamLauncher.Helper = bundle.TargetHash(HelperDescriptor.Image) + ":" + bundle.TargetHash(HelperDelivery.Receipt);
-            SteamLauncher.AfterHelper = () => Write(bundle.GameRoot, HelperDescriptor.Image, "changed after verification"); Reject(() => NativeUninstall.PlanFiles(bundle, receipt, _ => { }), "changed verified helper blocked");
             bundle = Seed(scratch, "missing-receipt"); File.Delete(Path.Combine(bundle.GameRoot, InstallReceipt.Path)); Reject(() => NativeUninstall.ReadReceipt(bundle), "baseline receipt missing keeps files");
             bundle = Seed(scratch, "invalid-receipt"); Write(bundle.GameRoot, InstallReceipt.Path, "{}"); Reject(() => NativeUninstall.ReadReceipt(bundle), "invalid baseline receipt rejected");
             bundle = Seed(scratch, "preview"); Write(bundle.GameRoot, "doorstop_config.ini", "enabled=false\r\nunrelated=x"); var before = Snapshot(bundle.GameRoot); var fileCount = before.Count;
-            Check(Run(bundle, true) == 0, "preview accepted"); Unchanged(before); Check(Snapshot(bundle.GameRoot).Count == fileCount && NativeMaintenance.Locks == 0 && NativeMaintenance.Starts == 0 && SteamLauncher.Stages == 0, "preview makes no locks/journals/logs/files");
+            Check(Run(bundle, true) == 0, "preview accepted"); Unchanged(before); Check(Snapshot(bundle.GameRoot).Count == fileCount && NativeMaintenance.Locks == 0 && NativeMaintenance.Starts == 0 && SetupHost.Stages == 0, "preview makes no locks/journals/logs/files");
             Check(NativeSteamMaintenance.StopGames == 0 && NativeSteamMaintenance.StopSteams == 0 && NativeSteamMaintenance.Removes == 0, "preview does no process or shortcut actions");
             bundle = Seed(scratch, "pending-preview", false); before = Snapshot(bundle.GameRoot); NativeMaintenance.Pending = true;
             Check(Run(bundle, true) == 0 && NativeMaintenance.PendingChecks == 1 && NativeMaintenance.Locks == 0, "pending preview checks recovery without lock"); Unchanged(before);
             bundle = Seed(scratch, "noop-preview", false); before = Snapshot(bundle.GameRoot); Check(Run(bundle, true) == 0 && NativeMaintenance.Starts == 0, "no-op preview skips transaction"); Unchanged(before);
-            bundle = Seed(scratch, "cancel"); before = Snapshot(bundle.GameRoot); Check(Run(bundle, answer: "") == 0 && NativeMaintenance.Starts == 0 && SteamLauncher.Stages == 0, "blank removal confirmation cancels"); Unchanged(before);
+            bundle = Seed(scratch, "cancel"); before = Snapshot(bundle.GameRoot); Check(Run(bundle, answer: "") == 0 && NativeMaintenance.Starts == 0 && SetupHost.Stages == 0, "blank removal confirmation cancels"); Unchanged(before);
             bundle = Seed(scratch, "shortcut-only", false); NativeSteamMaintenance.Shortcut = true;
             Check(Run(bundle) == 0 && NativeMaintenance.Starts == 0 && NativeMaintenance.Completes == 0 && NativeMaintenance.Locks == 0, "shortcut-only bypasses empty ordinary journal");
             Check(NativeSteamMaintenance.StopSteams == 1 && NativeSteamMaintenance.Removes == 1 && NativeSteamMaintenance.Resumes == 1, "shortcut-only stops and resumes selected Steam through facade");
             bundle = Seed(scratch, "remove"); Write(bundle.GameRoot, "doorstop_config.ini", "enabled=false\r\nunrelated=x");
             Write(bundle.GameRoot, "BepInEx/plugins/OtherMod/Other.dll", "unrelated mod");
             var exclusive = new[] { "BepInEx/config/kr.betterastralparty.mod.cfg", "BepInEx/BetterAstralParty-Diagnostics/current.log", "BepInEx/BetterAstralParty-Diagnostics/previous.log",
-                "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch.log", "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log", "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log" };
+                "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch.log", "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log", "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log", ChannelTransitionIntent.AdoptionPath };
             foreach (var relative in exclusive) Write(bundle.GameRoot, relative, "mod settings or log: " + relative);
             Write(bundle.GameRoot, "BepInEx/BetterAstralParty-Diagnostics/unrecognized.log", "preserved unrelated diagnostics");
             Check(Run(bundle) == 0 && NativeMaintenance.Starts == 1 && NativeMaintenance.Completes == 1, "native held-object removal and ordinary completion");
@@ -89,11 +94,13 @@ internal static class NativeUninstallFixture
             foreach (var relative in exclusive) Check(!File.Exists(Path.Combine(bundle.GameRoot, relative)), "fixed exclusive removal allowlist: " + relative);
             Check(File.ReadAllText(Path.Combine(bundle.GameRoot, "BepInEx/BetterAstralParty-Diagnostics/unrecognized.log")) == "preserved unrelated diagnostics", "unrecognized diagnostics path preserved");
             Check(NativeSteamMaintenance.StopSteams == 0, "file-only uninstall leaves Steam independent");
-            bundle = Seed(scratch, "changed-installed-launcher");Write(bundle.GameRoot,"BetterAstralParty-Launcher.exe","changed installed launcher");
+            bundle = Seed(scratch, "legacy-remove", legacy: true); HelperPair(bundle);
+            Check(Run(bundle) == 0 && LegacyReceipt.Owned.Concat(new[] { OrdinaryInstallRecovery.LegacyHelper, OrdinaryInstallRecovery.LegacyHelperReceipt, InstallReceipt.Path }).All(name => bundle.ReadTarget(name) == null), "1.4.0 uninstaller removes a 1.3.x installation and its verified helper");
+            bundle = Seed(scratch, "changed-installed-launcher", legacy: true);Write(bundle.GameRoot,"BetterAstralParty-Launcher.exe","changed installed launcher");
             var keptReceipt = bundle.ReadTarget(InstallReceipt.Path)!;
             Check(Run(bundle)==0 && NativeMaintenance.Completes==1,"changed old launcher is not an unrelated removal gate");
             Check(Encoding.UTF8.GetString(bundle.ReadTarget("BetterAstralParty-Launcher.exe")!)=="changed installed launcher"&&bundle.ReadTarget(InstallReceipt.Path)!.SequenceEqual(keptReceipt)
-                &&InstallReceipt.Owned.Where(path=>path!="BetterAstralParty-Launcher.exe").All(path=>bundle.ReadTarget(path)==null),"retain unknown launcher and receipt while independently verified targets are removed");
+                &&LegacyReceipt.Owned.Where(path=>path!="BetterAstralParty-Launcher.exe").All(path=>bundle.ReadTarget(path)==null),"retain unknown launcher and receipt while independently verified targets are removed");
             foreach (var reason in new[] { "SteamRootAbsent", "SteamProfileAbsent", "SteamProfileAmbiguous", "SteamProfileMetadataInvalid", "SteamProfileReadUnavailable" })
             {
                 bundle = Seed(scratch, "optional-" + reason); Write(bundle.GameRoot, "BepInEx/plugins/OtherMod/Other.dll", "unrelated mod");
@@ -152,7 +159,7 @@ internal static class NativeUninstallFixture
             bundle = Seed(scratch, "shortcut-rollback"); before = Snapshot(bundle.GameRoot); NativeSteamMaintenance.Shortcut = true; NativeMaintenance.CompletionFailure = new IOException("inert complete failure");
             Reject(() => Run(bundle), "completion failure propagates"); Check(NativeSteamMaintenance.Rollbacks == 1 && NativeMaintenance.Restores == 1, "shortcut fingerprint rollback precedes ordinary file rollback"); Unchanged(before);
             bundle = Seed(scratch, "rollback-failed"); NativeSteamMaintenance.Shortcut = true; var original = new IOException("inert removal failure"); NativeSteamMaintenance.RemoveFailure = original; var recovery = new IOException("inert rollback failure"); NativeMaintenance.RestoreFailure = recovery;
-            Reject(() => Run(bundle), "failed rollback preserves original failure"); Check(ReferenceEquals(original.Data["BapRollbackFailure"], recovery) && SteamLauncher.Failures == 1 && File.Exists(NativeMaintenance.JournalPath(bundle.GameRoot)), "rollback cause recorded and pending evidence retained");
+            Reject(() => Run(bundle), "failed rollback preserves original failure"); Check(ReferenceEquals(original.Data["BapRollbackFailure"], recovery) && SetupHost.Failures == 1 && File.Exists(NativeMaintenance.JournalPath(bundle.GameRoot)), "rollback cause recorded and pending evidence retained");
             bundle = Seed(scratch, "loader-recorded", loader: false); receipt = NativeUninstall.ReadReceipt(bundle)!; Write(bundle.GameRoot, "doorstop_config.ini", "enabled=true\r\nunrelated=x");
             Check(NativeUninstall.LoaderChange(bundle, receipt, "Recorded", false, _ => "", _ => { }) == "enabled=true\nunrelated=x", "Recorded preserves already enabled shared loader");
             Check(NativeUninstall.LoaderChange(bundle, receipt, "Disabled", false, _ => "", _ => { }) == "enabled=false\nunrelated=x", "explicit Disabled preserves unrelated loader text");

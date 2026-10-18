@@ -8,13 +8,12 @@ internal static partial class TestCommands
         var assembly = BuildProject(context, "focus-tests/whole-channel-transition/WholeChannelTransitionFixture.csproj", Path.Combine(stage, "host"), pin, ["-p:FixtureTrustSource=" + prepared.PublicPins]);
         var scratch = Path.Combine(context.Root, "artifacts", "wct-" + Guid.NewGuid().ToString("N"));
         var args = new List<string> { assembly, scratch, Path.Combine(context.Root, "artifacts"), prepared.Packages[0], prepared.Packages[1] };
-        if (name == "terminal-whole-history") args.Add("archive-only");
         var environment = EnvironmentFor(stage); environment["LOCALAPPDATA"] = Path.Combine(stage, "inert-local-data");
         Ensure(context.Run(Dotnet(context), args, env: environment), "current native whole/channel and terminal history semantics");
         context.WriteJsonCreateNew(Path.Combine(stage, "whole-history-port.json"), new {
-            passed = true, name, protocol = 4, signedFixturePackages = true, productionKeysOpened = false,
+            passed = true, name, protocol = 5, signedFixturePackages = true, productionKeysOpened = false,
             privateHistoricalArtifactsRead = false, realInstallationPerformed = false,
-            retired = "Immutable 1.1.3/1.1.4 inspector compatibility and frozen v1 seed; current protocol4 launch, maintenance and partial-removal guards replace them.",
+            retired = "terminal-whole-history (protocol-4 whole-intent archive) and WholeInstallBridge migration/helper/partial-removal cases; protocol 5 installs through NativeInstall with InstallProof receipts.",
             actualRuntimeGameOrSteamExecution = false
         });
     }

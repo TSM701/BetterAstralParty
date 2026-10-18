@@ -38,9 +38,8 @@ internal static partial class TestCommands
         var canonicalPath = Path.Combine(context.Root, "src", "Plugin.cs"); var before = context.Hash(canonicalPath);
         foreach (var version in new string?[] { null, "1.3.0" }) {
             var directory = Path.Combine(stage, version == null ? "native-default" : "native-override"); Directory.CreateDirectory(directory);
-            var identity = File.ReadAllText(BuildCommands.Identity(context.Root, directory, "Launcher", version));
-            var expected = version ?? BuildVersion.SourceVersion(File.ReadAllBytes(canonicalPath));
-            Check(identity.Contains("AssemblyInformationalVersion(\"" + expected + "\")", StringComparison.Ordinal), "Native identity uses the same default/override version");
+            var setup = File.ReadAllText(BuildCommands.Identity(context.Root, directory, "Setup", version));
+            Check(setup.Contains("AssemblyInformationalVersion(\"" + BuildCommands.SetupVersion(context.Root) + "\")", StringComparison.Ordinal), "Setup identity uses its own component version regardless of default/override");
         }
         Check(context.Hash(canonicalPath) == before, "Version preparation never changes canonical Plugin.cs");
         var project = XDocument.Load(Path.Combine(context.Root, "src", "BetterAstralParty.csproj"));

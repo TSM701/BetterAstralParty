@@ -19,9 +19,16 @@ namespace BetterAstralParty.Installation
             internal string Source = "", Relative = "";
             internal bool Shared;
         }
+        // A 1.3.x installation taken over by this package: its receipt and the exact files to remove.
+        internal const string LegacyHighWater = "BetterAstralParty.update-v4.version";
+        internal sealed class Takeover
+        {
+            internal LegacyReceipt Receipt = null!;
+            internal readonly Dictionary<string, string> Removals = new Dictionary<string, string>(StringComparer.Ordinal);
+        }
         private static string Full(string root, string relative) { return WindowsPath.Absolute(root + "\\" + relative.Replace('/', '\\')); }
-        private static void Stage(string phase, string outcome = "Begin") { try { SteamLauncher.RecordInstallerStage(phase, outcome); } catch { } }
-        private static void Failure(string phase, Exception error) { try { SteamLauncher.RecordInstallerFailure(phase, error); } catch { } }
+        private static void Stage(string phase, string outcome = "Begin") { try { SetupHost.RecordInstallerStage(phase, outcome); } catch { } }
+        private static void Failure(string phase, Exception error) { try { SetupHost.RecordInstallerFailure(phase, error); } catch { } }
         private static void Consent(Func<string, string?> input, string prompt)
         {
             string? answer; try { answer = input(prompt); } catch (Exception error) { throw new InvalidOperationException("Interactive maintenance confirmation unavailable. / 대화형 동의를 확인할 수 없습니다.", error); }
@@ -48,68 +55,74 @@ namespace BetterAstralParty.Installation
             if (updateOnly && (restartSteam || account != 0 || steamRoot != null)) throw new InvalidOperationException("UpdateOnly cannot register or restart Steam. / UpdateOnly는 Steam을 변경할 수 없습니다.");
             if (!updateOnly && (steamRoot == null || account == 0)) output("Steam 바로가기를 변경하지 않고 파일을 설치합니다. Steam에서 순정 게임 실행 후 설치기를 다시 실행하면 바로가기를 추가할 수 있습니다. / Install files without changing Steam shortcuts; run the original game through Steam and rerun installation to add the shortcut.");
             if (checkOnly) { Preview(bundle, updateOnly, steamRoot, account, consent, output); return; }
-            var session = new SteamSessionState(); NativeMaintenance.Transaction? transaction = null; IDisposable? maintenance = null;
+            var session = new SteamSessionState(); NativeMaintenance.Transaction? transaction = null;
             NativeMaintenance.InstallLock? installLock = null;
             var rollback = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase); string[] targets = Array.Empty<string>(); var registered = false;
-            var stage = "Signed automatic update helper preflight"; var phase = "HelperInstall";
+            var stage = "Signed package validation"; var phase = "BootstrapGate";
             try {
-                Stage(phase); bundle.AssertRoot(); SteamLauncher.ValidateWholeInputs(bundle.GameRoot, bundle.PackageRoot, bundle.Version);
-                var helperHash = bundle.Hashes["helper-bootstrap/BetterAstralParty-UpdateHelper.exe"];
-                if (SteamLauncher.ValidateHelperBootstrap(Full(bundle.PackageRoot, "helper-bootstrap"), bundle.Version, helperHash) != helperHash) throw new InvalidDataException("Helper bootstrap hash mismatch.");
-                Stage(phase, "Completed");
+                Stage(phase); bundle.AssertRoot(); SetupHost.ValidateWholeInputs(bundle.GameRoot, bundle.PackageRoot, bundle.Version); Stage(phase, "Completed");
                 installLock = NativeMaintenance.AcquireInstallLock(bundle);
-                {
-                    stage = "Interrupted installation/removal recovery"; phase = "Recovery"; Stage(phase);
-                    if (File.Exists(WindowsPath.ForIo(NativeMaintenance.JournalPath(bundle.GameRoot)))) NativeMaintenance.RecoverPending(bundle, consent, output);
-                    else NativeSteamMaintenance.StopGame(bundle.GameRoot, consent, output);
-                    Stage(phase, "Completed");
-                    // Compatibility is observation only; authenticated ownership and recovery still govern writes.
-                    stage = "Compatibility validation"; phase = "BootstrapGate"; Stage(phase);
-                    CheckCompatibility(bundle, _ => { }); Stage(phase, "Completed");
-                    stage = "Completed removal / new installation generation validation"; phase = "Recovery"; Stage(phase);
-                    var generation = NativeReinstallGeneration.Review(bundle.GameRoot, bundle.PackageRoot, bundle.Version, bundle.ManifestHash, installLock.Root);
-                    if (generation != null) {
-                        if (updateOnly || bundle.Recovery != null) throw new InvalidOperationException("Clean reinstall requires normal installation, not UpdateOnly or reviewed recovery.");
-                        output("완전 제거 상태를 확인했습니다. 이전 업데이트 이력을 보존하고 새로 설치합니다. / Complete removal verified; archive previous history and install: " + generation.Version + " -> " + bundle.Version);
-                        Consent(consent, "새 설치를 진행할까요? / Start a new installation generation? [y/N]");
-                        NativeReinstallGeneration.Retire(generation, bundle.GameRoot, bundle.PackageRoot, bundle.Version, bundle.ManifestHash, installLock.Root, installLock.File);
-                    }
-                    stage = "Whole helper recovery"; SteamLauncher.RecoverWholeHelper(bundle.GameRoot, bundle.PackageRoot, bundle.Version); Stage(phase, "Completed");
-                    stage = "Installed ownership / whole bridge validation"; phase = "DescriptorVerification"; Stage(phase);
-                    var bridgeObservation = bundle.Recovery == null ? SteamLauncher.ValidateWholeBridge(bundle.GameRoot, bundle.PackageRoot, bundle.Version)
-                        : SteamLauncher.ValidateReviewedWholeBridge(bundle.GameRoot, bundle.PackageRoot, bundle.Version, Utf8.GetString(MaintenanceJson.Write(bundle.Recovery)));
-                    bundle.Observation = bridgeObservation;
-                    stage = "Installed version / channel transition validation"; Transition(bundle, consent); Stage(phase, "Completed");
-                    // Keep the existing later gate as well; recovery work must not make an earlier game observation authoritative.
-                    stage = "Compatibility validation"; phase = "BootstrapGate"; Stage(phase);
-                    CheckCompatibility(bundle, output); Stage(phase, "Completed");
-                    stage = "Package file / shared loader validation"; phase = "BootstrapGate"; Stage(phase);
-                    var files = OwnedPlan(); var shared = new Dictionary<string, string?>(StringComparer.Ordinal);
-                    var freshLoader = !ExistingSharedLoader(bundle, output);
-                    var loader = freshLoader ? null : ReadExistingLoader(bundle, output);
-                    if (freshLoader) files.AddRange(SharedLoaderPlan(bundle, shared));
-                    var oldReceiptBytes = bundle.ReadTarget(InstallReceipt.Path, 16384);
-                    var oldReceipt = oldReceiptBytes == null ? null : InstallReceipt.Parse(oldReceiptBytes);
-                    if (updateOnly && (oldReceipt == null || bundle.TargetHash(UpdateTrust.PluginPath) == null)) throw new InvalidOperationException("UpdateOnly requires an existing installation. / 먼저 일반 설치를 실행하세요.");
-                    var loaderBefore = LoaderBaseline(oldReceipt, loader, freshLoader, bundle.TargetHash(UpdateTrust.PluginPath) == null);
-                    var prepared = SteamLauncher.PrepareWholeReceipt(bundle.GameRoot, bundle.PackageRoot, bundle.Version, bridgeObservation, loaderBefore.HasValue ? loaderBefore.Value ? "true" : "false" : "null");
-                    targets = files.Select(file => Full(bundle.GameRoot, file.Relative)).Concat(freshLoader ? new[] { Full(bundle.GameRoot, Configuration), Full(bundle.GameRoot, InstallReceipt.Path) } : new[] { Full(bundle.GameRoot, InstallReceipt.Path) }).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
-                    long installBytes = 0; foreach (var file in files) installBytes = checked(installBytes + bundle.Bytes(file.Source, 64 * 1048576).Length);
-                    stage = "Maintenance path planning / write permission preflight";
-                    foreach (var target in targets) NativeMaintenance.AssertTarget(bundle.GameRoot, target);
-                    NativeMaintenance.TestWritable(targets);
-                    var needsShortcut = PlanShortcut(bundle, updateOnly, steamRoot, account, output, observation);
-                    if (needsShortcut) NativeMaintenance.TestWritable(new[] { Full(steamRoot!, "userdata/" + account + "/config/shortcuts.vdf") });
-                    if (bundle.TargetHash(UpdateTrust.PluginPath) != null) output("기존 설치: 사용자 설정을 유지하고 변경 대상 파일을 백업합니다. / Existing installation: settings preserved; target files backed up.");
-                    Stage(phase, "Completed"); stage = "Steam shortcut planning / shutdown"; phase = "WaitForExit"; Stage(phase);
-                    if (needsShortcut) NativeSteamMaintenance.StopSteam(steamRoot!, session, consent, output);
-                    NativeSteamMaintenance.AssertGameStopped(bundle.GameRoot);
-                    if (needsShortcut) NativeSteamMaintenance.AssertStopped(steamRoot!, "InstallPreflight");
-                    Stage(phase, "Completed"); phase = "Apply"; Stage(phase);
-                    stage = "Previous installation backup"; bundle.AssertUnchanged(); AssertSharedUnchanged(bundle, shared);
-                    maintenance = SteamLauncher.BeginWholeInstall(bundle.GameRoot, bundle.PackageRoot, bundle.Version, bridgeObservation, prepared);
+                stage = "Interrupted installation/removal recovery"; phase = "Recovery"; Stage(phase);
+                if (File.Exists(WindowsPath.ForIo(NativeMaintenance.JournalPath(bundle.GameRoot)))) NativeMaintenance.RecoverPending(bundle, consent, output);
+                NativeSteamMaintenance.WaitGameClosed(bundle.GameRoot, consent, output);
+                if (SetupHost.HasPendingUpdate(bundle.GameRoot)) {
+                    output("중단된 자동 업데이트를 복구합니다. / Recovering an interrupted automatic update.");
+                    output("자동 업데이트 복구 결과 / Update recovery result: " + SetupHost.RecoverPendingUpdate(bundle.GameRoot));
+                }
+                Stage(phase, "Completed");
+                stage = "Compatibility validation"; phase = "BootstrapGate"; Stage(phase);
+                CheckCompatibility(bundle, _ => { }); Stage(phase, "Completed");
+                stage = "Completed removal / new installation generation validation"; phase = "Recovery"; Stage(phase);
+                var generation = NativeReinstallGeneration.Review(bundle.GameRoot, bundle.PackageRoot, bundle.Version, bundle.ManifestHash, installLock.Root);
+                if (generation != null) {
+                    if (updateOnly) throw new InvalidOperationException("Clean reinstall requires normal installation, not UpdateOnly.");
+                    output("완전 제거 상태를 확인했습니다. 이전 업데이트 이력을 보존하고 새로 설치합니다. / Complete removal verified; archive previous history and install: " + generation.Version + " -> " + bundle.Version);
+                    Consent(consent, "새 설치를 진행할까요? / Start a new installation generation? [y/N]");
+                    NativeReinstallGeneration.Retire(generation, bundle.GameRoot, bundle.PackageRoot, bundle.Version, bundle.ManifestHash, installLock.Root, installLock.File);
+                }
+                Stage(phase, "Completed");
+                stage = "Installed version / ownership validation"; phase = "DescriptorVerification"; Stage(phase);
+                var takeover = LegacyTakeover(bundle, output);
+                if (takeover != null) {
+                    if (updateOnly) throw new InvalidOperationException("1.3.x를 인계하려면 일반 설치가 필요합니다. / Taking over 1.3.x requires a normal installation, not UpdateOnly.");
+                    Consent(consent, "1.3.x 설치를 1.4.0 구조로 옮길까요? 런처·업데이트 도우미 파일을 백업 후 제거합니다. / Move the 1.3.x installation to 1.4.0? Launcher and update-helper files are backed up and removed. [y/N]");
+                    bundle.Mode = "Takeover"; bundle.Observed = ObservedFiles(bundle, takeover);
+                } else Transition(bundle);
+                Stage(phase, "Completed");
+                stage = "Compatibility validation"; phase = "BootstrapGate"; Stage(phase);
+                CheckCompatibility(bundle, output); Stage(phase, "Completed");
+                stage = "Package file / shared loader validation"; Stage(phase);
+                var files = OwnedPlan(); var shared = new Dictionary<string, string?>(StringComparer.Ordinal);
+                var freshLoader = !ExistingSharedLoader(bundle, output);
+                var loader = freshLoader ? null : ReadExistingLoader(bundle, output);
+                if (freshLoader) files.AddRange(SharedLoaderPlan(bundle, shared));
+                var oldReceiptBytes = bundle.ReadTarget(InstallReceipt.Path, 16384);
+                var oldReceipt = oldReceiptBytes == null || takeover != null ? null : InstallReceipt.Parse(oldReceiptBytes);
+                if (updateOnly && (oldReceipt == null || bundle.TargetHash(UpdateTrust.PluginPath) == null)) throw new InvalidOperationException("UpdateOnly requires an existing installation. / 먼저 일반 설치를 실행하세요.");
+                var loaderBefore = takeover != null ? takeover.Receipt.LoaderBefore : LoaderBaseline(oldReceipt, loader, freshLoader, bundle.TargetHash(UpdateTrust.PluginPath) == null);
+                var prepared = SetupHost.PrepareWholeReceipt(bundle.GameRoot, bundle.PackageRoot, bundle.Version, loaderBefore.HasValue ? loaderBefore.Value ? "true" : "false" : "null");
+                var water = SetupHost.PrepareHighWater(bundle.GameRoot, bundle.PackageRoot, bundle.Version);
+                var extra = new List<string> { InstallReceipt.Path };
+                if (freshLoader) extra.Add(Configuration);
+                if (water != null) extra.Add(UpdateTransaction.HighWaterPath);
+                if (takeover != null) extra.AddRange(takeover.Removals.Keys);
+                targets = files.Select(file => Full(bundle.GameRoot, file.Relative)).Concat(extra.Select(path => Full(bundle.GameRoot, path))).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
+                long installBytes = 0; foreach (var file in files) installBytes = checked(installBytes + bundle.Bytes(file.Source, 64 * 1048576).Length);
+                stage = "Maintenance path planning / write permission preflight";
+                foreach (var target in targets) NativeMaintenance.AssertTarget(bundle.GameRoot, target);
+                NativeMaintenance.TestWritable(targets);
+                var needsShortcut = PlanShortcut(bundle, updateOnly, steamRoot, account, output, observation);
+                if (needsShortcut) NativeMaintenance.TestWritable(new[] { Full(steamRoot!, "userdata/" + account + "/config/shortcuts.vdf") });
+                if (bundle.TargetHash(UpdateTrust.PluginPath) != null) output("기존 설치: 사용자 설정을 유지하고 변경 대상 파일을 백업합니다. / Existing installation: settings preserved; target files backed up.");
+                Stage(phase, "Completed"); stage = "Steam shortcut planning / Steam closed"; phase = "WaitForExit"; Stage(phase);
+                if (needsShortcut) NativeSteamMaintenance.StopSteam(steamRoot!, session, consent, output);
+                NativeSteamMaintenance.AssertGameStopped(bundle.GameRoot);
+                if (needsShortcut) NativeSteamMaintenance.AssertStopped(steamRoot!, "InstallPreflight");
+                Stage(phase, "Completed"); phase = "Apply"; Stage(phase);
+                stage = "Previous installation backup"; bundle.AssertUnchanged(); AssertSharedUnchanged(bundle, shared);
+                using (SetupHost.GuardMaintenance(bundle.GameRoot)) {
                     transaction = NativeMaintenance.StartTransaction(bundle, targets, installBytes);
-                    stage = "Loader / mod / launcher copy";
+                    stage = "Loader / mod copy";
                     foreach (var file in files) {
                         var bytes = bundle.Bytes(file.Source, 64 * 1048576); var target = Full(bundle.GameRoot, file.Relative);
                         var original = transaction.Entries.Single(entry => entry.Target.Equals(target, StringComparison.OrdinalIgnoreCase));
@@ -120,56 +133,100 @@ namespace BetterAstralParty.Installation
                     var config = freshLoader ? bundle.ReadTarget(Configuration) : null;
                     var updated = freshLoader ? DisableUnityListening(config) : null;
                     if (freshLoader && (config == null || !updated!.SequenceEqual(config))) {
-                        var entry = transaction.Entries.Single(row => row.Target.Equals(Full(bundle.GameRoot, Configuration), StringComparison.OrdinalIgnoreCase));
+                        var entry = Entry(transaction, bundle, Configuration);
                         WriteTarget(bundle, Configuration, updated!, entry.Hash, !entry.Existed, rollback);
                     }
                     foreach (var file in bundle.Expected) if (bundle.TargetHash(file.Key) != file.Value) throw new InvalidDataException("Installed payload differs from the verified bundle: " + file.Key);
-                    var receipt = transaction.Entries.Single(entry => entry.Target.Equals(Full(bundle.GameRoot, InstallReceipt.Path), StringComparison.OrdinalIgnoreCase));
+                    var receipt = Entry(transaction, bundle, InstallReceipt.Path);
                     WriteTarget(bundle, InstallReceipt.Path, Utf8.GetBytes(prepared), receipt.Hash, !receipt.Existed, rollback);
+                    if (water != null) { var entry = Entry(transaction, bundle, UpdateTransaction.HighWaterPath); WriteTarget(bundle, UpdateTransaction.HighWaterPath, water, entry.Hash, !entry.Existed, rollback); }
+                    if (takeover != null) { stage = "1.3.x launcher/helper removal"; foreach (var removal in takeover.Removals) RemoveTarget(bundle, removal.Key, removal.Value, rollback); }
                     Stage(phase, "Completed"); phase = "Apply"; Stage(phase); stage = "Steam shortcut registration";
                     if (needsShortcut) { NativeSteamMaintenance.Register(steamRoot!, account, bundle.GameRoot, output); registered = true; }
                     NativeMaintenance.CompleteTransaction(bundle, transaction, targets); transaction = null; Stage(phase, "Completed");
-                    // HelperDelivery owns a separate recoverable transaction after ordinary files and routing commit.
-                    maintenance.Dispose(); maintenance = null; phase = "HelperInstall"; Stage(phase); stage = "Automatic update helper installation / ownership verification";
-                    SteamLauncher.InstallWholeHelper(bundle.GameRoot, bundle.PackageRoot, bundle.Version, bridgeObservation, UpdateTrust.Hash(Utf8.GetBytes(prepared)));
-                    var owned = SteamLauncher.CheckOwnedHelper(bundle.GameRoot);
-                    if (owned == null || !owned.StartsWith(helperHash + ":", StringComparison.Ordinal)) throw new InvalidOperationException("Whole helper commit ownership verification failed; retain records.");
-                    Stage(phase, "Completed");
-                    output(needsShortcut ? "적용 완료! Steam 라이브러리에 Mod가 등록되었습니다. / Installed Astral Party - Mod." : "기존 설치본 업데이트 완료. / Updated existing installation.");
+                    LegacyWork.Remove(bundle.GameRoot, output);
                 }
+                output(needsShortcut ? "적용 완료! Steam 라이브러리의 \"Astral Party - Mod\"로 실행하세요. / Installed; start \"Astral Party - Mod\" from Steam." : "기존 설치본 업데이트 완료. / Updated existing installation.");
             } catch (Exception error) {
                 if (transaction != null && !registered) {
                     try { Stage("Rollback"); NativeMaintenance.RestoreTransaction(bundle, transaction, targets, rollback); transaction = null; Stage("Rollback", "Completed"); }
                     catch (Exception restore) { error.Data["BapRollbackFailure"] = restore; Failure("Rollback", restore); try { output("복구가 끝나지 않았습니다. 게임을 닫고 현재 묶음·journal·백업을 보관하세요. / Recovery incomplete; retain the current package, journal and backups. reason=" + restore.GetType().Name); } catch { } }
                 }
                 error.Data["BapInstallStage"] = stage; Failure(phase, error); throw;
-            } finally { try { maintenance?.Dispose(); } finally { installLock?.Dispose(); NativeSteamMaintenance.ResumeSteam(session, output); } }
+            } finally { try { installLock?.Dispose(); } finally { NativeSteamMaintenance.ResumeSteam(session, output); } }
         }
+        private static NativeMaintenance.Entry Entry(NativeMaintenance.Transaction transaction, NativeMaintenanceBundle bundle, string relative)
+        { return transaction.Entries.Single(row => row.Target.Equals(Full(bundle.GameRoot, relative), StringComparison.OrdinalIgnoreCase)); }
         private static void Preview(NativeMaintenanceBundle bundle, bool updateOnly, string? steamRoot, uint account, Func<string, string?> consent, Action<string> output)
         {
-            bundle.AssertRoot(); SteamLauncher.ValidateWholeInputs(bundle.GameRoot, bundle.PackageRoot, bundle.Version);
-            var helperHash = bundle.Hashes["helper-bootstrap/BetterAstralParty-UpdateHelper.exe"];
-            if (SteamLauncher.ValidateHelperBootstrap(Full(bundle.PackageRoot, "helper-bootstrap"), bundle.Version, helperHash) != helperHash) throw new InvalidDataException("Helper bootstrap hash mismatch.");
+            bundle.AssertRoot(); SetupHost.ValidateWholeInputs(bundle.GameRoot, bundle.PackageRoot, bundle.Version);
             if (!NativeMaintenance.RecoverPending(bundle, consent, output, true)) return;
+            if (SetupHost.HasPendingUpdate(bundle.GameRoot)) output("CheckOnly: an interrupted automatic update will be recovered first. / 중단된 자동 업데이트를 먼저 복구합니다.");
             CheckCompatibility(bundle, output, false);
             var generation = NativeReinstallGeneration.Review(bundle.GameRoot, bundle.PackageRoot, bundle.Version, bundle.ManifestHash, NativeMaintenance.JournalRoot(bundle.GameRoot));
             if (generation != null) {
-                if (updateOnly || bundle.Recovery != null) throw new InvalidOperationException("Clean reinstall requires normal installation, not UpdateOnly or reviewed recovery.");
+                if (updateOnly) throw new InvalidOperationException("Clean reinstall requires normal installation, not UpdateOnly.");
                 output("CheckOnly: verified complete removal; new generation requires confirmation. / 완전 제거 확인: 새 설치 전에 동의가 필요합니다.");
-            } else {
-                bundle.Observation = bundle.Recovery == null ? SteamLauncher.ValidateWholeBridge(bundle.GameRoot, bundle.PackageRoot, bundle.Version)
-                    : SteamLauncher.ValidateReviewedWholeBridge(bundle.GameRoot, bundle.PackageRoot, bundle.Version, Utf8.GetString(MaintenanceJson.Write(bundle.Recovery)));
-                Transition(bundle, consent, false);
-            }
+            } else if (LegacyTakeover(bundle, output) != null) {
+                if (updateOnly) throw new InvalidOperationException("Taking over 1.3.x requires a normal installation, not UpdateOnly.");
+                output("CheckOnly: 1.3.x installation will be taken over after confirmation. / 1.3.x 설치는 동의 후 인계합니다.");
+            } else Transition(bundle);
             var existingLoader = ExistingSharedLoader(bundle, output);
             if (updateOnly && (bundle.ReadTarget(InstallReceipt.Path, 16384) == null || bundle.TargetHash(UpdateTrust.PluginPath) == null)) throw new InvalidOperationException("UpdateOnly requires an existing installation.");
             if (!existingLoader) SharedLoaderPlan(bundle, new Dictionary<string, string?>(StringComparer.Ordinal));
             var shortcut = PlanShortcut(bundle, updateOnly, steamRoot, account, output);
+            var legacyWork = LegacyWork.Finished(bundle.GameRoot).Count;
+            if (legacyWork != 0) output("CheckOnly: 끝난 1.3.x 업데이트 작업 기록 " + legacyWork + "개를 설치 후 정리합니다. / " + legacyWork + " finished 1.3.x update work records will be removed after installation.");
             output("CheckOnly: installation validation complete; shortcutWrite=" + shortcut + ". / 설치 사전 검사가 완료되었습니다.");
+        }
+        // 1.3.x takeover is allowed only from a finished, unmodified protocol-4 installation.
+        internal static Takeover? LegacyTakeover(NativeMaintenanceBundle bundle, Action<string> output)
+        {
+            var bytes = bundle.ReadTarget(InstallReceipt.Path, 16384);
+            if (bytes == null || !LegacyReceipt.Is(bytes)) return null;
+            var result = new Takeover { Receipt = LegacyReceipt.Parse(bytes) };
+            if (File.Exists(WindowsPath.ForIo(NativeMaintenance.LegacyJournalPath(bundle.GameRoot))))
+                throw new InvalidOperationException("1.3.x 설치·제거 작업이 끝나지 않았습니다. Force-Uninstall.cmd로 정리한 뒤 다시 설치하세요. / An unfinished 1.3.x install/removal exists; run Force-Uninstall.cmd, then install again.");
+            foreach (var file in result.Receipt.Files) {
+                var current = bundle.TargetHash(file.Key);
+                if (current != null && current != file.Value)
+                    throw new InvalidOperationException("1.3.x 파일이 기록과 다릅니다(" + file.Key + "). 변경된 파일은 보존합니다. Force-Uninstall.cmd로 정리한 뒤 다시 설치하세요. / A 1.3.x file differs from its receipt (" + file.Key + "); it is preserved. Run Force-Uninstall.cmd, then install again.");
+            }
+            using (var game = new WindowsFileFence(bundle.GameRoot)) {
+                foreach (var name in new[] { "BetterAstralParty.update-v4.operation", "BetterAstralParty.reinstall-v4.pending" })
+                    if (File.Exists(WindowsPath.ForIo(game.Full(name)))) throw new InvalidOperationException("1.3.x 업데이트 작업이 끝나지 않았습니다. Force-Uninstall.cmd로 정리한 뒤 다시 설치하세요. / An unfinished 1.3.x update exists; run Force-Uninstall.cmd, then install again.");
+                foreach (var parent in new[] { game.Root, game.Full(UpdateWorkPath.Root) }) {
+                    if (!Directory.Exists(WindowsPath.ForIo(parent))) continue;
+                    foreach (var work in Directory.GetDirectories(WindowsPath.ForIo(parent), "bap-v4-*"))
+                        if (File.Exists(Path.Combine(work, "plan")) && !File.Exists(Path.Combine(work, "committed")) && !File.Exists(Path.Combine(work, "rolled-back")) && !File.Exists(Path.Combine(work, "cancelled")))
+                            throw new InvalidOperationException("1.3.x 업데이트 기록이 끝나지 않았습니다. Force-Uninstall.cmd로 정리한 뒤 다시 설치하세요. / Unfinished 1.3.x update records exist; run Force-Uninstall.cmd, then install again.");
+                }
+            }
+            // The protocol-4 high-water is superseded by the v5 record written in the same transaction.
+            var oldWater = bundle.TargetHash(LegacyHighWater); if (oldWater != null) result.Removals.Add(LegacyHighWater, oldWater);
+            var launcher = OrdinaryInstallRecovery.LegacyLauncher;
+            var launcherHash = bundle.TargetHash(launcher); if (launcherHash != null) result.Removals.Add(launcher, launcherHash);
+            var helper = bundle.TargetHash(OrdinaryInstallRecovery.LegacyHelper);
+            var helperReceipt = bundle.ReadTarget(OrdinaryInstallRecovery.LegacyHelperReceipt, 1024);
+            if (helper != null || helperReceipt != null) {
+                // Remove the helper only as the pair its own receipt describes; anything else is preserved.
+                var text = helperReceipt == null ? "" : Encoding.ASCII.GetString(helperReceipt);
+                if (helper == null || helperReceipt == null || !text.StartsWith("BetterAstralParty.HelperReceipt/v1\nroot=" + bundle.RootIdentity + "\n", StringComparison.Ordinal) || !text.Contains("\nsha256=" + helper + "\n"))
+                    throw new InvalidOperationException("1.3.x 업데이트 도우미 파일을 확인할 수 없습니다. Force-Uninstall.cmd로 정리한 뒤 다시 설치하세요. / The 1.3.x update helper could not be verified; run Force-Uninstall.cmd, then install again.");
+                result.Removals.Add(OrdinaryInstallRecovery.LegacyHelper, helper);
+                result.Removals.Add(OrdinaryInstallRecovery.LegacyHelperReceipt, UpdateTrust.Hash(helperReceipt));
+            }
+            output("1.3.x 설치를 확인했습니다. 설정과 다른 모드는 유지하고 런처·업데이트 도우미를 제거합니다. / 1.3.x installation found; settings and other mods are kept, the launcher and update helper are removed.");
+            return result;
+        }
+        private static Dictionary<string, string?> ObservedFiles(NativeMaintenanceBundle bundle, Takeover takeover)
+        {
+            var paths = bundle.Expected.Keys.Concat(new[] { InstallReceipt.Path, UpdateTransaction.HighWaterPath }).Concat(takeover.Removals.Keys).Distinct(StringComparer.Ordinal);
+            return paths.ToDictionary(path => path, bundle.TargetHash, StringComparer.Ordinal);
         }
         private static List<FilePlan> OwnedPlan()
         {
-            var order = new[] { "BetterAstralParty-Launcher.exe", UpdateTrust.PluginPath, "BetterAstralParty.compatibility.json", "BetterAstralParty-Mod.cmd", "AstralParty-Vanilla.cmd" };
+            var order = new[] { UpdateTrust.PluginPath, "BetterAstralParty.compatibility.json", "BetterAstralParty-Mod.cmd", "AstralParty-Vanilla.cmd" };
             return order.Select(relative => new FilePlan { Relative = relative, Source = NativeMaintenanceBundle.OwnedSources[relative] }).ToList();
         }
         private static bool ExistingSharedLoader(NativeMaintenanceBundle bundle, Action<string> output)
@@ -246,43 +303,45 @@ namespace BetterAstralParty.Installation
                 }
             }
         }
-        private static void Transition(NativeMaintenanceBundle bundle, Func<string, string?> consent, bool confirmRecovery = true)
+        // Takeover removal: only the exact backed-up legacy file is deleted, by its held handle.
+        private static void RemoveTarget(NativeMaintenanceBundle bundle, string relative, string expected, Dictionary<string, string?> rollback)
+        {
+            using (var game = new WindowsFileFence(bundle.GameRoot)) {
+                if (game.RootIdentity.Text != bundle.RootIdentity) throw new InvalidDataException("Installation root changed.");
+                using (var target = game.OpenFile(relative, true)) {
+                    if (target.Hash() != expected) throw new InvalidDataException("Legacy file changed since backup: " + relative);
+                    target.RemoveOrdinaryRecoveryTarget(relative); rollback[game.Full(relative)] = null;
+                }
+            }
+        }
+        private static void Transition(NativeMaintenanceBundle bundle)
         {
             bundle.AssertRoot();
-            var state = SteamLauncher.ReadInstallerState(bundle.GameRoot);
+            var state = SetupHost.ReadInstallerState(bundle.GameRoot);
             var match = Regex.Match(state, @"\ABetterAstralParty.InstallerState/v1\nroot=([A-F0-9]{8}:[A-F0-9]{16})\nversion=([^\r\n]*)\nwater-sha=([A-F0-9]{64})?\n\z");
             if (!match.Success || match.Groups[1].Value != bundle.RootIdentity || state.Length > 320) throw new InvalidDataException("Invalid installer state response.");
             var observed = bundle.Expected.Keys.Concat(new[] { InstallReceipt.Path, UpdateTransaction.HighWaterPath }).ToDictionary(path => path, bundle.TargetHash, StringComparer.Ordinal);
             if (observed[UpdateTransaction.HighWaterPath] != (match.Groups[3].Success ? match.Groups[3].Value : null)) throw new InvalidDataException("High-water changed during preflight.");
             var receiptBytes = bundle.ReadTarget(InstallReceipt.Path, 16384);
             if (receiptBytes == null) {
-                if (bundle.Recovery != null || bundle.Expected.Keys.Any(path => observed[path] != null) || observed[UpdateTransaction.HighWaterPath] != null) throw new InvalidDataException("Incomplete installation requires recovery review.");
+                if (bundle.Expected.Keys.Any(path => observed[path] != null) || observed[UpdateTransaction.HighWaterPath] != null)
+                    throw new InvalidDataException("설치 기록 없이 모드 파일이 남아 있습니다. Force-Uninstall.cmd로 정리한 뒤 다시 설치하세요. / Mod files exist without an install receipt; run Force-Uninstall.cmd, then install again.");
                 bundle.Mode = "FirstInstall"; bundle.Observed = observed; return;
             }
-            var receipt = InstallReceipt.Parse(receiptBytes); string current;
-            if (bundle.Recovery != null || observed[UpdateTrust.PluginPath] == null) {
-                var signed = SteamLauncher.ReadVerifiedInstalledState(bundle.GameRoot, bundle.PackageRoot, bundle.Version).Split('\n');
-                if (signed.Length != 6 || signed[0] != "BetterAstralParty.VerifiedInstalledState/v1" || signed[1] != "root=" + bundle.RootIdentity || !signed[2].StartsWith("version=", StringComparison.Ordinal) || signed[3] != "update-protocol=4" || signed[4] != "settings-schema=1" || signed[5] != "") throw new InvalidDataException("Invalid signed installed-state response.");
-                current = signed[2].Substring(8);
-            } else current = InstalledPluginMetadata.ReadMaintenance(bundle.ReadTarget(UpdateTrust.PluginPath) ?? throw new InvalidDataException("Installed plugin missing.")).Version;
+            var receipt = InstallReceipt.Parse(receiptBytes);
+            var plugin = bundle.ReadTarget(UpdateTrust.PluginPath) ?? throw new InvalidDataException("설치된 플러그인이 없습니다. Force-Uninstall.cmd로 정리한 뒤 다시 설치하세요. / Installed plugin missing; run Force-Uninstall.cmd, then install again.");
+            var current = InstalledPluginMetadata.ReadMaintenance(plugin).Version;
             var high = match.Groups[2].Value;
-            bundle.Mode = TransitionMode(bundle.Version, current, high.Length == 0 ? null : high, receipt.Files, bundle.Expected, observed, bundle.Recovery);
-            if (bundle.Recovery != null && confirmRecovery) Consent(consent, "명시한 복구 묶음으로 교체합니다. 현재 파일은 백업하며 업데이트 버전 기록은 유지합니다. / Apply the reviewed recovery plan? [y/N]");
+            bundle.Mode = TransitionMode(bundle.Version, current, high.Length == 0 ? null : high, receipt.Files, bundle.Expected, observed);
             bundle.Observed = observed;
         }
-        internal static string TransitionMode(string incoming, string current, string? highest, IDictionary<string, string> previous, IDictionary<string, string> expected, IDictionary<string, string?> observed, Dictionary<string, object?>? recovery)
+        internal static string TransitionMode(string incoming, string current, string? highest, IDictionary<string, string> previous, IDictionary<string, string> expected, IDictionary<string, string?> observed)
         {
             var next = UpdateVersion.Parse(incoming); var installed = UpdateVersion.Parse(current); var floor = installed;
             if (highest != null) { var high = UpdateVersion.Parse(highest); if (high.CompareTo(floor) > 0) floor = high; }
-            if (recovery != null) {
-                if (MaintenanceJson.Text(recovery, "fromVersion") != current || MaintenanceJson.Text(recovery, "receiptSha256") != observed[InstallReceipt.Path]) throw new InvalidDataException("Recovery plan does not match the current installation.");
-                if (!recovery.TryGetValue("observedFiles", out var raw)) throw new InvalidDataException("Recovery observation missing."); var files = MaintenanceJson.Map(raw);
-                if (files.Count != observed.Count || observed.Any(file => !files.TryGetValue(file.Key, out var hash) || !Equals(hash, file.Value))) throw new InvalidDataException("Installation changed since recovery planning.");
-                return "ReviewedRecovery";
-            }
             if (previous.Any(file => observed[file.Key] != null && observed[file.Key] != file.Value)) throw new InvalidDataException("Existing installation differs from its receipt; preserved.");
             if (next.CompareTo(floor) < 0) throw new InvalidDataException("Downgrade blocked; use the latest complete bundle.");
-            if (next.CompareTo(installed) == 0 && previous.Any(file => expected[file.Key] != file.Value)) throw new InvalidDataException("Different build at the same version requires reviewed recovery.");
+            if (next.CompareTo(installed) == 0 && previous.Any(file => expected[file.Key] != file.Value)) throw new InvalidDataException("Different build at the same version; run Force-Uninstall.cmd, then install again.");
             return expected.All(file => observed[file.Key] == file.Value) ? "SameBuild" : "Upgrade";
         }
     }

@@ -12,7 +12,7 @@ internal static class PackagingExport
     internal static void SourceName(string name)
     {
         PackagingBoundary.PathName(name); if (!BuildCommands.IsPublicSourcePath(name)) throw new InvalidDataException("Inactive private/historical source rejected: " + name); var extension = Path.GetExtension(name).ToLowerInvariant();
-        if (Regex.IsMatch(name, "(^|/)(artifacts|releases|\\.deps|\\.dotnet|\\.codegraph|bin|obj|helper-bootstrap)/", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant) || extension is ".exe" or ".dll" or ".pdb" or ".cfg" or ".log" or ".dmp" or ".pfx" or ".p12" or ".pem" or ".key" or ".ps1" || Path.GetFileName(name) is "AGENTS.md" or ".env" or "development-maintenance.json") throw new InvalidDataException("Private/binary/PowerShell source rejected: " + name);
+        if (Regex.IsMatch(name, "(^|/)(artifacts|releases|\\.deps|\\.dotnet|\\.codegraph|bin|obj|helper-bootstrap)/", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant) || extension is ".exe" or ".dll" or ".pdb" or ".cfg" or ".log" or ".dmp" or ".pfx" or ".p12" or ".pem" or ".key" or ".ps1" || BuildCommands.IsAgentInstructions(name) || Path.GetFileName(name) is ".env" or "development-maintenance.json") throw new InvalidDataException("Private/binary/PowerShell source rejected: " + name);
     }
     internal static void Closure(IEnumerable<string> rows, IEnumerable<string> expected)
     {

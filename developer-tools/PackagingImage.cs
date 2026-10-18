@@ -10,7 +10,7 @@ internal static class PackagingImage
     internal static string PluginVersion(byte[] bytes)
     {
         var metadata = InstalledPluginMetadata.ReadMaintenance(bytes);
-        if (metadata.UpdateProtocol != 4 || metadata.SettingsSchema != 1) throw new InvalidDataException("Native 1.3.0 maintenance generation required.");
+        if (metadata.UpdateProtocol != UpdateTrust.Protocol || metadata.SettingsSchema != 1) throw new InvalidDataException("Native 1.4.0 maintenance generation required.");
         return PackagingBoundary.CanonicalVersion(metadata.Version);
     }
     internal static object Inspect(byte[] bytes, string role, string version)
@@ -25,20 +25,25 @@ internal static class PackagingImage
             var instructions = gate.Body.Instructions;
             if (instructions.Count != 2 || instructions[1].OpCode.Name != "ret" || instructions[0].OpCode.Name is not ("ldc.i4.0" or "ldc.i4.1")) throw new InvalidDataException("Unknown credential gate IL.");
             credentialInput = instructions[0].OpCode.Name == "ldc.i4.1";
-        } else if (role == "Launcher") {
-            var launcher = types.Single(type => type.FullName == "SteamLauncher");
-            if (launcher.Fields.Single(field => field.Name == "InstallBundleProtocol" && field.IsLiteral).Constant is not int protocol || protocol != 1) throw new InvalidDataException("Launcher maintenance protocol mismatch.");
+        } else if (role == "Setup") {
+            var setup = types.Single(type => type.FullName == "SetupHost");
+            if (setup.Fields.Single(field => field.Name == "InstallBundleProtocol" && field.IsLiteral).Constant is not int protocol || protocol != 1) throw new InvalidDataException("Setup maintenance protocol mismatch.");
+            // The installer has no network, update-apply or process-termination code.
+            if (assembly.MainModule.AssemblyReferences.Any(reference => reference.Name == "System.Net.Http")) throw new InvalidDataException("Setup must not reference networking.");
+            foreach (var type in types) foreach (var method in type.Methods) {
+                if (method.IsPInvokeImpl && method.PInvokeInfo?.EntryPoint is "TerminateProcess") throw new InvalidDataException("Setup must not terminate processes.");
+                if (method.HasBody) foreach (var instruction in method.Body.Instructions)
+                    if (instruction.Operand is MethodReference called && (called.Name == "Kill" && called.DeclaringType.FullName == "System.Diagnostics.Process" || called.DeclaringType.FullName == "BetterAstralParty.Updating.UpdateTransaction" && called.Name == "Apply"))
+                        throw new InvalidDataException("Setup must not kill processes or apply updates.");
+            }
             foreach (var name in new[] { "BetterAstralParty.Installation.NativeMaintenanceEntry", "BetterAstralParty.Installation.NativeInstall", "BetterAstralParty.Installation.NativeUninstall" })
                 if (types.Count(type => type.FullName == name) != 1) throw new InvalidDataException("Native maintenance closure missing.");
             foreach (var resource in assembly.MainModule.Resources) {
                 if (resource.Name.StartsWith("BetterAstralParty.HelperBootstrap.", StringComparison.Ordinal)) throw new InvalidDataException("Historical embedded helper forbidden.");
                 if (resource is EmbeddedResource embedded) { var data = embedded.GetResourceData(); if (data.Length >= 2 && data[0] == 77 && data[1] == 90) throw new InvalidDataException("Embedded executable rejected."); }
             }
-        } else if (role == "Helper") {
-            foreach (var name in new[] { "BetterAstralParty.Updating.UpdateHelperProgram", "BetterAstralParty.Updating.UpdateHelperService" })
-                if (types.Count(type => type.FullName == name) != 1) throw new InvalidDataException("Helper entrypoint/closure missing.");
         } else throw new ArgumentException("Unknown image role.");
-        if (role is "Launcher" or "Helper") BuildVersion.ValidateNative(bytes, version);
+        if (role == "Setup") BuildVersion.ValidateNative(bytes, version);
         foreach (var type in types) {
             if (System.Text.RegularExpressions.Regex.IsMatch(type.FullName, "SettingsTraceProbe|SettingsTracePhase|Fixture|InertProcess|TrialVersionCheck|ReleaseSessionCheck")) throw new InvalidDataException("Fixture type entered product.");
             foreach (var method in type.Methods.Where(method => method.HasBody)) foreach (var instruction in method.Body.Instructions) {

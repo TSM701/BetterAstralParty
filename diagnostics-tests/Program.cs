@@ -97,7 +97,7 @@ using (var zip = ZipFile.OpenRead(damaged.ArchivePath))
     Check(!json.Contains("FAKE_RAW") && !json.Contains(workId) && !json.Contains(targetKey) && !json.Contains(root), "net6 raw state and original root or operation identities excluded");
     using var summaryReader = new StreamReader(zip.GetEntry("summary.json")!.Open()); using var summary = JsonDocument.Parse(summaryReader.ReadToEnd());
     Check(!summary.RootElement.GetProperty("environment").GetProperty("gameRootValidated").GetBoolean()
-        && summary.RootElement.GetProperty("collectorVersion").GetString() == "6", "net6 shared collection preserves markerless provenance");
+        && summary.RootElement.GetProperty("collectorVersion").GetString() == "7", "net6 shared collection preserves markerless provenance");
     using var logReader = new StreamReader(zip.GetEntry("logs/game-diagnostics-current.log")!.Open()); var logText = logReader.ReadToEnd();
     Check(logText.Contains("public-phase; phase=7") && !logText.Contains("FAKE_RAW"), "net6 markerless owned logs preserve typed projection privacy");
 }

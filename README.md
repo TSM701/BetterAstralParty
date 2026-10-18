@@ -19,7 +19,8 @@ Astral Party 국제판 INT(Global)의 PvE 정보 표시와 판단을 돕는 한�
 - PvE 매칭 성사 또는 직접 만든 PvE 방의 게임 시작 시 창 포커스
 - PvE 필드 휠 확대·축소와 턴 전환에도 유지되는 자유 시점, 자유 시점 카메라 종료 버튼
 - 별도의 Astral Party - Mod Steam 항목
-- 모드 실행 문제 발생 시 런처에서 업데이트 확인·다운로드와 진단 ZIP 생성
+- 게임 안에서 적용되는 자동 업데이트와 시작 실패가 반복될 때의 안전 모드
+- 오류 로그와 충돌 기록을 모은 진단 ZIP 생성
 
 PvP 방·경기가 감지되면 전투 추천·카드 정렬·추가 정보 표시·비활성 창 음소거 등 모드 편의 기능이 일시 중지됩니다. PvP에서 나오면 저장된 설정대로 다시 작동하며, 업데이트와 진단 처리는 PvP에서도 계속됩니다.
 
@@ -32,17 +33,21 @@ PvP 방·경기가 감지되면 전투 추천·카드 정렬·추가 정보 표�
 
 ### 설치와 실행
 
-BetterAstralParty 1.2.x 이하 버전을 사용 중이라면, 게임과 모드 실행기를 종료하고 사용하던 패키지의 `Uninstall.cmd`로 먼저 제거하세요. 제거가 정상 완료되면 아래 순서로 1.3.0 이상을 새로 설치하세요. 이전 설치 체계에서 자동 업데이트하거나 새 패키지로 덮어쓰는 설치는 지원하지 않습니다. 제거에 실패하면 새 패키지의 `Force-Uninstall.cmd`를 먼저 시도해주세요. 그래도 해결되지 않으면 번거로우시겠지만 보관할 데이터를 백업한 뒤 게임을 클린 설치하고 모드 설치를 다시 시도해주세요. 처음 설치하는 사용자는 바로 아래 순서대로 진행하면 됩니다.
+BetterAstralParty 1.3.x를 사용 중이라면 게임을 종료하고 1.4.0 패키지의 `Install.cmd`를 실행하세요. 기존 설치를 그대로 이어받아 이전 실행기·업데이트 도우미 파일을 정리하고, 기존 Astral Party - Mod 항목을 새 실행 방식으로 바꾸며, 설정은 유지합니다. 1.3.x는 1.4.0으로 자동 업데이트되지 않으며 게임 안에 `수동 다운로드 필요`로 표시됩니다.
+
+1.2.x 이하 버전을 사용 중이라면 게임을 종료하고 사용하던 패키지의 `Uninstall.cmd`로 먼저 제거한 뒤 아래 순서로 새로 설치하세요. 제거에 실패하면 새 패키지의 `Force-Uninstall.cmd`를 먼저 시도해주세요. 그래도 해결되지 않으면 번거로우시겠지만 보관할 데이터를 백업한 뒤 게임을 클린 설치하고 모드 설치를 다시 시도해주세요. 처음 설치하는 사용자는 바로 아래 순서대로 진행하면 됩니다.
 
 1. GitHub Releases에서 설치할 버전의 `BetterAstralParty-<버전>.zip` 전체 설치 ZIP을 받으세요. 소스 ZIP은 설치용이 아닙니다.
 2. 순정 Steam 클라이언트의 라이브러리에서 Astral Party를 열고 INT(Global) 게임을 먼저 한 번 실행하세요. Astral Party - Mod가 아닌 게임 자체를 실행해 업데이트와 데이터 다운로드를 마친 뒤 정상 종료하세요.
 3. 쓰기 가능한 별도 폴더에 ZIP 전체를 압축 해제하고, 동봉된 파일과 폴더를 함께 유지하세요. 게임 폴더 위에 직접 덮어쓰거나 ZIP 내부에서 실행하지 마세요.
 4. Steam에 로그인한 상태에서 압축을 푼 폴더의 `Install.cmd`를 실행하세요. PowerShell에서는 `.\Install.cmd`를 실행합니다. 경로를 묻는 경우 Steam의 설치된 파일 → 찾아보기로 확인한 `Astral Party` 폴더 또는 `8vJXnINT` 하위 폴더를 선택하세요.
-5. Steam 라이브러리의 Astral Party - Mod로 실행하세요. 첫 실행은 로더 초기화와 파일 다운로드로 시간이 걸리며 인터넷 연결이 필요할 수 있습니다.
+5. Steam 라이브러리의 Astral Party - Mod로 실행하세요. 게임 폴더의 `BetterAstralParty-Mod.cmd`가 모드를 켠 상태로 게임을 시작하며, 콘솔 창이 잠깐 보였다 사라질 수 있습니다. 첫 실행은 로더 초기화와 파일 다운로드로 시간이 걸리며 인터넷 연결이 필요할 수 있습니다.
+
+설치 도구는 패키지의 `artifacts/BetterAstralParty-Setup.exe`이며 게임 폴더에는 복사되지 않습니다. 게임 폴더에는 `BetterAstralParty-Mod.cmd`, `AstralParty-Vanilla.cmd`, `BetterAstralParty.compatibility.json`, `BepInEx/plugins/BetterAstralParty/BetterAstralParty.dll`과 설치 기록만 남으며 실행 파일은 설치하지 않습니다.
 
 Steam 경로나 계정을 자동으로 찾지 못하면 바로가기는 건드리지 않고 파일만 설치합니다. 순정 Steam 클라이언트에서 게임을 실행한 뒤 `Install.cmd`를 다시 실행하면 바로가기를 추가할 수 있습니다.
 
-Steam 항목 등록·수정 때문에 종료 안내가 나오면 Steam을 정상 종료한 뒤 `r`로 재확인할 수 있습니다. `y`를 입력하면 표시된 Steam 게임·앱과 Steam이 강제 종료될 수 있으므로 진행 상황을 저장하고 동기화를 마치세요. 빈 입력이나 거절은 취소합니다. 강제로 종료한 경우 작업 후 Steam만 다시 실행합니다. 실행 경로를 확인할 수 없는 프로세스는 강제 종료하지 않습니다.
+게임이나 Steam을 종료해야 하면 설치 도구가 안내합니다. 직접 정상 종료한 뒤 재확인하거나 취소할 수 있으며, 설치 도구가 프로세스를 강제로 종료하지는 않습니다.
 
 BetterAstralParty 없이 실행하려면 순정 Steam 클라이언트에서 Astral Party를 실행해 INT(Global)를 선택하거나 게임 폴더의 `AstralParty-Vanilla.cmd`를 실행하세요. Astral Party - Mod에서는 BetterAstralParty를 함께 불러옵니다. 두 실행 방법은 BetterAstralParty 적용 여부만 구분하며 다른 BepInEx 모드는 그대로 유지합니다. 새 공용 로더는 ON으로 설치됩니다. 전환 전 게임을 종료하고, Steam의 Astral Party 실행 옵션은 변경하지 마세요.
 
@@ -100,7 +105,7 @@ BetterAstralParty 없이 실행하려면 순정 Steam 클라이언트에서 Astr
 
 - 시작 공지 자동 열기 방지: 기본 ON입니다. 로그인 공지가 자동으로 열리는 것만 막으며 수동 공지 버튼은 유지합니다. OFF는 게임 원래의 자동 열기를 따릅니다.
 
-- 자동 다운로드·종료 후 적용: 기본은 각각 ON이며 두 옵션을 따로 끌 수 있습니다. 새 버전을 내려받고 검증한 뒤, 적용 대기 상태에서 게임·모드 실행기가 종료되면 적용합니다. 저장된 OFF와 업데이트 실패 후 OFF로 저장된 값은 유지합니다. 자동 다운로드 OFF는 업데이트 확인까지 끄는 옵션이 아닙니다.
+- 자동 다운로드·자동 적용: 기본은 각각 ON이며 두 옵션을 따로 끌 수 있습니다. 새 버전을 내려받아 검증하고, 자동 적용이 ON이면 게임 실행 중에 바로 적용해 다음 실행부터 새 버전을 사용합니다. 이전 이름은 종료 후 적용이며 저장된 선택과 업데이트 실패 후 OFF로 저장된 값은 유지합니다. 자동 다운로드 OFF는 업데이트 확인까지 끄는 옵션이 아닙니다.
 
 진단 폴더 열기·진단 ZIP 만들기, 업데이트 확인·다운로드 페이지·업데이트 받기·취소는 실행 버튼이며 ON·OFF 설정이 아닙니다. 새 버전의 변경 사항은 업데이트 알림 팝업에 표시합니다.
 
@@ -128,23 +133,23 @@ BetterAstralParty 없이 실행하려면 순정 Steam 클라이언트에서 Astr
 
 ### 업데이트
 
-- 자동·수동 업데이트는 새 1.3.0 설치 체계부터 지원합니다. 1.2.x 이하 버전은 사용하던 패키지로 먼저 제거한 뒤 새 전체 패키지로 설치하세요. 새 패키지의 설치·제거 도구는 이전 설치 체계의 전환을 지원하지 않습니다.
+- 자동 업데이트는 1.4.0 설치부터 지원합니다. 1.3.x는 1.4.0 패키지의 `Install.cmd`로 직접 올리고, 1.2.x 이하 버전은 사용하던 패키지로 먼저 제거한 뒤 새로 설치하세요.
 - 릴리즈와 프리 릴리즈는 공개 저장소에서 로그인 없이 확인합니다. 비공개 베타만 토큰 인증이 필요합니다. 업데이트 채널을 바꾸면 해당 채널의 최신 결과를 갱신하며, 다운로드 페이지는 선택한 채널의 GitHub 릴리스 목록을 엽니다.
-- 자동 업데이트: 새 1.3.0 이상 설치 후 모드 설정에서 자동 다운로드와 종료 후 적용을 켜세요. 적용 대기가 완료되면 게임과 모드 실행기를 정상 종료하고, 적용 후 직접 다시 실행하세요. 선택한 채널의 저장소만 확인합니다.
-- 공개 채널에서는 1.3.0 이상만 자동 업데이트 대상으로 선택합니다. 선택한 채널에 지원 버전이 없으면 현재 설치를 유지하며, 1.2.x로 내려가지 않습니다.
-- 채널 전환: 선택한 저장소의 지원되는 최신 릴리스를 확인합니다. 설치된 버전보다 낮거나 같은 버전이어도 다른 채널로 전환할 수 있으며, 전환 안내에서 직접 승인해야 적용을 준비합니다. 같은 채널의 일반 업데이트는 버전 역행을 허용하지 않습니다.
+- 자동 업데이트: 모드 설정에서 자동 다운로드와 자동 적용을 켜세요. 검증된 업데이트가 준비되면 게임 실행 중에 모드가 직접 적용하고, 다음 실행부터 새 버전을 사용합니다. 적용을 위해 게임을 종료할 필요가 없으며 별도 창도 열리지 않습니다. 선택한 채널의 저장소만 확인합니다.
+- 공개 채널에서는 1.4.0 이상만 자동 업데이트 대상으로 선택합니다. 선택한 채널에 지원 버전이 없으면 현재 설치를 유지하며, 이전 버전으로 내려가지 않습니다.
+- 채널 전환: 선택한 저장소의 지원되는 최신 릴리스를 확인합니다. 설치된 버전보다 낮은 버전이어도 다른 채널로 전환할 수 있으며, 업데이트 채널 아래의 `채널 전환` 버튼에서 대상 버전을 확인하고 직접 승인해야 적용을 준비합니다. 릴리즈와 프리 릴리즈에 설치된 버전과 같은 버전만 있으면 다시 설치하지 않고 `채널 전환 대기`로 표시하며, 새 버전이 나오면 전환을 확인할 수 있습니다. 선택한 채널이 설치된 채널과 다르면 설치된 채널을 함께 표시합니다. 승인 후 다른 설정을 바꿔도 전환은 유지되고, 업데이트 채널을 다시 바꾸면 승인이 취소됩니다. 같은 채널의 일반 업데이트는 버전 역행을 허용하지 않습니다.
 - 같은 공개 버전이 GitHub에서 프리 릴리즈↔릴리즈로 바뀌어도 설치된 파일과 저장한 채널은 그대로 둡니다. 새 업데이트 확인에는 변경된 분류를 사용하며, 분류 변경만으로 자동 재설치하거나 다운그레이드하지 않습니다.
-- 수동 업데이트: 새 1.3.0 이상 설치 이후에는 게임과 모드 실행기를 종료한 뒤 상위 버전 전체 패키지의 `Install.cmd`를 실행하세요. 기존 설정은 유지하며, 버전 역행과 같은 버전의 다른 파일 덮어쓰기는 차단합니다.
+- 수동 업데이트: 게임을 종료한 뒤 상위 버전 전체 패키지의 `Install.cmd`를 실행하세요. 기존 설정은 유지하며, 버전 역행과 같은 버전의 다른 파일 덮어쓰기는 차단합니다.
 - Mod 실행 시 공용 로더가 OFF라면 안내창 없이 ON으로 전환하며, 다른 모드 파일과 나머지 로더 설정은 보존합니다. 변경 전 원본은 `BepInEx/config/BetterAstralParty.loader-before-*.bak`에 보관됩니다.
 - 이전에 받은 패키지의 설치·제거 도구는 자동 업데이트로 바뀌지 않으므로 최신 전체 패키지를 사용하세요.
 - 새 자동 업데이트 파일과 임시 작업 파일은 게임 폴더의 `BetterAstralParty.Update/`에 모읍니다. 실행·제거에 필요한 일부 기록은 게임 폴더에 남으며, 기존 기록·백업·로그의 위치는 유지합니다.
-- 게임 핫픽스로 파일 해시나 카탈로그가 달라진 것만으로 설치·실행을 막지 않습니다. 실제로 맞지 않는 선택 기능은 해당 기능만 중단하며, 필수 실행 파일 누락이나 미완료 복구 등으로 중단된 경우에는 런처의 복구 업데이트 화면에서 재확인하거나 업데이트를 내려받을 수 있습니다. 검증을 통과한 후보는 적용 버튼을 누르면 런처 종료 후 반영됩니다. 호환 패치가 없거나 확인에 실패한 경우에는 설치 파일을 변경하지 않으며, 순정 Steam 클라이언트로 실행하거나 진단 ZIP을 만들 수 있습니다.
-- 비상 업데이트 화면에서는 이번 업데이트의 릴리즈·프리 릴리즈 채널만 선택합니다. 게임 안에 저장된 채널 설정은 바꾸지 않으며, 비공개 베타 채널은 인게임 업데이트 설정에서 선택하세요.
-- 게임 UI 호환성 오류가 나도 업데이트 드라이버가 실행되는 동안에는 기존 설정에 따라 업데이트 확인·다운로드를 계속합니다. 로더나 드라이버 자체가 시작되지 않는 경우에는 런처의 복구 업데이트 또는 최신 전체 패키지를 사용하세요.
+- 게임 핫픽스로 파일 해시나 카탈로그가 달라진 것만으로 설치·실행을 막지 않습니다. 실제로 맞지 않는 선택 기능은 해당 기능만 중단합니다.
+- 안전 모드: 모드가 두 번 연속 홈 화면까지 시작하지 못하면 다음 실행은 안전 모드로 시작합니다. 모드 기능은 꺼지고 업데이트 확인·다운로드·적용만 동작하므로 호환 수정판을 자동으로 받을 수 있습니다. 안전 모드로 세 번 실행하면 전체 모드를 한 번 다시 시도합니다. 새 BetterAstralParty 버전이나 바뀐 게임 빌드는 횟수를 초기화하며, 홈 화면에 도달하면 안전 모드가 해제됩니다.
+- 게임 UI 호환성 오류가 나도 업데이트 기능은 기존 설정에 따라 확인·다운로드·적용을 계속합니다. 모드를 켠 상태로 게임 자체가 시작되지 않으면 순정 Steam 클라이언트로 실행하거나 `Create-Diagnostics.cmd`로 진단 ZIP을 만들고, 최신 전체 패키지를 설치하세요.
 
 ### 제거
 
-새 1.3.0 이상 설치의 제거에는 최신 전체 패키지의 `Uninstall.cmd`를 사용하세요. 게임과 모드 실행기를 종료한 뒤 제거 목록을 확인하세요. 모드 파일과 설정은 `%LOCALAPPDATA%/BetterAstralParty/Backups/v4`에 백업한 뒤 제거합니다. 이전 설치 체계의 버전은 사용하던 패키지의 제거기를 사용해야 합니다.
+제거에는 최신 전체 패키지의 `Uninstall.cmd`를 사용하세요. 게임을 종료한 뒤 제거 목록을 확인하세요. 모드 파일과 설정은 `%LOCALAPPDATA%/BetterAstralParty/Backups/v5`에 백업한 뒤 제거합니다. 1.2.x 이하 버전은 사용하던 패키지의 제거기를 사용해야 합니다.
 
 Steam 경로나 로그인 계정을 자동으로 찾지 못하면 바로가기 정리는 건너뛰고, 소유가 검증된 모드 파일은 정상 제거 절차로 처리합니다. 남은 Astral Party - Mod 항목은 Steam에서 직접 제거할 수 있습니다.
 
@@ -159,8 +164,8 @@ Steam 경로나 로그인 계정을 자동으로 찾지 못하면 바로가기 �
 - Steam 항목이 안 보이면 Steam을 재시작하고 라이브러리 필터와 로그인 계정을 확인하세요. 항목 복구에는 `Install.cmd`를 사용하세요.
 - 설치·실행 오류는 `Open-Logs.cmd`로 로그를 확인하세요. 호환성 검사 오류가 나면 오류 문구를 함께 제보하세요.
 - 계산 문제는 모드 설정에서 진단을 켠 뒤 재현하세요.
-- 진단 ZIP은 패키지의 `Create-Diagnostics.cmd` 또는 게임의 F8 → 일반 설정 → 진단 ZIP 만들기로 생성하세요. 기본 저장 위치는 `%LOCALAPPDATA%/BetterAstralParty/Diagnostics`입니다.
-- 최근 설치·초기 실행·런처·호환성 오류의 상세 본문도 포함합니다. 토큰·개인 경로를 가리며, 용량 제한이나 누락 사유는 ZIP의 `summary.json`에 기록합니다.
+- 진단 ZIP은 패키지의 `Create-Diagnostics.cmd` 또는 게임의 F8 → 일반 설정 → 진단 ZIP 만들기로 생성하세요. 바탕 화면의 `BetterAstralParty-Diagnostics` 폴더에 저장됩니다.
+- 최근 설치·초기 실행·호환성 오류의 상세 본문, BepInEx `LogOutput.log`와 Unity `Player.log`에서 오류 주변만 걸러 가린 줄, 게임의 Windows 오류 보고·응용 프로그램 오류 기록, Unity 충돌 폴더의 `error.log`, 시작 단계 기록과 안전 모드 상태, 설치된 다른 BepInEx 플러그인의 이름·버전 목록을 포함합니다. 충돌 덤프는 크기만 기록합니다. 토큰·개인 경로를 가리고 아무것도 업로드하지 않으며, 용량 제한이나 누락 사유는 ZIP의 `summary.json`에 기록합니다.
 - Steam 관련 설치·제거 오류는 실패 당시의 프로세스 확인 결과와 단계도 수집합니다. 확인하지 못한 정보는 미확인으로 남깁니다.
 - 게임·모드 파일이 일부 없는 경우에도 고정 모드 파일·복구 및 백업 표식의 존재·크기·해시를 `recovery-inventory.json`에 기록합니다. 복구 기록 원문과 인증 저장소는 포함하지 않습니다.
 
@@ -187,7 +192,8 @@ A Korean/English quality-of-life mod for Astral Party INT(Global), focused on Pv
 - Focus the game when a PvE match is found or a manually created PvE room starts
 - PvE field wheel zoom and free view across turns, with an Exit Free Camera button
 - A separate Astral Party - Mod Steam entry
-- Launcher update checks, downloads and diagnostics ZIP creation when mod launch encounters a problem
+- Automatic updates applied in game, and a safe mode after repeated startup failures
+- Diagnostics ZIP creation with error logs and crash records
 
 When a PvP room or match is detected, mod conveniences such as combat recommendations, hand layouts, additional information displays and focus muting pause. They resume with your saved settings after leaving PvP; updates and diagnostics continue even during PvP.
 
@@ -200,17 +206,21 @@ Differences in another mod or an existing shared loader's configuration or versi
 
 ### Install and play
 
-If you use BetterAstralParty 1.2.x or earlier, close the game and mod launcher and uninstall using your previous package's `Uninstall.cmd` first. After removal completes successfully, install 1.3.0 or newer fresh using the steps below. Automatic updates and in-place installation from the previous installation generation are not supported. If removal fails, first try `Force-Uninstall.cmd` from the new package. If that still does not resolve the issue, please back up any data you want to keep, perform a clean installation of the game, then try installing the mod again. First-time users can follow the steps below directly.
+If you use BetterAstralParty 1.3.x, close the game and run `Install.cmd` from the 1.4.0 package. It takes over the existing installation directly, removes the old launcher and update helper files, converts the existing Astral Party - Mod entry to the new launch method and keeps your settings. 1.3.x does not update to 1.4.0 automatically; the game reports that a manual download is required.
+
+If you use 1.2.x or earlier, close the game and uninstall using your previous package's `Uninstall.cmd` first, then install fresh using the steps below. If removal fails, first try `Force-Uninstall.cmd` from the new package. If that still does not resolve the issue, please back up any data you want to keep, perform a clean installation of the game, then try installing the mod again. First-time users can follow the steps below directly.
 
 1. Download the complete `BetterAstralParty-<version>.zip` installation package for your chosen version from GitHub Releases. Source ZIPs are not installation packages.
 2. In the Steam client, first launch Astral Party INT(Global) itself from your library, not Astral Party - Mod. Wait for game/data updates to finish, then exit normally.
 3. Extract the entire ZIP to a separate writable folder and keep all bundled files and folders together. Do not overwrite the game folder directly or run inside the ZIP.
 4. While signed in to Steam, run `Install.cmd` from the extracted folder. In PowerShell, run `.\Install.cmd`. If prompted, select the `Astral Party` folder or its `8vJXnINT` child, as shown by Steam's Installed Files → Browse.
-5. Launch Astral Party - Mod from your Steam library. First-time loader initialization and file downloads may take time and require internet access.
+5. Launch Astral Party - Mod from your Steam library. `BetterAstralParty-Mod.cmd` in the game folder starts the game with the mod active; a console window may flash briefly. First-time loader initialization and file downloads may take time and require internet access.
+
+The installer is `artifacts/BetterAstralParty-Setup.exe` inside the package and is not copied into the game folder. The game folder only receives `BetterAstralParty-Mod.cmd`, `AstralParty-Vanilla.cmd`, `BetterAstralParty.compatibility.json`, `BepInEx/plugins/BetterAstralParty/BetterAstralParty.dll` and installation records; no executable is installed.
 
 If Steam or its account cannot be discovered, installation continues without changing shortcuts. Launch the original game through Steam, then rerun `Install.cmd` to add the entry.
 
-If Steam entry registration or repair prompts you to close processes, you can close Steam normally and enter `r` to recheck. Entering `y` may force-close the listed Steam games/apps and Steam, so save progress and finish syncing first. A blank response or refusal cancels. After a forced shutdown, only Steam restarts. Processes with unverified executable paths are never force-closed.
+When the game or Steam must be closed, the installer tells you. Close it normally yourself, then recheck or cancel; the installer never force-closes processes.
 
 To play without BetterAstralParty, launch Astral Party through the Steam client and select INT(Global), or run `AstralParty-Vanilla.cmd` in the game folder. Astral Party - Mod also loads BetterAstralParty. These launch methods select BetterAstralParty only; other BepInEx mods remain available in both. A newly installed shared loader defaults to ON. Close the game before switching and leave Astral Party's Steam launch options unchanged.
 
@@ -268,7 +278,7 @@ When an existing configuration lacks the new entries, KO Conditions initially in
 
 - Suppress Startup Notices: ON by default; suppresses automatic login notices only. Manual NOTICE buttons remain. OFF follows native automatic notice behavior.
 
-- Auto Download / Apply After Exit: both default to ON and can be disabled separately. Downloads and verifies a new version, then applies a queued update after the game and mod launcher close. Saved OFF values and OFF values persisted after update failure remain. Auto Download OFF does not disable update checks.
+- Auto Download / Apply Automatically: both default to ON and can be disabled separately. Downloads and verifies a new version; with Apply Automatically ON, applies it right away while the game runs, and the new version is used from the next launch. The previous name was Apply After Exit; saved choices and OFF values persisted after update failure remain. Auto Download OFF does not disable update checks.
 
 Open Diagnostics Folder, Create Diagnostics ZIP, Check Updates, Download Page, Get Update and Cancel Update are action buttons, not ON/OFF settings. Release notes appear in the update notification popup.
 
@@ -296,23 +306,23 @@ Use your own Steam screenshot and overlay hotkeys.
 
 ### Updates
 
-- Automatic and manual updates are supported from the new 1.3.0 installation generation. Uninstall 1.2.x or earlier with your previous package before installing the new complete package fresh. The new installation/removal tools do not migrate the previous installation generation.
+- Automatic updates are supported from the 1.4.0 installation. Upgrade 1.3.x directly with `Install.cmd` from the 1.4.0 package; uninstall 1.2.x or earlier with your previous package before installing fresh.
 - Release and Pre-release check the public repository without login. Only Private Beta requires token authentication. Switching channels refreshes that channel's latest result; Download Page opens its GitHub releases listing.
-- Automatic updates: after installing the new 1.3.0 generation or newer, enable Auto Download and Apply After Exit in mod settings. Once the update is queued, close the game and mod launcher normally, then restart the game yourself after it finishes. Only the selected channel's repository is checked.
-- Public channels select only version 1.3.0 or newer for automatic updates. If the selected channel has no supported release, the current installation stays unchanged; it does not downgrade to 1.2.x.
-- Channel switching: checks the latest supported release in the selected repository. A different channel can have a lower or equal version; approve the transition notice to prepare it. Ordinary updates within the same channel still reject downgrades.
+- Automatic updates: enable Auto Download and Apply Automatically in mod settings. When a verified update is ready, the mod applies it while the game runs, and the new version is used from the next launch. You do not need to close the game for it to apply, and no separate window opens. Only the selected channel's repository is checked.
+- Public channels select only version 1.4.0 or newer for automatic updates. If the selected channel has no supported release, the current installation stays unchanged; it does not downgrade to an earlier version.
+- Channel switching: checks the latest supported release in the selected repository. A different channel can have a lower version; review the target version with the `Switch Channel` button below Update Channel and approve it to prepare the switch. When Release and Pre-release only have the version you already have, nothing is reinstalled: the status shows `Channel Switch Waiting` until a newer version is released. When the selected channel differs from the installed one, the installed channel is shown as well. Changing other settings after approval keeps the switch; changing the update channel again cancels it. Ordinary updates within the same channel still reject downgrades.
 - Reclassifying the same public version between GitHub Pre-release and Release leaves installed files and your saved channel unchanged. Subsequent checks use the current classification; reclassification alone never reinstalls or downgrades the mod.
-- Manual updates: after installing the new 1.3.0 generation or newer, close the game and mod launcher, then run `Install.cmd` from a newer complete package. Saved settings are preserved; downgrades and replacing a version with different files at the same version remain blocked.
+- Manual updates: close the game, then run `Install.cmd` from a newer complete package. Saved settings are preserved; downgrades and replacing a version with different files at the same version remain blocked.
 - A Mod launch enables the shared loader without a prompt if it is OFF, preserving other mods' files and all remaining loader settings. The original configuration is retained at `BepInEx/config/BetterAstralParty.loader-before-*.bak`.
 - Automatic updates do not replace installation/removal tools in previously downloaded packages; use the latest complete package for maintenance.
 - New automatic-update downloads and temporary working files are kept in `BetterAstralParty.Update/` inside the game folder. Some records needed for launch and removal stay at the top level; existing records, backups and logs keep their locations.
-- Changed game hashes or catalogs after a hotfix alone do not block installation or launch. An incompatible optional feature stops independently. If essential executables are missing or unfinished recovery prevents launch, use the launcher's recovery update window to retry or download an update. After a candidate passes verification, choose Apply to install it after the launcher exits. No compatible patch or a failed lookup leaves installation files unchanged; launching through the Steam client and creating a diagnostics ZIP remain available.
-- The emergency update screen offers Release and Pre-release for this update only, without changing the saved in-game channel setting. Select Private Beta in the in-game Update Settings.
-- Game UI compatibility errors do not stop update checks and downloads while the update driver is running; saved preferences still apply. If the loader or driver cannot start, use launcher recovery or the latest complete package.
+- Changed game hashes or catalogs after a hotfix alone do not block installation or launch. An incompatible optional feature stops independently.
+- Safe mode: if the mod fails to reach the home screen on two starts in a row, the next start runs in safe mode. Mod features are off and only update checks, downloads and applying keep working, so a compatible fix can arrive automatically. After three safe-mode runs, the full mod is retried once. A new BetterAstralParty version or a changed game build resets the count, and reaching the home screen clears safe mode.
+- Game UI compatibility errors do not stop update checks, downloads and applying; saved preferences still apply. If the game itself cannot start with the mod, launch through the Steam client or create a diagnostics ZIP with `Create-Diagnostics.cmd`, and install the latest complete package.
 
 ### Uninstall
 
-Use `Uninstall.cmd` from the latest complete package to remove an installation from the new 1.3.0 generation or newer. Close the game and mod launcher and review the removal list. Mod files and settings are backed up under `%LOCALAPPDATA%/BetterAstralParty/Backups/v4` before removal. Installations from the previous generation must use their previous package's uninstaller.
+Use `Uninstall.cmd` from the latest complete package to remove the mod. Close the game and review the removal list. Mod files and settings are backed up under `%LOCALAPPDATA%/BetterAstralParty/Backups/v5` before removal. Installations of 1.2.x or earlier must use their previous package's uninstaller.
 
 If the Steam directory or signed-in account cannot be discovered, shortcut cleanup is skipped while verified mod files still follow normal backed-up removal. Remove any remaining Astral Party - Mod entry manually in Steam.
 
@@ -327,8 +337,8 @@ If normal removal fails, first run `Force-Uninstall.cmd` and review the deletion
 - Missing Steam entry: restart Steam and check library filters and the signed-in account. Use `Install.cmd` to repair the entry.
 - Installation or launch errors: open logs with `Open-Logs.cmd`. Include the error message when reporting a compatibility-check failure.
 - Calculation issues: enable diagnostics in mod settings, then reproduce the issue.
-- Create a diagnostics ZIP using the package's `Create-Diagnostics.cmd` or F8 → General → Create Diagnostics ZIP in game. The default output folder is `%LOCALAPPDATA%/BetterAstralParty/Diagnostics`.
-- Recent installation, bootstrap, launcher and compatibility errors include detailed text with tokens and private paths redacted. Size limits and missing evidence are listed in the ZIP's `summary.json`.
+- Create a diagnostics ZIP using the package's `Create-Diagnostics.cmd` or F8 → General → Create Diagnostics ZIP in game. It is saved to the `BetterAstralParty-Diagnostics` folder on the Desktop.
+- The ZIP includes detailed text of recent installation, bootstrap and compatibility errors, filtered and redacted BepInEx `LogOutput.log` and Unity `Player.log` lines around errors, Windows Error Reporting and Application Error records for the game, Unity crash-folder `error.log` text, the startup stage record and safe-mode state, and the names and versions of other installed BepInEx plugins. Crash dumps are not included, only their size. Tokens and private paths are redacted and nothing is uploaded. Size limits and missing evidence are listed in the ZIP's `summary.json`.
 - Steam-related installation and removal errors include the process observations and stage recorded at failure time. Unavailable information remains unknown.
 - Even when game or mod files are missing, `recovery-inventory.json` lists the presence, size and hashes of fixed mod files and recovery/backup markers. Raw recovery records and credential stores are excluded.
 

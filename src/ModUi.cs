@@ -52,13 +52,14 @@ internal static class ModUi
     {
         if (_lastFrame == Time.frameCount) return;
         _lastFrame = Time.frameCount;
+        if (Time.realtimeSinceStartup >= StartupGuard.HealthySeconds) StartupGuard.Healthy();
         try
         {
             Plugin.Updates.InstalledChannel(Plugin.Automatic.Snapshot.InstalledChannel);
             Plugin.Updates.Tick(DateTimeOffset.UtcNow, (Plugin.AutomaticChecks.Value || Plugin.Updates.TransitionCheckPending) && (!Compatibility.Allowed("CoreUi") || !Compatibility.Allowed("HomeMenu") || GameUi.HomeAvailable) && Plugin.Automatic.Status != AutomaticUpdateStatus.CheckingInstallation);
             Plugin.UpdateSession?.Poll();
             UpdateDiscoveryBridge.Apply(Plugin.Updates, Plugin.Automatic, Plugin.Version);
-            Plugin.PollUpdatePreferences(); Plugin.Automatic.Tick(DateTimeOffset.UtcNow);
+            Plugin.PollUpdatePreferences(); Plugin.Automatic.Tick(DateTimeOffset.UtcNow); Plugin.AdoptConfirmedChannel();
             Plugin.UpdateSession?.Poll();
             Plugin.ObserveUpdateDiagnostics();
         }
@@ -215,7 +216,7 @@ internal static class ModUi
             _updateRevision = Plugin.Updates.Revision; _automaticRevision = Plugin.Automatic.Revision;
             _sessionRevision = Plugin.UpdateSession?.Revision ?? -1;
             Refresh();
-            if (_helpAction is "UpdateCheck" or "UpdateDownload" or "AutoDownload" or "AfterExit" or "UpdateGet" or "UpdateCancel" or "UpdateAuth" or "UpdateSignOut")
+            if (_helpAction is "UpdateCheck" or "UpdateDownload" or "AutoDownload" or "AfterExit" or "UpdateSwitch" or "UpdateGet" or "UpdateCancel" or "UpdateAuth" or "UpdateSignOut")
             { var action = _helpAction; _helpAction = null; SetHelp(action); }
         }
         if (_compatibilityRevision != Compatibility.Revision)
@@ -352,6 +353,7 @@ internal static class ModUi
         AddToggle("InputAttention", 440, 320);
         AddToggle("MatchFocus", 440, MenuLayout.ToggleY(4));
         AddToggle("UpdateChannel", 440, MenuLayout.ToggleY(7));
+        AddToggle("UpdateSwitch", 440, MenuLayout.ToggleY(21));
         AddToggle("UpdateCheck", 440, MenuLayout.ToggleY(8));
         AddToggle("UpdateDownload", 440, MenuLayout.ToggleY(9));
         AddToggle("AutoDownload", 440, MenuLayout.ToggleY(10));
@@ -701,8 +703,8 @@ internal static class ModUi
         body = Compatibility.Reason(action) ?? body;
         Labels["HelpTitle"].Set("text", action is "UpdateAuth" or "UpdateSignOut" ? ModText.SessionTitle(action) : ModText.Text(title));
         Labels["HelpBody"].Set("text", action is "UpdateAuth" or "UpdateSignOut" ? ModText.SessionDetails(Plugin.UpdateSession?.Status ?? ReleaseSessionStatus.NotConfigured) : action == "UpdateCheck"
-            ? ModText.UpdateDetails(Plugin.Updates.Result, Plugin.Version) : action is "UpdateGet" or "UpdateCancel"
-                ? ModText.AutomaticDetails(Plugin.Automatic.Status, Plugin.Automatic.RecoveryStage, Plugin.Automatic.Fault, Plugin.Updates.Channel) : ModText.Text(body));
+            ? ModText.UpdateDetails(Plugin.Updates.Result, Plugin.Version) : action is "UpdateGet" or "UpdateCancel" or "UpdateSwitch"
+                ? ModText.AutomaticDetails(Plugin.Automatic.Status, Plugin.Automatic.RecoveryStage, Plugin.Automatic.Fault, Plugin.Updates.Channel, Plugin.Automatic.TransitionWaiting) : ModText.Text(body));
         var label = Labels["HelpBody"];
         ModFont.Track(label); // Resolve fallback before measuring scrolling bounds.
         // textHeight forces native line layout once, rather than measuring every frame.
@@ -912,8 +914,10 @@ internal static class ModUi
                 Refresh(); _helpAction = null; SetHelp(action); return;
             case "AutoDownload": Plugin.AutoDownload.Value = !Plugin.AutoDownload.Value; break;
             case "AfterExit": Plugin.ApplyAfterExit.Value = !Plugin.ApplyAfterExit.Value; break;
-            case "UpdateGet":
+            case "UpdateSwitch":
                 if (UpdateNotificationUi.CanConfirmTransition) { UpdateNotificationUi.BeginTransition(); ClosePanel(true); return; }
+                Refresh(); _helpAction = null; SetHelp(action); return;
+            case "UpdateGet":
                 if (Plugin.Automatic.CanReactivate) Plugin.Automatic.Reactivate(); else if (Plugin.Automatic.CanRecheck) Plugin.Automatic.Recheck(); else Plugin.Automatic.Download(DateTimeOffset.UtcNow);
                 Refresh(); _helpAction = null; SetHelp(action); return;
             case "UpdateCancel": Plugin.Automatic.Cancel(); Refresh(); _helpAction = null; SetHelp(action); return;
@@ -978,18 +982,26 @@ internal static class ModUi
             if (action is "UpdateChannel" or "UpdateCheck" or "UpdateDownload")
             {
                 var available = action == "UpdateDownload" || Plugin.Updates.TryDownloadPage(out _);
-                var state = action == "UpdateChannel" ? ModText.ChannelName(Plugin.Updates.Channel.ToString())
-                    : action == "UpdateCheck" ? ModText.UpdateStatus(Plugin.Updates.Result.Status) : "";
+                var installed = Plugin.Automatic.Snapshot is { RequiresTransition: true, InstalledChannel.Length: > 0 } snapshot ? snapshot.InstalledChannel : null;
+                var state = action == "UpdateChannel" ? ModText.ChannelName(Plugin.Updates.Channel.ToString()) + (installed == null ? "" : ModText.InstalledChannelSuffix(installed))
+                    : action == "UpdateCheck" ? ModText.CheckStatus(Plugin.Updates.Result) : "";
                 ToggleBackgrounds[action].Set("grayed", action != "UpdateChannel" && !available);
                 NativeUi.StyleTitle(button, ModText.Text(MenuLayout.Help(action).Title) + (state.Length == 0 ? "" : ": " + state), 22);
                 continue;
             }
+            if (action == "UpdateSwitch")
+            {
+                var confirmable = UpdateNotificationUi.CanConfirmTransition;
+                var target = confirmable && Plugin.Updates.Result.Release is { } candidate ? ModText.ChannelName(Plugin.Updates.Channel.ToString()) + " " + candidate.Version : null;
+                button.Set("grayed", !confirmable); ToggleBackgrounds[action].Set("grayed", !confirmable);
+                NativeUi.StyleTitle(button, ModText.Text(MenuLayout.Help(action).Title) + ": " + ModText.SwitchState(Plugin.Automatic.Snapshot.RequiresTransition, Plugin.Automatic.TransitionWaiting, target), 20);
+                continue;
+            }
             if (action is "UpdateGet" or "UpdateCancel")
             {
-                var transition = action == "UpdateGet" && UpdateNotificationUi.CanConfirmTransition;
-                var available = action == "UpdateGet" ? transition || Plugin.Automatic.CanDownload || Plugin.Automatic.CanReactivate || Plugin.Automatic.CanRecheck : Plugin.Automatic.CanCancel;
+                var available = action == "UpdateGet" ? Plugin.Automatic.CanDownload || Plugin.Automatic.CanReactivate || Plugin.Automatic.CanRecheck : Plugin.Automatic.CanCancel;
                 button.Set("grayed", !available); ToggleBackgrounds[action].Set("grayed", !available);
-                NativeUi.StyleTitle(button, (transition ? ModText.ChannelTransitionTitle : action == "UpdateGet" && Plugin.Automatic.CanReactivate ? ModText.Korean ? "다시 사용" : "Re-enable Updates" : action == "UpdateGet" && Plugin.Automatic.CanRecheck ? ModText.Korean ? "상태 다시 확인" : "Recheck Installation" : ModText.Text(MenuLayout.Help(action).Title)) + ": " + ModText.AutomaticStatus(Plugin.Automatic.Status), 20);
+                NativeUi.StyleTitle(button, (action == "UpdateGet" && Plugin.Automatic.CanReactivate ? ModText.Korean ? "다시 사용" : "Re-enable Updates" : action == "UpdateGet" && Plugin.Automatic.CanRecheck ? ModText.Korean ? "상태 다시 확인" : "Recheck Installation" : ModText.Text(MenuLayout.Help(action).Title)) + ": " + ModText.AutomaticStatus(Plugin.Automatic.Status, Plugin.Automatic.TransitionWaiting), 20);
                 continue;
             }
             if (action == "Language")

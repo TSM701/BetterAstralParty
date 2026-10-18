@@ -29,7 +29,7 @@ namespace BetterAstralParty.Installation
         private static readonly string[] Exclusive = {
             "BepInEx/config/kr.betterastralparty.mod.cfg", "BepInEx/BetterAstralParty-Diagnostics/current.log",
             "BepInEx/BetterAstralParty-Diagnostics/previous.log", "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch.log",
-            "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log", "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log"
+            "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log", "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log", ChannelTransitionIntent.AdoptionPath
         };
         private static ApplySafetyException Bad(string reason)
         {
@@ -44,13 +44,13 @@ namespace BetterAstralParty.Installation
         }
         private static void Absent(WindowsFileFence game)
         {
-            foreach (var name in InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path, HelperDescriptor.Image, HelperDelivery.Receipt }))
+            foreach (var name in InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path, OrdinaryInstallRecovery.LegacyLauncher, OrdinaryInstallRecovery.LegacyHelper, OrdinaryInstallRecovery.LegacyHelperReceipt }))
             {
                 var path = game.Full(name);
                 if (File.Exists(WindowsPath.ForIo(path)) || Directory.Exists(WindowsPath.ForIo(path))) throw Bad("ReinstallOwnedFilesRemain");
                 using (Maybe(game, name)) { }
             }
-            foreach (var name in new[] { "BetterAstralParty.reinstall-v4.pending", "BetterAstralParty.update-v4.operation", "BetterAstralParty.update-v4.failed" })
+            foreach (var name in new[] { "BetterAstralParty.reinstall-v5.pending", UpdateFaults.OperationPath, "BetterAstralParty.update-v5.failed" })
             {
                 using (var file = Maybe(game, name)) if (file != null) throw Bad("ReinstallOperationPending");
                 if (Directory.Exists(WindowsPath.ForIo(game.Full(name)))) throw Bad("ReinstallOperationPending");
@@ -92,7 +92,7 @@ namespace BetterAstralParty.Installation
                 || !state.TryGetValue("Entries", out entries) || !(entries is List<object?> rows) || rows.Count < 1 || rows.Count > 300)
                 throw Bad("RemovalJournalInvalid");
             backups.DirectoryIdentity(plan.BackupId);
-            var allowed = new HashSet<string>(InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path, HelperDescriptor.Image, HelperDelivery.Receipt, "doorstop_config.ini" }).Concat(Exclusive), StringComparer.OrdinalIgnoreCase);
+            var allowed = new HashSet<string>(InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path, "doorstop_config.ini" }).Concat(Exclusive), StringComparer.OrdinalIgnoreCase);
             var result = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
             for (var i = 0; i < rows.Count; i++)
             {
@@ -118,7 +118,7 @@ namespace BetterAstralParty.Installation
                 }
                 result.Add(name, entry);
             }
-            foreach (var name in InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path, HelperDescriptor.Image, HelperDelivery.Receipt }))
+            foreach (var name in InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path }))
                 if (!result.ContainsKey(name)) throw Bad("RemovalBackupIncomplete");
             return result;
         }
@@ -186,7 +186,7 @@ namespace BetterAstralParty.Installation
                 var signature = Pin(game, entry.Stage + "/signature.bin", UpdateTrust.MaxSignatureBytes, pins);
                 var key = Pin(game, entry.Stage + "/key-id.bin", 40, pins); var keyId = Encoding.ASCII.GetString(key);
                 if (UpdateTrust.Hash(descriptor) != digest || key.Any(value => value > 127) || !Regex.IsMatch(keyId, @"\A[A-Za-z0-9_-]{1,40}\z")) throw Bad("RemovalHistoricalDescriptorInvalid");
-                selected = WholeInstallBridge.VerifyUpdateProof(descriptor, new DetachedSignature(keyId, signature).Bytes());
+                selected = InstallProof.VerifyUpdateProof(descriptor, new DetachedSignature(keyId, signature).Bytes());
                 foreach (var pair in pins)
                 {
                     string? previous; if (plan.GamePins.TryGetValue(pair.Key, out previous) && previous != pair.Value) throw Bad("RemovalEvidenceConflict");
@@ -206,7 +206,7 @@ namespace BetterAstralParty.Installation
                 using (var receipt = Maybe(game, InstallReceipt.Path)) if (highest == null || receipt != null) return null;
                 Absent(game); UpdateLaunchGate.Check(game);
                 var local = Environment.GetEnvironmentVariable("LOCALAPPDATA");
-                if (string.IsNullOrEmpty(local) || backupRoot != WindowsPath.Absolute(Path.Combine(local, "BetterAstralParty", "Backups", "v4", UpdateTrust.Hash(Encoding.UTF8.GetBytes(game.Root.ToLowerInvariant())))))
+                if (string.IsNullOrEmpty(local) || backupRoot != WindowsPath.Absolute(Path.Combine(local, "BetterAstralParty", "Backups", "v5", UpdateTrust.Hash(Encoding.UTF8.GetBytes(game.Root.ToLowerInvariant())))))
                     throw Bad("RemovalBackupRootMismatch");
                 using (var package = new WindowsFileFence(packageRoot))
                 using (var manifest = package.OpenLaunchImage("package-manifest.json"))
@@ -214,7 +214,7 @@ namespace BetterAstralParty.Installation
                 using (var water = game.OpenFile(UpdateTransaction.HighWaterPath))
                 {
                     if (manifest.Hash() != manifestHash || water.Hash() != waterHash) throw Bad("ReinstallInputChanged");
-                    WholeInstallBridge.ValidateInputs(gameRoot, packageRoot, version);
+                    InstallProof.ValidateInputs(gameRoot, packageRoot, version);
                     var plan = new Plan { GameRoot = gameRoot, PackageRoot = packageRoot, IncomingVersion = version, ManifestHash = manifestHash, BackupRoot = backupRoot,
                         RootIdentity = game.RootIdentity.Text, BackupRootIdentity = backups.RootIdentity.Text, Version = highest, WaterHash = waterHash!, WaterIdentity = water.Identity.Text, BackupId = Latest(backups) };
                     var entries = Journal(game, backups, plan);
@@ -225,24 +225,10 @@ namespace BetterAstralParty.Installation
                     if (entries[UpdateTrust.PluginPath].Existed)
                     {
                         var metadata = InstalledPluginMetadata.ReadMaintenance(Pin(backups, entries[UpdateTrust.PluginPath].Backup, UpdateTrust.MaxFileBytes, plan.BackupPins));
-                        if (metadata.UpdateProtocol != 4 || metadata.SettingsSchema != 1) throw Bad("RemovalPluginUnsupported");
+                        if (metadata.UpdateProtocol != UpdateTrust.Protocol || metadata.SettingsSchema != 1) throw Bad("RemovalPluginUnsupported");
                         pluginVersion = metadata.Version;
                     }
-                    else
-                    {
-                        plan.CoreProof = WholeInstallBridge.RemovedInstallEvidence(gameRoot, packageRoot, version, receiptBytes);
-                        var lines = plan.CoreProof.Split('\n');
-                        if (lines.Length < 7 || lines[0] != "BetterAstralParty.RemovedInstallEvidence/v1" || lines[1] != "root=" + plan.RootIdentity
-                            || !lines[2].StartsWith("version=", StringComparison.Ordinal) || !Regex.IsMatch(lines[3], @"\Adescriptor=[A-F0-9]{64}\z")
-                            || lines[4] != "update-protocol=4" || lines[5] != "settings-schema=1" || lines[lines.Length - 1] != "") throw Bad("RemovedInstallProofInvalid");
-                        pluginVersion = UpdateVersion.Parse(lines[2].Substring(8)).Tag;
-                        foreach (var line in lines.Skip(6).Take(lines.Length - 7))
-                        {
-                            var match = Regex.Match(line, @"\Aproof=(" + UpdateWorkPath.OptionalRootPattern + @"(?:bap-v4-txn-[0-9a-f]{32}/(?:plan|committed|commit-intent)|bap-v4-stage-[0-9a-f]{32}/(?:descriptor\.bin|signature\.bin|key-id\.bin)|bap-v4-(?:wholeintent|wholehist)-[0-9a-f]{32}/(?:plan|committed|target-receipt|signed-update\.descriptor|signed-update\.signature)))=([A-F0-9]{64})\z");
-                            if (!match.Success || plan.GamePins.ContainsKey(match.Groups[1].Value)) throw Bad("RemovedInstallProofInvalid");
-                            plan.GamePins.Add(match.Groups[1].Value, match.Groups[2].Value);
-                        }
-                    }
+                    else throw Bad("RemovalPluginBackupRequired");
                     var channel = receipt.Channels ?? throw Bad("RemovalChannelMissing");
                     var waterLines = Encoding.ASCII.GetString(UpdateTicket.Read(water, 2048)).Split('\n');
                     var digest = waterLines[3].Substring(11);
@@ -250,19 +236,6 @@ namespace BetterAstralParty.Installation
                     {
                         var historical = RetainedHistory(game, plan, digest);
                         if (!History(channel, plan.RootIdentity, highest, digest, pluginVersion, historical)) throw Bad("RemovalHistoryMismatch");
-                    }
-                    var helperImage = Pin(backups, entries[HelperDescriptor.Image].Backup, UpdateTrust.MaxFileBytes, plan.BackupPins);
-                    var helperReceipt = Pin(backups, entries[HelperDelivery.Receipt].Backup, 1024, plan.BackupPins);
-                    plan.HelperProof = HelperDelivery.RemovedEvidence(game, UpdateTrust.Production(), helperImage, helperReceipt);
-                    var helperLines = plan.HelperProof.Split('\n'); string? work = null; var suffixes = new HashSet<string>(StringComparer.Ordinal);
-                    if (helperLines.Length != 6 || helperLines[0] != "BetterAstralParty.RemovedHelperEvidence/v1" || helperLines[5] != "") throw Bad("RemovedHelperProofInvalid");
-                    foreach (var line in helperLines.Skip(1).Take(4))
-                    {
-                        var match = Regex.Match(line, @"\A(" + UpdateWorkPath.OptionalRootPattern + @"bap-v4-helper-[0-9a-f]{32})/(plan|descriptor|signature|committed)=([A-F0-9]{64})\z");
-                        if (!match.Success || work != null && work != match.Groups[1].Value || !suffixes.Add(match.Groups[2].Value)) throw Bad("RemovedHelperProofInvalid");
-                        work = match.Groups[1].Value; var name = work + "/" + match.Groups[2].Value;
-                        string? previous; if (plan.GamePins.TryGetValue(name, out previous) && previous != match.Groups[3].Value) throw Bad("RemovalEvidenceConflict");
-                        plan.GamePins[name] = match.Groups[3].Value;
                     }
                     return plan;
                 }
@@ -289,7 +262,7 @@ namespace BetterAstralParty.Installation
                 heldBackupLock.Recheck();
                 if (!heldBackupLock.Stream.CanWrite || heldBackupLock.Path != backups.Full("pending.json.lock")) throw Bad("ReinstallBackupLockMismatch");
                 if (game.RootIdentity.Text != plan.RootIdentity || backups.RootIdentity.Text != plan.BackupRootIdentity) throw Bad("ReinstallRootChanged");
-                WindowsProcessGuard.AssertNoRunning(new[] { game.Full("AstralParty_INT.exe"), game.Full("BetterAstralParty-Launcher.exe"), game.Full(HelperDescriptor.Image) });
+                WindowsProcessGuard.AssertNoRunning(new[] { game.Full("AstralParty_INT.exe"), game.Full(OrdinaryInstallRecovery.LegacyLauncher), game.Full(OrdinaryInstallRecovery.LegacyHelper) });
                 foreach (var relative in plan.GamePins.Keys) game.DirectoryIdentity(relative.Substring(0, relative.LastIndexOf('/')));
                 Boundary("proof-parents-pinned", "");
                 var current = Review(gameRoot, packageRoot, version, manifestHash, backupRoot);
@@ -321,12 +294,12 @@ namespace BetterAstralParty.Installation
                         // Values were validated above; this journal carries no executable input or secrets.
                         var text = "{" + string.Join(",", record.Select(pair => "\"" + pair.Key + "\":" + (pair.Value is int ? "1" : "\"" + (string)pair.Value! + "\""))) + "}";
                         var bytes = new UTF8Encoding(false).GetBytes(text);
-                        using (var intent = game.OpenFile("BetterAstralParty.reinstall-v4.pending", true, true))
+                        using (var intent = game.OpenFile("BetterAstralParty.reinstall-v5.pending", true, true))
                         {
                             intent.Stream.Write(bytes, 0, bytes.Length); intent.Flush(); Boundary("intent-durable", archive);
                             water.RenameTo(game, archive); water.Flush(); Boundary("water-archived", archive);
                             if (water.Hash() != plan.WaterHash) throw Bad("ReinstallArchiveChanged");
-                            intent.RenameTo(game, "BetterAstralParty.reinstall-v4.completed-" + nonce); intent.Flush(); Boundary("generation-completed", archive);
+                            intent.RenameTo(game, "BetterAstralParty.reinstall-v5.completed-" + nonce); intent.Flush(); Boundary("generation-completed", archive);
                         }
                     }
                 }

@@ -102,7 +102,7 @@ Case("both languages for every updater state",()=>{
         var retryAt=DateTimeOffset.UnixEpoch.AddDays(20000);
         var queued=ModText.UpdateDetails(new(ReleaseUpdateStatus.RetryWaiting,RetryAt:retryAt),Plugin.Version);
         Check(queued.Contains(ModText.Text("확인 대기")) && queued.Contains(ModText.Text("다음 확인"))
-            && queued.Contains(retryAt.UtcDateTime.ToString("u",System.Globalization.CultureInfo.InvariantCulture)),"queued discovery shows its retry deadline");
+            && queued.Contains(retryAt.ToLocalTime().ToString("MM-dd HH:mm",System.Globalization.CultureInfo.InvariantCulture)) && !queued.Contains("Z"),"queued discovery shows its retry deadline");
         Check(language!="English" || !queued.Any(c=>c is >= '\uac00' and <= '\ud7a3'),"queued discovery translation");
         foreach(var status in Enum.GetValues<AutomaticUpdateStatus>()) {
             var text=ModText.UpdateNotificationDetails(Release("2.0.0-rc.2"),Plugin.Version,status,ReleaseUpdateStatus.Available);
@@ -126,8 +126,8 @@ Case("notes move from hover to literal bilingual popup with full bounded content
         var hover=ModText.UpdateDetails(new(ReleaseUpdateStatus.Stale,release,checkedAt,ReleaseUpdateStatus.RateLimited,retryAt),Plugin.Version);
         Check(hover.Contains(Plugin.Version)&&hover.Contains(release.Version)&&hover.Contains(ModText.UpdateStatus(ReleaseUpdateStatus.Stale))
             &&hover.Contains(ModText.UpdateStatus(ReleaseUpdateStatus.RateLimited)),"hover keeps versions and both statuses");
-        Check(hover.Contains(checkedAt.UtcDateTime.ToString("u",System.Globalization.CultureInfo.InvariantCulture))
-            &&hover.Contains(retryAt.UtcDateTime.ToString("u",System.Globalization.CultureInfo.InvariantCulture)),"hover keeps check/retry timestamps");
+        Check(hover.Contains(checkedAt.ToLocalTime().ToString("MM-dd HH:mm",System.Globalization.CultureInfo.InvariantCulture))
+            &&hover.Contains(retryAt.ToLocalTime().ToString("MM-dd HH:mm",System.Globalization.CultureInfo.InvariantCulture)),"hover keeps check/retry timestamps");
         Check(!hover.Contains("javascript")&&!hover.Contains("[url=")&&!hover.Contains(ModText.Text("변경 사항")),"hover has no release-note body or heading");
         var popup=ModText.UpdateNotificationDetails(release,Plugin.Version,AutomaticUpdateStatus.Queued,ReleaseUpdateStatus.Stale);
         var notes=ReleaseUpdates.PlainText(malicious,ReleaseUpdates.MaxNotes);
@@ -148,7 +148,7 @@ Case("linked Ui waits for late result then visible reveal",()=>{
 });
 Case("linked Ui updates queued status and language without recreate",()=>{
     var count=NativeUi.Panels.Count; Plugin.Automatic.Status=AutomaticUpdateStatus.Queued; Plugin.Automatic.Revision++; Frame();
-    Check(Body().Get<string>("text").Contains("Waiting for Exit"),"queue wording");
+    Check(Body().Get<string>("text").Contains("Applying"),"queue wording");
     ModText.Select("한국어"); Frame(); ModText.Select("English"); Frame(); for(var i=0;i<100;i++)Frame();
     Check(NativeUi.Panels.Count==count,"no recreate");
 });

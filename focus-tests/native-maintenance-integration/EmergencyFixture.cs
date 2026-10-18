@@ -26,11 +26,12 @@ internal static partial class NativeMaintenanceIntegrationFixture
 {
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool CreateHardLinkW(string path, string source, IntPtr security);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool CreateSymbolicLinkW(string path, string source, uint flags);
-    private static readonly string[] EmergencyFiles = InstallReceipt.Owned.Concat(new[] { HelperDescriptor.Image, HelperDelivery.Receipt, InstallReceipt.Path, "BetterAstralParty-Steam.ps1",
+    private static readonly string[] EmergencyFiles = InstallReceipt.Owned.Concat(new[] { OrdinaryInstallRecovery.LegacyLauncher, OrdinaryInstallRecovery.LegacyHelper, OrdinaryInstallRecovery.LegacyHelperReceipt, InstallReceipt.Path, "BetterAstralParty-Steam.ps1",
         "BepInEx/config/kr.betterastralparty.mod.cfg", "BepInEx/BetterAstralParty-Diagnostics/current.log", "BepInEx/BetterAstralParty-Diagnostics/previous.log",
-        "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch.log", "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log", "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log" }).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-    private static string EmergencyLegacyBackups(string root)
-    { var current = NativeMaintenance.JournalRoot(root); return Full(WindowsPath.Parent(WindowsPath.Parent(current)), "v3/" + WindowsPath.Leaf(current)); }
+        "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch.log", "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log", "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log", ChannelTransitionIntent.AdoptionPath }).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    // v5 is the current journal scope; v4 (1.3.x) and v3 are the selected-root legacy scopes force removal also deletes.
+    private static string EmergencyLegacyBackups(string root, string version = "v4")
+    { var current = NativeMaintenance.JournalRoot(root); return Full(WindowsPath.Parent(WindowsPath.Parent(current)), version + "/" + WindowsPath.Leaf(current)); }
     private static string EmergencySeed(string name, out string steam)
     {
         var root = Full(Scratch, "emergency-cases/" + name + "/game"); steam = Full(Scratch, "emergency-cases/" + name + "/steam");
@@ -52,7 +53,7 @@ internal static partial class NativeMaintenanceIntegrationFixture
     }
     private static Dictionary<string, string> EmergencyState(string root, string steam)
     {
-        var result = Snapshot(root); foreach (var row in Snapshot(steam).Concat(Snapshot(NativeMaintenance.JournalRoot(root))).Concat(Snapshot(EmergencyLegacyBackups(root)))) result.Add(row.Key, row.Value); return result;
+        var result = Snapshot(root); foreach (var row in Snapshot(steam).Concat(Snapshot(NativeMaintenance.JournalRoot(root))).Concat(Snapshot(EmergencyLegacyBackups(root))).Concat(Snapshot(EmergencyLegacyBackups(root, "v3")))) result.Add(row.Key, row.Value); return result;
     }
     private static void EmergencySame(Dictionary<string, string> before, string root, string steam, string label)
     { var after = EmergencyState(root, steam); Check(before.Count == after.Count && before.All(row => after.TryGetValue(row.Key, out var hash) && hash == row.Value), label); }
@@ -71,10 +72,10 @@ internal static partial class NativeMaintenanceIntegrationFixture
     {
         var relative = NativeMaintenance.Relative(root, path); var first = relative.Split('/')[0];
         return EmergencyFiles.Contains(relative, StringComparer.OrdinalIgnoreCase) || relative == "BetterAstralParty.update.lock"
-            || Regex.IsMatch(relative, @"\ABetterAstralParty\.Update/bap-v4-(?:stage|txn|helperauto|helper|helperbridge|wholeintent|wholehist)-[0-9a-f]{32}/")
+            || Regex.IsMatch(relative, @"\ABetterAstralParty\.Update/bap-v[45]-(?:stage|txn|helperauto|helper|helperbridge|wholeintent|wholehist)-[0-9a-f]{32}/")
             || Regex.IsMatch(relative, @"\ABetterAstralParty\.Update/bap-v4-transition-[0-9a-f]{32}\z")
-            || Regex.IsMatch(first, @"\ABetterAstralParty\.(?:update-v[34]\.(?:version(?:\.uninstalled-[0-9a-f]{32})?|failure|operation|preferences-failed|failed)|reinstall-v[34]\.(?:pending|completed-[0-9a-f]{32}))\z")
-            || Regex.IsMatch(first, @"\A(?:bap-v[34]-(?:stage|txn|helperauto|helper|helperbridge|wholeintent|wholehist)-[0-9a-f]{32}|BetterAstralParty-emergency-[0-9a-f]{32})\z");
+            || Regex.IsMatch(first, @"\ABetterAstralParty\.(?:update-v[345]\.(?:version(?:\.uninstalled-[0-9a-f]{32})?|failure|operation|preferences-failed|failed)|reinstall-v[345]\.(?:pending|completed-[0-9a-f]{32}))\z")
+            || Regex.IsMatch(first, @"\A(?:bap-v[345]-(?:stage|txn|helperauto|helper|helperbridge|wholeintent|wholehist)-[0-9a-f]{32}|BetterAstralParty-emergency-[0-9a-f]{32})\z");
     }
     private static void EmergencyPreserved(string root, string steam, Dictionary<string, string> before)
     {
@@ -85,7 +86,7 @@ internal static partial class NativeMaintenanceIntegrationFixture
     }
     private static void EmergencyNoCopies(string root)
     {
-        Check(!Directory.Exists(WindowsPath.ForIo(NativeMaintenance.JournalRoot(root))) && !Directory.Exists(WindowsPath.ForIo(EmergencyLegacyBackups(root))), "selected-root v3/v4 backups, journals and lock namespaces are actually deleted");
+        Check(!Directory.Exists(WindowsPath.ForIo(NativeMaintenance.JournalRoot(root))) && !Directory.Exists(WindowsPath.ForIo(EmergencyLegacyBackups(root))) && !Directory.Exists(WindowsPath.ForIo(EmergencyLegacyBackups(root, "v3"))), "selected-root v3/v4/v5 backups, journals and lock namespaces are actually deleted");
         Check(!Directory.GetDirectories(WindowsPath.ForIo(root), "BetterAstralParty-emergency-*", SearchOption.TopDirectoryOnly).Any(), "no old/new quarantine copies remain");
         Check(!File.Exists(WindowsPath.ForIo(Full(root, "BetterAstralParty.update.lock"))), "own idle game update lock is deleted after backup cleanup");
     }
@@ -135,9 +136,9 @@ internal static partial class NativeMaintenanceIntegrationFixture
     }
     private static void EmergencyBusyProcesses()
     {
-        foreach (var name in new[] { HelperDescriptor.Image, "BetterAstralParty-Launcher.exe", "AstralParty_INT.exe" })
+        foreach (var name in new[] { OrdinaryInstallRecovery.LegacyHelper, OrdinaryInstallRecovery.LegacyLauncher, "AstralParty_INT.exe" })
         {
-            var root = EmergencySeed("busy-" + name, out var steam); Write(Full(root, name), Read(WindowsPath.FromIo(typeof(SteamLauncher).Assembly.Location))); var signal = Full(Scratch, "emergency-cases/busy-" + name + "/signal"); var before = EmergencyState(root, steam);
+            var root = EmergencySeed("busy-" + name, out var steam); Write(Full(root, name), Read(WindowsPath.FromIo(typeof(SetupHost).Assembly.Location))); var signal = Full(Scratch, "emergency-cases/busy-" + name + "/signal"); var before = EmergencyState(root, steam);
             var info = new ProcessStartInfo { FileName = WindowsPath.ForProcess(Full(root, name)), Arguments = NativeMaintenanceEntry.CommandLine(new[] { "emergency-hold", signal }), WorkingDirectory = WindowsPath.ForProcess(root), UseShellExecute = false, CreateNoWindow = true };
             using (var process = Process.Start(info) ?? throw new InvalidOperationException("Inert process start failed")) {
                 try { var watch = Stopwatch.StartNew(); while (!File.Exists(WindowsPath.ForIo(Full(signal, "ready"))) && watch.ElapsedMilliseconds < 10000) Thread.Sleep(50); Check(!process.HasExited && File.Exists(WindowsPath.ForIo(Full(signal, "ready"))), "verified inert process active: " + name);
@@ -230,7 +231,7 @@ internal static partial class NativeMaintenanceIntegrationFixture
         foreach (var kind in new[] { "marker-directory", "work-file", "backup-root-file", "marker-link" })
         {
             var root = EmergencySeed(kind, out var steam); var path = kind == "backup-root-file" ? NativeMaintenance.JournalRoot(root)
-                : Full(root, kind == "work-file" ? "bap-v4-stage-" + new string('a', 32) : "BetterAstralParty.update-v4.version");
+                : Full(root, kind == "work-file" ? "bap-v4-stage-" + new string('a', 32) : UpdateTransaction.HighWaterPath);
             if (kind == "marker-directory" || kind == "marker-link") {
                 Scope(path); var seeded = File.GetAttributes(WindowsPath.ForIo(path));
                 Check((seeded & (FileAttributes.Directory | FileAttributes.ReparsePoint)) == 0, "wrong-type fixture replaces only its exact ordinary seeded marker: " + kind);
@@ -248,9 +249,9 @@ internal static partial class NativeMaintenanceIntegrationFixture
                 : (attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) == 0 && Encoding.UTF8.GetString(Read(path)) == "unexpected object type, retain";
             Check(payload.All(row => Read(Full(root, row.Key)).SequenceEqual(row.Value)) && typeRemains, "wrong-type recovery object and payload remain intact: " + kind);
         }
-        foreach (var version in new[] { "v3", "v4" })
+        foreach (var version in new[] { "v3", "v4", "v5" })
         {
-            var root = EmergencySeed("unreadable-" + version, out var steam); var backup = version == "v3" ? EmergencyLegacyBackups(root) : NativeMaintenance.JournalRoot(root);
+            var root = EmergencySeed("unreadable-" + version, out var steam); var backup = version == "v5" ? NativeMaintenance.JournalRoot(root) : EmergencyLegacyBackups(root, version);
             Text(Full(backup, "saved/backup.bin"), "inert unreadable recovery evidence"); Scope(backup); var before = EmergencyState(root, steam);
             var original = Directory.GetAccessControl(WindowsPath.ForIo(backup), AccessControlSections.Access); var denied = Directory.GetAccessControl(WindowsPath.ForIo(backup), AccessControlSections.Access);
             var originalDescriptor = original.GetSecurityDescriptorBinaryForm(); Write(Full(Scratch, "results/fixture-" + version + "-original-dacl.bin"), originalDescriptor);
@@ -282,10 +283,14 @@ internal static partial class NativeMaintenanceIntegrationFixture
         foreach (var name in new[] { "complete", "unknown-child", "interrupted" }) {
             var root = EmergencySeed("contained-" + name, out var steam); var owned = new List<string>();
             using (var fence = new WindowsFileFence(root)) {
-                foreach (var kind in new[] { "stage", "txn", "helperauto", "helper", "helperbridge", "wholeintent", "wholehist" }) {
+                foreach (var kind in new[] { "stage", "txn" }) {
                     var work = UpdateWorkPath.New(kind); UpdateWorkPath.Create(fence, work); var file = work + "/pending.bin"; owned.Add(file); Text(Full(root, file), "inert contained history");
                 }
-                var marker = UpdateWorkPath.Transition(Guid.NewGuid().ToString("N")); owned.Add(marker); Text(Full(root, marker), "inert transition");
+                // 1.3.x (v4) contained work kinds, including the removed helper/whole-bridge kinds, remain force-removal scope.
+                foreach (var kind in new[] { "stage", "txn", "helperauto", "helper", "helperbridge", "wholeintent", "wholehist" }) {
+                    var file = UpdateWorkPath.Root + "/bap-v4-" + kind + "-" + Guid.NewGuid().ToString("N") + "/pending.bin"; owned.Add(file); Text(Full(root, file), "inert legacy contained history");
+                }
+                var marker = UpdateWorkPath.Root + "/bap-v4-transition-" + Guid.NewGuid().ToString("N"); owned.Add(marker); Text(Full(root, marker), "inert transition");
             }
             var unknown = Full(root, UpdateWorkPath.Root + "/user-subtree/user.keep");
             if (name == "unknown-child") Text(unknown, "unrelated namespace child survives");
@@ -296,7 +301,7 @@ internal static partial class NativeMaintenanceIntegrationFixture
                 finally { NativeEmergencyUninstall.Boundary = null; }
             }
             EmergencyRun(root, steam); EmergencyNoCopies(root); EmergencyPreserved(root, steam, before);
-            Check(owned.All(path => !File.Exists(WindowsPath.ForIo(Full(root, path)))), "force removal deletes only selected contained current-v4 work and transition objects");
+            Check(owned.All(path => !File.Exists(WindowsPath.ForIo(Full(root, path)))), "force removal deletes only selected contained v5/v4 work and transition objects");
             Check(name == "unknown-child" ? File.Exists(WindowsPath.ForIo(unknown)) && Directory.Exists(WindowsPath.ForIo(Full(root, UpdateWorkPath.Root))) : !Directory.Exists(WindowsPath.ForIo(Full(root, UpdateWorkPath.Root))), "namespace removed only after exact owned children leave it empty: " + name);
         }
         foreach (var kind in new[] { "container-link", "work-link", "transition-hardlink" }) {
@@ -307,7 +312,7 @@ internal static partial class NativeMaintenanceIntegrationFixture
                 Directory.Move(WindowsPath.ForIo(Full(root, UpdateWorkPath.Root)), WindowsPath.ForIo(Full(root, "fixture-saved-namespace")));
                 ArchiveJunctionForEmergency(Full(root, UpdateWorkPath.Root), outside);
             } else if (kind == "work-link") ArchiveJunctionForEmergency(Full(root, UpdateWorkPath.New("stage")), outside);
-            else Check(CreateHardLinkW(WindowsPath.ForIo(Full(root, UpdateWorkPath.Transition(Guid.NewGuid().ToString("N")))), WindowsPath.ForIo(Full(outside, "user.keep")), IntPtr.Zero), "actual contained transition hardlink fixture");
+            else Check(CreateHardLinkW(WindowsPath.ForIo(Full(root, UpdateWorkPath.Root + "/bap-v4-transition-" + Guid.NewGuid().ToString("N"))), WindowsPath.ForIo(Full(outside, "user.keep")), IntPtr.Zero), "actual contained transition hardlink fixture");
             var payload = Read(Full(root, UpdateTrust.PluginPath)); var error = EmergencyReject(() => EmergencyRun(root, steam), "contained exact-owned links are refused: " + kind);
             Check(error.Data["BapEmergencyDeletedFiles"] is int count && count == 0 && Read(Full(root, UpdateTrust.PluginPath)).SequenceEqual(payload) && Encoding.UTF8.GetString(Read(Full(outside, "user.keep"))) == "unrelated linked target", "contained link refusal precedes mutation and preserves foreign objects");
         }
@@ -319,11 +324,11 @@ internal static partial class NativeMaintenanceIntegrationFixture
     private static void Emergency()
     {
         EmergencyReadOnly(); EmergencySuccessful("missing-receipt-modified", root => { File.Delete(WindowsPath.ForIo(Full(root, InstallReceipt.Path))); Text(Full(root, UpdateTrust.PluginPath), "modified known plugin bytes 가"); });
-        EmergencySuccessful("damaged-receipt-partial", root => { Text(Full(root, InstallReceipt.Path), "{ damaged receipt"); foreach (var path in new[] { UpdateTrust.PluginPath, HelperDescriptor.Image, "BetterAstralParty-Launcher.exe" }) File.Delete(WindowsPath.ForIo(Full(root, path))); });
+        EmergencySuccessful("damaged-receipt-partial", root => { Text(Full(root, InstallReceipt.Path), "{ damaged receipt"); foreach (var path in new[] { UpdateTrust.PluginPath, OrdinaryInstallRecovery.LegacyHelper, OrdinaryInstallRecovery.LegacyLauncher }) File.Delete(WindowsPath.ForIo(Full(root, path))); });
         EmergencySuccessful("pending-history", root => {
-            foreach (var version in new[] { "3", "4" }) { Text(Full(root, "BetterAstralParty.reinstall-v" + version + ".pending"), "damaged pending data"); Text(Full(root, "BetterAstralParty.update-v" + version + ".version"), "damaged high water"); foreach (var prefix in new[] { "stage", "txn", "helperauto", "helper", "helperbridge", "wholeintent", "wholehist" }) Text(Full(root, "bap-v" + version + "-" + prefix + "-" + new string('a', 32) + "/nested/pending.bin"), "inert owned history"); }
+            foreach (var version in new[] { "3", "4", "5" }) { Text(Full(root, "BetterAstralParty.reinstall-v" + version + ".pending"), "damaged pending data"); Text(Full(root, "BetterAstralParty.update-v" + version + ".version"), "damaged high water"); foreach (var prefix in new[] { "stage", "txn", "helperauto", "helper", "helperbridge", "wholeintent", "wholehist" }) Text(Full(root, "bap-v" + version + "-" + prefix + "-" + new string('a', 32) + "/nested/pending.bin"), "inert owned history"); }
             Text(Full(root, "BetterAstralParty-emergency-" + new string('b', 32) + "/old-quarantine.bin"), "old quarantined bytes");
-            foreach (var backup in new[] { NativeMaintenance.JournalRoot(root), EmergencyLegacyBackups(root) }) { Text(Full(backup, "pending.json"), "{ damaged ordinary pending"); Text(Full(backup, "historical-completed/completed.json"), "historical metadata"); Text(Full(backup, "historical-completed/backup.bin"), "previous recovery bytes"); Text(Full(backup, "pending.json.lock"), "idle old lock"); }
+            foreach (var backup in new[] { NativeMaintenance.JournalRoot(root), EmergencyLegacyBackups(root), EmergencyLegacyBackups(root, "v3") }) { Text(Full(backup, "pending.json"), "{ damaged ordinary pending"); Text(Full(backup, "historical-completed/completed.json"), "historical metadata"); Text(Full(backup, "historical-completed/backup.bin"), "previous recovery bytes"); Text(Full(backup, "pending.json.lock"), "idle old lock"); }
             Text(Full(root, "bap-v4-unrelated-" + new string('c', 32) + "/user.keep"), "unknown prefix preserved");
             var sibling = Full(WindowsPath.Parent(NativeMaintenance.JournalRoot(root)), new string('D', 64) + "/other-root.keep"); Text(sibling, "other installation backup preserved");
         });

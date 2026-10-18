@@ -5,11 +5,11 @@ using System.IO;
 using BetterAstralParty.Installation;
 using BetterAstralParty.Updating;
 
-internal static class SteamLauncher
+internal static class SetupHost
 {
     public const int InstallBundleProtocol = 1;
-    public static void ValidateMaintenancePaths(string game, string backups) { WholeInstallBridge.ValidateMaintenancePaths(game, backups); }
-    public static IDisposable GuardOrdinaryRecovery(string game, string package, string version, string hash)
+    public static void ValidateMaintenancePaths(string game, string backups) { InstallProof.ValidateMaintenancePaths(game, backups); }
+    public static IDisposable GuardOrdinaryRecovery(string game)
     { NativeCommonFixture.AssertScope(game); return new UpdateLaunchGate.Lease(game); }
     public static void RestoreOrdinaryInstall(string game, string backups, string hash, string[] targets, string current, bool complete, string identity)
     { NativeCommonFixture.AssertScope(game); OrdinaryInstallRecovery.Run(game, backups, hash, targets, current, complete, identity); }
@@ -32,7 +32,7 @@ namespace BetterAstralParty.Installation
         internal static Action<Exception>? WaitingDiagnostic = null;
         internal static Exception? RootFailure;
         internal static int Stops;
-        internal static void StopGame(string game, Func<string, string?> consent, Action<string> output) { NativeCommonFixture.AssertScope(game); Stops++; }
+        internal static void WaitGameClosed(string game, Func<string, string?> consent, Action<string> output) { NativeCommonFixture.AssertScope(game); Stops++; }
         internal static string? ResolveSteamRoot() { throw RootFailure ?? new Exception("Fixture must not query Steam"); }
         internal static string ResolveUserPath(string path) { throw new Exception("Fixture must not run entry path resolution"); }
         internal static string ResolveGame(string? game, string? steam, string package, Action<string>? output) { throw new Exception("Fixture must not discover games"); }

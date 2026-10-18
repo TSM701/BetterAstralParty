@@ -29,7 +29,7 @@ internal sealed class AutomaticUpdates : IDisposable {
     private bool _transitionApplyOnce;
     private ReceiptChannelState? _channels;
     private string? _installedVersion;
-    private bool _requiresTransition;
+    private bool _requiresTransition, _transitionCandidate;
     private Pending? _pending;
     private object? _ready;
     private IUpdateHelperJob? _job;
@@ -145,9 +145,12 @@ internal sealed class AutomaticUpdates : IDisposable {
         AutoDownload = download; ApplyAfterExit = apply; Revision++;
         if (stop) { _explicitTransition = null; _transitionApplyOnce = false; Retire(); Set(Configured ? _cancel != null ? AutomaticUpdateStatus.Cancelling : AutomaticUpdateStatus.Cancelled : AutomaticUpdateStatus.NotConfigured); }
     }
-    internal void Context(UpdateDownloadRequest? request, int sourceGeneration = 0) {
+    // A switched channel with no eligible target waits instead of asking for a review that cannot start.
+    internal bool TransitionWaiting => Status == AutomaticUpdateStatus.TransitionRequired && _request == null && !_transitionCandidate;
+    internal void Context(UpdateDownloadRequest? request, int sourceGeneration = 0, bool transitionCandidate = false) {
         if (_explicitTransition != null) { request = _explicitTransition; sourceGeneration = _transitionSourceGeneration; }
         _sourceGeneration = sourceGeneration;
+        if (_transitionCandidate != transitionCandidate) { _transitionCandidate = transitionCandidate; Revision++; }
         var identity = request?.Identity ?? ""; if (_requestIdentity == identity) return;
         Retire(true); _request = request; _requestIdentity = identity;
         try { RefreshTransition(); } catch { Disable(FaultPhase.Preparation, FaultReason.Integrity, AutomaticUpdateStatus.RecoveryRequired); return; }

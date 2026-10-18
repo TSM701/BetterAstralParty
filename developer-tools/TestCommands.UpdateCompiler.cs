@@ -28,8 +28,8 @@ internal static partial class TestCommands
             var path = Path.Combine(framework, reference); pin(path); flags.Add("/reference:" + path);
         }
         var inputs = sources.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        if (inputs.Any(path => Path.GetFileName(path) == "PublicReleaseEligibility.cs") && !inputs.Any(path => Path.GetFileName(path) == "LauncherRecoveryJson.cs"))
-            inputs.Add(Path.Combine(context.Root, "tools/LauncherRecoveryJson.cs"));
+        if (inputs.Any(path => Path.GetFileName(path) == "PublicReleaseEligibility.cs") && !inputs.Any(path => Path.GetFileName(path) == "MaintenanceJsonReader.cs"))
+            inputs.Add(Path.Combine(context.Root, "tools/MaintenanceJsonReader.cs"));
         if (entry == "BetterAstralParty.Updating.UpdateHelperProgram") {
             var identity = helperIdentity == null ? UpdateGenerated(stage, name + ".framework.cs",
                 "[assembly: System.Runtime.Versioning.TargetFramework(\".NETFramework,Version=v4.8\")]\n") : Path.GetFullPath(helperIdentity);

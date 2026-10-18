@@ -11,11 +11,11 @@ namespace BetterAstralParty.Installation
 {
     internal static class NativeUninstall
     {
-        private static readonly string[] OwnedOrder = { UpdateTrust.PluginPath, "BetterAstralParty-Launcher.exe", "BetterAstralParty.compatibility.json",
-            "BetterAstralParty-Mod.cmd", "AstralParty-Vanilla.cmd" };
+        private static readonly string[] OwnedOrder = { UpdateTrust.PluginPath, "BetterAstralParty.compatibility.json",
+            "BetterAstralParty-Mod.cmd", "AstralParty-Vanilla.cmd", OrdinaryInstallRecovery.LegacyLauncher };
         private static readonly string[] Exclusive = { "BepInEx/config/kr.betterastralparty.mod.cfg", "BepInEx/BetterAstralParty-Diagnostics/current.log",
             "BepInEx/BetterAstralParty-Diagnostics/previous.log", "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch.log",
-            "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log", "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log" };
+            "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log", "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log", ChannelTransitionIntent.AdoptionPath };
         private static string Full(string root, string relative) { return WindowsPath.Absolute(root + "\\" + relative.Replace('/', '\\')); }
 
         internal sealed class Plan
@@ -25,34 +25,39 @@ namespace BetterAstralParty.Installation
             internal bool Retained;
         }
 
-        internal static InstallReceipt? ReadReceipt(NativeMaintenanceBundle bundle)
+        // Owned files from a 1.4.0 receipt, or from a 1.3.x receipt this package can also remove.
+        internal sealed class Receipt
+        {
+            internal readonly Dictionary<string, string> Files; internal readonly bool? LoaderBefore; internal readonly bool Legacy;
+            internal Receipt(Dictionary<string, string> files, bool? loader, bool legacy) { Files = files; LoaderBefore = loader; Legacy = legacy; }
+        }
+        internal static Receipt? ReadReceipt(NativeMaintenanceBundle bundle)
         {
             var bytes = bundle.ReadTarget(InstallReceipt.Path, 16384);
             if (bytes != null)
             {
-                try { return InstallReceipt.Parse(bytes); }
+                if (LegacyReceipt.Is(bytes)) { var legacy = LegacyReceipt.Parse(bytes); return new Receipt(legacy.Files, legacy.LoaderBefore, true); }
+                try { var current = InstallReceipt.Parse(bytes); return new Receipt(current.Files, current.LoaderBefore, false); }
                 catch (Exception error) when (error is ApplySafetyException || error is DecoderFallbackException)
-                { throw new InvalidOperationException("새 1.3.0 기준판 설치만 제거할 수 있습니다. 이전 설치는 이전 패키지로 제거하세요. / Only the new 1.3.0 baseline is supported; use the previous package to uninstall older installations.", error); }
+                { throw new InvalidOperationException("설치 기록을 읽을 수 없습니다. 파일을 보존합니다. Force-Uninstall.cmd를 사용하세요. / The install receipt is unreadable; files are kept. Use Force-Uninstall.cmd.", error); }
             }
             if (bundle.Expected.Keys.Any(name => bundle.TargetHash(name) != null))
                 throw new InvalidOperationException("설치 기록이 없거나 이전 설치가 남아 있습니다. 파일을 보존합니다. / Missing baseline receipt or previous installation retained.");
             return null;
         }
 
-        internal static Plan PlanFiles(NativeMaintenanceBundle bundle, InstallReceipt? receipt, Action<string> output)
+        internal static Plan PlanFiles(NativeMaintenanceBundle bundle, Receipt? receipt, Action<string> output)
         {
             var plan = new Plan(); var game = bundle.GameRoot;
-            var helper = Full(game, HelperDescriptor.Image); var helperReceipt = Full(game, HelperDelivery.Receipt);
-            var imageHash = bundle.TargetHash(HelperDescriptor.Image); var receiptHash = bundle.TargetHash(HelperDelivery.Receipt);
-            if (imageHash != null || receiptHash != null)
+            var helper = Full(game, OrdinaryInstallRecovery.LegacyHelper); var helperReceipt = Full(game, OrdinaryInstallRecovery.LegacyHelperReceipt);
+            var imageHash = bundle.TargetHash(OrdinaryInstallRecovery.LegacyHelper); var receiptBytes = bundle.ReadTarget(OrdinaryInstallRecovery.LegacyHelperReceipt, 1024);
+            if (imageHash != null || receiptBytes != null)
             {
-                var fingerprint = SteamLauncher.CheckOwnedHelper(game);
-                if (fingerprint != null && Regex.IsMatch(fingerprint, @"\A[A-F0-9]{64}:[A-F0-9]{64}\z") && imageHash != null && receiptHash != null)
+                // A 1.3.x helper is removed only as the pair its own receipt describes.
+                var text = receiptBytes == null ? "" : Encoding.ASCII.GetString(receiptBytes);
+                if (receipt != null && receipt.Legacy && imageHash != null && receiptBytes != null && text.StartsWith("BetterAstralParty.HelperReceipt/v1\nroot=" + bundle.RootIdentity + "\n", StringComparison.Ordinal) && text.Contains("\nsha256=" + imageHash + "\n"))
                 {
-                    var parts = fingerprint.Split(':');
-                    if (bundle.TargetHash(HelperDescriptor.Image) != parts[0] || bundle.TargetHash(HelperDelivery.Receipt) != parts[1])
-                        throw new InvalidOperationException("검증 후 helper 파일이 바뀌었습니다. 제거하지 않고 중단합니다. / Helper changed after verification.");
-                    plan.Targets.Add(helper); plan.Targets.Add(helperReceipt); plan.Hashes[helper] = parts[0]; plan.Hashes[helperReceipt] = parts[1];
+                    plan.Targets.Add(helper); plan.Targets.Add(helperReceipt); plan.Hashes[helper] = imageHash; plan.Hashes[helperReceipt] = UpdateTrust.Hash(receiptBytes);
                 }
                 else
                 {
@@ -93,7 +98,7 @@ namespace BetterAstralParty.Installation
             return plan;
         }
 
-        internal static string? LoaderChange(NativeMaintenanceBundle bundle, InstallReceipt? receipt, string restoreLoader, bool whatIf,
+        internal static string? LoaderChange(NativeMaintenanceBundle bundle, Receipt? receipt, string restoreLoader, bool whatIf,
             Func<string, string?> consent, Action<string> output, Action<string>? skipped = null)
         {
             if (restoreLoader.Equals("Keep", StringComparison.OrdinalIgnoreCase)) return null;
@@ -161,13 +166,12 @@ namespace BetterAstralParty.Installation
                     if (!NativeMaintenance.RecoverPending(bundle, consent, output)) return 0;
                 }
                 var receipt = ReadReceipt(bundle);
-                if (!whatIf) NativeSteamMaintenance.StopGame(game, consent, output);
+                if (!whatIf) NativeSteamMaintenance.WaitGameClosed(game, consent, output);
                 if (whatIf) { using (var fence = new WindowsFileFence(game)) UpdateLaunchGate.Check(fence); }
                 else maintenance = new UpdateLaunchGate.Lease(game);
                 bundle.AssertRoot();
-                if (receipt != null) SteamLauncher.ValidateInstalledHistory(game);
+                if (receipt != null && !receipt.Legacy) SetupHost.ValidateInstalledHistory(game);
                 var plan = PlanFiles(bundle, receipt, output);
-                if (plan.MissingOwned.Count != 0 && !plan.Retained) WholeInstallBridge.ValidatePartialRemovalWithPackage(game, bundle.PackageRoot, bundle.Version);
                 if (plan.Targets.Count == 0 && !removeShortcut)
                 { output("제거할 확인된 파일·바로가기가 없습니다. / No verified mod files or shortcut to remove."); return 0; }
                 var loaderPath = Full(game, "doorstop_config.ini"); string? loaderUpdated = null, loaderSkipped = null;
@@ -183,13 +187,15 @@ namespace BetterAstralParty.Installation
                 if (removeShortcut) output("Remove the matching Astral Party - Mod shortcut only; keep all other Steam entries.");
                 if (shortcutSkipped != null) output("Steam 정보를 확정할 수 없어 바로가기는 남겨 둡니다. 확인된 모드 파일만 백업 후 제거합니다. / Steam discovery unavailable or ambiguous; keep shortcuts and back up/remove only verified mod files. Reason: " + shortcutSkipped);
                 output("전용 설정·로그도 백업 후 제거합니다. 공용 로더·다른 모드는 유지합니다. / Includes mod settings/logs; shared loader and other mods stay.");
+                var legacyWork = LegacyWork.Finished(game).Count;
+                if (legacyWork != 0) output("끝난 1.3.x 업데이트 작업 기록 " + legacyWork + "개도 정리합니다. / Also removes " + legacyWork + " finished 1.3.x update work records.");
                 if (whatIf) { output("WhatIf: BetterAstralParty 파일 백업 및 제거 / Back up and remove listed BetterAstralParty files"); return 0; }
                 if (consent("BetterAstralParty 파일을 백업 후 제거할까요? / Back up and remove listed BetterAstralParty files? [y/N]") != "y")
                 { output("취소했습니다. 아무것도 변경하지 않았습니다. / Cancelled; nothing changed."); return 0; }
                 if (shortcutSkipped != null) try { observation?.Invoke("NativeUninstallShortcut: action=Skipped; reason=" + shortcutSkipped
                     + (shortcutDiscoveryError == null ? "" : "; exception=" + shortcutDiscoveryError.GetType().Name + "; hresult=0x" + shortcutDiscoveryError.HResult.ToString("X8", System.Globalization.CultureInfo.InvariantCulture))); } catch { }
                 if (loaderSkipped != null) try { observation?.Invoke("NativeUninstallLoader: action=Skipped; reason=" + loaderSkipped); } catch { }
-                SteamLauncher.RecordInstallerStage("Uninstall", "Begin");
+                SetupHost.RecordInstallerStage("Uninstall", "Begin");
                 if (backupTargets.Length != 0)
                 {
                     if (installLock == null) installLock = NativeMaintenance.AcquireInstallLock(bundle);
@@ -220,8 +226,9 @@ namespace BetterAstralParty.Installation
                 if (removeShortcut) removedShortcut = NativeSteamMaintenance.Remove(steamRoot!, account, game, output);
                 removal?.Dispose(); removal = null;
                 if (transaction != null) { NativeMaintenance.CompleteTransaction(bundle, transaction, backupTargets); transaction = null; }
+                LegacyWork.Remove(game, output);
                 maintenance?.Dispose(); maintenance = null;
-                SteamLauncher.RecordInstallerStage("Uninstall", "Completed");
+                SetupHost.RecordInstallerStage("Uninstall", "Completed");
                 foreach (var relative in new[] { "BepInEx/plugins/BetterAstralParty", "BepInEx/BetterAstralParty-Diagnostics" })
                 {
                     var path = Full(game, relative);
@@ -243,7 +250,7 @@ namespace BetterAstralParty.Installation
                     try { NativeSteamMaintenance.AssertStopped(steamRoot!, "ShortcutRollback"); NativeSteamMaintenance.Rollback(removedShortcut); }
                     catch (Exception rollbackError) { RecordRollback(error, rollbackError); output("Steam shortcut recovery needs review; retain backup: " + removedShortcut.Backup); }
                 if (transaction != null)
-                    try { SteamLauncher.RecordInstallerStage("Rollback", "Begin"); NativeMaintenance.RestoreTransaction(bundle, transaction, backupTargets, rollback); SteamLauncher.RecordInstallerStage("Rollback", "Completed"); }
+                    try { SetupHost.RecordInstallerStage("Rollback", "Begin"); NativeMaintenance.RestoreTransaction(bundle, transaction, backupTargets, rollback); SetupHost.RecordInstallerStage("Rollback", "Completed"); }
                     catch (Exception rollbackError) { RecordRollback(error, rollbackError); output("복구 미완료: 백업을 보관하세요. / Recovery incomplete; retain " + transaction.JournalPath); }
                 throw;
             }
@@ -251,7 +258,7 @@ namespace BetterAstralParty.Installation
         }
         private static void RecordRollback(Exception original, Exception failure)
         {
-            SteamLauncher.RecordInstallerFailure("Rollback", failure);
+            SetupHost.RecordInstallerFailure("Rollback", failure);
             original.Data["BapRollbackFailure"] = original.Data["BapRollbackFailure"] is Exception prior ? new AggregateException(prior, failure) : failure;
         }
     }

@@ -11,13 +11,10 @@ internal static partial class TestCommands
         switch (name) {
             case "shared-loader": SharedLoaderPolicy(context, stage, scratch, pin); break;
             case "update-runtime-isolation": RuntimeIsolation(context, stage, options, pin); break;
-            case "launcher-recovery": LauncherRecovery(context, stage, pin); break;
-            case "handoff-start-failure": HandoffStartFailure(context, stage, pin); break;
             case "update-notification-ui": UpdateNotificationMetadata(context, stage, options, pin); break;
             case "updater-primitives": UpdatePrimitives(context, stage, pin); break;
             case "updater-transaction": UpdateSafetyFixture(context, stage, name, options, pin); break;
             case "updater-apply-boundary": UpdateSafetyFixture(context, stage, name, options, pin); break;
-            case "updater-helper": UpdateSafetyFixture(context, stage, name, options, pin); break;
             case "staging": UpdateSafetyFixture(context, stage, name, options, pin); break;
             case "update-generation": UpdateGenerationFixture(context, stage, pin); break;
             default: return false;

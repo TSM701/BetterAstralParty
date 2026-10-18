@@ -21,14 +21,14 @@ if not exist "%BAP_BOOTLOG%" mkdir "%BAP_BOOTLOG%" 2>nul
 set "BAP_BOOTLOG=%BAP_BOOTLOG%\Bootstrap-%RANDOM%-%RANDOM%.log"
 >"%BAP_BOOTLOG%" echo BAP-BOOTSTRAP-START: Precompiled native uninstaller.
 :native
-if not exist "\\?\%BAP_ENTRYROOT%artifacts\BetterAstralParty-Launcher.exe" goto missing
+if not exist "\\?\%BAP_ENTRYROOT%artifacts\BetterAstralParty-Setup.exe" goto missing
 pushd "%BAP_ENTRYROOT%artifacts"
 if errorlevel 1 goto missing
 if exist "\\?\%BAP_ENTRYROOT%package-manifest.json" goto packaged
-"BetterAstralParty-Launcher.exe" --development --uninstall %*
+"BetterAstralParty-Setup.exe" --development --uninstall %*
 goto result
 :packaged
-"BetterAstralParty-Launcher.exe" --uninstall %*
+"BetterAstralParty-Setup.exe" --uninstall %*
 :result
 set "BAP_EXIT=%errorlevel%"
 popd
@@ -48,7 +48,7 @@ if "%BAP_PREVIEW%"=="1" (
     echo Native uninstaller missing. No maintenance executed.
     exit /b 1
 )
->>"%BAP_BOOTLOG%" echo BAP-PACKAGE-INCOMPLETE: artifacts\BetterAstralParty-Launcher.exe missing.
+>>"%BAP_BOOTLOG%" echo BAP-PACKAGE-INCOMPLETE: artifacts\BetterAstralParty-Setup.exe missing.
 echo Native uninstaller missing. Use the complete official ZIP; no game files were removed.
 echo Bootstrap log: "%BAP_BOOTLOG%"
 pause

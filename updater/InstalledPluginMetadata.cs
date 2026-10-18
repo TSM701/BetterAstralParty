@@ -134,7 +134,7 @@ namespace BetterAstralParty.Updating
                 }
             }
             if (!values.ContainsKey("Guid") || !values.ContainsKey("Version") || values["Guid"] != Owner) throw Bad(); UpdateVersion.Parse(values["Version"]);
-            if (values.Count != (maintenance ? 6 : 4) || !values.TryGetValue("UpdateProtocol", out var protocol) || protocol != "4" || !values.TryGetValue("SettingsSchema", out var schema) || schema != "1") throw Bad();
+            if (values.Count != (maintenance ? 6 : 4) || !values.TryGetValue("UpdateProtocol", out var protocol) || protocol != "5" || !values.TryGetValue("SettingsSchema", out var schema) || schema != "1") throw Bad();
             if (maintenance) {
                 if (!values.TryGetValue("Name", out var pluginName) || pluginName != "BetterAstralParty" || !values.ContainsKey("InstallBundleProtocol")) throw Bad();
                 Func<int, string> typeDefinition = row => {
@@ -177,7 +177,7 @@ namespace BetterAstralParty.Updating
                 }
                 if (count != 1) throw Bad();
             }
-            return new InstalledPluginMetadata(values["Version"], 4, 1);
+            return new InstalledPluginMetadata(values["Version"], UpdateTrust.Protocol, 1);
         }
         private static string SerializedText(Reader reader, ref int at)
         {

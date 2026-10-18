@@ -17,7 +17,7 @@ namespace BetterAstralParty.Installation
             if (bytes.Length >= 3 && bytes[0] == 239 && bytes[1] == 187 && bytes[2] == 191) {
                 var plain = new byte[bytes.Length - 3]; Buffer.BlockCopy(bytes, 3, plain, 0, plain.Length); bytes = plain;
             }
-            var value = Normalize(LauncherRecoveryJson.Read(bytes, limit), rows) as Dictionary<string, object?>;
+            var value = Normalize(MaintenanceJsonReader.Read(bytes, limit), rows) as Dictionary<string, object?>;
             if (value == null) throw new InvalidDataException("JSON root must be an object.");
             return value;
         }
@@ -56,10 +56,10 @@ namespace BetterAstralParty.Installation
         internal static readonly Dictionary<string, string> OwnedSources = new Dictionary<string, string>(StringComparer.Ordinal) {
             {"AstralParty-Vanilla.cmd", "tools/AstralParty-Vanilla.cmd"},
             {UpdateTrust.PluginPath, "artifacts/BetterAstralParty.dll"},
-            {"BetterAstralParty-Launcher.exe", "artifacts/BetterAstralParty-Launcher.exe"},
             {"BetterAstralParty-Mod.cmd", "tools/BetterAstralParty-Mod.cmd"},
             {"BetterAstralParty.compatibility.json", "artifacts/BetterAstralParty.compatibility.json"}
         };
+        internal const string SetupPath = "artifacts/BetterAstralParty-Setup.exe";
         internal readonly WindowsFileFence Source;
         internal readonly string PackageRoot, GameRoot, Version, ManifestHash, BuildIdentity, RootIdentity;
         internal readonly Dictionary<string, string> Hashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -67,7 +67,6 @@ namespace BetterAstralParty.Installation
         private readonly Dictionary<string, int> _sizes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, WindowsFileFence.FileLease> _files = new Dictionary<string, WindowsFileFence.FileLease>(StringComparer.OrdinalIgnoreCase);
         internal readonly Dictionary<string, object?>? Recovery;
-        internal string? Observation;
         internal string? Mode;
         internal Dictionary<string, string?>? Observed;
         internal NativeMaintenanceBundle(string packageRoot, string gameRoot, string? recoveryPath = null)
@@ -81,7 +80,7 @@ namespace BetterAstralParty.Installation
                 ManifestHash = UpdateTrust.Hash(manifestBytes); var manifest = MaintenanceJson.Read(manifestBytes);
                 if (MaintenanceJson.Number(manifest, "schema") != 1) throw new InvalidDataException("Invalid package schema.");
                 Version = MaintenanceJson.Text(manifest, "version"); var kind = MaintenanceJson.Text(manifest, "kind");
-                if (kind.Length == 0 || UpdateVersion.Parse(Version).CompareTo(UpdateVersion.Parse("1.3.0-0")) < 0) throw new InvalidDataException("New 1.3.0 installation baseline required.");
+                if (kind.Length == 0 || UpdateVersion.Parse(Version).CompareTo(UpdateVersion.Parse(ReleaseFeedPolicy.Baseline + "-0")) < 0) throw new InvalidDataException("New 1.4.0 installation baseline required.");
                 var files = MaintenanceJson.List(manifest, "files"); if (files.Count < 10) throw new InvalidDataException("Incomplete installation manifest.");
                 foreach (var raw in files) {
                     var row = MaintenanceJson.Map(raw); var name = MaintenanceJson.Text(row, "path"); var hash = MaintenanceJson.Text(row, "sha256"); var size = MaintenanceJson.Number(row, "bytes");
@@ -90,15 +89,15 @@ namespace BetterAstralParty.Installation
                     Hashes.Add(name, hash);
                     _sizes.Add(name, size);
                 }
-                Bytes("artifacts/BetterAstralParty-Launcher.exe", UpdateTrust.MaxFileBytes);
-                foreach (var name in new[] { "Install.cmd", "Uninstall.cmd", "tools/approved-install-bundles.json", "helper-bootstrap/BetterAstralParty-UpdateHelper.exe", "helper-bootstrap/helper.descriptor", "helper-bootstrap/helper.signature", "update-proof/update.descriptor", "update-proof/update.signature" })
+                Bytes(SetupPath, UpdateTrust.MaxFileBytes);
+                foreach (var name in new[] { "Install.cmd", "Uninstall.cmd", "tools/approved-install-bundles.json", "update-proof/update.descriptor", "update-proof/update.signature" })
                     if (!Hashes.ContainsKey(name)) throw new InvalidDataException("필수 설치 파일이 없습니다. / Required package file missing: " + name);
                 foreach (var entry in OwnedSources) {
                     string hash; if (!Hashes.TryGetValue(entry.Value, out hash!)) throw new InvalidDataException("Missing owned installation file: " + entry.Value); Expected.Add(entry.Key, hash);
                 }
-                var ownPath = WindowsPath.FromIo(typeof(SteamLauncher).Assembly.Location);
-                if (!ownPath.Equals(Source.Full("artifacts/BetterAstralParty-Launcher.exe"), StringComparison.OrdinalIgnoreCase) || _files["artifacts/BetterAstralParty-Launcher.exe"].Hash() != Expected["BetterAstralParty-Launcher.exe"])
-                    throw new InvalidDataException("The exact incoming package launcher must execute maintenance.");
+                var ownPath = WindowsPath.FromIo(typeof(SetupHost).Assembly.Location);
+                if (!ownPath.Equals(Source.Full(SetupPath), StringComparison.OrdinalIgnoreCase) || _files[SetupPath].Hash() != Hashes[SetupPath])
+                    throw new InvalidDataException("The exact incoming package setup tool must execute maintenance.");
                 var names = new List<string>(Hashes.Keys); names.RemoveAll(n => n.Equals("tools/approved-install-bundles.json", StringComparison.OrdinalIgnoreCase)); names.Sort(StringComparer.Ordinal);
                 var identity = new StringBuilder("BetterAstralParty.InstallBundle/v1\nversion=").Append(Version).Append("\nkind=").Append(kind).Append("\nprotocol=1\n");
                 foreach (var name in names) identity.Append(name).Append('=').Append(Hashes[name]).Append('\n');
@@ -112,8 +111,8 @@ namespace BetterAstralParty.Installation
                     if (MaintenanceJson.Text(row, "buildIdentity") == BuildIdentity && MaintenanceJson.Text(row, "version") == Version && MaintenanceJson.Text(row, "kind") == kind && MaintenanceJson.Number(row, "protocol") == 1) approved++;
                 }
                 if (approved != 1) throw new InvalidDataException("검토 등록되지 않은 설치 묶음입니다. / Unregistered installation bundle.");
-                var proof = WholeInstallBridge.VerifyUpdateProof(Bytes("update-proof/update.descriptor", UpdateTrust.MaxDescriptorBytes), Bytes("update-proof/update.signature", 1024));
-                if (proof.Version != Version || proof.Protocol != 4 || proof.SettingsSchema != 1 || proof.Files.Count != OwnedSources.Count || SteamLauncher.InstallBundleProtocol != 1)
+                var proof = InstallProof.VerifyUpdateProof(Bytes("update-proof/update.descriptor", UpdateTrust.MaxDescriptorBytes), Bytes("update-proof/update.signature", 1024));
+                if (proof.Version != Version || proof.Protocol != UpdateTrust.Protocol || proof.SettingsSchema != 1 || proof.Files.Count != OwnedSources.Count)
                     throw new InvalidDataException("Incompatible installation components.");
                 foreach (var row in proof.Files) {
                     string source;

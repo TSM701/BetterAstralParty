@@ -44,7 +44,7 @@ internal static partial class FixtureEntry
         try {
             var root = Path.GetFullPath(args[0]); if (!root.Contains("native-steam-")) throw new InvalidOperationException("Isolated fixture root required.");
             var steam = Path.Combine(root, "Steam"); var game = Path.Combine(root, "Game"); Directory.CreateDirectory(steam); Directory.CreateDirectory(game);
-            Text(Path.Combine(game, "AstralParty_INT.exe"), "inert game"); Text(Path.Combine(game, "BetterAstralParty-Launcher.exe"), "inert launcher");
+            Text(Path.Combine(game, "AstralParty_INT.exe"), "inert game"); Text(Path.Combine(game, "BetterAstralParty-Mod.cmd"), "inert mod entry");
             var mode=args.Length>1?args[1]:"all";
             if(mode=="all"){Discovery(root,steam,game);DiscoveryExtended(root);UserPaths(root,steam,game);Accounts(steam);Binary(root,game);Mutations(steam,game);ProcessPolicy(steam,game);TypedDiagnostics(game);}
             else if(mode=="discovery"){Discovery(root,steam,game);DiscoveryExtended(root);UserPaths(root,steam,game);}
@@ -125,13 +125,19 @@ internal static partial class FixtureEntry
     private static void Binary(string root, string game)
     {
         var empty = NativeSteamMaintenance.EmptyShortcuts(); var items = (OrderedDictionary)empty["shortcuts"]!;
-        var exe = "\"" + Path.Combine(game, "BetterAstralParty-Launcher.exe") + "\"";
-        items.Add("0", Item(exe)); items.Add("5", Item("\"" + Path.Combine(root, "other", "BetterAstralParty-Launcher.exe") + "\""));
+        var exe = "\"" + Path.Combine(game, "BetterAstralParty-Mod.cmd") + "\"";
+        items.Add("0", Item(exe)); items.Add("5", Item("\"" + Path.Combine(root, "other", "BetterAstralParty-Mod.cmd") + "\""));
         var bytes = NativeSteamMaintenance.WriteShortcuts(empty);
         Check(NativeSteamMaintenance.WriteShortcuts(NativeSteamMaintenance.ReadShortcuts(bytes)).SequenceEqual(bytes), "ordered binary VDF roundtrip preserves all fields");
         Check(NativeSteamMaintenance.OwnedShortcutKeys(empty, game).SequenceEqual(new[] { "0" }), "ownership requires exact selected executable");
         items.Add("9", Item(exe, args: "custom")); Check(NativeSteamMaintenance.OwnedShortcutKeys(empty, game).Count == 1, "custom launch options are not owned");
         items.Add("2", Item(exe)); Reject(() => NativeSteamMaintenance.OwnedShortcutKeys(empty, game), "duplicate owned shortcut rejected"); items.Remove("2");
+        var legacyExe = "\"" + Path.Combine(game, "BetterAstralParty-Launcher.exe") + "\""; bool legacy;
+        items.Add("2", Item(legacyExe)); Reject(() => NativeSteamMaintenance.OwnedShortcutKeys(empty, game), "current and 1.3.x shortcuts together are ambiguous"); items.Remove("2");
+        items.Remove("0"); items.Add("0", Item(legacyExe));
+        Check(NativeSteamMaintenance.OwnedShortcutKeys(empty, game, out legacy).SequenceEqual(new[] { "0" }) && legacy, "exact 1.3.x launcher shortcut is recognised as the owned legacy entry");
+        items.Remove("0"); items.Add("0", Item(exe));
+        Check(NativeSteamMaintenance.OwnedShortcutKeys(empty, game, out legacy).Count == 1 && !legacy, "current Mod.cmd shortcut is not legacy");
         Reject(() => NativeSteamMaintenance.ReadShortcuts(bytes.Concat(new byte[] { 8 }).ToArray()), "trailing binary bytes rejected");
         Reject(() => NativeSteamMaintenance.ReadShortcuts(bytes.Take(bytes.Length - 1).ToArray()), "truncated binary rejected");
         Reject(() => NativeSteamMaintenance.ReadShortcuts(new byte[] { 3, 0, 8 }), "unsupported field type rejected");
@@ -180,6 +186,15 @@ internal static partial class FixtureEntry
         File.WriteAllBytes(path, new byte[] { 8 }); Reject(() => NativeSteamMaintenance.Rollback(again), "rollback never overwrites modified VDF");
         Check(File.ReadAllBytes(path).SequenceEqual(new byte[] { 8 }), "modified VDF preserved"); File.WriteAllBytes(path, original);
         Check(NativeSteamMaintenance.Remove(steam, 11, game) == null, "missing owned shortcut is a no-op");
+        var legacyRoot = NativeSteamMaintenance.EmptyShortcuts(); var legacyItems = (OrderedDictionary)legacyRoot["shortcuts"]!; legacyItems.Add("5", Item("unrelated", "Other shortcut"));
+        legacyItems.Add("6", Item("\"" + Path.Combine(game, "BetterAstralParty-Launcher.exe") + "\"")); File.WriteAllBytes(path, NativeSteamMaintenance.WriteShortcuts(legacyRoot));
+        Check(NativeSteamMaintenance.PlanRegister(steam, 11, game), "1.3.x launcher shortcut needs conversion");
+        var converted = NativeSteamMaintenance.Register(steam, 11, game)!; var convertedRoot = NativeSteamMaintenance.ReadShortcuts(File.ReadAllBytes(path)); bool wasLegacy;
+        var convertedKey = NativeSteamMaintenance.OwnedShortcutKeys(convertedRoot, game, out wasLegacy); var convertedItem = (OrderedDictionary)((OrderedDictionary)convertedRoot["shortcuts"]!)[convertedKey[0]]!;
+        Check(convertedKey.SequenceEqual(new[] { "6" }) && !wasLegacy && (uint)convertedItem["appid"]! == 0x80000001U && (string)convertedItem["custom"]! == (string)Item("x")["custom"]!
+            && ((OrderedDictionary)convertedRoot["shortcuts"]!).Count == 2, "legacy shortcut converted in place: same key, app ID and unrelated fields; no duplicate entry");
+        Check(!NativeSteamMaintenance.PlanRegister(steam, 11, game) && converted.Backup != null, "converted shortcut is current and the original VDF is backed up");
+        File.WriteAllBytes(path, original);
         var alias = Path.Combine(steam, "inert-linked-shortcuts.vdf");
         if (!CreateHardLinkW(alias, path, IntPtr.Zero)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
         try {
@@ -202,19 +217,13 @@ internal static partial class FixtureEntry
         Check(NativeSteamMaintenance.ClassifySteam(new[] { selected, otherSession, unknown }, steam, 7).State == "Unknown", "unknown Steam observation takes precedence");
         Check(NativeSteamMaintenance.ClassifySteam(new[] { new SteamProcessObservation { Pid = 24 } }, steam, 7).State == "Unknown", "unavailable process name/path cannot prove Steam stopped");
         unknown.Exited = true; Check(NativeSteamMaintenance.ClassifySteam(new[] { unknown }, steam, 7).State == "Stopped", "confirmed exit is not running");
-        NativeSteamMaintenance.EnsureApprovedList(new[] { selected, unrelated }, new[] { selected }); checks++;
-        Reject(() => NativeSteamMaintenance.EnsureApprovedList(new[] { selected }, new[] { Process(10, "steam", selected.Image, creation: selected.Creation + 1) }), "PID reuse invalidates consent");
-        Reject(() => NativeSteamMaintenance.EnsureApprovedList(new[] { selected }, new[] { Process(14, "AstralParty_INT", Path.Combine(game, "AstralParty_INT.exe")) }), "new game invalidates force consent");
-        Reject(() => NativeSteamMaintenance.EnsureApprovedList(new[] { selected }, new[] { Process(10, "steam", selected.Image, 8) }), "session change invalidates consent");
         var listedGame = Process(20, "AnotherInstalledGame", Path.Combine(game, "OtherGame.exe"));
         var helper = Process(21, "steamwebhelper", Path.Combine(steam, "bin", "steamwebhelper.exe"));
         var outside = Process(22, "UnrelatedApp", Path.Combine(game + "Outside", "outside.exe"));
         var targets = NativeSteamMaintenance.SelectSteamTargets(new[] { listedGame, outside, helper, selected, unrelated, otherSession }, steam, new[] { game }, 7);
-        Check(targets.Count == 3 && targets.Contains(listedGame) && !targets.Contains(outside) && !targets.Contains(otherSession), "Steam force list includes only installed apps and selected current-session client");
-        Check(NativeSteamMaintenance.SteamStopOrder(targets).Select(x => x.Pid).SequenceEqual(new uint[] { 10, 21, 20 }), "Steam client stops before helpers and listed installed apps");
+        Check(targets.Count == 3 && targets.Contains(listedGame) && !targets.Contains(outside) && !targets.Contains(otherSession), "remaining-process list includes only installed apps and selected current-session client");
         var updater = Process(23, "BetterAstralParty-UpdateHelper", Path.Combine(game, "BetterAstralParty-UpdateHelper.exe"));
         Reject(() => NativeSteamMaintenance.SelectSteamTargets(new[] { updater }, steam, new[] { game }, 7), "update helper is never a forced Steam target");
-        Reject(() => NativeSteamMaintenance.SteamStopOrder(new[] { updater }).ToArray(), "update helper is rejected at final ordering boundary");
         unknown.Exited = false; Reject(() => NativeSteamMaintenance.SelectSteamTargets(new[] { unknown }, steam, new[] { game }, 7), "unknown Steam cannot become an approved force target");
         foreach (var item in new[] { new SteamProcessObservation { Pid = 31, Name = "steam", NativeError = 5 }, new SteamProcessObservation { Pid = 32, NativeError = 87 },
             Process(33, "steam", selected.Image, creation: 0) }) {
@@ -225,190 +234,34 @@ internal static partial class FixtureEntry
         var gameFailure = (Exception)typeof(NativeSteamMaintenance).GetMethod("Failure", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static, null,
             new[] { typeof(string), typeof(string), typeof(SteamProcessObservation) }, null)!.Invoke(null, new object[] { "ProcessObservationUnavailable", "GameObservation", missingGame })!;
         UnavailableDiagnostic(() => { throw gameFailure; }, missingGame, "Game", "GameObservation");
-        var shown = new System.Collections.Generic.List<string>();
-        Check(NativeSteamMaintenance.ConfirmForce(new[] { selected, listedGame }, prompt => "y", shown.Add), "fresh y accepts only the shown force list");
-        Check(shown.Count == 3 && shown[0].Contains("Unsaved progress") && shown[1].Contains("PID 10") && shown[2].Contains("PID 20"), "fresh consent shows data-loss warning and complete target list first");
-        Check(!NativeSteamMaintenance.ConfirmForce(new[] { selected }, prompt => "r", shown.Add), "r rechecks without terminating");
-        Reject(() => NativeSteamMaintenance.ConfirmForce(new[] { selected }, prompt => null, shown.Add), "blank unavailable consent cancels");
-        Reject(() => NativeSteamMaintenance.ConfirmForce(new[] { selected }, prompt => "yes", shown.Add), "only explicit y allows force");
-        try { NativeSteamMaintenance.ConfirmForce(new[] { selected }, prompt => { throw new IOException("fixture input unavailable"); }, shown.Add); throw new InvalidOperationException("Expected unavailable input cancellation."); }
-        catch (InvalidOperationException error) {
-            var context = new JavaScriptSerializer().DeserializeObject((string)error.Data["BapSteamDiagnostic"]!) as System.Collections.Generic.Dictionary<string, object>;
-            Check(context != null && (string)context["reason"] == "ConsentUnavailable" && (string)context["phase"] == "ShutdownConsent", "noninteractive input failure carries bounded diagnostic context");
-            Check(error.Data.Contains("BapSteamObservation"), "process diagnostic companion is preserved");
-        }
-        TerminationRaces(steam, helper);
-        TerminationApiCases(steam);
+        ManualSteamExit(steam);
     }
-    private static void TerminationRaces(string steam, SteamProcessObservation target)
+    // Steam is never terminated: the player exits it, Enter cancels, r rechecks.
+    private static void ManualSteamExit(string steam)
     {
-        var observer = WindowsProcessGuard.Observer;
-        var processes = NativeSteamMaintenance.ProcessObserver;
-        var statusObserver = NativeSteamMaintenance.SteamStatusObserver;
-        var stop = typeof(NativeSteamMaintenance).GetMethod("StopVerified", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-        void Run()
-        {
-            try { stop.Invoke(null, new object[] { target }); }
-            catch (System.Reflection.TargetInvocationException error) when (error.InnerException != null) { throw error.InnerException; }
-        }
-        void Refuse(int nativeError, string reason)
-        {
-            try { Run(); }
-            catch (ApplySafetyException error) {
-                Check(error.Failure == ApplyFailure.ProcessUncertain && error.NativeError == nativeError, reason);
-                Check(error.Data.Contains("BapSteamDiagnostic") && error.Data.Contains("BapSteamObservation"), "termination failure preserves diagnostic context");
-                return;
-            }
-            throw new InvalidOperationException(reason);
-        }
-        try {
-            var enumerations = 0;
-            WindowsProcessGuard.Observer = (pid, allowExited) => { Check(pid == target.Pid && allowExited, "termination observes the approved PID with exit allowed"); throw new ApplySafetyException(ApplyFailure.ProcessUncertain, 87); };
-            NativeSteamMaintenance.ProcessObserver = () => { enumerations++; return Array.Empty<SteamProcessObservation>(); };
-            Run(); Check(enumerations == 1, "Steam helper gone before handle capture does not fail removal");
-            Check(WindowsProcessGuard.LastMetadataExitWaitMilliseconds == 2000, "approved target capture passes the bounded metadata-exit wait without changing broad scans");
-            NativeSteamMaintenance.ProcessObserver = () => new[] { target };
-            Refuse(87, "error 87 is not exit evidence while the approved PID remains listed");
-            NativeSteamMaintenance.ProcessObserver = () => new[] { new SteamProcessObservation { Pid = target.Pid } };
-            Refuse(87, "unavailable same-PID metadata cannot authorize skipping termination");
-            NativeSteamMaintenance.ProcessObserver = () => new[] { Process(target.Pid, "UnrelatedApp", target.Image + ".other", creation: target.Creation + 1) };
-            Refuse(87, "a reused PID is never treated as an absent approved process");
-            NativeSteamMaintenance.ProcessObserver = () => { throw new IOException("inert enumeration failure"); };
-            try { Run(); throw new InvalidOperationException("Expected enumeration failure."); }
-            catch (IOException error) { Check(error.Data.Contains("BapSteamDiagnostic"), "failed fresh enumeration never authorizes a skip and retains diagnostics"); }
-            WindowsProcessGuard.Observer = (pid, allowExited) => { throw new ApplySafetyException(ApplyFailure.ProcessUncertain, 5); };
-            NativeSteamMaintenance.ProcessObserver = () => { throw new InvalidOperationException("Access denied must not query an exit fallback."); };
-            Refuse(5, "access denied is not interpreted as natural process exit");
-            Text(Path.Combine(steam, "steam.exe"), "inert client, never executed");
-            foreach (var reappear in new[] { false, true }) {
-                uint session; using (var self = System.Diagnostics.Process.GetCurrentProcess()) session = (uint)self.SessionId;
-                var client = Process(51, "steam", Path.Combine(steam, "steam.exe"), session);
-                var child = Process(52, "steamwebhelper", Path.Combine(steam, "bin", "steamwebhelper.exe"), session);
-                var clientExited = false; var snapshots = 0; var statusReads = 0; var helperCaptures = 0;
-                NativeSteamMaintenance.SteamStatusObserver = () => { statusReads++; return new SteamProcessStatus { State = clientExited ? "Stopped" : "Running" }; };
-                NativeSteamMaintenance.ProcessObserver = () => {
-                    snapshots++;
-                    return !clientExited ? new[] { client, child } : reappear && snapshots >= 4
-                        ? new[] { Process(53, "steamwebhelper", child.Image, session) } : Array.Empty<SteamProcessObservation>();
-                };
-                WindowsProcessGuard.Observer = (pid, allowExited) => {
-                    if (pid == client.Pid) { clientExited = true; return new WindowsProcessGuard.Captured(); }
-                    Check(pid == child.Pid && clientExited && allowExited, "client exits before its naturally disappearing helper is captured");
-                    helperCaptures++; throw new ApplySafetyException(ApplyFailure.ProcessUncertain, 87);
-                };
-                var state = new SteamSessionState();
-                if (!reappear) {
-                    NativeSteamMaintenance.StopSteam(steam, state, prompt => "y", _ => { });
-                    Check(state.Restart && state.Root == steam, "successful client-first shutdown retains restart intent without starting Steam");
-                }
-                else {
-                    try { NativeSteamMaintenance.StopSteam(steam, state, prompt => "y", _ => { }); throw new Exception("Expected final process barrier."); }
-                    catch (InvalidOperationException error) { Check(error.Message.Contains("SteamGameProcessesRemain"), "a new process after the absent-PID skip still blocks final shutdown completion"); }
-                }
-                Check(helperCaptures == 1 && snapshots == 4 && statusReads >= 5, "normal shutdown reaches final process barriers after the helper-exit race");
-            }
-        }
-        finally { WindowsProcessGuard.Observer = observer; NativeSteamMaintenance.ProcessObserver = processes; NativeSteamMaintenance.SteamStatusObserver = statusObserver; }
-    }
-    private static void TerminationApiCases(string steam)
-    {
-        var observer = WindowsProcessGuard.Observer; var processes = NativeSteamMaintenance.ProcessObserver; var statusObserver = NativeSteamMaintenance.SteamStatusObserver;
-        var open = NativeSteamMaintenance.TerminationOpen; var creation = NativeSteamMaintenance.TerminationCreation;
-        var terminate = NativeSteamMaintenance.TerminationStop; var wait = NativeSteamMaintenance.TerminationWait; var lastError = NativeSteamMaintenance.TerminationNativeError;
-        var stop = typeof(NativeSteamMaintenance).GetMethod("StopVerified", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        var processes = NativeSteamMaintenance.ProcessObserver; var statusObserver = NativeSteamMaintenance.SteamStatusObserver;
         uint session; using (var self = System.Diagnostics.Process.GetCurrentProcess()) session = (uint)self.SessionId;
-        var target = Process(91, "steamwebhelper", Path.Combine(steam, "bin", "steamwebhelper.exe"), session);
-        var opens = 0; var stops = 0; var waits = 0; var heldWaits = 0;
-        void Prepare(bool openDenied = false, bool terminateDenied = false, bool exitedAfterDenial = false)
-        {
-            target = Process(91, "steamwebhelper", Path.Combine(steam, "bin", "steamwebhelper.exe"), session);
-            opens = stops = waits = heldWaits = 0; NativeSteamMaintenance.TerminationNativeError = 5;
-            WindowsProcessGuard.Observer = (pid, allowExited) => {
-                Check(pid == target.Pid && allowExited, "API termination keeps the approved captured identity");
-                return new WindowsProcessGuard.Captured(target.Image, target.Session, target.Creation, () => false, milliseconds => {
-                    Check(milliseconds == 2000, "access-denied exit confirmation is bounded to two seconds"); heldWaits++; return exitedAfterDenial;
-                });
-            };
-            NativeSteamMaintenance.TerminationOpen = pid => { Check(pid == target.Pid, "terminate handle opens only approved PID"); opens++; return new Microsoft.Win32.SafeHandles.SafeWaitHandle(openDenied ? IntPtr.Zero : new IntPtr(1), false); };
-            NativeSteamMaintenance.TerminationCreation = handle => target.Creation;
-            NativeSteamMaintenance.TerminationStop = handle => { stops++; return !terminateDenied; };
-            NativeSteamMaintenance.TerminationWait = (handle, milliseconds) => { Check(milliseconds == 5000, "termination wait remains bounded"); waits++; return 0; };
-        }
-        void Run()
-        {
-            try { stop.Invoke(null, new object[] { target }); }
-            catch (System.Reflection.TargetInvocationException error) when (error.InnerException != null) { throw error.InnerException; }
-        }
-        void Failed(string reason, int nativeError, Type type, Action? action = null)
-        {
-            Exception? failure = null; try { (action ?? Run)(); } catch (Exception error) { failure = error; }
-            Check(failure != null && failure.GetType() == type && target.NativeError == nativeError && !target.Exited, "live/uncertain process remains a truthful refusal: " + reason);
-            var log = (string)failure!.Data["BapSteamLog"]!;
-            Check((string)failure.Data["BapSteamLogStatus"]! == "included" && log.Contains("reason=" + reason + "; phase=ProcessTermination;")
-                && log.Contains("nativeError=" + nativeError + "; exitAvailable=true; confirmedExit=false"), "exact native API/result reaches canonical diagnostics: " + reason);
-        }
+        Text(Path.Combine(steam, "steam.exe"), "inert, never executed");
+        var client = Process(91, "steam", Path.Combine(steam, "steam.exe"), session);
         try {
-            foreach (var openDenied in new[] { true, false }) {
-                Prepare(openDenied, !openDenied, true); Run();
-                Check(target.Exited && opens == 1 && stops == (openDenied ? 0 : 1) && waits == 0 && heldWaits == 1, "already-terminating access denied succeeds only after same-held exit confirmation");
-                Prepare(openDenied, !openDenied);
-                Failed(openDenied ? "ProcessTerminateOpenFailed" : "ProcessTerminateFailed", 5, typeof(System.ComponentModel.Win32Exception));
-                Check(heldWaits == 1 && waits == 0, "still-live denial is not retried or treated as exit");
-            }
-            Prepare(); NativeSteamMaintenance.TerminationWait = (handle, milliseconds) => { waits++; return 258; };
-            Failed("ProcessExitTimeout", 0, typeof(InvalidOperationException));
-            Check(waits == 1 && heldWaits == 0, "timeout is distinct from stale native error 5 and does not enter denied-exit fallback");
-            Prepare(); NativeSteamMaintenance.TerminationNativeError = 6; NativeSteamMaintenance.TerminationWait = (handle, milliseconds) => uint.MaxValue;
-            Failed("ProcessExitWaitFailed", 6, typeof(System.ComponentModel.Win32Exception));
-            Check(heldWaits == 0, "failed native wait is not ignored as exit");
-            foreach (var api in new[] { "open", "wait", "timeout" }) {
-                Prepare(api == "open"); var exitReads = 0; NativeSteamMaintenance.TerminationNativeError = 6;
-                WindowsProcessGuard.Observer = (pid, allowExited) => new WindowsProcessGuard.Captured(target.Image, target.Session, target.Creation, () => ++exitReads > 1);
-                NativeSteamMaintenance.TerminationWait = (handle, milliseconds) => api == "timeout" ? 258U : uint.MaxValue;
-                Run(); Check(target.Exited && exitReads == 2 && heldWaits == 0, "positive same-held exit still resolves a completed non-denial API failure: " + api);
-            }
-            Prepare(); Run(); Check(target.Exited && opens == 1 && stops == 1 && waits == 1 && heldWaits == 0, "successful native wait confirms actual exit");
-            Prepare(true); WindowsProcessGuard.Observer = (pid, allowExited) => new WindowsProcessGuard.Captured(target.Image, target.Session, target.Creation,
-                () => false, milliseconds => { throw new ApplySafetyException(ApplyFailure.ProcessUncertain, 6); });
-            Failed("ProcessExitWaitFailed", 6, typeof(ApplySafetyException));
-            Prepare(); NativeSteamMaintenance.TerminationCreation = handle => target.Creation + 1;
-            Reject(Run, "reused termination PID is rejected before termination"); Check(stops == 0 && heldWaits == 0, "identity failure has no natural-exit bypass");
-            Prepare(); WindowsProcessGuard.Observer = (pid, allowExited) => new WindowsProcessGuard.Captured(target.Image, target.Session + 1, target.Creation, () => false);
-            Reject(Run, "changed process session is rejected"); Check(opens == 0 && stops == 0, "captured session mismatch never obtains a terminate handle");
-            foreach (var captureDenied in new[] { false, true })
-            foreach (var mode in new[] { "closed", "closed-helper", "new-pid", "cancel" }) {
-                Prepare(true); var prompts = 0; var closed = false;
-                if (captureDenied) WindowsProcessGuard.Observer = (pid, allowExited) => { throw new ApplySafetyException(ApplyFailure.ProcessUncertain, 5); };
+            foreach (var mode in new[] { "closed", "closed-remaining", "cancel", "blank", "unavailable" }) {
+                var prompts = 0; var closed = false; var shown = new List<string>(); var state = new SteamSessionState();
                 NativeSteamMaintenance.SteamStatusObserver = () => new SteamProcessStatus { State = closed ? "Stopped" : "Running" };
-                NativeSteamMaintenance.ProcessObserver = () => closed ? mode == "closed-helper" ? new[] { Process(92, target.Name, target.Image, session) } : Array.Empty<SteamProcessObservation>() : new[] { target };
-                string? Consent(string prompt) {
-                    prompts++; if (prompts == 1) return "y";
-                    if (prompts == 2 && mode != "cancel") { if (mode.StartsWith("closed", StringComparison.Ordinal)) closed = true; else target = Process(92, target.Name, target.Image, session, target.Creation + 1); return "r"; }
-                    return "";
+                NativeSteamMaintenance.ProcessObserver = () => closed ? mode == "closed-remaining" ? new[] { Process(92, "steamwebhelper", Path.Combine(steam, "bin", "steamwebhelper.exe"), session) } : new SteamProcessObservation[0] : new[] { client };
+                Func<string, string?> consent = prompt => {
+                    prompts++; if (mode == "cancel") return ""; if (mode == "blank") return null; if (mode == "unavailable") throw new IOException("fixture input unavailable");
+                    closed = true; return "r";
+                };
+                if (mode == "closed") { NativeSteamMaintenance.StopSteam(steam, state, consent, shown.Add); Check(prompts == 1 && state.Restart && state.Root != null, "manual Steam exit plus recheck continues and Steam is restarted afterwards"); }
+                else if (mode == "closed-remaining") {
+                    try { NativeSteamMaintenance.StopSteam(steam, state, consent, shown.Add); throw new Exception("Expected remaining-process barrier."); }
+                    catch (InvalidOperationException error) { Check(error.Message.Contains("SteamGameProcessesRemain") && prompts == 1, "manual Steam exit cannot skip the final remaining-process barrier"); }
                 }
-                var state = new SteamSessionState();
-                if (mode == "closed") { NativeSteamMaintenance.StopSteam(steam, state, Consent, _ => { }); Check(prompts == 2, "normal manual exit resumes without another termination attempt"); }
-                else if (mode == "closed-helper") {
-                    try { NativeSteamMaintenance.StopSteam(steam, state, Consent, _ => { }); throw new Exception("Expected remaining helper barrier."); }
-                    catch (InvalidOperationException error) { Check(error.Message.Contains("SteamGameProcessesRemain") && prompts == 2, "manual Steam exit cannot skip the final remaining-process barrier"); }
-                }
-                else if (mode == "cancel") Failed(captureDenied ? "ProcessCaptureFailed" : "ProcessTerminateOpenFailed", 5,
-                    captureDenied ? typeof(ApplySafetyException) : typeof(System.ComponentModel.Win32Exception), () => NativeSteamMaintenance.StopSteam(steam, state, Consent, _ => { }));
-                else { Reject(() => NativeSteamMaintenance.StopSteam(steam, state, Consent, _ => { }), "replacement PID requires fresh force-close consent"); Check(prompts == 3, "explicit recheck does not authorize terminating replacement process"); }
-                Check(opens == (captureDenied ? 0 : 1) && stops == 0 && heldWaits == (captureDenied ? 0 : 1), "manual recheck/refusal never auto-retries capture or native termination");
+                else { Reject(() => NativeSteamMaintenance.StopSteam(steam, state, consent, shown.Add), "refused, blank or unavailable input cancels: " + mode); Check(prompts == 1 && !state.Restart, "cancel never restarts Steam: " + mode); }
+                Check(shown.Any(line => line.Contains("Steam")), "the player is told to exit Steam: " + mode);
             }
-            Prepare(); var nonDenialPrompts = 0;
-            WindowsProcessGuard.Observer = (pid, allowExited) => { throw new ApplySafetyException(ApplyFailure.ProcessUncertain, 6); };
-            NativeSteamMaintenance.SteamStatusObserver = () => new SteamProcessStatus { State = "Running" };
-            NativeSteamMaintenance.ProcessObserver = () => new[] { target };
-            Failed("ProcessCaptureFailed", 6, typeof(ApplySafetyException), () => NativeSteamMaintenance.StopSteam(steam, new SteamSessionState(), prompt => { nonDenialPrompts++; return "y"; }, _ => { }));
-            Check(nonDenialPrompts == 1 && opens == 0 && stops == 0, "non-denial capture uncertainty is not swallowed or retried");
         }
-        finally {
-            WindowsProcessGuard.Observer = observer; NativeSteamMaintenance.ProcessObserver = processes; NativeSteamMaintenance.SteamStatusObserver = statusObserver;
-            NativeSteamMaintenance.TerminationOpen = open; NativeSteamMaintenance.TerminationCreation = creation; NativeSteamMaintenance.TerminationStop = terminate;
-            NativeSteamMaintenance.TerminationWait = wait; NativeSteamMaintenance.TerminationNativeError = lastError;
-        }
+        finally { NativeSteamMaintenance.ProcessObserver = processes; NativeSteamMaintenance.SteamStatusObserver = statusObserver; }
     }
     private static Exception Diagnostic(string reason, string phase, SteamProcessStatus status)
     {
@@ -419,7 +272,7 @@ internal static partial class FixtureEntry
     {
         var status = new SteamProcessStatus();
         var missing = new SteamProcessObservation { Pid = 6, Name = "steam", NativeError = 87 };
-        var running = Process(42, "BetterAstralParty-Launcher", game + "\\private-path-not-for-export.exe"); running.PathMatch = false; running.SessionMatch = true;
+        var running = Process(42, "AstralParty_INT", game + "\\private-path-not-for-export.exe"); running.PathMatch = false; running.SessionMatch = true;
         status.Facts.Add(running); status.Facts.Add(missing);
         var culture = System.Threading.Thread.CurrentThread.CurrentCulture;
         try {
@@ -431,7 +284,7 @@ internal static partial class FixtureEntry
             Check(lines[1] == "SteamProcess: index=1; pid=6; sessionMatch=unknown; pathAvailable=false; pathMatch=unknown; startAvailable=false; startedUtc=unknown"
                 && lines[2] == "SteamObservationProcess: index=1; pid=6; kind=SteamClient; querySource=Unavailable; nativeError=87; exitAvailable=false; confirmedExit=false", "unknown native identity and native error remain exact lowercase typed facts");
             Check(lines[3] == "SteamProcess: index=2; pid=42; sessionMatch=true; pathAvailable=true; pathMatch=false; startAvailable=true; startedUtc=" + DateTime.FromFileTimeUtc(running.Creation).ToString("o", CultureInfo.InvariantCulture)
-                && lines[4] == "SteamObservationProcess: index=2; pid=42; kind=Launcher; querySource=Native; nativeError=0; exitAvailable=true; confirmedExit=false" && lines[5] == "SteamObservationCoverage: status=included", "observed path/session/start facts are rendered without names or paths");
+                && lines[4] == "SteamObservationProcess: index=2; pid=42; kind=Game; querySource=Native; nativeError=0; exitAvailable=true; confirmedExit=false" && lines[5] == "SteamObservationCoverage: status=included", "observed path/session/start facts are rendered without names or paths");
             var legacy = (System.Collections.Generic.Dictionary<string, object>)new JavaScriptSerializer().DeserializeObject((string)failure.Data["BapSteamDiagnostic"]!);
             Check((string)legacy["phase"] == "GameObservation" && failure.Data.Contains("BapSteamObservation") && !log.Contains(game), "legacy JSON cause stays unchanged and typed log exports no executable path");
             foreach (var mapping in new[] { new[] { "GameIdentity", "ProcessIdentity" }, new[] { "GameTermination", "ProcessTermination" } })

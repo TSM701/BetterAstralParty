@@ -18,7 +18,7 @@ namespace BetterAstralParty.GaSigning
     // Bounded local-only signing; no GitHub identity, credentials, installation or publication.
     public static class SignLocalInstall
     {
-        private static string Stage="", PolicyPath="", ReviewPath="", Output="", Reservation="", Version="", Channel="", DescriptorHash="", HelperHash="", ImageHash="", ZipHash="", SourceHash="";
+        private static string Stage="", PolicyPath="", ReviewPath="", Output="", Reservation="", Version="", Channel="", DescriptorHash="", ZipHash="", SourceHash="";
         private const string KeyName="BetterAstralParty.PrivateTrial.20261002", KeyId="bap-trial-20261002";
         private static void Select(string policyPath) {
             if(!policyPath.StartsWith("artifacts/automatic-update-development/",StringComparison.Ordinal) || !policyPath.EndsWith("/signing-policy.json",StringComparison.Ordinal) || policyPath.Contains('\\') || policyPath.Split('/').Any(p=>p=="" || p=="." || p==".."))
@@ -26,11 +26,13 @@ namespace BetterAstralParty.GaSigning
             PolicyPath=policyPath;Stage=policyPath.Substring(0,policyPath.LastIndexOf('/'));ReviewPath=Stage+"/signing-review.json";Output=Stage+"/signatures";
         }
         private static int invoked;
-        private sealed class Inputs { internal byte[] Helper=null!,Image=null!,Descriptor=null!,Zip=null!,Proof=null!,ProofSignature=null!; }
+        // Protocol 5 signs only the update descriptor: one native call per version.
+        private const int MaxCalls = 1;
+        private sealed class Inputs { internal byte[] Descriptor=null!,Zip=null!,Proof=null!,ProofSignature=null!; }
         private sealed class Budget {
-            internal readonly bool[] AttemptRecorded=new bool[2]; internal readonly int[] Calls=new int[2];
+            internal readonly bool[] AttemptRecorded=new bool[MaxCalls]; internal readonly int[] Calls=new int[MaxCalls];
             internal int Total=>Calls.Sum();
-            internal void Count(int index) { if(index<0 || index>=2 || !AttemptRecorded[index] || Calls[index]!=0 || Total>=2)throw new InvalidOperationException("One durable call per descriptor, two total");Calls[index]++; }
+            internal void Count(int index) { if(index<0 || index>=MaxCalls || !AttemptRecorded[index] || Calls[index]!=0 || Total>=MaxCalls)throw new InvalidOperationException("One durable call per descriptor, one total");Calls[index]++; }
         }
         private static string Text(JsonElement e,string name)=>e.GetProperty(name).GetString()??"";
         private static void Hash(string value) { if(value.Length!=64 || value.Any(c=>!(c>='0'&&c<='9'||c>='A'&&c<='F')))throw new InvalidDataException("Exact uppercase SHA-256 required"); }
@@ -44,14 +46,14 @@ namespace BetterAstralParty.GaSigning
         private static Inputs Load(DevelopmentPackageFiles files,string root,string policyHash)
         {
             using var doc=JsonDocument.Parse(Read(files,PolicyPath,policyHash));var p=doc.RootElement;
-            Fields(p,"schema","purpose","version","channel","keyName","keyId","maximumNativeSignCalls","rootIdentity","output","reservation","sourceManifestSha256","helperDescriptorSha256","updateDescriptorSha256","helperImageSha256","zipSha256","compiledFiles","toolFiles");
-            Version=Text(p,"version");Channel=Text(p,"channel");SourceHash=Text(p,"sourceManifestSha256");HelperHash=Text(p,"helperDescriptorSha256");DescriptorHash=Text(p,"updateDescriptorSha256");ImageHash=Text(p,"helperImageSha256");ZipHash=Text(p,"zipSha256");
+            Fields(p,"schema","purpose","version","channel","keyName","keyId","maximumNativeSignCalls","rootIdentity","output","reservation","sourceManifestSha256","updateDescriptorSha256","zipSha256","compiledFiles","toolFiles");
+            Version=Text(p,"version");Channel=Text(p,"channel");SourceHash=Text(p,"sourceManifestSha256");DescriptorHash=Text(p,"updateDescriptorSha256");ZipHash=Text(p,"zipSha256");
             CheckScope(Version,Channel);
             Reservation="artifacts/automatic-update-development/signing-"+Version+".reserved.json";
-            foreach(var digest in new[]{SourceHash,HelperHash,DescriptorHash,ImageHash,ZipHash})Hash(digest);
+            foreach(var digest in new[]{SourceHash,DescriptorHash,ZipHash})Hash(digest);
             if(p.GetProperty("schema").GetInt32()!=1 || Text(p,"purpose")!="sign-local-install-once" || !ReleaseFeedPolicy.IsChannel(Channel)
-                || UpdateVersion.Parse(Version).CompareTo(UpdateVersion.Parse("1.3.0-0"))<0 || !UpdateVersion.Parse(Version).IsLocalPrerelease
-                || UpdateVersion.Parse(Version).Tag!=Version || Text(p,"keyName")!=KeyName || Text(p,"keyId")!=KeyId || p.GetProperty("maximumNativeSignCalls").GetInt32()!=2
+                || UpdateVersion.Parse(Version).CompareTo(UpdateVersion.Parse(ReleaseFeedPolicy.Baseline+"-0"))<0 || !UpdateVersion.Parse(Version).IsLocalPrerelease
+                || UpdateVersion.Parse(Version).Tag!=Version || Text(p,"keyName")!=KeyName || Text(p,"keyId")!=KeyId || p.GetProperty("maximumNativeSignCalls").GetInt32()!=MaxCalls
                 || Text(p,"rootIdentity")!=files.RootIdentity || Text(p,"output")!=Output || Text(p,"reservation")!=Reservation)
                 throw new InvalidDataException("Exact local signing policy mismatch");
             var expected=BetterAstralParty.Development.PackagingSigning.CompiledPaths(root).ToHashSet(StringComparer.Ordinal);
@@ -70,11 +72,8 @@ namespace BetterAstralParty.GaSigning
             }
             var h=new Inputs {
                 Descriptor=Read(files,Stage+"/signing-inputs/update.descriptor.unsigned",DescriptorHash),
-                Helper=Read(files,Stage+"/signing-inputs/helper.descriptor.unsigned",HelperHash),
-                Image=Read(files,Stage+"/inputs/files/helper-bootstrap/BetterAstralParty-UpdateHelper.exe",ImageHash),
                 Zip=Read(files,Stage+"/signing-inputs/payload.zip",ZipHash)
             };
-            if(!GaPackageContract.PrepareHelper(Version,h.Image).SequenceEqual(h.Helper))throw new InvalidDataException("Helper descriptor does not match actual image");
             h.Proof=Read(files,"artifacts/automatic-update-development/b120/d/helper.descriptor.unsigned","07EECEF5DEF1E6E5AE95456354B719F290D75D56FBC84C066E4DE42679457856");
             h.ProofSignature=Read(files,"artifacts/automatic-update-development/b120-sign/signatures/helper.signature","E8C34656F7224D61BC05CF2D5781D209057670248F253CC22A682AB91E4829F3");
             // Historical signature proves the existing key only; it cannot authorize installation.
@@ -96,13 +95,13 @@ namespace BetterAstralParty.GaSigning
         }
         private static void CheckScope(string version,string channel) {
             var parsed=UpdateVersion.Parse(version);
-            if(!ReleaseFeedPolicy.IsChannel(channel)||parsed.CompareTo(UpdateVersion.Parse("1.3.0-0"))<0||!parsed.IsLocalPrerelease||parsed.Tag!=version)throw new InvalidDataException("Exact local prerelease channel scope required");
+            if(!ReleaseFeedPolicy.IsChannel(channel)||parsed.CompareTo(UpdateVersion.Parse(ReleaseFeedPolicy.Baseline+"-0"))<0||!parsed.IsLocalPrerelease||parsed.Tag!=version)throw new InvalidDataException("Exact local prerelease channel scope required");
         }
         private static void Review(DevelopmentPackageFiles files,string policyHash,string reviewHash) {
             using var doc=JsonDocument.Parse(Read(files,ReviewPath,reviewHash));var r=doc.RootElement;
             Fields(r,"schema","purpose","status","policySha256","maximumNativeSignCalls","automaticExecutionAuthorized","providerConfirmationPreserved","newHumanApprovalInvented","reviewReference");
             if(r.GetProperty("schema").GetInt32()!=1 || Text(r,"purpose")!="approve-local-install-signing" || Text(r,"status")!="approved"
-                || Text(r,"policySha256")!=policyHash || r.GetProperty("maximumNativeSignCalls").GetInt32()!=2
+                || Text(r,"policySha256")!=policyHash || r.GetProperty("maximumNativeSignCalls").GetInt32()!=MaxCalls
                 || r.GetProperty("automaticExecutionAuthorized").ValueKind!=JsonValueKind.True || r.GetProperty("providerConfirmationPreserved").ValueKind!=JsonValueKind.True
                 || r.GetProperty("newHumanApprovalInvented").ValueKind!=JsonValueKind.False || Text(r,"reviewReference").Length==0)
                 throw new InvalidDataException("Independent exact automatic-signing review missing");
@@ -123,8 +122,8 @@ namespace BetterAstralParty.GaSigning
             // Every local entry point for this version shares this FILE_CREATE marker before outputs or key access.
             using var marker=fence.OpenFile(Reservation,true,true);
             var scope=Json(new{schema=1,purpose="local-install-signing",policySha256=policyHash,reviewSha256=reviewHash,rootIdentity=files.RootIdentity,
-                helperDescriptorSha256=HelperHash,updateDescriptorSha256=DescriptorHash,helperImageSha256=ImageHash,zipSha256=ZipHash,
-                channel=Channel,repositoryId=ReleaseFeedPolicy.For(Channel).RepositoryId,releaseId=0,assetId=0,keyName=KeyName,keyId=KeyId,maximumNativeSignCalls=2,output=Output,
+                updateDescriptorSha256=DescriptorHash,zipSha256=ZipHash,
+                channel=Channel,repositoryId=ReleaseFeedPolicy.For(Channel).RepositoryId,releaseId=0,assetId=0,keyName=KeyName,keyId=KeyId,maximumNativeSignCalls=MaxCalls,output=Output,
                 providerConfirmationPreserved=true,newHumanApprovalInvented=false});
             marker.Stream.Write(scope,0,scope.Length);marker.Flush();
             try {
@@ -137,8 +136,8 @@ namespace BetterAstralParty.GaSigning
                 stage="verify-existing-key-identity";var padding=new PssPadding{Algorithm="SHA256",SaltBytes=32};var proofHash=SHA256.HashData(h.Proof);var proofSignature=DetachedSignature.Parse(h.ProofSignature).Signature;
                 nativeStatus=NCryptVerifySignature(handle,ref padding,proofHash,proofHash.Length,proofSignature,proofSignature.Length,0x8|0x40);
                 if(nativeStatus!=0)throw new CryptographicException("Existing key does not match public proof; no fallback",new CryptographicException(nativeStatus.Value));
-                for(var index=0;index<2;index++) {
-                    var name=index==0?"helper":"update";var descriptor=index==0?h.Helper:h.Descriptor;var descriptorHash=index==0?HelperHash:DescriptorHash;
+                for(var index=0;index<MaxCalls;index++) {
+                    var name="update";var descriptor=h.Descriptor;var descriptorHash=DescriptorHash;
                     SignOne(budget,index,()=>{
                         stage=name+"-record-attempt";files.Recheck();marker.Recheck();
                         files.Write(name+"-signing-attempt.json",Json(new{schema=1,policySha256=policyHash,reviewSha256=reviewHash,descriptorSha256=descriptorHash,maximumNativeSignCalls=1}));
@@ -149,17 +148,16 @@ namespace BetterAstralParty.GaSigning
                         if(written!=384)throw new CryptographicException("Unexpected RSA-3072 output; never retry");return signature;
                     },signature=>{
                         stage=name+"-public-verify";var envelope=new DetachedSignature(KeyId,signature).Bytes();
-                        if(index==0)GaPackageContract.VerifyHelper(Version,h.Helper,envelope,h.Image);
-                        else GaPackageContract.VerifyWholeUpdate(Version,h.Descriptor,envelope,h.Zip);
+                        GaPackageContract.VerifyWholeUpdate(Version,h.Descriptor,envelope,h.Zip);
                     },signature=>{
                         stage=name+"-save-signature";files.Recheck();marker.Recheck();files.Write(name+".signature",new DetachedSignature(KeyId,signature).Bytes());
                     });
                 }
-                stage="save-evidence";var helperSignatureHash=files.OutputHash("helper.signature");var updateSignatureHash=files.OutputHash("update.signature");
-                files.Write("signing-evidence.json",Json(new{schema=1,signingComplete=true,policySha256=policyHash,reviewSha256=reviewHash,helperDescriptorSha256=HelperHash,updateDescriptorSha256=DescriptorHash,
-                    helperSignatureSha256=helperSignatureHash,updateSignatureSha256=updateSignatureHash,nativeSignCalls=budget.Total,perDescriptorNativeSignCalls=budget.Calls,directoryIdentity,
+                stage="save-evidence";var updateSignatureHash=files.OutputHash("update.signature");
+                files.Write("signing-evidence.json",Json(new{schema=1,signingComplete=true,policySha256=policyHash,reviewSha256=reviewHash,updateDescriptorSha256=DescriptorHash,
+                    updateSignatureSha256=updateSignatureHash,nativeSignCalls=budget.Total,perDescriptorNativeSignCalls=budget.Calls,directoryIdentity,
                     productionPublicVerification=true,providerConfirmationPreserved=true,keyCreated=false,keyExported=false,existingAclChanged=false,remoteWrites=false}));files.Recheck();marker.Recheck();
-                return JsonSerializer.Serialize(new{signingComplete=true,nativeSignCalls=budget.Total,helperSignatureSha256=helperSignatureHash,updateSignatureSha256=updateSignatureHash,output=Output});
+                return JsonSerializer.Serialize(new{signingComplete=true,nativeSignCalls=budget.Total,updateSignatureSha256=updateSignatureHash,output=Output});
             } catch(Exception error) {
                 if(created)try{files.Write("failure.json",Json(new{schema=1,stage,nativeStatus,nativeSignCalls=budget.Total,perDescriptorNativeSignCalls=budget.Calls,exceptionType=error.GetType().FullName,hresult=error.HResult,retryAuthorized=false}));}catch{}
                 throw new InvalidOperationException("Local signing stopped; preserve reservation and outputs; never rerun Execute",error);
@@ -196,22 +194,22 @@ namespace BetterAstralParty.GaSigning
         }
         public static string SelfCheck() {
             var passed=0;
-            foreach(var channel in new[]{"Stable","PreRelease","Beta"}){CheckScope("1.3.0-rc.1.local.1",channel);passed++;}
-            foreach(var pair in new[]{("1.3.0-rc.1.local.1","Prerelease"),("1.3.0","PreRelease"),("1.2.1-rc.1.local.1","PreRelease")}){var rejected=false;try{CheckScope(pair.Item1,pair.Item2);}catch(Exception error)when(error is InvalidDataException||error is UpdateValidationException){rejected=true;}if(!rejected)throw new Exception("Nonlocal or unknown local channel accepted");passed++;}
+            foreach(var channel in new[]{"Stable","PreRelease","Beta"}){CheckScope("1.4.0-rc.1.local.1",channel);passed++;}
+            foreach(var pair in new[]{("1.4.0-rc.1.local.1","Prerelease"),("1.4.0","PreRelease"),("1.3.1-rc.1.local.6","PreRelease")}){var rejected=false;try{CheckScope(pair.Item1,pair.Item2);}catch(Exception error)when(error is InvalidDataException||error is UpdateValidationException){rejected=true;}if(!rejected)throw new Exception("Nonlocal or unknown local channel accepted");passed++;}
             foreach(var size in new[]{(NteNotFound,0),(0,0)}){var calls=0;if(UiPolicy(_=>{calls++;return size;}).Length!=0 || calls!=1)throw new Exception("Default UI policy");passed++;}
             var header=new byte[32];header[0]=1;var calls2=0;
             if(!UiPolicy(b=>{calls2++;if(b!=null)header.CopyTo(b,0);return(0,32);}).SequenceEqual(header)||calls2!=2)throw new Exception("Present UI policy");passed++;
             foreach(var status in new[]{5,unchecked((int)0x80090022)}){var rejected=false;try{UiPolicy(_=>(status,0));}catch(CryptographicException){rejected=true;}if(!rejected)throw new Exception("UI error accepted");passed++;}
             foreach(var data in new[]{(NteNotFound,0),(0,31)}){var count=0;var rejected=false;try{UiPolicy(_=>++count==1?(0,32):data);}catch(CryptographicException){rejected=true;}if(!rejected||count!=2)throw new Exception("UI data error accepted");passed++;}
-            for(var index=0;index<2;index++)for(var fail=-1;fail<4;fail++) {
+            for(var index=0;index<MaxCalls;index++)for(var fail=-1;fail<4;fail++) {
                 var budget=new Budget();var log=new List<int>();var step=0;Action next=()=>{var current=step++;log.Add(current);if(current==fail)throw new IOException("inert failure");};var stopped=false;
                 try{SignOne(budget,index,next,()=>{budget.Count(index);next();return new byte[384];},_=>next(),_=>next());}catch(IOException){stopped=true;}
                 if(stopped!=(fail>=0)||!log.SequenceEqual(Enumerable.Range(0,fail<0?4:fail+1))||budget.Total!=(fail==0?0:1))throw new Exception("Attempt/sign/verify/save order");passed++;
                 if(budget.Total==1){var rejected=false;try{budget.Count(index);}catch(InvalidOperationException){rejected=true;}if(!rejected||budget.Total!=1)throw new Exception("Repeat call accepted");passed++;}
             }
             var noAttempt=new Budget();var refused=false;try{noAttempt.Count(0);}catch(InvalidOperationException){refused=true;}if(!refused||noAttempt.Total!=0)throw new Exception("Unrecorded attempt accepted");passed++;
-            var both=new Budget();both.AttemptRecorded[0]=both.AttemptRecorded[1]=true;both.Count(0);both.Count(1);
-            foreach(var index in new[]{-1,0,1,2}){var rejected=false;try{both.Count(index);}catch(InvalidOperationException){rejected=true;}if(!rejected||both.Total!=2)throw new Exception("Two call ceiling failed");passed++;}
+            var once=new Budget();once.AttemptRecorded[0]=true;once.Count(0);
+            foreach(var index in new[]{-1,0,1}){var rejected=false;try{once.Count(index);}catch(InvalidOperationException){rejected=true;}if(!rejected||once.Total!=1)throw new Exception("One call ceiling failed");passed++;}
             if(Marshal.SizeOf<PssPadding>()!=16 || Marshal.OffsetOf<PssPadding>(nameof(PssPadding.SaltBytes)).ToInt32()!=8)throw new Exception("PSS x64 layout");passed++;
             return JsonSerializer.Serialize(new{selfCheckPassed=true,cases=passed,keyOpened=false,nativeSignCalls=0,outputsCreated=false});
         }

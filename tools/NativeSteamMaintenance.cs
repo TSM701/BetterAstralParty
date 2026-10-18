@@ -56,7 +56,7 @@ namespace BetterAstralParty.Installation
     {
         private const string ShortcutName = "Astral Party - Mod";
         private static readonly string[] ClientNames = { "steam", "steamwebhelper", "GameOverlayUI", "steamerrorreporter", "steamerrorreporter64" };
-        private static readonly string[] GameNames = { "AstralParty_INT", "AstralParty_CN", "BetterAstralParty-Launcher" };
+        private static readonly string[] GameNames = { "AstralParty_INT", "AstralParty_CN", "BetterAstralParty-Launcher" }; // 1.3.x launcher included for takeover
         private static readonly UTF8Encoding Utf8 = new UTF8Encoding(false, true);
         private static readonly RegexOptions Rx = RegexOptions.CultureInvariant | RegexOptions.IgnoreCase;
         internal static Action<Exception>? WaitingDiagnostic = null;
@@ -269,11 +269,17 @@ namespace BetterAstralParty.Installation
             using (var stream = new MemoryStream()) using (var writer = new BinaryWriter(stream)) { Object(writer, root); return stream.ToArray(); }
         }
         internal static OrderedDictionary EmptyShortcuts() { var root = new OrderedDictionary(StringComparer.OrdinalIgnoreCase); root.Add("shortcuts", new OrderedDictionary(StringComparer.OrdinalIgnoreCase)); return root; }
-        internal static List<string> OwnedShortcutKeys(OrderedDictionary root, string gameRoot)
+        internal const string ModEntry = "BetterAstralParty-Mod.cmd", LegacyEntry = "BetterAstralParty-Launcher.exe";
+        internal static List<string> OwnedShortcutKeys(OrderedDictionary root, string gameRoot) { bool legacy; return OwnedShortcutKeys(root, gameRoot, out legacy); }
+        internal static List<string> OwnedShortcutKeys(OrderedDictionary root, string gameRoot, out bool legacy)
         {
-            var exe = "\"" + Join(PathOf(gameRoot), "BetterAstralParty-Launcher.exe") + "\""; var keys = new List<string>();
+            var current = "\"" + Join(PathOf(gameRoot), ModEntry) + "\""; var old = "\"" + Join(PathOf(gameRoot), LegacyEntry) + "\""; var keys = new List<string>(); legacy = false;
             foreach (DictionaryEntry field in (OrderedDictionary)root["shortcuts"]!) if (field.Value is OrderedDictionary item &&
-                string.Equals(item["AppName"] as string, ShortcutName, StringComparison.OrdinalIgnoreCase) && string.Equals(item["exe"] as string, exe, StringComparison.OrdinalIgnoreCase) && item["LaunchOptions"] is string options && options.Length == 0) keys.Add((string)field.Key);
+                string.Equals(item["AppName"] as string, ShortcutName, StringComparison.OrdinalIgnoreCase) && item["LaunchOptions"] is string options && options.Length == 0) {
+                var exe = item["exe"] as string;
+                if (string.Equals(exe, current, StringComparison.OrdinalIgnoreCase)) keys.Add((string)field.Key);
+                else if (string.Equals(exe, old, StringComparison.OrdinalIgnoreCase)) { keys.Add((string)field.Key); legacy = true; }
+            }
             if (keys.Count > 1) throw new InvalidOperationException("Duplicate mod shortcuts; refusing to choose one.");
             return keys;
         }
@@ -296,7 +302,7 @@ namespace BetterAstralParty.Installation
         internal static bool PlanRemove(string steamRoot, uint account, string gameRoot, Action<Exception>? unavailable = null) { return PlanShortcut(steamRoot, account, gameRoot, true, unavailable); }
         private static bool PlanShortcut(string steamRoot, uint account, string gameRoot, bool remove, Action<Exception>? unavailable)
         {
-            try { return OwnedShortcutKeys(LoadShortcuts(ShortcutPath(steamRoot, account)), gameRoot).Count == (remove ? 1 : 0); }
+            try { bool legacy; var keys = OwnedShortcutKeys(LoadShortcuts(ShortcutPath(steamRoot, account)), gameRoot, out legacy); return remove ? keys.Count == 1 : keys.Count == 0 || legacy; }
             catch (Exception error) when (unavailable != null && (error is ApplySafetyException || error is IOException || error is InvalidDataException
                 || error is UnauthorizedAccessException || error is System.Security.SecurityException || error is InvalidOperationException || error is ArgumentException))
             {
@@ -312,13 +318,19 @@ namespace BetterAstralParty.Installation
             using var configFence = new WindowsFileFence(WindowsPath.Parent(path));
             byte[]? original;
             using (var file = Optional(configFence, "shortcuts.vdf")) original = file == null ? null : UpdateTicket.Read(file, 16 * 1048576);
-            var root = original == null ? EmptyShortcuts() : ReadShortcuts(original); var items = (OrderedDictionary)root["shortcuts"]!; var owned = OwnedShortcutKeys(root, game);
-            if (remove && owned.Count == 0 || !remove && owned.Count == 1) return null;
+            var root = original == null ? EmptyShortcuts() : ReadShortcuts(original); var items = (OrderedDictionary)root["shortcuts"]!; bool legacy; var owned = OwnedShortcutKeys(root, game, out legacy);
+            if (remove && owned.Count == 0 || !remove && owned.Count == 1 && !legacy) return null;
             AssertStopped(steam, "ShortcutPreflight");
             uint appId;
             if (remove) { var item = (OrderedDictionary)items[owned[0]]!; if (!(item["appid"] is uint id)) throw new InvalidDataException("Owned shortcut app ID is invalid."); appId = id; items.Remove(owned[0]); }
+            else if (owned.Count == 1) {
+                // Keep the 1.3.x entry's app ID so playtime, artwork and collections stay attached.
+                var entry = Join(game, ModEntry); if (!File.Exists(Io(entry))) throw new FileNotFoundException("Missing installed mod entry.");
+                var item = (OrderedDictionary)items[owned[0]]!; if (!(item["appid"] is uint id)) throw new InvalidDataException("Owned shortcut app ID is invalid."); appId = id;
+                item["exe"] = "\"" + entry + "\""; item["StartDir"] = "\"" + game + "\"";
+            }
             else {
-                var launcher = Join(game, "BetterAstralParty-Launcher.exe"); if (!File.Exists(Io(launcher))) throw new FileNotFoundException("Missing installed launcher.");
+                var launcher = Join(game, ModEntry); if (!File.Exists(Io(launcher))) throw new FileNotFoundException("Missing installed mod entry.");
                 appId = BitConverter.ToUInt32(Guid.NewGuid().ToByteArray(), 0) | 0x80000000U;
                 while (items.Values.Cast<object>().OfType<OrderedDictionary>().Any(x => x["appid"] is uint id && id == appId)) appId = checked(appId + 1);
                 var index = 0; while (items.Contains(index.ToString(System.Globalization.CultureInfo.InvariantCulture))) index++;
@@ -523,20 +535,6 @@ namespace BetterAstralParty.Installation
         {
             try { return consent(prompt) ?? ""; } catch { throw Failure("ConsentUnavailable", "ShutdownConsent"); }
         }
-        internal static bool ConfirmForce(IEnumerable<SteamProcessObservation> targets, Func<string, string?> consent, Action<string> output)
-        {
-            output("목록의 게임/앱을 강제 종료합니다. 저장하지 않은 진행 상황과 동기화 중인 데이터가 손실될 수 있습니다. 게임은 다시 실행하지 않습니다. / Force-close the listed processes. Unsaved progress and syncing data may be lost. Games will not restart.");
-            foreach (var item in targets) output("  " + item.Name + " (PID " + item.Pid + ")");
-            var answer = Choice(consent, "r: 직접 종료 후 재확인 / recheck, y: 목록 강제 종료 / force-close listed processes, Enter: 취소 / cancel");
-            if (string.Equals(answer, "r", StringComparison.OrdinalIgnoreCase)) return false;
-            if (!string.Equals(answer, "y", StringComparison.OrdinalIgnoreCase)) throw Failure("ConsentCancelled", "ShutdownConsent");
-            return true;
-        }
-        internal static void EnsureApprovedList(IEnumerable<SteamProcessObservation> approved, IEnumerable<SteamProcessObservation> fresh)
-        {
-            var status = new SteamProcessStatus(); status.Facts.AddRange(fresh);
-            foreach (var item in status.Facts) if (!approved.Any(x => x.Pid == item.Pid && x.Creation == item.Creation && x.Session == item.Session && string.Equals(x.Image, item.Image, StringComparison.OrdinalIgnoreCase))) throw Failure("ProcessListChanged", "ShutdownRecheck", status);
-        }
         private static List<SteamProcessObservation> GameTargets(string root, bool helper)
         {
             var directory = PathOf(root); var list = new List<SteamProcessObservation>();
@@ -559,13 +557,18 @@ namespace BetterAstralParty.Installation
             }
         }
         private static void Waiting(Exception error) { try { WaitingDiagnostic?.Invoke(error); } catch { } }
-        internal static void StopGame(string gameRoot, Func<string, string?> consent, Action<string> output)
+        // The game is never closed for the player: show what runs, then recheck or cancel.
+        internal static void WaitGameClosed(string gameRoot, Func<string, string?> consent, Action<string> output)
         {
-            WaitHelper(gameRoot, consent, output); List<SteamProcessObservation> approved;
-            while (true) { approved = GameTargets(gameRoot, false); if (approved.Count == 0) return; if (ConfirmForce(approved, consent, output)) break; WaitHelper(gameRoot, consent, output); }
-            WaitHelper(gameRoot, consent, output); var fresh = GameTargets(gameRoot, false); EnsureApprovedList(approved, fresh);
-            foreach (var item in fresh.OrderBy(x => string.Equals(x.Name, "BetterAstralParty-Launcher", StringComparison.OrdinalIgnoreCase) ? 0 : 1)) StopVerified(item);
-            if (GameTargets(gameRoot, false).Count != 0) throw Failure("GameProcessesRemain", "GameCompletion");
+            WaitHelper(gameRoot, consent, output);
+            while (true) {
+                var running = GameTargets(gameRoot, false); if (running.Count == 0) return;
+                var status = new SteamProcessStatus(); status.Facts.AddRange(running);
+                Waiting(Failure("GameProcessesRemain", "GamePreflight", status));
+                output("게임이 실행 중입니다. 게임을 직접 종료한 뒤 재확인하세요. / The game is running; close it yourself, then recheck.");
+                foreach (var item in running) output("  " + item.Name + " (PID " + item.Pid + ")");
+                if (!string.Equals(Choice(consent, "r: 종료 후 재확인 / recheck after closing, Enter: 취소 / cancel"), "r", StringComparison.OrdinalIgnoreCase)) throw Failure("ConsentCancelled", "GamePreflight", status);
+            }
         }
         internal static void AssertGameStopped(string gameRoot)
         {
@@ -602,7 +605,7 @@ namespace BetterAstralParty.Installation
         }
         internal static void StopSteam(string steamRoot, SteamSessionState state, Func<string, string?> consent, Action<string> output)
         {
-            var root = PathOf(steamRoot); List<SteamProcessObservation> approved; var shutdownAttempted = false;
+            var root = PathOf(steamRoot); var shutdownAttempted = false;
             while (true) {
                 var status = Status(root);
                 if (status.State == "Stopped") {
@@ -616,24 +619,12 @@ namespace BetterAstralParty.Installation
                     continue;
                 }
                 if (!File.Exists(Io(Join(root, "steam.exe")))) throw Failure("SteamExecutableMissing", "ShutdownObservation", status);
-                try { approved = SteamTargets(root); }
-                catch (InvalidOperationException error) when (error.Message.Contains("HelperRunning")) { Waiting(error); output("Update helper is running; wait for it to finish. / 업데이트 helper 정상 종료를 기다리세요."); if (Choice(consent, "r: recheck / 재확인, Enter: cancel / 취소") != "r") throw; continue; }
-                if (!ConfirmForce(approved, consent, output)) continue;
-                var rechecked = Status(root); if (rechecked.State == "Unknown" || rechecked.State == "OtherSession") throw Failure(rechecked.State, "ShutdownRecheck", rechecked);
-                var fresh = SteamTargets(root); EnsureApprovedList(approved, fresh);
-                rechecked = Status(root); if (rechecked.State == "Unknown" || rechecked.State == "OtherSession") throw Failure(rechecked.State, "ShutdownRecheck", rechecked);
-                state.Root = root; shutdownAttempted = true;
-                try { foreach (var item in SteamStopOrder(fresh)) { StopVerified(item); if (item.Client && string.Equals(item.Name, "steam", StringComparison.OrdinalIgnoreCase)) state.Restart = true; } }
-                catch (Exception error) when (error is System.ComponentModel.Win32Exception native && native.NativeErrorCode == 5
-                    || error is ApplySafetyException safety && safety.Failure == ApplyFailure.ProcessUncertain && safety.NativeError == 5) {
-                    Waiting(error);
-                    output("Steam did not close; close it normally and recheck. / Steam을 정상 종료한 뒤 재확인하세요.");
-                    if (!string.Equals(Choice(consent, "r: 정상 종료 후 재확인 / recheck after normal exit, Enter: 취소 / cancel"), "r", StringComparison.OrdinalIgnoreCase)) throw;
-                    continue;
-                }
-                for (var attempt = 0; attempt < 20 && Status(root).State != "Stopped"; attempt++) Thread.Sleep(100);
-                AssertStopped(root, "ShutdownCompletion"); if (SteamTargets(root).Count != 0) throw Failure("SteamGameProcessesRemain", "ShutdownCompletion");
-                return;
+                // Steam is never terminated; the player exits it so it saves its own state.
+                state.Root = root; state.Restart = true; shutdownAttempted = true;
+                Waiting(Failure("SteamRunning", "ShutdownConsent", status));
+                output("바로가기를 등록하려면 Steam을 종료해야 합니다. Steam 메뉴에서 나가기로 종료한 뒤 재확인하세요. 등록 후 Steam을 다시 실행합니다. / Steam must be closed to register the shortcut. Exit Steam from its menu, then recheck. Steam is started again afterwards.");
+                string choice; try { choice = Choice(consent, "r: 종료 후 재확인 / recheck after exiting, Enter: 취소 / cancel"); } catch { state.Restart = false; throw; }
+                if (!string.Equals(choice, "r", StringComparison.OrdinalIgnoreCase)) { state.Restart = false; throw Failure("ConsentCancelled", "ShutdownConsent", status); }
             }
         }
         internal static void ResumeSteam(SteamSessionState state, Action<string> output)
@@ -642,78 +633,6 @@ namespace BetterAstralParty.Installation
             try { if (Status(state.Root).State == "Stopped") Process.Start(new ProcessStartInfo { FileName = WindowsPath.ForProcess(Join(state.Root, "steam.exe")), UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden }); }
             catch (Exception error) { try { output("Steam restart failed; start Steam manually. / Steam을 직접 실행하세요. reason=" + error.GetType().Name); } catch { } }
         }
-        internal static IEnumerable<SteamProcessObservation> SteamStopOrder(IEnumerable<SteamProcessObservation> targets)
-        {
-            if (targets.Any(x => string.Equals(x.Name, "BetterAstralParty-UpdateHelper", StringComparison.OrdinalIgnoreCase))) throw Failure("HelperRunning", "ProcessTermination");
-            return targets.OrderBy(x => x.Client && string.Equals(x.Name, "steam", StringComparison.OrdinalIgnoreCase) ? 0 : x.Client ? 1 : 2);
-        }
-#if BAP_SAFETY_FIXTURE
-        internal static Func<uint, SafeWaitHandle>? TerminationOpen = null;
-        internal static Func<SafeWaitHandle, long>? TerminationCreation = null;
-        internal static Func<SafeWaitHandle, bool>? TerminationStop = null;
-        internal static Func<SafeWaitHandle, uint, uint>? TerminationWait = null;
-        internal static int TerminationNativeError = 0;
-        private static SafeWaitHandle OpenProcess(uint access, bool inherit, uint pid) { return TerminationOpen == null ? throw new InvalidOperationException("Inert termination facade required.") : TerminationOpen(pid); }
-        private static bool GetProcessTimes(SafeWaitHandle process, out long creation, out long exit, out long kernel, out long user) { creation = TerminationCreation == null ? throw new InvalidOperationException("Inert process times required.") : TerminationCreation(process); exit = kernel = user = 0; return true; }
-        private static bool TerminateProcess(SafeWaitHandle process, uint code) { return TerminationStop == null ? throw new InvalidOperationException("Inert termination required.") : TerminationStop(process); }
-        private static uint WaitForSingleObject(SafeWaitHandle process, uint milliseconds) { return TerminationWait == null ? throw new InvalidOperationException("Inert wait required.") : TerminationWait(process, milliseconds); }
-        private static int TerminationError() { return TerminationNativeError; }
-#else
-        [DllImport("kernel32.dll", SetLastError = true)] private static extern SafeWaitHandle OpenProcess(uint access, [MarshalAs(UnmanagedType.Bool)] bool inherit, uint pid);
-        [DllImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetProcessTimes(SafeWaitHandle process, out long creation, out long exit, out long kernel, out long user);
-        [DllImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool TerminateProcess(SafeWaitHandle process, uint code);
-        [DllImport("kernel32.dll", SetLastError = true)] private static extern uint WaitForSingleObject(SafeWaitHandle process, uint milliseconds);
-        private static int TerminationError() { return Marshal.GetLastWin32Error(); }
-#endif
-        private static void StopVerified(SteamProcessObservation target)
-        {
-            var status = new SteamProcessStatus(); status.Facts.Add(target); var failureReason = "ProcessCaptureFailed";
-            try {
-                if (string.Equals(target.Name, "BetterAstralParty-UpdateHelper", StringComparison.OrdinalIgnoreCase)) throw Failure("HelperRunning", "ProcessTermination", status);
-                WindowsProcessGuard.Captured captured;
-                try { captured = WindowsProcessGuard.Observe(target.Pid, true, 2000); }
-                catch (ApplySafetyException error) when (target.Pid != 0 && error.Failure == ApplyFailure.ProcessUncertain && error.NativeError == 87) {
-                    // Steam can exit its helpers before capture; a still-listed or reused PID must never be skipped.
-                    if (Observe().Any(item => item.Pid == target.Pid)) throw;
-                    return;
-                }
-                using (captured) {
-                    if (captured.Exited) { target.Exited = true; return; }
-                    target.PathMatch = string.Equals(captured.Image, target.Image, StringComparison.OrdinalIgnoreCase); target.SessionMatch = captured.Session == target.Session;
-                    if (target.SessionMatch != true || captured.Creation != target.Creation || target.PathMatch != true) throw Failure("ProcessIdentityChanged", "ProcessIdentity", status);
-                    try {
-                        failureReason = "ProcessTerminateOpenFailed";
-                        using (var terminate = OpenProcess(1 | 0x1000 | 0x100000, false, target.Pid)) {
-                            if (terminate.IsInvalid) throw new System.ComponentModel.Win32Exception(TerminationError());
-                            long creation, exit, kernel, user;
-                            if (!GetProcessTimes(terminate, out creation, out exit, out kernel, out user) || creation != target.Creation) throw Failure("ProcessIdentityChanged", "ProcessIdentity", status);
-                            failureReason = "ProcessTerminateFailed";
-                            if (!TerminateProcess(terminate, 1)) throw new System.ComponentModel.Win32Exception(TerminationError());
-                            failureReason = "ProcessExitWaitFailed";
-                            var wait = WaitForSingleObject(terminate, 5000);
-                            if (wait == uint.MaxValue) throw new System.ComponentModel.Win32Exception(TerminationError());
-                            if (wait == 258) {
-                                if (captured.Exited) { target.Exited = true; return; }
-                                target.NativeError = 0; throw Failure("ProcessExitTimeout", "ProcessTermination", status);
-                            }
-                            if (wait != 0) { target.NativeError = 0; throw Failure("ProcessExitWaitFailed", "ProcessTermination", status); }
-                            target.Exited = true;
-                        }
-                    } catch (System.ComponentModel.Win32Exception error) {
-                        // Steam shuts helpers down asynchronously; confirm exit on the same held process, never by PID alone.
-                        bool exited;
-                        try { exited = error.NativeErrorCode == 5 && (failureReason == "ProcessTerminateOpenFailed" || failureReason == "ProcessTerminateFailed") ? captured.WaitForExit(2000) : captured.Exited; }
-                        catch { failureReason = "ProcessExitWaitFailed"; throw; }
-                        if (exited) { target.Exited = true; return; }
-                        throw;
-                    }
-                }
-            } catch (Exception error) {
-                if (error is System.ComponentModel.Win32Exception native) target.NativeError = native.NativeErrorCode;
-                else if (error is ApplySafetyException safety) target.NativeError = safety.NativeError;
-                if (!error.Data.Contains("BapSteamDiagnostic")) { var diagnostic = Failure(failureReason, "ProcessTermination", status); foreach (DictionaryEntry field in diagnostic.Data) error.Data[field.Key] = field.Value; }
-                throw;
-            }
-        }
+
     }
 }

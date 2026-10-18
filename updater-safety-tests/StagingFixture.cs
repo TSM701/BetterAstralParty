@@ -63,9 +63,9 @@ internal static class StagingFixture
                 }
                 Zip = output.ToArray();
             }
-            Descriptor = Encoding.ASCII.GetBytes("BetterAstralParty.UpdateDescriptor/v4\nrepository=TSM701/BetterAstralParty\nversion=1.3.2\nchannel=Stable\nplatform="
+            Descriptor = Encoding.ASCII.GetBytes("BetterAstralParty.UpdateDescriptor/v5\nrepository=TSM701/BetterAstralParty\nversion=1.3.2\nchannel=Stable\nplatform="
                 + UpdateTrust.PlatformId + "\nrelease-id=123\nasset-id=456\nasset-name=BetterAstralParty-1.3.2-update.zip\nzip-bytes=" + Zip.Length
-                + "\nzip-sha256=" + UpdateTrust.Hash(Zip) + "\nfile-count=5\npurpose=release/Stable\nrepository-id=" + ReleaseFeedPolicy.StableRepositoryId + "\nsettings-schema=1\n"
+                + "\nzip-sha256=" + UpdateTrust.Hash(Zip) + "\nfile-count=4\npurpose=release/Stable\nrepository-id=" + ReleaseFeedPolicy.StableRepositoryId + "\nsettings-schema=1\n"
                 + string.Concat(InstallReceipt.Owned.Select(path => "file=" + path + "\t" + bytes.Length + "\t" + UpdateTrust.Hash(bytes) + "\n")));
             Signature = _signing.SignData(Descriptor, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
             Trust = new UpdateTrust(new[] { new TrustedUpdateKey("staging-fixture", _signing.ExportParameters(false)) });

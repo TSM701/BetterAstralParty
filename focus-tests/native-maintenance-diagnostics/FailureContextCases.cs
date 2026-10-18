@@ -40,7 +40,7 @@ internal static partial class NativeMaintenanceDiagnosticsFixture
             Check(raw.Contains("sessionMatch=true; pathAvailable=false; pathMatch=unknown; startAvailable=false; startedUtc=unknown")&&raw.Contains("startedUtc=2026-10-11T18:00:00.0000000Z"),"unknown process facts remain distinct from false and observed UTC time");Check(raw.Contains("exceptionDepth=3; exceptionChainOmitted=false; textTruncated=false; steamContext=included"),"native source records original context coverage");
             var first=ContextZip();Check(first.Text.Contains("SteamOwnershipUnknown")&&first.Text.Contains("pid=12345")&&first.Text.Contains("pathMatch=unknown")&&first.Text.Contains("exceptionDepth=3"),"actual native guard exception to writer to ZIP retains bounded decision facts");
             Check(!first.Text.Contains(basis)&&!first.Text.Contains("FAKE_PRIVATE"),"private roots and arbitrary exception Data excluded");
-            ContextCorrelation(basis);ContextWaiting(basis);ContextCompatibility(basis);ContextFlatWork(basis);ContextTermination(basis);
+            ContextCorrelation(basis);ContextWaiting(basis);ContextCompatibility(basis);ContextTermination(basis);
             foreach(var malformed in new[]{"unknown-field","invalid-time","wrong-type","oversize"})
             {
                 ContextRoot(basis,malformed);var invalid=ContextSteam();var facts=(string)invalid.Data["BapSteamLog"]!;
@@ -99,8 +99,8 @@ internal static partial class NativeMaintenanceDiagnosticsFixture
         using(var sink=DiagnosticOwner.StartInstaller(game,"1.3.0",new string('a',32))) {
             Check(DiagnosticHub.Bind(sink),"isolated real installer diagnostic sink bound");
             try {
-                SteamLauncher.RecordInstallerFailure("BootstrapGate",failure);
-                SteamLauncher.RecordInstallerFailure("HelperInstall",new ApplySafetyException(ApplyFailure.FileBusy,32));
+                SetupHost.RecordInstallerFailure("BootstrapGate",failure);
+                SetupHost.RecordInstallerFailure("HelperInstall",new ApplySafetyException(ApplyFailure.FileBusy,32));
                 Check(sink.Stop(DiagnosticEndReason.OwnerDisposed),"real installer failure mapper and writer flush before ZIP");
             } finally { DiagnosticHub.Unbind(sink); }
         }
@@ -129,7 +129,7 @@ internal static partial class NativeMaintenanceDiagnosticsFixture
         Check(action!=null&&action.Contains("이전 설치 패키지")&&action.Contains("matching previous package")&&raw.Contains("BapRecoveryReason: LegacyFlatWorkPending")&&raw.Contains(action)&&!raw.Contains("FAKE_PRIVATE"),"actual flat-work guard emits allowlisted bilingual action without trusting free-form exception Data");
         using(var sink=DiagnosticOwner.StartInstaller(game,"1.3.0",new string('a',32))) {
             Check(DiagnosticHub.Bind(sink),"flat-work diagnostic sink bound");
-            try { SteamLauncher.RecordInstallerFailure("Recovery",cause);Check(sink.Stop(DiagnosticEndReason.OwnerDisposed),"flat-work prerequisite event flushed"); }
+            try { SetupHost.RecordInstallerFailure("Recovery",cause);Check(sink.Stop(DiagnosticEndReason.OwnerDisposed),"flat-work prerequisite event flushed"); }
             finally{DiagnosticHub.Unbind(sink);}
         }
         var collected=ContextZip(game);
@@ -160,7 +160,7 @@ internal static partial class NativeMaintenanceDiagnosticsFixture
         {
             NativeSteamMaintenance.ProcessObserver=()=>throw new InvalidOperationException("Live process enumeration is forbidden in the waiting fixture");
             NativeSteamMaintenance.WaitingDiagnostic=NativeMaintenanceEntry.Waiting;
-            foreach(var kind in new[]{"Unknown","OtherSession","Helper"})
+            foreach(var kind in new[]{"Unknown","OtherSession"})
             {
                 ContextRoot(basis,"waiting-"+kind);var run=Guid.NewGuid().ToString("N");var game=Path.Combine(FixtureFolders.Root,"game");var steam=Path.Combine(FixtureFolders.Root,"steam");Directory.CreateDirectory(Io(steam));
                 Set("_run",run);Set("_version","1.3.0");Set("_operation","Installation");Set("_package",Path.Combine(FixtureFolders.Root,"package"));Set("_game",game);WriteContextStage(game,run,"WaitForExit","Begin","None");

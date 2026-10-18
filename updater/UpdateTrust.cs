@@ -76,7 +76,7 @@ namespace BetterAstralParty.Updating
     {
         internal readonly string Repository, Channel, Version, Platform, AssetName, ZipSha256, DescriptorSha256, KeyId;
         internal readonly long ReleaseId, AssetId, ZipBytes;
-        internal int Protocol { get; private set; } = 4;
+        internal int Protocol { get; private set; } = UpdateTrust.Protocol;
         internal long RepositoryId { get; private set; }
         internal int SettingsSchema { get; private set; }
         internal bool PublicRelease { get; private set; }
@@ -95,12 +95,15 @@ namespace BetterAstralParty.Updating
         internal void FeedContract(object stamp, long repositoryId, int settingsSchema, bool publicRelease = false)
         {
             if (!UpdateTrust.ValidStamp(stamp)) throw new UpdateValidationException(UpdateFailure.InvalidDescriptor);
-            Protocol = 4; RepositoryId = repositoryId; SettingsSchema = settingsSchema; PublicRelease = publicRelease;
+            Protocol = UpdateTrust.Protocol; RepositoryId = repositoryId; SettingsSchema = settingsSchema; PublicRelease = publicRelease;
         }
     }
     internal sealed class UpdateTrust
     {
         internal const string PlatformId = "windows-x64-int";
+        // Update protocol 5: in-process apply, four owned game-root files, no launcher/helper executables.
+        internal const int Protocol = 5;
+        internal const string DescriptorHeader = "BetterAstralParty.UpdateDescriptor/v5", LocalDescriptorHeader = "BetterAstralParty.LocalInstallDescriptor/v2";
         internal const string PluginPath = "BepInEx/plugins/BetterAstralParty/BetterAstralParty.dll";
         internal const int MaxDescriptorBytes = 64 * 1024, MaxSignatureBytes = 512, MaxFiles = 32;
         internal const long MaxZipBytes = 64L * 1024 * 1024, MaxFileBytes = 64L * 1024 * 1024, MaxExpandedBytes = 128L * 1024 * 1024;
@@ -122,7 +125,7 @@ namespace BetterAstralParty.Updating
         internal static bool OwnedPath(string path)
         {
             // Exact ASCII allowlist also rejects traversal, ADS, reserved names, case aliases and user settings.
-            return path == PluginPath || path == "BetterAstralParty-Launcher.exe" || path == "BetterAstralParty.compatibility.json"
+            return path == PluginPath || path == "BetterAstralParty.compatibility.json"
                 || path == "BetterAstralParty-Mod.cmd" || path == "AstralParty-Vanilla.cmd";
         }
         internal static string Hash(byte[] bytes)
@@ -203,7 +206,7 @@ namespace BetterAstralParty.Updating
             foreach (var b in snapshot)
                 if (b != 10 && b != 9 && (b < 32 || b > 126)) throw new UpdateValidationException(UpdateFailure.InvalidDescriptor);
             var lines = Encoding.UTF8.GetString(snapshot).Split('\n');
-            var protocol = lines[0] == (localInstall ? "BetterAstralParty.LocalInstallDescriptor/v1" : "BetterAstralParty.UpdateDescriptor/v4") ? 4 : 0;
+            var protocol = lines[0] == (localInstall ? LocalDescriptorHeader : DescriptorHeader) ? Protocol : 0;
             if (lines.Length < 15 || protocol == 0 || lines[lines.Length - 1] != "")
                 throw new UpdateValidationException(UpdateFailure.InvalidDescriptor);
             string Value(int i, string name)
@@ -237,7 +240,7 @@ namespace BetterAstralParty.Updating
             if (purpose != (publicRelease ? ReleaseFeedPolicy.PublicPurpose : (localInstall ? "local-install/" : "release/") + channel) || context.RepositoryId != repositoryId
                 || !ReleaseFeedPolicy.IsChannel(channel)
                 || repository != ReleaseFeedPolicy.For(channel).Repository) throw new UpdateValidationException(UpdateFailure.WrongTarget);
-            if (_production && (protocol != 4 || !ReleaseFeedPolicy.Matches(context))) throw new UpdateValidationException(UpdateFailure.WrongTarget);
+            if (_production && (protocol != Protocol || !ReleaseFeedPolicy.Matches(context))) throw new UpdateValidationException(UpdateFailure.WrongTarget);
             var version = UpdateVersion.Parse(tag);
             if (_production && (localInstall ? !ReleaseFeedPolicy.SupportsAutomaticSource(tag) : !ReleaseFeedPolicy.SupportsAutomaticTarget(tag, channel)))
                 throw new UpdateValidationException(UpdateFailure.WrongTarget);
@@ -246,7 +249,7 @@ namespace BetterAstralParty.Updating
                 || assetName != "BetterAstralParty-" + version.Tag + "-update.zip")
                 throw new UpdateValidationException(UpdateFailure.WrongTarget);
             if (channel == "Stable" && (version.Major == 0 || version.IsPrerelease && !(localInstall && version.IsLocalPrerelease))) throw new UpdateValidationException(UpdateFailure.WrongTarget);
-            if (context.Transition != null && (protocol != 4 || !context.Transition.MatchesTarget(context)))
+            if (context.Transition != null && (protocol != Protocol || !context.Transition.MatchesTarget(context)))
                 throw new UpdateValidationException(UpdateFailure.WrongTarget);
             if (context.Transition != null && (context.Transition.DescriptorHash != Hash(snapshot) || context.Transition.ZipHash != zipHash))
                 throw new UpdateValidationException(UpdateFailure.WrongTarget);
@@ -271,7 +274,7 @@ namespace BetterAstralParty.Updating
             cancellation.ThrowIfCancellationRequested();
             var result = new VerifiedUpdateDescriptor(VerificationStamp, keyId, repository, channel, tag, platform, assetName, releaseId, assetId,
                 zipBytes, zipHash, Hash(snapshot), files);
-            if (protocol == 4) result.FeedContract(VerificationStamp, repositoryId, settingsSchema, publicRelease);
+            if (protocol == Protocol) result.FeedContract(VerificationStamp, repositoryId, settingsSchema, publicRelease);
             return result;
         }
     }

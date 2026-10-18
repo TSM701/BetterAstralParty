@@ -52,8 +52,8 @@ internal static class DiagnosticActions
         1 => "진단 ZIP 만드는 중", 2 => "진단 ZIP 생성됨", 3 => "진단 ZIP 생성 실패",
         4 => "진단 폴더 열기 실패", _ => ""
     });
-    private static string Primary => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BetterAstralParty", "Diagnostics");
-    private static string Fallback => Path.Combine(Path.GetTempPath(), "BetterAstralParty", "Diagnostics");
+    private static string Primary => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "BetterAstralParty-Diagnostics");
+    private static string Fallback => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BetterAstralParty", "Diagnostics");
     internal static void OpenFolder() => _controller.OpenFolder();
     internal static void CreateBundle() => _controller.CreateBundle();
     private static Func<BundleResult> Prepare()
@@ -68,7 +68,7 @@ internal static class DiagnosticActions
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BetterAstralParty", "Logs"),
             Path.Combine(Path.GetTempPath(), "BetterAstralParty"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData", "LocalLow", "feimo", "AstralParty_INT"),
-            Primary, Fallback, "", Plugin.Version, CaptureHealth(minimal));
+            Primary, Fallback, "", Plugin.Version, CaptureHealth(minimal), DiagnosticSources.Production());
         };
     }
     private static LiveDiagnosticHealth CaptureHealth(MinimalEventLog? owner)

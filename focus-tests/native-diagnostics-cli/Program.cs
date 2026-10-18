@@ -69,6 +69,7 @@ namespace BetterAstralParty.Diagnostics
     {
         internal static int Calls { get; private set; }
         internal static Hub AcquireHub(string primary, string fallback) { Calls++; throw new InvalidOperationException("No collection in parser fixture."); }
-        internal static BundleResult Collect(params string[] paths) { Calls++; throw new InvalidOperationException("No real logs in parser fixture."); }
+        internal static BundleResult Collect(params object?[] paths) { Calls++; throw new InvalidOperationException("No real logs in parser fixture."); }
     }
+    internal sealed class DiagnosticSources { internal static DiagnosticSources Production() => new DiagnosticSources(); }
 }

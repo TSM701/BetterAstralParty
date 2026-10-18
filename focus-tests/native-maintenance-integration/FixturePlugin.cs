@@ -10,7 +10,7 @@ namespace BetterAstralParty
     [BepInEx.BepInPlugin(Guid, Name, Version)]
     public sealed class Plugin
     {
-        public const string Guid = "kr.betterastralparty.mod", Name = "BetterAstralParty", Version = FixtureBoundary.Version, UpdateProtocol = "4", SettingsSchema = "1";
+        public const string Guid = "kr.betterastralparty.mod", Name = "BetterAstralParty", Version = FixtureBoundary.Version, UpdateProtocol = "5", SettingsSchema = "1";
         public const int InstallBundleProtocol = 1;
     }
 }

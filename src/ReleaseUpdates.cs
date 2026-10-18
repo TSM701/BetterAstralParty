@@ -274,10 +274,10 @@ internal sealed class ReleaseUpdates : IDisposable
         var client = _client!; var authentication = _feed is { RequiresAuthentication: false } ? null : _authentication;
         var feed = _feed; var repository = _repository; var endpoint = _endpoint; var generation = _generation;
         var transitionScan = _transitionScan || feed != null && _installedChannel != null && _installedChannel != feed.Channel;
-        var channel = Channel; var identity = _identity;
+        var channel = Channel; var identity = _identity; var installedChannel = _installedChannel;
         _channelCache.Remove(Channel); // An interrupted newer scan must not resurrect an older success as current.
         _lastStarted[Channel] = now; _autoDue = false; _transitionScan = _channelRefresh = false;
-        _pending = new(Task.Run(() => ReadAsync(client, authentication, pages, channel, repository, endpoint, feed, generation, transitionScan, now, token)),
+        _pending = new(Task.Run(() => ReadAsync(client, authentication, pages, channel, repository, endpoint, feed, generation, transitionScan, installedChannel, now, token)),
             cancellation, _generation, identity);
         Set(new(ReleaseUpdateStatus.Checking));
     }
@@ -339,7 +339,7 @@ internal sealed class ReleaseUpdates : IDisposable
     }
 
     private async Task<Scan> ReadAsync(HttpClient client, IReleaseAuthentication? authentication,
-        Dictionary<string, Page> cached, ReleaseChannel channel, string repository, Uri endpoint, ReleaseFeed? feed, int generation, bool transitionScan, DateTimeOffset now, CancellationToken token)
+        Dictionary<string, Page> cached, ReleaseChannel channel, string repository, Uri endpoint, ReleaseFeed? feed, int generation, bool transitionScan, string? installedChannel, DateTimeOffset now, CancellationToken token)
     {
         var diagnosticOperation = DiagnosticOperation.New();
         DiagnosticHub.Stage(DiagnosticFeature.ReleaseCheck, DiagnosticPhase.ReleaseMetadata, DiagnosticOutcome.Begin, diagnosticOperation);
@@ -373,7 +373,9 @@ internal sealed class ReleaseUpdates : IDisposable
             var eligible = feed == null ? collected : collected.Where(release => ReleaseFeedPolicy.SupportsAutomaticTarget(release.Version, feed.Channel));
             var release = transitionScan ? Select(eligible, "0.0.0", channel) : Select(eligible, _current, channel);
             if (release != null && transitionScan && TryVersion(release.Version, out var target) && TryVersion(_current, out var current) && target.CompareTo(current) <= 0)
-                release = release with { TransitionCandidate = true };
+                // Stable and Pre-release share one public release; the same version there is the installed build, not a switch target.
+                release = target.CompareTo(current) == 0 && feed?.Channel is ("Stable" or "PreRelease") && installedChannel is ("Stable" or "PreRelease")
+                    ? null : release with { TransitionCandidate = true };
             DiagnosticHub.Stage(DiagnosticFeature.ReleaseCheck, DiagnosticPhase.ReleaseMetadata, DiagnosticOutcome.Completed, diagnosticOperation);
             return new(new(release == null ? ReleaseUpdateStatus.UpToDate : ReleaseUpdateStatus.Available, release, now), pages);
         }

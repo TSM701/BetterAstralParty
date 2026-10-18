@@ -31,10 +31,8 @@
     <Compile Include="..\updater\UpdateRecoveryPolicy.cs" Link="UpdateRecoveryPolicy.cs" />
     <Compile Include="..\updater\UpdateRecovery.cs" Link="UpdateRecovery.cs" />
     <Compile Include="..\updater\UpdateLaunchGate.cs" Link="UpdateLaunchGate.cs" />
-    <Compile Include="..\updater\AutomaticHelperUpgrade.cs" Link="AutomaticHelperUpgrade.cs" />
-    <Compile Include="..\updater\WholeInstallBridge.cs" Link="WholeInstallBridge.cs" />
+    <Compile Include="..\updater\InstallProof.cs" Link="InstallProof.cs" />
     <Compile Include="..\updater\OrdinaryInstallRecovery.cs" Link="OrdinaryInstallRecovery.cs" />
-    <Compile Include="..\updater\HelperDelivery.cs" Link="HelperDelivery.cs" />
     <Compile Include="..\src\Observability\*.cs" />
     <Compile Include="..\diagnostics\MinimalDiagnosticProjection.cs" />
   </ItemGroup>

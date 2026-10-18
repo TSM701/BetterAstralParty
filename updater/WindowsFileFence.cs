@@ -337,33 +337,6 @@ namespace BetterAstralParty.Updating
                 } finally { Marshal.FreeHGlobal(buffer); }
             }
         }
-        // Completed journal history moves by identity, never by a replaceable pathname.
-        internal void ArchiveDirectory(string relative, string destination, string expectedIdentity)
-        {
-            var source = Full(relative); var target = Full(destination);
-            if (WindowsPath.Parent(source) != WindowsPath.Parent(target)) throw new ApplySafetyException(ApplyFailure.UnsafePath);
-            var parent = Parent(source);
-            AssertPrivateDirectory(relative); var pin = _pins[source];
-            if (pin.Identity.Text != expectedIdentity) throw new ApplySafetyException(ApplyFailure.IdentityChanged);
-            foreach (var path in _pins.Keys)
-                if (path.StartsWith(source + "\\", StringComparison.OrdinalIgnoreCase)) throw new ApplySafetyException(ApplyFailure.FileBusy);
-            Recheck(); _pins.Remove(source); pin.Dispose();
-            // Reopen under the held parent and require the same object after releasing our read pin.
-            _beforeOperation?.Invoke("archive-open");
-            var handle = OpenRelative(parent, WindowsPath.Leaf(source), Delete | 0x80 | 0x20000, 1, false, true, false);
-            try {
-                var identity = Identity(ReadInfo(handle, true));
-                if (identity.Text != expectedIdentity || !string.Equals(Final(handle), source, StringComparison.OrdinalIgnoreCase)) throw new ApplySafetyException(ApplyFailure.IdentityChanged);
-                WindowsPrivateSecurity.AssertDirectory(handle); Recheck();
-                _beforeOperation?.Invoke("rename"); RenameHeld(handle, parent, WindowsPath.Leaf(target));
-                if (!identity.Same(Identity(ReadInfo(handle, true))) || !string.Equals(Final(handle), target, StringComparison.OrdinalIgnoreCase)) throw new ApplySafetyException(ApplyFailure.IdentityChanged);
-                // A DELETE-access pin would prevent independent read-only fences from sharing this history.
-                handle.Dispose(); handle=OpenRelative(parent,WindowsPath.Leaf(target),0x80 | 0x20000,1,false,true,false);
-                if(!identity.Same(Identity(ReadInfo(handle,true))) || !string.Equals(Final(handle),target,StringComparison.OrdinalIgnoreCase))throw new ApplySafetyException(ApplyFailure.IdentityChanged);
-                WindowsPrivateSecurity.AssertDirectory(handle);
-                _pins.Add(target, new Pin(target, handle, identity)); handle = null!; Recheck();
-            } finally { handle?.Dispose(); }
-        }
         private static void RenameHeld(SafeFileHandle handle, Pin parent, string leaf)
         {
             Component(leaf); var name = Encoding.Unicode.GetBytes(leaf);
@@ -397,10 +370,13 @@ namespace BetterAstralParty.Updating
         // Dedicated diagnostic writer: allow bounded collector reads, deny foreign writes/deletes.
         internal FileLease OpenDiagnosticFile(string relative,bool create=false)
         { return OpenFileCore(relative,true,create,1); }
-        private FileLease OpenFileCore(string relative, bool mutable, bool create, uint share)
+        // In-process update only: the running plugin image may be renamed by handle, never written or deleted.
+        internal FileLease OpenLoadedImage(string relative)
+        { return OpenFileCore(relative, false, false, 1 | 4, true); }
+        private FileLease OpenFileCore(string relative, bool mutable, bool create, uint share, bool renameable = false)
         {
             var path = Full(relative); var parent = Parent(path);
-            var access = Read | (mutable ? Write | Delete : 0);
+            var access = Read | (mutable ? Write | Delete : 0) | (renameable ? Delete : 0);
             _beforeOperation?.Invoke("open");
             var handle = OpenRelative(parent, WindowsPath.Leaf(path), access, share, create, false, mutable);
             try
@@ -410,7 +386,7 @@ namespace BetterAstralParty.Updating
                     throw new ApplySafetyException(ApplyFailure.IdentityChanged);
                 if (mutable && (info.Attributes & 1) != 0) throw new ApplySafetyException(ApplyFailure.FileBusy);
                 Recheck(); // Detect a directory reparse mutation before exposing any data stream.
-                return new FileLease(this, path, handle, identity, mutable);
+                return new FileLease(this, path, handle, identity, mutable, renameable);
             }
             catch { handle.Dispose(); throw; }
         }
@@ -418,13 +394,13 @@ namespace BetterAstralParty.Updating
         {
             private WindowsFileFence _fence;
             private readonly SafeFileHandle _handle;
-            private readonly bool _mutable;
+            private readonly bool _mutable, _renameable;
             private readonly FileStream _stream;
             internal string Path { get; private set; }
             internal readonly WindowsFileIdentity Identity;
             internal Stream Stream { get { return _stream; } }
-            internal FileLease(WindowsFileFence fence, string path, SafeFileHandle handle, WindowsFileIdentity identity, bool mutable)
-            { _fence = fence; Path = path; _handle = handle; Identity = identity; _mutable = mutable; _stream = new FileStream(handle, mutable ? FileAccess.ReadWrite : FileAccess.Read); }
+            internal FileLease(WindowsFileFence fence, string path, SafeFileHandle handle, WindowsFileIdentity identity, bool mutable, bool renameable = false)
+            { _fence = fence; Path = path; _handle = handle; Identity = identity; _mutable = mutable; _renameable = renameable; _stream = new FileStream(handle, mutable ? FileAccess.ReadWrite : FileAccess.Read); }
             internal void Recheck()
             {
                 _fence.Recheck();
@@ -436,10 +412,10 @@ namespace BetterAstralParty.Updating
                 Recheck(); _stream.Position = 0;
                 using (var hash = SHA256.Create()) { var digest = UpdateTrust.Hex(hash.ComputeHash(_stream)); _stream.Position = 0; Recheck(); return digest; }
             }
-            internal void Flush() { _stream.Flush(true); Recheck(); }
+            internal void Flush() { if (_mutable) _stream.Flush(true); Recheck(); }
             internal void RenameTo(WindowsFileFence destinationFence, string relative)
             {
-                if (!_mutable) throw new ApplySafetyException(ApplyFailure.InvalidState);
+                if (!_mutable && !_renameable) throw new ApplySafetyException(ApplyFailure.InvalidState);
                 var destination = destinationFence.Full(relative); var parent = destinationFence.Parent(destination);
                 Recheck(); destinationFence.Recheck();
                 if (Identity.Volume != parent.Identity.Volume) throw new ApplySafetyException(ApplyFailure.UnsafePath);
@@ -468,8 +444,15 @@ namespace BetterAstralParty.Updating
                     _fence.Recheck();
                 } finally {Marshal.FreeHGlobal(buffer);}
             }
+            internal void RemoveChannelAdoption() {
+                if (!_mutable || Path != _fence.Full("BetterAstralParty.channel-adopt")) throw new ApplySafetyException(ApplyFailure.UnsafePath);
+                Recheck(); var buffer=Marshal.AllocHGlobal(1);
+                try { Marshal.WriteByte(buffer,1);IoStatus io;var status=NtSetInformationFile(_handle,out io,buffer,1,13);
+                    if(status!=0)throw new ApplySafetyException(ApplyFailure.FileBusy,(int)RtlNtStatusToDosError(status));_fence.Recheck();
+                } finally {Marshal.FreeHGlobal(buffer);}
+            }
             internal void RemoveTemporaryPackage() {
-                if (!_mutable || !Regex.IsMatch(Path.Substring(_fence.Root.Length + 1).Replace('\\','/'), @"\ABetterAstralParty\.Update/bap-v4-stage-[0-9a-f]{32}/package\.zip\z")) throw new ApplySafetyException(ApplyFailure.UnsafePath);
+                if (!_mutable || !Regex.IsMatch(Path.Substring(_fence.Root.Length + 1).Replace('\\','/'), @"\ABetterAstralParty\.Update/bap-v5-stage-[0-9a-f]{32}/package\.zip\z")) throw new ApplySafetyException(ApplyFailure.UnsafePath);
                 Recheck();
                 var buffer=Marshal.AllocHGlobal(1);
                 try {

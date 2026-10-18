@@ -7,14 +7,17 @@ using System.Text.RegularExpressions;
 namespace BetterAstralParty.Updating
 {
     // Paths remain relative to the selected game fence; this is not a second game root.
+    // Protocol 5 work lives only under the container; protocol-4 (bap-v4-*) evidence is never matched.
     internal static class UpdateWorkPath
     {
         internal const string Root = "BetterAstralParty.Update";
-        internal const string OptionalRootPattern = @"(?:BetterAstralParty\.Update/)?";
-        private static bool Kind(string kind) => Regex.IsMatch(kind, @"\A(?:stage|txn|helper|helperauto|helperbridge|wholeintent|wholehist)\z");
-        internal static bool Is(string relative, string kind) => Kind(kind) && Regex.IsMatch(relative, @"\A" + OptionalRootPattern + "bap-v4-" + kind + @"-[0-9a-f]{32}\z");
+        internal const string Prefix = "bap-v5-";
+        private static bool Kind(string kind) => kind == "stage" || kind == "txn";
+        // Anchored regex for one contained work directory of the given kind.
+        internal static string Pattern(string kind) => @"\ABetterAstralParty\.Update/" + Prefix + kind + @"-[0-9a-f]{32}\z";
+        internal static bool Is(string relative, string kind) => Kind(kind) && Regex.IsMatch(relative, Pattern(kind));
         internal static bool IsStage(string relative) => Is(relative, "stage");
-        internal static bool IsContained(string relative, string kind) => relative.StartsWith(Root + "/", StringComparison.Ordinal) && Is(relative, kind);
+        internal static bool IsContained(string relative, string kind) => Is(relative, kind);
         internal static string Operation(string relative, string kind)
         {
             if (!Is(relative, kind)) throw new ApplySafetyException(ApplyFailure.UnsafePath);
@@ -23,34 +26,12 @@ namespace BetterAstralParty.Updating
         internal static string At(string kind, string operation)
         {
             if (!Kind(kind) || !Regex.IsMatch(operation, @"\A[0-9a-f]{32}\z")) throw new ApplySafetyException(ApplyFailure.UnsafePath);
-            return Root + "/bap-v4-" + kind + "-" + operation;
+            return Root + "/" + Prefix + kind + "-" + operation;
         }
         internal static string New(string kind) => At(kind, Guid.NewGuid().ToString("N"));
-        internal static string Transition(string operation)
-        {
-            if (!Regex.IsMatch(operation, @"\A[0-9a-f]{32}\z")) throw new ApplySafetyException(ApplyFailure.UnsafePath);
-            return Root + "/bap-v4-transition-" + operation;
-        }
-        internal static string TransitionFor(string stage, string operation) => IsContained(stage, "stage") ? Transition(operation)
-            : IsStage(stage) && Regex.IsMatch(operation, @"\A[0-9a-f]{32}\z") ? "bap-v4-transition-" + operation : throw new ApplySafetyException(ApplyFailure.UnsafePath);
-        internal static string WholeHistory(string relative)
-        {
-            var operation = Operation(relative, "wholeintent");
-            return IsContained(relative, "wholeintent") ? At("wholehist", operation) : "bap-v4-wholehist-" + operation;
-        }
-        internal static string LogicalIntent(string relative)
-        {
-            var kind = Is(relative, "wholeintent") ? "wholeintent" : "wholehist";
-            var operation = Operation(relative, kind);
-            return IsContained(relative, kind) ? At("wholeintent", operation) : "bap-v4-wholeintent-" + operation;
-        }
         internal static void RequireContained(string relative, string kind)
         {
-            if (IsContained(relative, kind)) return;
             if (!Is(relative, kind)) throw new ApplySafetyException(ApplyFailure.UnsafePath);
-            var error = new ApplySafetyException(ApplyFailure.RecoveryRequired);
-            error.Data["BapRecoveryReason"] = "LegacyFlatWorkPending";
-            throw error;
         }
         private static bool Container(WindowsFileFence fence, bool create)
         {
@@ -65,26 +46,17 @@ namespace BetterAstralParty.Updating
         }
         internal static WindowsFileIdentity Create(WindowsFileFence fence, string relative)
         {
-            var valid = false;
-            foreach (var kind in new[] { "stage", "txn", "helper", "helperauto", "helperbridge", "wholeintent", "wholehist" }) valid |= IsContained(relative, kind);
-            if (!valid) throw new ApplySafetyException(ApplyFailure.UnsafePath);
+            if (!Is(relative, "stage") && !Is(relative, "txn")) throw new ApplySafetyException(ApplyFailure.UnsafePath);
             Container(fence, true); return fence.CreatePrivateDirectory(relative);
         }
         internal static IEnumerable<string> Directories(WindowsFileFence fence, string kind)
         {
             if (!Kind(kind)) throw new ApplySafetyException(ApplyFailure.UnsafePath);
-            // Read retained flat evidence in place. No caller may mutate a flat pending operation.
-            foreach (var directory in WindowsPath.Directories(fence.Root, "bap-v4-" + kind + "-*"))
-            {
-                var relative = WindowsPath.Leaf(directory);
-                if (!Is(relative, kind)) throw new ApplySafetyException(ApplyFailure.UnsafePath);
-                yield return relative;
-            }
             if (!Container(fence, false)) yield break;
-            foreach (var directory in WindowsPath.Directories(fence.Full(Root), "bap-v4-" + kind + "-*"))
+            foreach (var directory in WindowsPath.Directories(fence.Full(Root), Prefix + kind + "-*"))
             {
                 var relative = Root + "/" + WindowsPath.Leaf(directory);
-                if (!IsContained(relative, kind)) throw new ApplySafetyException(ApplyFailure.UnsafePath);
+                if (!Is(relative, kind)) throw new ApplySafetyException(ApplyFailure.UnsafePath);
                 yield return relative;
             }
             fence.Recheck();

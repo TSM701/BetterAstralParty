@@ -15,7 +15,7 @@ internal sealed record PackagingReleaseIdentity(string Version, string Channel, 
     internal void Validate()
     {
         var parsed = UpdateVersion.Parse(Version);
-        if (parsed.Tag != Version || parsed.IsLocalPrerelease || parsed.CompareTo(UpdateVersion.Parse("1.3.0-0")) < 0 || !ReleaseFeedPolicy.IsChannel(Channel) || Channel == "Stable" && parsed.IsPrerelease || ReleaseId <= 0 || AssetId <= 0 || !Feed.Configured)
+        if (parsed.Tag != Version || parsed.IsLocalPrerelease || parsed.CompareTo(UpdateVersion.Parse(ReleaseFeedPolicy.Baseline + "-0")) < 0 || !ReleaseFeedPolicy.IsChannel(Channel) || Channel == "Stable" && parsed.IsPrerelease || ReleaseId <= 0 || AssetId <= 0 || !Feed.Configured)
             throw new InvalidDataException("Current-generation exact remote release identity required.");
     }
 }

@@ -7,17 +7,11 @@ internal static class SharedLoaderPolicyFixture
 {
     private static int Checks;
     private static void Check(bool value, string name) { if (!value) throw new Exception(name); Checks++; }
-    private static InstallReceipt Receipt(NativeMaintenanceBundle bundle, bool? baseline)
-    {
-        var channels = new ReceiptChannelState(bundle.RootIdentity, "Stable", new string('a', 32), ReleaseFeedPolicy.StableRepositoryId, "1.3.0", new string('B', 64), 0, null, "-");
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(new { schema = 1, baseline = "1.3.0", owner = InstalledPluginMetadata.Owner, loaderBefore = baseline,
-            files = InstallReceipt.Owned.Select(path => new { path, sha256 = new string('A', 64) }).ToArray(), channelState = channels.Encoded });
-        return InstallReceipt.Parse(bytes);
-    }
+    private static NativeUninstall.Receipt Receipt(NativeMaintenanceBundle bundle, bool? baseline)
+        => new NativeUninstall.Receipt(InstallReceipt.Owned.ToDictionary(path => path, _ => new string('A', 64), StringComparer.Ordinal), baseline, false);
     public static int Main(string[] args)
     {
         try {
-            SteamLauncher.Helper = null; SteamLauncher.AfterHelper = null;
             NativeMaintenance.Pending = false; NativeMaintenance.RestoreFailure = null; NativeMaintenance.CompletionFailure = null;
             NativeSteamMaintenance.RemoveFailure = null;
             if (args.Length != 2 || Directory.Exists(args[0]) || Path.GetDirectoryName(Path.GetFullPath(args[0])) != Path.GetFullPath(args[1])) throw new Exception("Fresh direct project artifact required.");

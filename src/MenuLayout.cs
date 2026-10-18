@@ -18,7 +18,7 @@ internal static class MenuLayout
         ("편의 기능", false, new[] { "AutoThanks", "PingFocus" }),
         ("화면·언어", true, new[] { "Language", "Scale", "Opacity" }),
         ("알림·소리", true, new[] { "MuteUnfocused", "InputAttention", "MatchFocus", "SuppressNotices" }),
-        ("업데이트", true, new[] { "UpdateChannel", "AutomaticChecks", "UpdateNotifications", "UpdateCheck", "AutoDownload", "AfterExit", "UpdateGet", "UpdateCancel", "UpdateDownload" }),
+        ("업데이트", true, new[] { "UpdateChannel", "UpdateSwitch", "AutomaticChecks", "UpdateNotifications", "UpdateCheck", "AutoDownload", "AfterExit", "UpdateGet", "UpdateCancel", "UpdateDownload" }),
         ("비공개 베타 인증", true, new[] { "UpdateAuth", "UpdateSignOut" }),
         ("진단", true, new[] { "Diagnostics", "DiagnosticsOpen", "DiagnosticsCollect" })
     };
@@ -99,7 +99,7 @@ internal static class MenuLayout
         StateHelp(action, value is not ("Native" or "Off"), value);
     internal static bool GeneralControl(string action) => action is "Language" or "Diagnostics" or "DiagnosticsOpen" or "DiagnosticsCollect" or "MuteUnfocused" or "InputAttention" or "MatchFocus"
         or "UpdateAuth" or "UpdateSignOut"
-        or "UpdateChannel" or "UpdateCheck" or "UpdateDownload" or "AutoDownload" or "AfterExit" or "UpdateGet" or "UpdateCancel"
+        or "UpdateChannel" or "UpdateSwitch" or "UpdateCheck" or "UpdateDownload" or "AutoDownload" or "AfterExit" or "UpdateGet" or "UpdateCancel"
         or "SuppressNotices" or "AutomaticChecks" or "UpdateNotifications"
         or "ScaleMinus" or "ScalePlus" or "OpacityMinus" or "OpacityPlus";
 
@@ -123,7 +123,7 @@ internal static class MenuLayout
         "AutomaticChecks" when !enabled => "새 버전을 주기적으로 확인하지 않습니다.",
         "UpdateNotifications" when !enabled => "새 버전 알림 팝업을 표시하지 않습니다.",
         "AutoDownload" when !enabled => "새 버전을 자동으로 다운로드하지 않습니다.",
-        "AfterExit" when !enabled => "게임 종료 후 업데이트를 자동 적용하지 않습니다.",
+        "AfterExit" when !enabled => "검증한 업데이트를 자동으로 적용하지 않습니다.",
         "InputAttention" => mode switch { "Off" => "게임 창이 비활성 상태일 때\n입력 대기 알림을 보내지 않습니다.", "Windows" => "게임 창이 비활성 상태에서\n내 입력을 기다리면 Windows로 알립니다.", _ => "게임 창이 비활성 상태에서\n내 입력을 기다리면 작업표시줄을 깜빡입니다." },
         "UpdateChannel" => mode switch { "PreRelease" => "공개 프리 릴리즈의 최신 버전을 확인합니다.", "Beta" => "비공개 베타의 최신 버전을 확인합니다.\n토큰 인증이 필요합니다.", _ => "공개 릴리즈의 최신 버전을 확인합니다." },
         "Enabled" when !enabled => "공격·놓아주기, 방어·회피 및\n카드 사용 추천을 표시하지 않습니다.",
@@ -173,13 +173,14 @@ internal static class MenuLayout
         "DiagnosticsCollect" => ("진단 ZIP 만들기", "진단 로그를 ZIP으로 모읍니다.\n공유 전 개인정보를 확인하세요."),
         "MuteUnfocused" => ("창 비활성화 시 음소거", "다른 창으로 전환하면 소리를 끄고\n게임으로 돌아오면 복원합니다."),
         "InputAttention" => ("입력 대기 알림", "게임 창이 비활성 상태일 때\n내 입력 대기를 알립니다."),
-        "UpdateChannel" => ("업데이트 채널", "선택한 채널의 최신 버전을 확인합니다.\n채널 전환은 대상을 확인한 뒤 승인합니다."),
+        "UpdateChannel" => ("업데이트 채널", "선택한 채널의 최신 버전을 확인합니다.\n설치된 채널과 다르면 채널 전환에서 승인합니다."),
+        "UpdateSwitch" => ("채널 전환", "선택한 채널의 대상 버전을 확인하고\n설치된 채널을 전환합니다."),
         "UpdateCheck" => ("업데이트 확인", "선택한 채널의 새 버전을 확인합니다."),
         "UpdateDownload" => ("다운로드 페이지", "선택한 채널의 GitHub 릴리스 목록을 엽니다."),
         "AutoDownload" => ("자동 다운로드", "검증된 새 버전을 자동으로 받습니다."),
-        "AfterExit" => ("종료 후 적용", "게임과 런처 종료 후 검증한 업데이트를 적용합니다."),
+        "AfterExit" => ("자동 적용", "검증한 업데이트를 바로 적용하고\n다음 실행부터 새 버전을 사용합니다."),
         "UpdateGet" => ("업데이트 받기", "선택한 채널의 검증된 업데이트를 받습니다.\n비공개 베타만 토큰 인증이 필요합니다."),
-        "UpdateCancel" => ("업데이트 취소", "다운로드 또는 종료 후 적용 대기를 취소합니다."),
+        "UpdateCancel" => ("업데이트 취소", "다운로드 또는 적용 대기를 취소합니다."),
         "ScaleMinus" or "ScalePlus" => ("표시 크기", "추천과 전투 상태 표시의\n크기를 조절합니다."),
         "OpacityMinus" or "OpacityPlus" => ("배경 불투명도", "전투 패널 바탕만 조절합니다.\n0%에서도 글자·아이콘·테두리는\n유지됩니다."),
         "Close" => ("돌아가기", "설정을 닫고 돌아갑니다.\n변경 사항은 자동 저장됩니다."),

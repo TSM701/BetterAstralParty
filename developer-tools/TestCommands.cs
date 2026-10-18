@@ -9,17 +9,17 @@ internal static partial class TestCommands
 {
     internal static string[] Supported => new[] {
         "sdk-path-safety", "source-mode", "settings-input", "settings-scroll",
-        "catalog-compatibility", "automatic-helper-upgrade", "native-compatibility",
+        "catalog-compatibility", "native-compatibility",
         "native-steam", "native-install", "native-uninstall", "native-maintenance-common",
-        "native-maintenance-diagnostics", "ordinary-helper-recovery", "recovery-diagnostics",
+        "native-maintenance-diagnostics", "recovery-diagnostics",
         "diagnostics-runtime", "staging", "channel-transition", "release-updates-and-readiness",
-        "match-focus", "card-scan-performance", "shared-loader-enable", "native-diagnostics-cli", "compatibility-snapshot"
+        "match-focus", "card-scan-performance", "native-diagnostics-cli", "compatibility-snapshot"
     }.Concat(new[] { "field-zoom", "field-free-camera", "field-camera-return", "field-indicator-opacity", "field-indicator-input", "field-counter", "field-buffs",
         "hand-layout", "hand-scan", "hand-outline", "hand-pointer-input", "hand-submit", "card-target-buttons" })
         .Concat(GeneralSupported).Concat(MaintenanceNames.Where(name => name != "maintenance-package-integration"))
         .Concat(DiagnosticsNames).Concat(DistributionNames)
-        .Concat(new[] { "shared-loader", "update-runtime-isolation", "launcher-recovery", "handoff-start-failure", "update-notification-ui",
-            "updater-primitives", "updater-transaction", "updater-apply-boundary", "updater-helper", "update-generation" })
+        .Concat(new[] { "shared-loader", "update-runtime-isolation", "update-notification-ui",
+            "updater-primitives", "updater-transaction", "updater-apply-boundary", "update-generation" })
         .Distinct(StringComparer.Ordinal).ToArray();
 
     internal static int Run(DevContext context, string[] args)
@@ -70,11 +70,10 @@ internal static partial class TestCommands
                     "focus-tests/native-steam/FixtureGuard.cs", "focus-tests/native-steam/FixtureEntry.cs", "focus-tests/native-steam/DiscoveryCases.cs"
                 }, new[] { Path.Combine(context.Root, "artifacts", "native-steam-" + Guid.NewGuid().ToString("N")) }, Pin); break;
                 case "native-maintenance-common": Framework(context, stage, "NativeCommonFixture", new[] {
-                    "tools/NativeMaintenance.cs", "tools/NativeMaintenanceBundle.cs", "tools/NativeMaintenanceEntry.cs", "tools/NativeMaintenanceFiles.cs", "tools/LauncherRecoveryJson.cs",
+                    "tools/NativeMaintenance.cs", "tools/NativeMaintenanceBundle.cs", "tools/NativeMaintenanceEntry.cs", "tools/NativeMaintenanceFiles.cs", "tools/MaintenanceJsonReader.cs",
                     "focus-tests/native-maintenance-common/Program.cs", "focus-tests/native-maintenance-common/BoundaryCases.cs", "focus-tests/native-maintenance-common/Facades.cs", "focus-tests/native-maintenance-common/Globals.cs"
                 }.Concat(UpdateSources(context)).ToArray(), new[] { scratch, Path.Combine(context.Root, "artifacts") }, Pin); break;
                 case "native-maintenance-diagnostics": NativeDiagnostics(context, stage, Pin); break;
-                case "shared-loader-enable": SharedLoader(context, stage, scratch, Pin); break;
                 case "card-scan-performance": CardScan(context, stage, Pin); break;
                 default:
                     if (name == "staging") { if (!UpdateChecks(context, name, stage, scratch, options, Pin)) throw new InvalidOperationException("Staging validation is not migrated."); break; }
@@ -167,8 +166,6 @@ internal static partial class TestCommands
             "catalog-compatibility" => ("focus-tests/catalog-compatibility/CatalogCompatibilityFixture.csproj", new[] { scratch, Path.Combine(context.Root, "artifacts") }),
             "native-compatibility" => ("focus-tests/native-compatibility/NativeCompatibilityFixture.csproj", new[] { scratch, Path.Combine(context.Root, "artifacts") }),
             "native-uninstall" => ("focus-tests/native-uninstall/NativeUninstallFixture.csproj", new[] { scratch, Path.Combine(context.Root, "artifacts") }),
-            "automatic-helper-upgrade" => ("focus-tests/automatic-helper-upgrade/AutomaticHelperUpgradeFixture.csproj", new[] { scratch, Path.Combine(context.Root, "artifacts") }),
-            "ordinary-helper-recovery" => ("focus-tests/ordinary-helper-recovery/OrdinaryHelperRecovery.csproj", new[] { Path.Combine(context.Root, "artifacts", "or-" + Guid.NewGuid().ToString("N")) }),
             "recovery-diagnostics" => ("diagnostics-tests/BetterAstralParty.Diagnostics.RecoveryFixture.csproj", new[] { scratch }),
             "diagnostics-runtime" => ("diagnostics-tests/BetterAstralParty.Diagnostics.Fixture.csproj", Array.Empty<string>()),
             "staging" => ("updater-safety-tests/BetterAstralParty.StagingTests.csproj", new[] { scratch }),
@@ -195,8 +192,8 @@ internal static partial class TestCommands
         .OrderByDescending(path => Version.Parse(Path.GetFileName(path))).Select(path => Path.Combine(path, "Roslyn", "bincore", "csc.dll")).First();
     private static string Framework(DevContext context, string stage, string entry, string[] sourcePaths, string[] arguments, Action<string> pin, bool fixtureDefine = true)
     {
-        if (sourcePaths.Any(path => Path.GetFileName(path) == "PublicReleaseEligibility.cs") && !sourcePaths.Any(path => Path.GetFileName(path) == "LauncherRecoveryJson.cs"))
-            sourcePaths = sourcePaths.Append("tools/LauncherRecoveryJson.cs").ToArray();
+        if (sourcePaths.Any(path => Path.GetFileName(path) == "PublicReleaseEligibility.cs") && !sourcePaths.Any(path => Path.GetFileName(path) == "MaintenanceJsonReader.cs"))
+            sourcePaths = sourcePaths.Append("tools/MaintenanceJsonReader.cs").ToArray();
         Directory.CreateDirectory(stage);
         var image = Path.Combine(stage, entry + ".exe");
         var framework = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Microsoft.NET", "Framework64", "v4.0.30319");

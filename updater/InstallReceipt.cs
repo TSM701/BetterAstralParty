@@ -10,7 +10,9 @@ namespace BetterAstralParty.Updating
     internal sealed class InstallReceipt
     {
         internal const string Path = "BetterAstralParty.install.json";
-        internal static readonly string[] Owned = { "AstralParty-Vanilla.cmd", UpdateTrust.PluginPath, "BetterAstralParty-Launcher.exe", "BetterAstralParty-Mod.cmd", "BetterAstralParty.compatibility.json" };
+        // Protocol 5 (1.4.0 baseline) installs no executable into the game root.
+        internal const string Baseline = "1.4.0";
+        internal static readonly string[] Owned = { "AstralParty-Vanilla.cmd", UpdateTrust.PluginPath, "BetterAstralParty-Mod.cmd", "BetterAstralParty.compatibility.json" };
         internal readonly bool? LoaderBefore;
         internal readonly Dictionary<string, string> Files;
         internal readonly ReceiptChannelState? Channels;
@@ -52,7 +54,7 @@ namespace BetterAstralParty.Updating
         {
             try {
                 var obj = new Json(bytes, maxText: 2048).Parse() as Dictionary<string, object?>;
-                if (obj == null || obj.Count != 6 || !obj.ContainsKey("baseline") || !Equals(obj["baseline"], "1.3.0") || !obj.ContainsKey("channelState") || !obj.ContainsKey("schema") || !(obj["schema"] is int) || (int)obj["schema"]! != 1
+                if (obj == null || obj.Count != 6 || !obj.ContainsKey("baseline") || !Equals(obj["baseline"], Baseline) || !obj.ContainsKey("channelState") || !obj.ContainsKey("schema") || !(obj["schema"] is int) || (int)obj["schema"]! != 1
                     || !obj.ContainsKey("owner") || !Equals(obj["owner"], InstalledPluginMetadata.Owner) || !obj.ContainsKey("loaderBefore") || !obj.ContainsKey("files")) throw Bad();
                 if (obj["loaderBefore"] != null && !(obj["loaderBefore"] is bool)) throw Bad();
                 var array = obj["files"] as List<object?>; if (array == null || array.Count != Owned.Length) throw Bad();
@@ -72,7 +74,7 @@ namespace BetterAstralParty.Updating
         {
             if (descriptor.Files.Count != Owned.Length) throw Bad(); var hashes = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var file in descriptor.Files) { if (!Files.ContainsKey(file.Path) || hashes.ContainsKey(file.Path)) throw Bad(); hashes.Add(file.Path, file.Sha256); }
-            var output = new StringBuilder("{\"schema\":1,\"baseline\":\"1.3.0\",\"owner\":\"" + InstalledPluginMetadata.Owner + "\",\"loaderBefore\":" + (LoaderBefore.HasValue ? LoaderBefore.Value ? "true" : "false" : "null") + ",\"files\":[");
+            var output = new StringBuilder("{\"schema\":1,\"baseline\":\"" + Baseline + "\",\"owner\":\"" + InstalledPluginMetadata.Owner + "\",\"loaderBefore\":" + (LoaderBefore.HasValue ? LoaderBefore.Value ? "true" : "false" : "null") + ",\"files\":[");
             for (var i = 0; i < Owned.Length; i++) { if (i != 0) output.Append(','); output.Append("{\"path\":\"").Append(Owned[i]).Append("\",\"sha256\":\"").Append(hashes[Owned[i]]).Append("\"}"); }
             channels ??= Channels;
             output.Append(']'); if (channels != null) output.Append(",\"channelState\":\"").Append(channels.Encoded).Append('"');
@@ -83,7 +85,7 @@ namespace BetterAstralParty.Updating
         // channel preference, and never discard existing history or the loader baseline.
         internal static byte[] Create(string root, VerifiedUpdateDescriptor descriptor, bool? loader)
         {
-            if (!Regex.IsMatch(root, @"\A[0-9A-F]{8}:[0-9A-F]{16}\z") || descriptor.Protocol != 4 || descriptor.RepositoryId <= 0 || descriptor.Files.Count != Owned.Length) throw Bad();
+            if (!Regex.IsMatch(root, @"\A[0-9A-F]{8}:[0-9A-F]{16}\z") || descriptor.Protocol != UpdateTrust.Protocol || descriptor.RepositoryId <= 0 || descriptor.Files.Count != Owned.Length) throw Bad();
             var hashes = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var file in descriptor.Files) { if (!UpdateTrust.OwnedPath(file.Path) || hashes.ContainsKey(file.Path)) throw Bad(); hashes.Add(file.Path, file.Sha256); }
             var stable = descriptor.Channel == "Stable"; var beta = descriptor.Channel == "Beta"; var preRelease = descriptor.Channel == "PreRelease";
@@ -95,7 +97,7 @@ namespace BetterAstralParty.Updating
         }
         internal byte[] InitializeChannel(string root, VerifiedUpdateDescriptor descriptor)
         {
-            if (!Regex.IsMatch(root, @"\A[0-9A-F]{8}:[0-9A-F]{16}\z") || descriptor.Protocol != 4 || descriptor.RepositoryId <= 0 || descriptor.Files.Count != Owned.Length) throw Bad();
+            if (!Regex.IsMatch(root, @"\A[0-9A-F]{8}:[0-9A-F]{16}\z") || descriptor.Protocol != UpdateTrust.Protocol || descriptor.RepositoryId <= 0 || descriptor.Files.Count != Owned.Length) throw Bad();
             foreach (var file in descriptor.Files) if (!Files.ContainsKey(file.Path) || Files[file.Path] != file.Sha256) throw Bad();
             ReceiptChannelState channels;
             if (Channels != null) {

@@ -38,42 +38,9 @@ namespace BetterAstralParty.Updating {
                 try {f.DirectoryIdentity(parent);}catch(ApplySafetyException e) when(e.NativeError==2 || e.NativeError==3){f.CreatePrivateDirectory(parent);}
             }
         }
-        private sealed class HelperCopies {
-            internal HelperDelivery.OrdinaryBinding Binding=null!;internal byte[] Image=Array.Empty<byte>(),Receipt=Array.Empty<byte>();
-        }
-        private static HelperCopies Copies(WindowsFileFence game,WindowsFileFence backups,WindowsFileFence.FileLease journal,string journalRoot,WindowsFileFence.FileLease image,WindowsFileFence.FileLease receipt,string imageHash,string receiptHash) {
-            var imageBytes=UpdateTicket.Read(image,UpdateTrust.MaxFileBytes);var receiptBytes=UpdateTicket.Read(receipt,1024);
-            if(UpdateTrust.Hash(imageBytes)!=imageHash || UpdateTrust.Hash(receiptBytes)!=receiptHash)throw Bad();
-            return new HelperCopies {Image=imageBytes,Receipt=receiptBytes,Binding=new HelperDelivery.OrdinaryBinding {JournalRoot=UpdateTrust.Hash(Encoding.UTF8.GetBytes(journalRoot)),JournalRootId=backups.RootIdentity.Text,JournalId=journal.Identity.Text,JournalHash=journal.Hash(),ImageHash=imageHash,ReceiptHash=receiptHash}};
-        }
-        internal static string? ValidateHelperRepair(WindowsFileFence game,string expectedJournalHash,UpdateTrust? trust=null) {
-            if(!Regex.IsMatch(expectedJournalHash,@"\A[A-F0-9]{64}\z"))throw Bad();
-            var local=Environment.GetEnvironmentVariable("LOCALAPPDATA");if(string.IsNullOrEmpty(local))throw Bad();
-            var rootKey=UpdateTrust.Hash(Encoding.UTF8.GetBytes(game.Root.ToLowerInvariant()));
-            var journalRoot=WindowsPath.Absolute(Path.Combine(local,"BetterAstralParty","Backups","v4",rootKey));
-            using(var mapped=new WindowsFileFence.OrdinaryJournal(journalRoot))using(var backups=new WindowsFileFence(Path.GetDirectoryName(mapped.PhysicalPath)!))using(var journal=backups.OpenFile("pending.json")) {
-                if(!mapped.Identity.Same(journal.Identity) || journal.Hash()!=expectedJournalHash)throw Bad();mapped.Recheck(backups.Full("pending.json"));
-                var state=new InstallReceipt.Json(UpdateTicket.Read(journal,1024*1024),1024*1024,300,WindowsPath.MaximumLength).Parse() as Dictionary<string,object?>;
-                if(state==null || state.Count!=3 || Text(state,"GameRoot")!=game.Root)throw Bad();
-                var backupDir=Text(state,"BackupDir");var leaf=BackupLeaf(journalRoot,backupDir);backups.DirectoryIdentity(leaf);
-                object? value;if(!state.TryGetValue("Entries",out value) || !(value is List<object?> rows) || rows.Count<1 || rows.Count>300)throw Bad();
-                string? imagePath=null,receiptPath=null,imageHash=null,receiptHash=null;
-                for(var i=0;i<rows.Count;i++) {
-                    var row=rows[i] as Dictionary<string,object?>;if(row==null || row.Count!=4 || !(row["Existed"] is bool))throw Bad();
-                    var target=Relative(game,Text(row,"Target"));if(Text(row,"Backup")!=Path.Combine(backupDir,i.ToString(CultureInfo.InvariantCulture)+".bin"))throw Bad();
-                    if(target!=HelperDescriptor.Image && target!=HelperDelivery.Receipt)continue;
-                    if(!(bool)row["Existed"]!)throw Bad();var hash=Text(row,"Hash");if(!Regex.IsMatch(hash,@"\A[A-F0-9]{64}\z"))throw Bad();
-                    if(target==HelperDescriptor.Image) {if(imagePath!=null)throw Bad();imagePath=leaf+"/"+i.ToString(CultureInfo.InvariantCulture)+".bin";imageHash=hash;}
-                    else {if(receiptPath!=null)throw Bad();receiptPath=leaf+"/"+i.ToString(CultureInfo.InvariantCulture)+".bin";receiptHash=hash;}
-                }
-                if(imagePath==null || receiptPath==null)throw Bad();
-                using(var imageCopy=backups.OpenFile(imagePath))using(var receiptCopy=backups.OpenFile(receiptPath))using(var image=Maybe(game,HelperDescriptor.Image))using(var receipt=Maybe(game,HelperDelivery.Receipt)) {
-                    var copies=Copies(game,backups,journal,journalRoot,imageCopy,receiptCopy,imageHash!,receiptHash!);
-                    return HelperDelivery.ValidateOrdinaryRepair(game,copies.Binding,copies.Image,copies.Receipt,trust??UpdateTrust.Production(),image,receipt);
-                }
-            }
-        }
         // Used only after the uninstaller has previewed and backed up the exact fixed owned set.
+        // Protocol-4 (1.3.x) executables and helper receipt, removed when 1.4.0 takes over or uninstalls.
+        internal const string LegacyLauncher = "BetterAstralParty-Launcher.exe", LegacyHelper = "BetterAstralParty-UpdateHelper.exe", LegacyHelperReceipt = "BetterAstralParty.helper.receipt";
         internal sealed class OwnedRemovalLease : IDisposable {
             private readonly List<IDisposable> _leases=new List<IDisposable>();
             private readonly Dictionary<string,Entry> _entries=new Dictionary<string,Entry>(StringComparer.OrdinalIgnoreCase);
@@ -87,13 +54,13 @@ namespace BetterAstralParty.Updating {
             private static bool Owned(string relative,bool loader) {
                 foreach(var name in InstallReceipt.Owned)if(name==relative)return true;
                 foreach(var name in new[]{
-                    InstallReceipt.Path,HelperDescriptor.Image,HelperDelivery.Receipt,
+                    InstallReceipt.Path,LegacyLauncher,LegacyHelper,LegacyHelperReceipt,
                     "BepInEx/config/kr.betterastralparty.mod.cfg",
                     "BepInEx/BetterAstralParty-Diagnostics/current.log",
                     "BepInEx/BetterAstralParty-Diagnostics/previous.log",
                     "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch.log",
                     "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log",
-                    "BetterAstralParty-Compatibility.log","BetterAstralParty-LaunchError.log"})
+                    "BetterAstralParty-Compatibility.log","BetterAstralParty-LaunchError.log",ChannelTransitionIntent.AdoptionPath})
                     if(name==relative)return true;
                 return loader && relative=="doorstop_config.ini";
             }
@@ -104,7 +71,7 @@ namespace BetterAstralParty.Updating {
                     var canonical=WindowsPath.Absolute(root).TrimEnd('\\');var local=Environment.GetEnvironmentVariable("LOCALAPPDATA");
                     if(string.IsNullOrEmpty(local))throw Bad();
                     var rootKey=UpdateTrust.Hash(Encoding.UTF8.GetBytes(canonical.ToLowerInvariant()));
-                    if(journalRoot!=WindowsPath.Absolute(Path.Combine(local,"BetterAstralParty","Backups","v4",rootKey)))throw Bad();
+                    if(journalRoot!=WindowsPath.Absolute(Path.Combine(local,"BetterAstralParty","Backups","v5",rootKey)))throw Bad();
                     _mapped=new WindowsFileFence.OrdinaryJournal(journalRoot);_leases.Add(_mapped);
                     _game=new WindowsFileFence(canonical);_leases.Add(_game);
                     _backups=new WindowsFileFence(Path.GetDirectoryName(_mapped.PhysicalPath)!);_leases.Add(_backups);
@@ -115,9 +82,9 @@ namespace BetterAstralParty.Updating {
                     if(_game.Root.Equals(_backups.Root,StringComparison.OrdinalIgnoreCase) || _game.Root.StartsWith(_backups.Root+"\\",StringComparison.OrdinalIgnoreCase) ||
                         _backups.Root.StartsWith(_game.Root+"\\",StringComparison.OrdinalIgnoreCase))throw Bad();
                     UpdateLaunchGate.Check(_game);
-                    _guardImages=new[]{_game.Full("AstralParty_INT.exe"),_game.Full("BetterAstralParty-Launcher.exe"),_game.Full(HelperDescriptor.Image)};
+                    _guardImages=new[]{_game.Full("AstralParty_INT.exe"),_game.Full(LegacyLauncher),_game.Full(LegacyHelper)};
                     WindowsProcessGuard.AssertNoRunning(_guardImages);
-                    // The launcher/helper are mutable removal targets; their exclusive target leases close their open/start race.
+                    // Legacy launcher/helper are mutable removal targets; their exclusive target leases close their open/start race.
                     _processes=WindowsProcessGuard.Acquire(_game,new[]{"AstralParty_INT.exe"},allowMissing:true);_leases.Add(_processes);
                     var state=new InstallReceipt.Json(UpdateTicket.Read(_journal,1024*1024),1024*1024,300,WindowsPath.MaximumLength).Parse() as Dictionary<string,object?>;
                     if(state==null || state.Count!=3 || Text(state,"GameRoot")!=_game.Root)throw Bad();
@@ -204,7 +171,7 @@ namespace BetterAstralParty.Updating {
             var canonical=WindowsPath.Absolute(root).TrimEnd('\\');
             var local=Environment.GetEnvironmentVariable("LOCALAPPDATA");if(string.IsNullOrEmpty(local))throw Bad();
             var rootKey=UpdateTrust.Hash(Encoding.UTF8.GetBytes(canonical.ToLowerInvariant()));
-            if(journalRoot!=WindowsPath.Absolute(Path.Combine(local,"BetterAstralParty","Backups","v4",rootKey)))throw Bad();
+            if(journalRoot!=WindowsPath.Absolute(Path.Combine(local,"BetterAstralParty","Backups","v5",rootKey)))throw Bad();
             using(var mapped=new WindowsFileFence.OrdinaryJournal(journalRoot))
             using(var game=new WindowsFileFence(canonical
 #if BAP_SAFETY_FIXTURE
@@ -251,21 +218,9 @@ namespace BetterAstralParty.Updating {
                         e.Remove=!completeOnly && !e.Existed && e.Target!=null;
                         entries.Add(e);
                     }
-                    Entry? helperImage=null,helperReceipt=null;
-                    foreach(var e in entries) {if(e.Relative==HelperDescriptor.Image)helperImage=e;else if(e.Relative==HelperDelivery.Receipt)helperReceipt=e;}
-                    HelperCopies? helperCopies=null;string? repairedHash=null;
-                    if(!completeOnly && helperImage?.Existed==true && helperReceipt?.Existed==true) {
-                        helperCopies=Copies(game,backups,journal,journalRoot,helperImage.Backup!,helperReceipt.Backup!,helperImage.Hash,helperReceipt.Hash);
-                        var work=HelperDelivery.ValidateOrdinaryRepair(game,helperCopies.Binding,helperCopies.Image,helperCopies.Receipt,trust??UpdateTrust.Production(),helperImage.Target,helperReceipt.Target);
-                        HelperDelivery.OrdinaryReceiptHash(game,helperCopies.Image,helperCopies.Receipt,helperImage.Target?.Identity.Text??game.RootIdentity.Text,trust??UpdateTrust.Production(),work);
-                        if(work!=null && helperImage.Target!=null && helperReceipt.Target!=null) {
-                            repairedHash=HelperDelivery.OrdinaryReceiptHash(game,helperCopies.Image,helperCopies.Receipt,helperImage.Target.Identity.Text,trust??UpdateTrust.Production(),work);
-                            if(helperReceipt.Target.Hash()==repairedHash) {helperReceipt.Restore=false;helperReceipt.Expected=repairedHash;}
-                        }
-                    }
                     foreach(var e in entries)if(!completeOnly && expected!=null) {
                         var current=e.Target?.Hash();var oldMatches=e.Existed?current==e.Hash:current==null;
-                        if(!oldMatches && !(e==helperReceipt && repairedHash!=null && current==repairedHash)) {
+                        if(!oldMatches) {
                             object? expectedHash;if(!expected.TryGetValue(game.Full(e.Relative),out expectedHash) || !Equals(expectedHash,current))throw Bad();
                         }
                     }
@@ -290,11 +245,6 @@ namespace BetterAstralParty.Updating {
                         }
                         if(e.Remove)e.Target!.RemoveOrdinaryRecoveryTarget(e.Relative);
                         boundary?.Invoke("ordinary-restored:"+e.Relative);
-                    }
-                    if(helperCopies!=null) {
-                        if(helperImage?.Target==null || helperReceipt?.Target==null)throw Bad();
-                        helperReceipt.Expected=HelperDelivery.RestoreOrdinary(game,helperCopies.Binding,helperCopies.Image,helperCopies.Receipt,helperImage.Target,helperReceipt.Target,trust??UpdateTrust.Production(),boundary);
-                        if(helperReceipt.Backup!.Hash()!=helperReceipt.Hash || helperImage.Backup!.Hash()!=helperImage.Hash)throw Bad();
                     }
                     if(journal.Hash()!=expectedJournalHash)throw Bad();
                     boundary?.Invoke("ordinary-before-journal-retire");

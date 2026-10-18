@@ -1,14 +1,11 @@
-# Builds the native launcher and update helper from this public source on a GitHub-hosted runner.
-# Reproducibility check before code signing: the summary lists SHA-256 values to compare with the local build.
+# Builds the package installer BetterAstralParty-Setup.exe from this public source on a GitHub-hosted runner.
+# Reproducibility check: the summary lists its SHA-256 to compare with the released package.
+# The setup host carries its own component version, so no product version input is needed.
 # Only cmd and the Windows curl, certutil and tar tools are used; no PowerShell step is part of this workflow.
 name: Native build
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: Product version stamped into the launcher and helper, for example 1.3.0
-        required: true
 
 permissions:
   contents: read
@@ -20,17 +17,12 @@ jobs:
       run:
         shell: cmd
     env:
-      BAP_VERSION: ${{ inputs.version }}
       DOTNET_ADD_GLOBAL_TOOLS_TO_PATH: "false"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Validate version input
-        run: |
-          echo %BAP_VERSION%| findstr /r /x "[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*[-0-9A-Za-z.]*" >nul || (echo Invalid version input & exit /b 1)
 
       # Full paths: Git for Windows puts GNU tar on PATH, which treats "D:\..." as a remote host.
       - name: Fetch pinned .NET SDK 8.0.425
@@ -45,24 +37,19 @@ jobs:
           certutil -hashfile "%RUNNER_TEMP%\bepinex.zip" SHA256 | findstr /i /x "f4cc496bd098a0df4164b81e3737297707f13a47c2478dba2f60eefab784817a" >nul || (echo BepInEx hash mismatch & exit /b 1)
           mkdir .deps\bepinex && "%SystemRoot%\System32\tar.exe" -xf "%RUNNER_TEMP%\bepinex.zip" -C .deps\bepinex || exit /b 1
 
-      - name: Build launcher and helper
+      - name: Build setup host
         run: |
-          call Developer.cmd build-launcher --version %BAP_VERSION% --output-directory "%GITHUB_WORKSPACE%\artifacts\ci-launcher" || exit /b 1
-          call Developer.cmd build-helper --version %BAP_VERSION% --output-directory "%GITHUB_WORKSPACE%\artifacts\ci-helper" || exit /b 1
+          call Developer.cmd build-setup --output-directory "%GITHUB_WORKSPACE%\artifacts\ci-setup" || exit /b 1
 
       - name: Record SHA-256
         run: |
-          (echo ## Native build %BAP_VERSION%& echo.& echo ```) >> "%GITHUB_STEP_SUMMARY%"
-          certutil -hashfile artifacts\ci-launcher\BetterAstralParty-Launcher.exe SHA256 | findstr /v ":" >> "%GITHUB_STEP_SUMMARY%"
-          echo BetterAstralParty-Launcher.exe >> "%GITHUB_STEP_SUMMARY%"
-          certutil -hashfile artifacts\ci-helper\BetterAstralParty-UpdateHelper.exe SHA256 | findstr /v ":" >> "%GITHUB_STEP_SUMMARY%"
-          echo BetterAstralParty-UpdateHelper.exe >> "%GITHUB_STEP_SUMMARY%"
+          (echo ## Native build& echo.& echo ```) >> "%GITHUB_STEP_SUMMARY%"
+          certutil -hashfile artifacts\ci-setup\BetterAstralParty-Setup.exe SHA256 | findstr /v ":" >> "%GITHUB_STEP_SUMMARY%"
+          echo BetterAstralParty-Setup.exe >> "%GITHUB_STEP_SUMMARY%"
           echo ``` >> "%GITHUB_STEP_SUMMARY%"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: native-${{ inputs.version }}
-          path: |
-            artifacts/ci-launcher/BetterAstralParty-Launcher.exe
-            artifacts/ci-helper/BetterAstralParty-UpdateHelper.exe
+          name: native-setup
+          path: artifacts/ci-setup/BetterAstralParty-Setup.exe
           if-no-files-found: error

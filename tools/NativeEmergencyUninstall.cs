@@ -14,14 +14,14 @@ namespace BetterAstralParty.Installation
         private const int MaxFiles = 4096, MaxDirectories = 2048, MaxDepth = 16;
         private const string UpdateLock = "BetterAstralParty.update.lock";
         private static readonly string[] Names = InstallReceipt.Owned.Concat(new[] {
-            HelperDescriptor.Image, HelperDelivery.Receipt, InstallReceipt.Path, "BetterAstralParty-Steam.ps1",
+            OrdinaryInstallRecovery.LegacyLauncher, OrdinaryInstallRecovery.LegacyHelper, OrdinaryInstallRecovery.LegacyHelperReceipt, InstallReceipt.Path, "BetterAstralParty-Steam.ps1",
             "BepInEx/config/kr.betterastralparty.mod.cfg", "BepInEx/BetterAstralParty-Diagnostics/current.log",
             "BepInEx/BetterAstralParty-Diagnostics/previous.log", "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch.log",
-            "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log", "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log", UpdateLock
+            "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log", "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log", ChannelTransitionIntent.AdoptionPath, UpdateLock
         }).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        private static readonly Regex RecoveryFile = new Regex(@"\ABetterAstralParty\.(?:update-v[34]\.(?:version(?:\.uninstalled-[0-9a-f]{32})?|failure|operation|preferences-failed|failed)|reinstall-v[34]\.(?:pending|completed-[0-9a-f]{32}))\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
-        private static readonly Regex RecoveryDirectory = new Regex(@"\A(?:bap-v[34]-(?:stage|txn|helperauto|helper|helperbridge|wholeintent|wholehist)-[0-9a-f]{32}|BetterAstralParty-emergency-[0-9a-f]{32})\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
-        private static readonly Regex ContainedDirectory = new Regex(@"\Abap-v4-(?:stage|txn|helperauto|helper|helperbridge|wholeintent|wholehist)-[0-9a-f]{32}\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+        private static readonly Regex RecoveryFile = new Regex(@"\ABetterAstralParty\.(?:update-v[345]\.(?:version(?:\.uninstalled-[0-9a-f]{32})?|failure|operation|preferences-failed|failed)|reinstall-v[345]\.(?:pending|completed-[0-9a-f]{32}))\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+        private static readonly Regex RecoveryDirectory = new Regex(@"\A(?:bap-v[345]-(?:stage|txn|helperauto|helper|helperbridge|wholeintent|wholehist)-[0-9a-f]{32}|BetterAstralParty-emergency-[0-9a-f]{32})\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+        private static readonly Regex ContainedDirectory = new Regex(@"\Abap-v[45]-(?:stage|txn|helperauto|helper|helperbridge|wholeintent|wholehist)-[0-9a-f]{32}\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
         private static readonly Regex ContainedTransition = new Regex(@"\Abap-v4-transition-[0-9a-f]{32}\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
         private sealed class Scope { internal string Key = "", Root = "", Prefix = ""; }
         private sealed class Entry
@@ -78,10 +78,10 @@ namespace BetterAstralParty.Installation
         private static Scope[] Scopes(string gameRoot)
         {
             var backup = WindowsPath.Absolute(NativeMaintenance.JournalRoot(gameRoot));
-            var key = WindowsPath.Leaf(backup); var v4 = WindowsPath.Parent(backup);
-            if (!Regex.IsMatch(key, @"\A[0-9A-F]{64}\z") || WindowsPath.Leaf(v4) != "v4" || WindowsPath.Leaf(WindowsPath.Parent(v4)) != "Backups") throw Stop("EmergencyBackupScopeInvalid");
-            return new[] { new Scope { Key = "game", Root = gameRoot }, new Scope { Key = "v4", Root = v4, Prefix = key },
-                new Scope { Key = "v3", Root = WindowsPath.Parent(v4) + "\\v3", Prefix = key } };
+            var key = WindowsPath.Leaf(backup); var v5 = WindowsPath.Parent(backup);
+            if (!Regex.IsMatch(key, @"\A[0-9A-F]{64}\z") || WindowsPath.Leaf(v5) != "v5" || WindowsPath.Leaf(WindowsPath.Parent(v5)) != "Backups") throw Stop("EmergencyBackupScopeInvalid");
+            return new[] { new Scope { Key = "game", Root = gameRoot }, new Scope { Key = "v5", Root = v5, Prefix = key },
+                new Scope { Key = "v4", Root = WindowsPath.Parent(v5) + "\\v4", Prefix = key }, new Scope { Key = "v3", Root = WindowsPath.Parent(v5) + "\\v3", Prefix = key } };
         }
         private static void AddFile(Plan plan, Scope scope, WindowsFileFence? fence, string relative, bool skipData)
         {
@@ -207,7 +207,7 @@ namespace BetterAstralParty.Installation
             var directories = preview.Directories.ToDictionary(row => row.Target, StringComparer.OrdinalIgnoreCase);
             foreach (var row in actual.Directories)
                 if (directories.TryGetValue(row.Target, out var before)) { if (row.Identity != before.Identity) throw Stop("EmergencyPreviewChanged"); }
-                else if (!currentCreated || row.Scope != "v4" || row.Relative != preview.Scopes.Single(s => s.Key == "v4").Prefix) throw Stop("EmergencyPreviewChanged");
+                else if (!currentCreated || row.Scope != "v5" || row.Relative != preview.Scopes.Single(s => s.Key == "v5").Prefix) throw Stop("EmergencyPreviewChanged");
             if (directories.Keys.Any(path => !actual.Directories.Any(row => row.Target.Equals(path, StringComparison.OrdinalIgnoreCase)))) throw Stop("EmergencyPreviewChanged");
         }
         private static void CheckLock(Entry observed, WindowsFileFence.FileLease? file, bool created)
@@ -215,7 +215,7 @@ namespace BetterAstralParty.Installation
             if (observed.Existed ? file == null || file.Identity.Text != observed.Identity || file.Stream.Length != observed.Bytes || file.Hash() != observed.Hash : file != null && !created) throw Stop("EmergencyLockPreviewChanged");
         }
         private static string[] Images(WindowsFileFence game)
-        { return new[] { game.Full("AstralParty_INT.exe"), game.Full("BetterAstralParty-Launcher.exe"), game.Full(HelperDescriptor.Image) }; }
+        { return new[] { game.Full("AstralParty_INT.exe"), game.Full(OrdinaryInstallRecovery.LegacyLauncher), game.Full(OrdinaryInstallRecovery.LegacyHelper) }; }
         private static void AbsentDirectory(WindowsFileFence fence, string relative)
         {
             try { fence.DirectoryIdentity(relative); }
@@ -225,7 +225,7 @@ namespace BetterAstralParty.Installation
         internal static int Run(NativeMaintenanceBundle bundle, string? steamRoot, uint account, bool whatIf, Func<string, string?> consent, Action<string> output)
         {
             ShortcutRecovery? removedShortcut = null; var phase = "Preflight"; var deleted = 0; var deletedDirectories = 0; string? lastTarget = null; Plan? preview = null;
-            var held = new List<Held>(); var fences = new Dictionary<string, WindowsFileFence>(StringComparer.Ordinal); NativeMaintenance.InstallLock? installLock = null; WindowsFileFence.FileLease? legacyLock = null;
+            var held = new List<Held>(); var fences = new Dictionary<string, WindowsFileFence>(StringComparer.Ordinal); NativeMaintenance.InstallLock? installLock = null; var legacyLocks = new Dictionary<string, WindowsFileFence.FileLease?>(StringComparer.Ordinal);
             try
             {
                 bundle.AssertRoot(); preview = Observe(bundle.GameRoot); var receipt = ReceiptStatus(preview);
@@ -238,12 +238,12 @@ namespace BetterAstralParty.Installation
                 foreach (var row in preview.Directories) output("  폴더 삭제 / Remove directory: " + row.Target + " | identity=" + row.Identity);
                 foreach (var scope in preview.Scopes.Where(s => s.Key != "game")) output("  선택한 게임의 복구 백업 삭제 / Selected-game recovery backups: " + scope.Root + "\\" + scope.Prefix);
                 output(removeShortcut ? "일치하는 Astral Party - Mod 바로가기만 제거합니다. / Remove only the exactly matching Astral Party - Mod shortcut." : "Steam 바로가기는 보존합니다. / Steam shortcut retained or absent. " + (shortcutFailure == null ? "" : shortcutFailure.GetType().Name));
-                output("위 목록과 선택한 게임의 v3/v4 복구 백업을 영구 삭제합니다. BetterAstralParty 파일의 백업·격리 복사본은 만들지 않으며, 중단되면 이미 삭제한 파일은 복원하지 않습니다. 공용 로더·다른 모드·추가 파일·다른 게임의 백업·전역 진단 ZIP은 보존합니다. / Permanently delete the listed files and selected-game v3/v4 recovery backups. No BetterAstralParty payload/recovery copies; partial deletion cannot be rolled back. Shared loader, other mods, extra files, other game backups and global diagnostic ZIPs remain unchanged.");
+                output("위 목록과 선택한 게임의 v3/v4/v5 복구 백업을 영구 삭제합니다. BetterAstralParty 파일의 백업·격리 복사본은 만들지 않으며, 중단되면 이미 삭제한 파일은 복원하지 않습니다. 공용 로더·다른 모드·추가 파일·다른 게임의 백업·전역 진단 ZIP은 보존합니다. / Permanently delete the listed files and selected-game v3/v4/v5 recovery backups. No BetterAstralParty payload/recovery copies; partial deletion cannot be rolled back. Shared loader, other mods, extra files, other game backups and global diagnostic ZIPs remain unchanged.");
                 output("Steam의 공용 바로가기·표지 정보는 기존 안전한 롤백 절차를 사용하므로 해당 정보의 백업이 별도로 남을 수 있습니다. / Shared Steam shortcut/artwork metadata uses the existing safe rollback procedure; its separate metadata backups may remain.");
                 if (whatIf) { output("WhatIf: 미리보기만 완료했습니다. / Preview only; nothing changed."); return 0; }
                 if (!preview.Files.Any(row => row.Existed) && preview.Directories.Count == 0 && !removeShortcut) { output("삭제할 파일·확인된 바로가기가 없습니다. / No files or verified shortcut to delete."); return 0; }
                 if (consent("표시한 파일과 복구 백업을 복원 불가능하게 영구 삭제할까요? / Permanently delete every listed unverified file and recovery backup without rollback? [y/N]") != "y") { output("취소했습니다. 아무것도 변경하지 않았습니다. / Cancelled; nothing changed."); return 0; }
-                SteamLauncher.RecordInstallerStage("Uninstall", "Begin"); phase = "Processes"; NativeSteamMaintenance.AssertGameStopped(bundle.GameRoot);
+                SetupHost.RecordInstallerStage("Uninstall", "Begin"); phase = "Processes"; NativeSteamMaintenance.AssertGameStopped(bundle.GameRoot);
                 phase = "Locks"; installLock = NativeMaintenance.AcquireInstallLock(bundle);
                 var game = new WindowsFileFence(bundle.GameRoot); fences.Add("game", game);
                 using (var updateLock = Maybe(game, UpdateLock, true) ?? game.OpenFile(UpdateLock, true, true))
@@ -251,10 +251,12 @@ namespace BetterAstralParty.Installation
                 {
                     if (game.RootIdentity.Text != bundle.RootIdentity) throw Stop("EmergencyRootChanged");
                     foreach (var scope in preview.Scopes.Where(s => s.Key != "game")) { var fence = MaybeScope(scope.Root); if (fence != null) fences.Add(scope.Key, fence); }
-                    var v3 = preview.Scopes.Single(s => s.Key == "v3"); if (fences.TryGetValue("v3", out var oldFence)) legacyLock = Maybe(oldFence, v3.Prefix + "/pending.json.lock", true);
-                    CheckLock(preview.Files.Single(r => r.Scope == "game" && r.Lock), updateLock, true); CheckLock(preview.Files.Single(r => r.Scope == "v4" && r.Lock), installLock.File, true); CheckLock(preview.Files.Single(r => r.Scope == "v3" && r.Lock), legacyLock, false);
-                    phase = "Capture"; var actual = Observe(bundle.GameRoot, true, fences); var v4Prefix = preview.Scopes.Single(s => s.Key == "v4").Prefix;
-                    var currentCreated = !preview.Directories.Any(r => r.Scope == "v4" && r.Relative == v4Prefix); SamePlan(preview, actual, currentCreated);
+                    // 1.3.x (v4) and older (v3) journal locks are legacy; only the v5 lock is this installer's own.
+                    foreach (var key in new[] { "v4", "v3" }) { var scope = preview.Scopes.Single(s => s.Key == key); legacyLocks[key] = fences.TryGetValue(key, out var oldFence) ? Maybe(oldFence, scope.Prefix + "/pending.json.lock", true) : null; }
+                    CheckLock(preview.Files.Single(r => r.Scope == "game" && r.Lock), updateLock, true); CheckLock(preview.Files.Single(r => r.Scope == "v5" && r.Lock), installLock.File, true);
+                    foreach (var key in new[] { "v4", "v3" }) CheckLock(preview.Files.Single(r => r.Scope == key && r.Lock), legacyLocks[key], false);
+                    phase = "Capture"; var actual = Observe(bundle.GameRoot, true, fences); var v5Prefix = preview.Scopes.Single(s => s.Key == "v5").Prefix;
+                    var currentCreated = !preview.Directories.Any(r => r.Scope == "v5" && r.Relative == v5Prefix); SamePlan(preview, actual, currentCreated);
                     foreach (var row in preview.Files.Where(r => !r.Lock))
                     {
                         WindowsFileFence.FileLease? file = null; if (fences.TryGetValue(row.Scope, out var fence)) file = Maybe(fence, row.Relative, true);
@@ -266,7 +268,7 @@ namespace BetterAstralParty.Installation
                     SamePlan(preview, Observe(bundle.GameRoot, true, fences), currentCreated); phase = "Delete";
                     foreach (var item in held.Where(h => h.File != null))
                     {
-                        updateLock.Recheck(); installLock.File.Recheck(); legacyLock?.Recheck(); processes.Recheck(); WindowsProcessGuard.AssertNoRunning(Images(game)); lastTarget = item.Entry.Target; Hit("BeforeDelete:" + item.Entry.Relative);
+                        updateLock.Recheck(); installLock.File.Recheck(); foreach (var legacy in legacyLocks.Values) legacy?.Recheck(); processes.Recheck(); WindowsProcessGuard.AssertNoRunning(Images(game)); lastTarget = item.Entry.Target; Hit("BeforeDelete:" + item.Entry.Relative);
                         if (item.File!.Hash() != item.Entry.Hash) throw Stop("EmergencyTargetChanged"); item.File.RemoveOrdinaryRecoveryTarget(item.Entry.Relative); item.Dispose(); deleted++;
                         output("  삭제 / Deleted: " + lastTarget + " | SHA256=" + item.Entry.Hash + " | identity=" + item.Entry.Identity); Hit("Deleted:" + item.Entry.Relative);
                     }
@@ -277,8 +279,8 @@ namespace BetterAstralParty.Installation
                         updateLock.Recheck(); processes.Recheck(); WindowsProcessGuard.AssertNoRunning(Images(game)); lastTarget = row.Target;
                         if (row.Scope != "game" && row.Relative == preview.Scopes.Single(s => s.Key == row.Scope).Prefix)
                         {
-                            if (row.Scope == "v4") { var ownLock = installLock ?? throw Stop("EmergencyInstallLockLost"); ownLock.File.RemoveOrdinaryRecoveryTarget("pending.json.lock"); ownLock.Dispose(); installLock = null; deleted++; Hit("InstallLockReleased"); }
-                            else if (legacyLock != null) { legacyLock.RemoveOrdinaryRecoveryTarget(v3.Prefix + "/pending.json.lock"); legacyLock.Dispose(); legacyLock = null; deleted++; Hit("LegacyLockReleased"); }
+                            if (row.Scope == "v5") { var ownLock = installLock ?? throw Stop("EmergencyInstallLockLost"); ownLock.File.RemoveOrdinaryRecoveryTarget("pending.json.lock"); ownLock.Dispose(); installLock = null; deleted++; Hit("InstallLockReleased"); }
+                            else if (legacyLocks.TryGetValue(row.Scope, out var legacy) && legacy != null) { legacy.RemoveOrdinaryRecoveryTarget(row.Relative + "/pending.json.lock"); legacy.Dispose(); legacyLocks[row.Scope] = null; deleted++; Hit("LegacyLockReleased"); }
                         }
                         fences[row.Scope].RemoveEmptyRecoveryDirectory(row.Relative, row.Identity); deletedDirectories++; output("  폴더 삭제 / Directory deleted: " + row.Target); Hit("DirectoryDeleted:" + row.Relative);
                     }
@@ -298,7 +300,7 @@ namespace BetterAstralParty.Installation
                         AbsentDirectory(game, row.Relative);
                     processes.Recheck(); updateLock.Recheck(); lastTarget = game.Full(UpdateLock); updateLock.RemoveOrdinaryRecoveryTarget(UpdateLock); deleted++; Hit("Completed");
                 }
-                SteamLauncher.RecordInstallerStage("Uninstall", "Completed"); output("긴급 영구 제거를 마쳤습니다. / Irreversible emergency removal completed. deletedFiles=" + deleted + "; deletedDirectories=" + deletedDirectories + "; no BetterAstralParty payload/recovery copies created; protected Steam metadata backups may remain."); return 0;
+                SetupHost.RecordInstallerStage("Uninstall", "Completed"); output("긴급 영구 제거를 마쳤습니다. / Irreversible emergency removal completed. deletedFiles=" + deleted + "; deletedDirectories=" + deletedDirectories + "; no BetterAstralParty payload/recovery copies created; protected Steam metadata backups may remain."); return 0;
             }
             catch (Exception error)
             {
@@ -306,11 +308,11 @@ namespace BetterAstralParty.Installation
                 error.Data["BapEmergencyObservedFiles"] = preview?.Files.Count(row => row.Existed) ?? 0; if (lastTarget != null) error.Data["BapEmergencyLastTarget"] = lastTarget;
                 if (!error.Data.Contains("BapRecoveryReason")) error.Data["BapRecoveryReason"] = "Emergency" + phase + "Stopped";
                 if (removedShortcut == null && error.Data["BapShortcutRecovery"] is ShortcutRecovery uncertain) removedShortcut = uncertain;
-                if (removedShortcut != null) try { NativeSteamMaintenance.AssertStopped(steamRoot!, "ShortcutRollback"); NativeSteamMaintenance.Rollback(removedShortcut); } catch (Exception recoveryError) { error.Data["BapRollbackFailure"] = recoveryError; SteamLauncher.RecordInstallerFailure("Rollback", recoveryError); }
+                if (removedShortcut != null) try { NativeSteamMaintenance.AssertStopped(steamRoot!, "ShortcutRollback"); NativeSteamMaintenance.Rollback(removedShortcut); } catch (Exception recoveryError) { error.Data["BapRollbackFailure"] = recoveryError; SetupHost.RecordInstallerFailure("Rollback", recoveryError); }
                 output("긴급 제거 중단. 삭제한 파일은 복원하지 않습니다. / Emergency removal stopped; deleted files are not restored. deletedFiles=" + deleted + "; deletedDirectories=" + deletedDirectories + "; phase=" + phase);
-                if (!whatIf) SteamLauncher.RecordInstallerFailure("Uninstall", error); throw;
+                if (!whatIf) SetupHost.RecordInstallerFailure("Uninstall", error); throw;
             }
-            finally { foreach (var item in held) item.Dispose(); legacyLock?.Dispose(); installLock?.Dispose(); foreach (var fence in fences.Values) fence.Dispose(); }
+            finally { foreach (var item in held) item.Dispose(); foreach (var legacy in legacyLocks.Values) legacy?.Dispose(); installLock?.Dispose(); foreach (var fence in fences.Values) fence.Dispose(); }
         }
     }
 }

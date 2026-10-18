@@ -15,7 +15,7 @@ internal static class TrustFixture
     private static int _checks;
     private static readonly byte[] Payload = new byte[2048];
     private static readonly UpdateContext Context = new UpdateContext("TSM701/BetterAstralParty", "Stable",
-        "1.3.0", "1.3.1", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId);
+        "1.4.0", "1.4.1", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId);
     private static void Check(bool value, string message)
     { _checks++; if (!value) throw new Exception("Trust fixture: " + message); }
     private static void Reject(Action action, string message, UpdateFailure? expected = null)
@@ -54,13 +54,13 @@ internal static class TrustFixture
             return memory.ToArray();
         }
     }
-    private static string Manifest(byte[] zip, string version = "1.3.1", string channel = "Stable",
+    private static string Manifest(byte[] zip, string version = "1.4.1", string channel = "Stable",
         string platform = UpdateTrust.PlatformId, string[]? files = null, byte[]? payload = null)
     {
         var paths = files ?? InstallReceipt.Owned;
         var data = payload ?? Payload;
         var feed = ReleaseFeedPolicy.For(channel);
-        return "BetterAstralParty.UpdateDescriptor/v4\nrepository=" + feed.Repository + "\nversion=" + version
+        return "BetterAstralParty.UpdateDescriptor/v5\nrepository=" + feed.Repository + "\nversion=" + version
             + "\nchannel=" + channel + "\nplatform=" + platform + "\nrelease-id=123\nasset-id=456\nasset-name=BetterAstralParty-"
             + (version.StartsWith("v", StringComparison.Ordinal) ? version.Substring(1) : version)
             + "-update.zip\nzip-bytes=" + zip.Length.ToString(CultureInfo.InvariantCulture) + "\nzip-sha256=" + UpdateTrust.Hash(zip)
@@ -128,9 +128,9 @@ internal static class TrustFixture
         Reject(() => production.VerifyDescriptor(bytes, "fixture-only", signature, Context), "fixture key cannot configure production", UpdateFailure.InvalidSignature);
         var d = Verify(trust, signing, text);
         Check(d.Platform == UpdateTrust.PlatformId && d.Repository == Context.Repository && d.Channel == Context.Channel
-            && d.Version == Context.ReleaseTag && d.KeyId == "fixture-only" && d.Files.Count == InstallReceipt.Owned.Length && d.Protocol == 4, "signed baseline target and owned5 binding");
+            && d.Version == Context.ReleaseTag && d.KeyId == "fixture-only" && d.Files.Count == InstallReceipt.Owned.Length && d.Protocol == 5, "signed baseline target and owned5 binding");
         foreach (var oldHeader in new[] { "BetterAstralParty.UpdateDescriptor/v1", "BetterAstralParty.UpdateDescriptor/v2", "BetterAstralParty.UpdateDescriptor/v3" })
-            Reject(() => Verify(trust, signing, text.Replace("BetterAstralParty.UpdateDescriptor/v4", oldHeader)), "signed prior protocol is unsupported", UpdateFailure.InvalidDescriptor);
+            Reject(() => Verify(trust, signing, text.Replace("BetterAstralParty.UpdateDescriptor/v5", oldHeader)), "signed prior protocol is unsupported", UpdateFailure.InvalidDescriptor);
         Reject(() => new VerifiedUpdateDescriptor(new object(), "fixture-only", d.Repository, d.Channel, d.Version, d.Platform, d.AssetName,
             d.ReleaseId, d.AssetId, d.ZipBytes, d.ZipSha256, d.DescriptorSha256, d.Files.ToList()), "unverified descriptor cannot be constructed");
         Reject(() => trust.VerifyDescriptor(bytes, "unknown", signature, Context), "unknown key ID", UpdateFailure.InvalidSignature);
@@ -147,13 +147,13 @@ internal static class TrustFixture
             new[] { "platform=windows-x64-int", "platform=windows-arm64-int" },
             new[] { "channel=Stable", "channel=Beta" },
             new[] { "release-id=123", "release-id=124" }, new[] { "asset-id=456", "asset-id=457" },
-            new[] { "asset-name=BetterAstralParty-1.3.1-update.zip", "asset-name=Other.zip" } })
+            new[] { "asset-name=BetterAstralParty-1.4.1-update.zip", "asset-name=Other.zip" } })
             Reject(() => Verify(trust, signing, text.Replace(pair[0], pair[1])), "signed wrong target " + pair[0], UpdateFailure.WrongTarget);
         foreach (var broken in new[] { text.Replace("platform=windows-x64-int\n", ""), text + "unknown=value\n",
             text.Replace("channel=Stable\n", "channel=Stable\nchannel=Stable\n"), text.Replace("\n", "\r\n"), "\ufeff" + text,
             text.TrimEnd('\n'), text.Replace("release-id=123", "release-id=0123"), text.Replace("asset-id=456", "asset-id=0"),
             text.Replace("zip-sha256=" + UpdateTrust.Hash(zip), "zip-sha256=" + UpdateTrust.Hash(zip).ToLowerInvariant()),
-            text.Replace("file-count=5", "file-count=33"), text.Replace("\t2048\t", "\t0\t"),
+            text.Replace("file-count=4", "file-count=33"), text.Replace("\t2048\t", "\t0\t"),
             text.Replace(UpdateTrust.PluginPath, "../BetterAstralParty.dll") })
             Reject(() => Verify(trust, signing, broken), "malformed signed descriptor", UpdateFailure.InvalidDescriptor);
         var allPaths = InstallReceipt.Owned;
@@ -163,21 +163,21 @@ internal static class TrustFixture
         rows.RemoveRange(14, InstallReceipt.Owned.Length); rows.InsertRange(14, lastRows.Reverse());
         Reject(() => Verify(trust, signing, string.Join("\n", rows)), "unsorted signed file set", UpdateFailure.InvalidDescriptor);
         Reject(() => Verify(trust, signing, Manifest(zip, files: new[] { UpdateTrust.PluginPath, UpdateTrust.PluginPath })), "duplicate signed file set", UpdateFailure.InvalidDescriptor);
-        Reject(() => Verify(trust, signing, Manifest(zip, files: new[] { "BetterAstralParty-Launcher.exe" })), "mandatory plugin omitted", UpdateFailure.InvalidDescriptor);
+        Reject(() => Verify(trust, signing, Manifest(zip, files: new[] { "BetterAstralParty-Mod.cmd" })), "mandatory plugin omitted", UpdateFailure.InvalidDescriptor);
         foreach (var path in new[] { "BepInEx/config/kr.betterastralparty.mod.cfg", "BepInEx/core/Other.dll", "doorstop_config.ini",
             "winhttp.dll", "/absolute.dll", @"C:\escape.dll", "../escape.dll", "CON", UpdateTrust.PluginPath.ToLowerInvariant(),
             UpdateTrust.PluginPath + ":stream", UpdateTrust.PluginPath + ".", UpdateTrust.PluginPath + " ", "BetterAstralParty-Updater.exe" })
             Check(!UpdateTrust.OwnedPath(path), "forbidden owned path " + path);
-        foreach (var current in new[] { "1.3.1", "1.3.1+new", "1.3.2", "2.0.0" })
-            Reject(() => Verify(trust, signing, text, new UpdateContext(Context.Repository, "Stable", current, "1.3.1", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId)),
+        foreach (var current in new[] { "1.4.1", "1.4.1+new", "1.4.2", "2.0.0" })
+            Reject(() => Verify(trust, signing, text, new UpdateContext(Context.Repository, "Stable", current, "1.4.1", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId)),
                 "old valid signature cannot downgrade/equal " + current, UpdateFailure.NotNewer);
-        Reject(() => Verify(trust, signing, text, new UpdateContext(Context.Repository, "Stable", "1.3.0", "1.3.1", 123, 456, UpdateTrust.PlatformId, "1.3.2", ReleaseFeedPolicy.StableRepositoryId)),
+        Reject(() => Verify(trust, signing, text, new UpdateContext(Context.Repository, "Stable", "1.4.0", "1.4.1", 123, 456, UpdateTrust.PlatformId, "1.4.2", ReleaseFeedPolicy.StableRepositoryId)),
             "high-water version blocks replay after rollback", UpdateFailure.NotNewer);
-        foreach (var version in new[] { "0.99.0", "1.3.1-rc.1" })
-            Reject(() => Verify(trust, signing, Manifest(zip, version), new UpdateContext(Context.Repository, "Stable", "1.3.0", version, 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId)),
+        foreach (var version in new[] { "0.99.0", "1.4.1-rc.1" })
+            Reject(() => Verify(trust, signing, Manifest(zip, version), new UpdateContext(Context.Repository, "Stable", "1.4.0", version, 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId)),
                 "stable excludes beta/prerelease", UpdateFailure.WrongTarget);
-        var beta = Verify(trust, signing, Manifest(zip, "v1.3.1-rc.10", "Beta"),
-            new UpdateContext(ReleaseFeedPolicy.BetaRepository, "Beta", "1.3.1-rc.2", "v1.3.1-rc.10", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.BetaRepositoryId));
+        var beta = Verify(trust, signing, Manifest(zip, "v1.4.1-rc.10", "Beta"),
+            new UpdateContext(ReleaseFeedPolicy.BetaRepository, "Beta", "1.4.1-rc.2", "v1.4.1-rc.10", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.BetaRepositoryId));
         Check(beta.Channel == "Beta", "strictly newer Beta and one leading v accepted");
         using (var cancellation = new CancellationTokenSource())
         {

@@ -2,12 +2,9 @@ using System.Text;
 using System.Text.Json;
 using BetterAstralParty.Updating;
 
-internal static class SteamLauncher
+internal static class SetupHost
 {
-    internal static string? Helper;
-    internal static Action? AfterHelper;
     internal static int History, Stages, Failures;
-    internal static string? CheckOwnedHelper(string game) { var fingerprint = Helper; AfterHelper?.Invoke(); return fingerprint; }
     internal static void ValidateInstalledHistory(string game) { History++; }
     internal static void RecordInstallerStage(string phase, string outcome) { Stages++; }
     internal static void RecordInstallerFailure(string phase, Exception error) { Failures++; }
@@ -18,7 +15,7 @@ namespace BetterAstralParty.Installation
     internal sealed class NativeMaintenanceBundle
     {
         internal readonly string GameRoot, PackageRoot, RootIdentity;
-        internal readonly string Version = "1.3.0";
+        internal readonly string Version = "1.4.0";
         internal readonly Dictionary<string, string> Expected = new(StringComparer.Ordinal);
         internal NativeMaintenanceBundle(string root)
         {
@@ -59,7 +56,7 @@ namespace BetterAstralParty.Installation
             if (PlanFailure != null) { if (unavailable == null) throw PlanFailure; unavailable(PlanFailure); return false; }
             return Shortcut;
         }
-        internal static void StopGame(string game, Func<string, string?> consent, Action<string> output) { StopGames++; }
+        internal static void WaitGameClosed(string game, Func<string, string?> consent, Action<string> output) { StopGames++; }
         internal static void StopSteam(string root, SteamSessionState state, Func<string, string?> consent, Action<string> output) { StopSteams++; state.Restart = true; }
         internal static void AssertGameStopped(string game) { }
         internal static void AssertStopped(string root, string phase) { }
@@ -92,7 +89,7 @@ namespace BetterAstralParty.Installation
             }
             public void Dispose() { File.Dispose(); _fence.Dispose(); }
         }
-        internal static string JournalRoot(string root) => Path.Combine(Environment.GetEnvironmentVariable("LOCALAPPDATA")!, "BetterAstralParty", "Backups", "v4", UpdateTrust.Hash(Encoding.UTF8.GetBytes(root.ToLowerInvariant())));
+        internal static string JournalRoot(string root) => Path.Combine(Environment.GetEnvironmentVariable("LOCALAPPDATA")!, "BetterAstralParty", "Backups", "v5", UpdateTrust.Hash(Encoding.UTF8.GetBytes(root.ToLowerInvariant())));
         internal static string JournalPath(string root) => Path.Combine(JournalRoot(root), "pending.json");
         internal static bool HasPending(NativeMaintenanceBundle bundle) => Pending || System.IO.File.Exists(JournalPath(bundle.GameRoot));
         internal static InstallLock AcquireInstallLock(NativeMaintenanceBundle bundle) { Locks++; return new InstallLock(JournalRoot(bundle.GameRoot)); }

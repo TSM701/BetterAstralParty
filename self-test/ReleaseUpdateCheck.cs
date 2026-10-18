@@ -129,7 +129,7 @@ internal static class ReleaseUpdateCheck
             }
             var stale = ModText.UpdateDetails(new(ReleaseUpdateStatus.Stale, text, Now, ReleaseUpdateStatus.RateLimited), "1.1.0-dev");
             Check(stale.Contains(ModText.UpdateStatus(ReleaseUpdateStatus.Stale)) && stale.Contains(ModText.UpdateStatus(ReleaseUpdateStatus.RateLimited)), "stale state and failure both visible");
-            Check(stale.Contains("1.1.0-dev") && stale.Contains(text.Version) && stale.Contains(Now.UtcDateTime.ToString("u", System.Globalization.CultureInfo.InvariantCulture)), "hover retains current/new versions and checked time");
+            Check(stale.Contains("1.1.0-dev") && stale.Contains(text.Version) && stale.Contains(Now.ToLocalTime().ToString("MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture)) && !stale.Contains(Now.UtcDateTime.ToString("u", System.Globalization.CultureInfo.InvariantCulture)), "hover retains current/new versions and checked time");
             Check(!stale.Contains("<a") && !stale.Contains("한글") && !stale.Contains(ModText.Text("변경 사항")), "release notes removed from update hover");
             var popup = ModText.UpdateNotificationDetails(text, "1.1.0-dev", AutomaticUpdateStatus.Queued, ReleaseUpdateStatus.Stale);
             Check(popup.Contains("<a") && popup.Contains("한글") && popup.Contains(ModText.AutomaticStatus(AutomaticUpdateStatus.Queued)), "popup preserves literal release notes alongside current status");

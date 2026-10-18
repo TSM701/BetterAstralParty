@@ -24,7 +24,9 @@ internal static class UpdateDiscoveryBridge
             && found.Generation == discovery.Generation ? found : null;
         if (release == null && KeepOperation(result, discovery.Generation, discovery.FeedIdentity,
             discovery.Channel, automatic.Snapshot)) return;
+        var candidate = result.Status == ReleaseUpdateStatus.Available
+            && result.Release is { TransitionCandidate: true } lower && lower.Generation == discovery.Generation;
         automatic.Context(release?.DownloadRequest(current, discovery.Channel),
-            release?.Generation ?? discovery.Generation);
+            release?.Generation ?? discovery.Generation, candidate);
     }
 }

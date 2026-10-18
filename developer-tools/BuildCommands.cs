@@ -6,12 +6,11 @@ namespace BetterAstralParty.Development;
 internal static class BuildCommands
 {
     public static string[] Checks => new[] {
-        "sdk-path-safety", "source-mode", "settings-input", "settings-scroll", "shared-loader", "shared-loader-enable", "automatic-helper-upgrade",
+        "sdk-path-safety", "source-mode", "settings-input", "settings-scroll", "shared-loader",
         "install-bundle-missing", "install-reader-origin", "update-runtime-isolation", "long-paths", "field-zoom", "field-free-camera", "field-camera-return",
-        "recovery-diagnostics", "launcher-recovery", "handoff-start-failure", "ordinary-helper-recovery", "catalog-compatibility",
+        "recovery-diagnostics", "catalog-compatibility",
         "install-recovery-diagnostics", "diagnostics-bundle", "failure-context", "steam-session", "steam-shortcut", "steam-observation",
-        "uninstall-steam-boundary", "install-log", "native-launcher", "maintenance-history", "release-updates-and-readiness",
-        "launch-failure-diagnostics", "maintenance-preservation", "uninstall-updated-receipt", "install-safety", "install-transaction",
+        "uninstall-steam-boundary", "install-log", "maintenance-history", "release-updates-and-readiness", "maintenance-preservation", "uninstall-updated-receipt", "install-safety", "install-transaction",
         "install-transaction-long-ps7", "install-transaction-long-ps5", "install-transaction-root1100-ps7", "install-transaction-root1100-ps5",
         "install-transaction-target1100-ps7", "install-transaction-target1100-ps5", "find-game", "maintenance-frontends", "maintenance-paths",
         "channel-transition", "update-notification-ui", "history-binding", "staging", "export-release-source",
@@ -76,8 +75,7 @@ internal static class BuildCommands
             if (generatedPlugin != null) pluginProperties.Add("-p:BapVersionOverrideSource=" + Path.Combine(output, BuildVersion.GeneratedPath).Replace("%", "%25").Replace(";", "%3B").Replace(",", "%2C"));
             BuildProject(context, Path.Combine(context.Root, "src", "BetterAstralParty.csproj"), Path.Combine(output, "plugin"),
                 Path.Combine(output, "plugin-obj"), configuration, environment, pluginProperties);
-            CompileNative(context, "Launcher", Path.Combine(output, "launcher"), versionOverride);
-            CompileNative(context, "Helper", Path.Combine(output, "helper"), versionOverride);
+            CompileNative(context, "Setup", Path.Combine(output, "setup"), versionOverride);
             foreach (var check in checks.Where(value => value != "sdk-path-safety" && value != "release-updates-and-readiness"))
                 Check(context, check, output, game, bepinex);
             var selfTests = new List<string>();
@@ -92,13 +90,12 @@ internal static class BuildCommands
             DevContext.RequireInventory(sourcePaths, Sources(context.Root));
             if (context.Hash(context.NativeAssemblyPath) != nativeHash) throw new IOException("Native metadata input changed; build approval refused.");
             if (!String.Equals(before, DevContext.PersistentPaths(), StringComparison.Ordinal)) throw new InvalidOperationException("Persistent PATH changed; build approval refused.");
-            var files = new[] { "plugin/BetterAstralParty.dll", "launcher/BetterAstralParty-Launcher.exe", "helper/BetterAstralParty-UpdateHelper.exe" }
+            var files = new[] { "plugin/BetterAstralParty.dll", "setup/BetterAstralParty-Setup.exe" }
                 .Select(relative => new { path = relative, bytes = new FileInfo(Path.Combine(output, relative)).Length, sha256 = context.Hash(Path.Combine(output, relative)) }).ToArray();
             var productVersion = PackagingImage.PluginVersion(File.ReadAllBytes(Path.Combine(output, "plugin", "BetterAstralParty.dll")));
             BuildVersion.Validate(pluginSource, System.Text.Json.JsonSerializer.SerializeToElement(new { versionOverride, generatedPlugin }), productVersion,
                 generatedPlugin == null ? null : File.ReadAllBytes(Path.Combine(output, BuildVersion.GeneratedPath)));
-            foreach (var image in new[] { "launcher/BetterAstralParty-Launcher.exe", "helper/BetterAstralParty-UpdateHelper.exe" })
-                BuildVersion.ValidateNative(File.ReadAllBytes(Path.Combine(output, image)), productVersion);
+            BuildVersion.ValidateNative(File.ReadAllBytes(Path.Combine(output, "setup", "BetterAstralParty-Setup.exe")), SetupVersion(context.Root));
             context.WriteJsonCreateNew(Path.Combine(output, "build-result.json"), new {
                 schema = 1, configuration, sourceManifestSha256 = context.Hash(Path.Combine(output, "build-source.json")), checks,
                 validationScope = options.ContainsKey("checks") ? "targeted" : "full", selfTests, versionOverride, generatedPlugin,
@@ -151,7 +148,7 @@ internal static class BuildCommands
     internal static int RunNative(DevContext context, string role, string[] args)
     {
         var options = Options(args);
-        if (role != "Launcher" && role != "Helper") throw new ArgumentException("Unknown native build role.");
+        if (role != "Setup") throw new ArgumentException("Unknown native build role.");
         if (!options.TryGetValue("output-directory", out var path) || options.Keys.Any(name => name is not ("output-directory" or "version"))) throw new ArgumentException("Isolated native compilation requires --output-directory and optional --version.");
         var versionOverride = options.TryGetValue("version", out var version) ? BuildVersion.Canonical(version!) : null;
         var output = context.FreshArtifactOutput(path!);
@@ -160,10 +157,15 @@ internal static class BuildCommands
         return 0;
     }
 
+    // Codex (AGENTS.md) and Claude Code (CLAUDE.md, CLAUDE.local.md) instructions stay development-only.
+    internal static bool IsAgentInstructions(string relative) =>
+        Path.GetFileName(relative) is var name && (name.Equals("AGENTS.md", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("CLAUDE.md", StringComparison.OrdinalIgnoreCase) || name.Equals("CLAUDE.local.md", StringComparison.OrdinalIgnoreCase));
+
     internal static bool IsPublicSourcePath(string relative)
     {
         return !relative.Split('/').Any(part => part.Equals("review-candidates", StringComparison.OrdinalIgnoreCase))
-            && !Path.GetFileName(relative).Equals("AGENTS.md", StringComparison.OrdinalIgnoreCase)
+            && !IsAgentInstructions(relative)
             && !relative.Equals("tools/RecoverGaLocal20261008.cs", StringComparison.OrdinalIgnoreCase)
             && !relative.Equals("tools/SignGaRelease.cs", StringComparison.OrdinalIgnoreCase)
             && !System.Text.RegularExpressions.Regex.IsMatch(relative, @"\Atools/SignRc[0-9][^/]*\.cs\z", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
@@ -209,7 +211,7 @@ internal static class BuildCommands
         if (context.NativeAssemblyExplicit) args.AddRange(new[] { "--native-assembly", context.NativeAssemblyPath });
         if (name == "native-compatibility") args.AddRange(new[] { "--compatibility-path", Path.Combine(output, "compatibility", "BetterAstralParty.compatibility.json") });
         if (File.Exists(Path.Combine(output, "plugin", "BetterAstralParty.dll"))) args.AddRange(new[] { "--plugin-path", Path.Combine(output, "plugin", "BetterAstralParty.dll") });
-        if (File.Exists(Path.Combine(output, "launcher", "BetterAstralParty-Launcher.exe"))) args.AddRange(new[] { "--inspector-path", Path.Combine(output, "launcher", "BetterAstralParty-Launcher.exe") });
+        if (File.Exists(Path.Combine(output, "setup", "BetterAstralParty-Setup.exe"))) args.AddRange(new[] { "--inspector-path", Path.Combine(output, "setup", "BetterAstralParty-Setup.exe") });
         if (TestCommands.Run(context, args.ToArray()) != 0) throw new InvalidOperationException("Build check failed: " + name);
     }
 
@@ -225,50 +227,53 @@ internal static class BuildCommands
 
     private static void CompileNative(DevContext context, string role, string output, string? versionOverride = null)
     {
+        if (role != "Setup") throw new ArgumentException("Only the setup host is a native build role.");
         if (Directory.Exists(output) || File.Exists(output)) throw new IOException("Fresh native build output is required.");
         Directory.CreateDirectory(output);
         var compiler = Path.Combine(context.DotnetRoot, "sdk", "8.0.425", "Roslyn", "bincore", "csc.dll");
         var framework = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Microsoft.NET", "Framework64", "v4.0.30319");
-        var launcher = role == "Launcher";
-        var target = launcher ? "BetterAstralParty-Launcher.exe" : "BetterAstralParty-UpdateHelper.exe";
         var arguments = new List<string> { compiler, "/nologo", "/noconfig", "/utf8output", "/nostdlib+", "/langversion:latest", "/nullable:enable", "/define:NETFRAMEWORK", "/warnaserror+",
-            "/deterministic+", "/pathmap:" + context.Root + "=/src/BetterAstralParty", "/platform:x64", "/target:" + (launcher ? "winexe" : "exe"),
-            "/main:" + (launcher ? "SteamLauncher" : "BetterAstralParty.Updating.UpdateHelperProgram"), "/out:" + Path.Combine(output, target) };
-        foreach (var name in launcher ? new[] { "mscorlib.dll", "System.dll", "System.Core.dll", "System.Security.dll", "System.Windows.Forms.dll", "System.Drawing.dll", "System.Web.Extensions.dll", "System.Net.Http.dll", "System.IO.Compression.dll", "System.IO.Compression.FileSystem.dll" }
-            : new[] { "mscorlib.dll", "System.dll", "System.Core.dll", "System.Security.dll", "System.IO.Compression.dll", "System.Net.Http.dll", "System.Web.Extensions.dll" }) {
+            "/deterministic+", "/pathmap:" + context.Root + "=/src/BetterAstralParty", "/platform:x64", "/target:winexe",
+            "/main:SetupHost", "/out:" + Path.Combine(output, "BetterAstralParty-Setup.exe") };
+        // No System.Net.Http or WinForms: the setup host has no network or UI-framework code.
+        foreach (var name in new[] { "mscorlib.dll", "System.dll", "System.Core.dll", "System.Security.dll", "System.Web.Extensions.dll", "System.IO.Compression.dll", "System.IO.Compression.FileSystem.dll" }) {
             var reference = Path.Combine(framework, name); if (!File.Exists(reference)) throw new FileNotFoundException("Framework reference missing.", reference);
             arguments.Add("/reference:" + reference);
         }
         arguments.Add(Identity(context.Root, output, role, versionOverride));
-        if (!launcher) arguments.Add(Path.Combine(context.Root, "tools", "LauncherRecoveryJson.cs"));
-        if (launcher) {
-            arguments.Add(Path.Combine(context.Root, "tools", "SteamLauncher.cs"));
-            arguments.Add(Path.Combine(context.Root, "tools", "InstallHelperBootstrap.cs"));
-            arguments.Add(Path.Combine(context.Root, "tools", "GameCompatibility.cs"));
-            arguments.AddRange(Directory.EnumerateFiles(Path.Combine(context.Root, "tools"), "Native*.cs").OrderBy(path => path, StringComparer.Ordinal));
-            arguments.AddRange(Directory.EnumerateFiles(Path.Combine(context.Root, "tools"), "LauncherRecovery*.cs").OrderBy(path => path, StringComparer.Ordinal));
-            var usings = Path.Combine(output, "LauncherGlobalUsings.cs");
-            File.WriteAllText(usings, "global using System;\nglobal using System.IO;\nglobal using System.Collections.Generic;\nglobal using System.Threading;\nglobal using System.Threading.Tasks;\n", new UTF8Encoding(false));
-            arguments.Add(usings); arguments.Add(Path.Combine(context.Root, "src", "ReleaseHttpClient.cs"));
-            arguments.Add(Path.Combine(context.Root, "src", "WindowsReleaseCredentialStore.cs"));
-            var collector = Path.Combine(output, "LauncherDiagnosticBundle.cs");
-            File.WriteAllText(collector, "#nullable disable\n" + File.ReadAllText(Path.Combine(context.Root, "diagnostics", "DiagnosticBundle.cs")), new UTF8Encoding(false));
-            arguments.Add(collector);
-        }
+        arguments.Add(Path.Combine(context.Root, "tools", "SetupHost.cs"));
+        arguments.Add(Path.Combine(context.Root, "tools", "GameCompatibility.cs"));
+        arguments.Add(Path.Combine(context.Root, "tools", "MaintenanceJsonReader.cs"));
+        arguments.AddRange(Directory.EnumerateFiles(Path.Combine(context.Root, "tools"), "Native*.cs").OrderBy(path => path, StringComparer.Ordinal));
+        var usings = Path.Combine(output, "SetupGlobalUsings.cs");
+        File.WriteAllText(usings, "global using System;\nglobal using System.IO;\nglobal using System.Collections.Generic;\nglobal using System.Threading;\nglobal using System.Threading.Tasks;\n", new UTF8Encoding(false));
+        arguments.Add(usings);
+        var collector = Path.Combine(output, "SetupDiagnosticBundle.cs");
+        File.WriteAllText(collector, "#nullable disable\n" + File.ReadAllText(Path.Combine(context.Root, "diagnostics", "DiagnosticBundle.cs")), new UTF8Encoding(false));
+        arguments.Add(collector);
         arguments.AddRange(Directory.EnumerateFiles(Path.Combine(context.Root, "updater"), "*.cs")
-            .Where(path => !launcher || Path.GetFileName(path) != "UpdateHelperProgram.cs").OrderBy(path => path, StringComparer.Ordinal));
+            .Where(path => Path.GetFileName(path) != "PublicReleaseEligibility.cs").OrderBy(path => path, StringComparer.Ordinal));
         arguments.AddRange(Directory.EnumerateFiles(Path.Combine(context.Root, "src", "Observability"), "*.cs").OrderBy(path => path, StringComparer.Ordinal));
         arguments.Add(Path.Combine(context.Root, "diagnostics", "MinimalDiagnosticProjection.cs"));
         Step(context, Path.Combine(context.DotnetRoot, "dotnet.exe"), arguments);
     }
 
+    // shortcut: nothing fails if setup bytes change while SetupVersion stays the same; add a pinned-hash check if that drift bites.
+    internal static string SetupVersion(string root)
+    {
+        var matches = System.Text.RegularExpressions.Regex.Matches(File.ReadAllText(Path.Combine(root, "tools", "SetupHost.cs")), "(?m)^    public const string SetupVersion = \"([^\"\\r\\n]+)\";\\r?$");
+        if (matches.Count != 1) throw new InvalidDataException("Exactly one setup component version is required.");
+        return BuildVersion.Canonical(matches[0].Groups[1].Value);
+    }
+
     internal static string Identity(string root, string output, string role, string? versionOverride = null)
     {
-        var tag = versionOverride == null ? BuildVersion.SourceVersion(File.ReadAllBytes(Path.Combine(root, "src", "Plugin.cs"))) : BuildVersion.Canonical(versionOverride);
+        var tag = role == "Setup" ? SetupVersion(root)
+            : versionOverride == null ? BuildVersion.SourceVersion(File.ReadAllBytes(Path.Combine(root, "src", "Plugin.cs"))) : BuildVersion.Canonical(versionOverride);
         var version = BetterAstralParty.Updating.UpdateVersion.Parse(tag);
         var fileVersion = version.Major + "." + version.Minor + "." + version.Patch + ".0";
         var text = "using System.Reflection;\n[assembly: System.Runtime.Versioning.TargetFramework(\".NETFramework,Version=v4.8\")]\n[assembly: AssemblyProduct(\"BetterAstralParty\")]\n"
-            + "[assembly: AssemblyTitle(\"" + (role == "Launcher" ? "BetterAstralParty native launch host" : "BetterAstralParty Update Helper") + "\")]\n"
+            + "[assembly: AssemblyTitle(\"" + "BetterAstralParty setup host" + "\")]\n"
             + "[assembly: AssemblyVersion(\"" + fileVersion + "\")]\n[assembly: AssemblyFileVersion(\"" + fileVersion + "\")]\n[assembly: AssemblyInformationalVersion(\"" + tag + "\")]\n";
         var path = Path.Combine(output, "ExecutableIdentity.cs"); File.WriteAllText(path, text, new UTF8Encoding(false)); return path;
     }

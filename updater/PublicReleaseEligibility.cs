@@ -53,7 +53,7 @@ namespace BetterAstralParty.Updating
             using var json = JsonDocument.Parse(bytes, new JsonDocumentOptions { MaxDepth = 16 }); var count = 0;
             return Convert(json.RootElement, ref count) as Dictionary<string, object> ?? throw Bad();
 #else
-            return LauncherRecoveryJson.Object(LauncherRecoveryJson.Read(bytes, limit));
+            return MaintenanceJsonReader.Object(MaintenanceJsonReader.Read(bytes, limit));
 #endif
         }
         private static object? Get(Dictionary<string, object> value, string key) => value.TryGetValue(key, out var field) ? field : throw Bad();

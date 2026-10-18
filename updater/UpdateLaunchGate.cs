@@ -5,20 +5,15 @@ namespace BetterAstralParty.Updating
     internal static class UpdateLaunchGate
     {
         internal static void AssertNoReinstall(WindowsFileFence fence) {
-            try { using(var pending=fence.OpenFile("BetterAstralParty.reinstall-v4.pending")) throw new ApplySafetyException(ApplyFailure.RecoveryRequired); }
+            try { using(var pending=fence.OpenFile("BetterAstralParty.reinstall-v5.pending")) throw new ApplySafetyException(ApplyFailure.RecoveryRequired); }
             catch(ApplySafetyException error) when(error.NativeError==2) { }
         }
+        // Maintenance gate: no reinstall in progress, no corrupt fault evidence, no active
+        // operation guard and no unfinished transaction.
         internal static void Check(WindowsFileFence fence) {
-            Check(fence,false);
-        }
-        internal static void CheckHelperRecovery(WindowsFileFence fence) {
-            Check(fence,true);
-        }
-        private static void Check(WindowsFileFence fence,bool helperRecovery) {
             AssertNoReinstall(fence);
             UpdateFaults.Read(fence); // Corrupt fault/guard evidence is unsafe; valid retired failures remain visible in-game.
-            var helperPending=AutomaticHelperUpgrade.Pending(fence);var deliveryPending=HelperDelivery.PendingInstall(fence);
-            if(UpdateFaults.ReadFile(fence,UpdateFaults.OperationPath)!=null || !helperRecovery && (helperPending || deliveryPending) || WholeInstallBridge.Pending(fence)) throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
+            if(UpdateFaults.ReadFile(fence,UpdateFaults.OperationPath)!=null) throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
             foreach(var entry in UpdateRecovery.Scan(fence)) if(entry.Pending) throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
         }
         internal sealed class Lease : IDisposable {

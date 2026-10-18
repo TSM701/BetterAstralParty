@@ -9,14 +9,14 @@ internal static class Program
             if (args.Length < 3 || args[0] != "--project-root") throw new ArgumentException("Run Developer.cmd from the canonical project.");
             var context = new DevContext(args[1]); var command = args[2]; var values = args.Skip(3).ToArray();
             if (command == "help" || command == "--help") {
-                Console.WriteLine("Developer.cmd build|build-launcher|build-helper|compatibility-snapshot|test|migration-status|" + string.Join("|", PackagingCommands.Names) + " [options]");
+                Console.WriteLine("Developer.cmd build|build-setup|compatibility-snapshot|test|migration-status|" + string.Join("|", PackagingCommands.Names) + " [options]");
                 Console.WriteLine("C# developer workflows only. Build does not install or publish. Signing requires a fresh reviewed policy; no certificate is generated automatically.");
                 Console.WriteLine("Build/test --native-assembly <path> selects an exact read-only native metadata snapshot; omitted uses the historical regression snapshot, invalid explicit inputs never fall back.");
                 Console.WriteLine("Build --checks <comma-separated names> runs targeted validation and records only those passes; sdk-path-safety is always included. Omit for the full suite.");
                 return 0;
             }
             if (command == "build") return BuildCommands.Run(context, values);
-            if (command == "build-launcher" || command == "build-helper") return BuildCommands.RunNative(context, command == "build-launcher" ? "Launcher" : "Helper", values);
+            if (command == "build-setup") return BuildCommands.RunNative(context, "Setup", values);
             if (command == "test") return TestCommands.Run(context, values);
             if (command == "compatibility-snapshot") {
                 Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(CompatibilitySnapshot.Run(context, values), new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));

@@ -53,7 +53,7 @@ internal static class LocalInstallFixture
         var bytes = GaPackageContract.PrepareLocalInstallDescriptor(LocalVersion, "Beta", zip, sizes, hashes);
         var text = Encoding.UTF8.GetString(bytes);
         var descriptor = Verify(trust, key, bytes);
-        Check(descriptor.Protocol == 4 && descriptor.Files.Count == paths.Length && descriptor.SettingsSchema == 1,
+        Check(descriptor.Protocol == 5 && descriptor.Files.Count == paths.Length && descriptor.SettingsSchema == 1,
             "local signed proof retains the v4 native-owned/settings contract");
         Check(descriptor.ReleaseId == 0 && descriptor.AssetId == 0 && descriptor.RepositoryId == ReleaseFeedPolicy.BetaRepositoryId,
             "local proof has no fabricated remote IDs and retains the compiled repository pin");
@@ -76,7 +76,7 @@ internal static class LocalInstallFixture
         Reject(() => Verify(trust, key, remoteBytes, Local(PublishedVersion)), "local verifier rejects a remote purpose/header", UpdateFailure.InvalidDescriptor);
 
         foreach (var change in new[] {
-            ("BetterAstralParty.LocalInstallDescriptor/v1", "BetterAstralParty.LocalInstallDescriptor/v2", "unknown local schema"),
+            ("BetterAstralParty.LocalInstallDescriptor/v2", "BetterAstralParty.LocalInstallDescriptor/v2", "unknown local schema"),
             ("purpose=local-install/Beta", "purpose=release/Beta", "cross-purpose local proof"),
             ("repository=" + ReleaseFeedPolicy.BetaRepository, "repository=someone/else", "repository display identity"),
             ("repository-id=" + ReleaseFeedPolicy.BetaRepositoryId.ToString(CultureInfo.InvariantCulture), "repository-id=1", "repository numeric identity"),
@@ -152,7 +152,7 @@ internal static class LocalInstallFixture
         ReceiptChannelState BetaState(string version = LocalVersion, string root = Root, long betaId = ReleaseFeedPolicy.BetaRepositoryId,
             long stableId = 0, string? stableVersion = null) => new(root, "Beta", new string('a', 32), stableId,
                 stableVersion, stableVersion == null ? "-" : new string('C', 64), betaId, version, descriptor.DescriptorSha256);
-        void ValidateGa(ReceiptChannelState? state, string current = LocalVersion, int protocol = 4, int settings = 1,
+        void ValidateGa(ReceiptChannelState? state, string current = LocalVersion, int protocol = 5, int settings = 1,
             VerifiedUpdateDescriptor? incoming = null, string? high = "1.3.1-rc.4") =>
             WholeInstallBridge.ValidateWholeChannel(state, Root, current, protocol, settings, incoming ?? ga, high);
         Check(ReleaseFeedPolicy.StableRepositoryId == 1410226758 && ga.RepositoryId == ReleaseFeedPolicy.StableRepositoryId,
@@ -200,7 +200,7 @@ internal static class LocalInstallFixture
         foreach (var ids in new[] { (0L, 456L), (123L, 0L) })
             RejectContext(() => new UpdateContext(ReleaseFeedPolicy.StableRepository, "Stable", "0.0.0", "1.3.1",
                 ids.Item1, ids.Item2, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId), "GA context rejects a zero remote ID");
-        var legacyGaBytes = Bytes(string.Join("\n", gaText.Replace("UpdateDescriptor/v4", "UpdateDescriptor/v1", StringComparison.Ordinal)
+        var legacyGaBytes = Bytes(string.Join("\n", gaText.Replace("UpdateDescriptor/v5", "UpdateDescriptor/v1", StringComparison.Ordinal)
             .Split('\n').Where(line => !line.StartsWith("purpose=", StringComparison.Ordinal)
                 && !line.StartsWith("repository-id=", StringComparison.Ordinal) && !line.StartsWith("settings-schema=", StringComparison.Ordinal))));
         Reject(() => GaProof(legacyGaBytes), "v1 incoming proof is unsupported", UpdateFailure.InvalidDescriptor);
@@ -222,7 +222,7 @@ internal static class LocalInstallFixture
         var stableLocalBytes = GaPackageContract.PrepareLocalInstallDescriptor(stableLocalVersion, "Stable", zip, sizes, hashes);
         var stableLocalText = Encoding.UTF8.GetString(stableLocalBytes);
         var stableLocal = StableLocalProof(stableLocalBytes);
-        Check(stableLocal.Protocol == 4 && stableLocal.SettingsSchema == 1 && stableLocal.Files.Count == paths.Length
+        Check(stableLocal.Protocol == 5 && stableLocal.SettingsSchema == 1 && stableLocal.Files.Count == paths.Length
             && stableLocal.Channel == "Stable" && stableLocal.Repository == ReleaseFeedPolicy.StableRepository
             && stableLocal.RepositoryId == ReleaseFeedPolicy.StableRepositoryId && stableLocal.ReleaseId == 0 && stableLocal.AssetId == 0
             && stableLocalText.Contains("\npurpose=local-install/Stable\n", StringComparison.Ordinal),
@@ -294,7 +294,7 @@ internal static class LocalInstallFixture
             "repository-id=42", StringComparison.Ordinal)), BetaContext(repositoryId: 42));
         RejectWholeChannel(() => WholeInstallBridge.ValidateWholeChannel(gaReceipt.Channels, Root, "1.3.1", 4, 1, wrongBetaRepo, null),
             "Stable-to-Beta rejects a fixture-signed wrong target repository ID");
-        var legacyBetaBytes = Bytes(string.Join("\n", nextBetaText.Replace("UpdateDescriptor/v4", "UpdateDescriptor/v1", StringComparison.Ordinal)
+        var legacyBetaBytes = Bytes(string.Join("\n", nextBetaText.Replace("UpdateDescriptor/v5", "UpdateDescriptor/v1", StringComparison.Ordinal)
             .Split('\n').Where(line => !line.StartsWith("purpose=", StringComparison.Ordinal)
                 && !line.StartsWith("repository-id=", StringComparison.Ordinal) && !line.StartsWith("settings-schema=", StringComparison.Ordinal))));
         Reject(() => BetaProof(legacyBetaBytes), "legacy incoming Beta proof is unsupported", UpdateFailure.InvalidDescriptor);
@@ -329,7 +329,7 @@ internal static class LocalInstallFixture
             "remote Stable proposal rejects a Stable local-purpose proof", UpdateFailure.InvalidDescriptor);
         RejectContext(() => GaPackageContract.PrepareUpdateDescriptor(stableLocalVersion, "Stable", 123, 456, zip, sizes, hashes),
             "remote Stable builder still rejects a local-looking prerelease");
-        var remotePrerelease = stableLocalText.Replace("BetterAstralParty.LocalInstallDescriptor/v1", "BetterAstralParty.UpdateDescriptor/v4", StringComparison.Ordinal)
+        var remotePrerelease = stableLocalText.Replace("BetterAstralParty.LocalInstallDescriptor/v2", "BetterAstralParty.UpdateDescriptor/v5", StringComparison.Ordinal)
             .Replace("purpose=local-install/Stable", "purpose=release/Stable", StringComparison.Ordinal)
             .Replace("release-id=0", "release-id=123", StringComparison.Ordinal).Replace("asset-id=0", "asset-id=456", StringComparison.Ordinal);
         Reject(() => GaProof(Bytes(remotePrerelease), GaContext(stableLocalVersion)),

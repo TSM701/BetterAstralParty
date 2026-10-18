@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 using System.Web.Script.Serialization;
 
 // Framework JSON parser plus a bounded duplicate-key check before conversion.
-internal static class LauncherRecoveryJson
+internal static class MaintenanceJsonReader
 {
     internal static object? Read(byte[] bytes, int limit)
     {

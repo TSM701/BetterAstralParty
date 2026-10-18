@@ -175,8 +175,6 @@ internal static class FixtureEntry
             if (ancestor.StartsWith(FixtureBoundary.Root + "\\", StringComparison.OrdinalIgnoreCase))
                 DenyIo(() => Directory.Move(WindowsPath.ForIo(Scoped(ancestor)), WindowsPath.ForIo(Scoped(ancestor + "-moved"))), "ancestor replacement blocked by held fence");
             var privateId = fence.CreatePrivateDirectory("history"); fence.AssertPrivateDirectory("history");
-            fence.ArchiveDirectory("history", "history-archived", privateId.Text);
-            Check(fence.DirectoryIdentity("history-archived").Text == privateId.Text, "private directory held archive preserves identity");
             fence.Recheck();
             var directories = WindowsPath.Directories(root, "*"); var count = 0;
             foreach (var directory in directories) { Check(!directory.StartsWith(@"\\?\", StringComparison.Ordinal), "directory enumeration returns ordinary identity"); ++count; }
@@ -227,25 +225,17 @@ internal static class FixtureEntry
         using (var fence = new WindowsFileFence(root))
         {
             var rootId = fence.RootIdentity.Text;
-            foreach (var kind in new[] { "stage", "txn", "helper", "helperauto", "helperbridge", "wholeintent", "wholehist" }) {
+            foreach (var kind in new[] { "stage", "txn" }) {
                 var relative = UpdateWorkPath.New(kind); var identity = UpdateWorkPath.Create(fence, relative);
                 Check(UpdateWorkPath.IsContained(relative, kind) && fence.DirectoryIdentity(relative).Same(identity), "new " + kind + " is private contained game-relative work");
                 Check(UpdateWorkPath.Directories(fence, kind).Contains(relative), "new " + kind + " is found under selected game fence");
             }
             Check(fence.RootIdentity.Text == rootId && Directory.GetDirectories(WindowsPath.ForIo(root)).Length == 1, "all new work shares one child namespace without changing game-root identity");
-            var source = UpdateWorkPath.New("wholeintent"); var destination = UpdateWorkPath.WholeHistory(source);
-            var sourceId = UpdateWorkPath.Create(fence, source).Text;
-            using (var file = fence.OpenFile(source + "/plan", true, true)) { file.Stream.Write(Payload, 0, Payload.Length); file.Flush(); }
-            fence.ArchiveDirectory(source, destination, sourceId);
-            Check(fence.DirectoryIdentity(destination).Text == sourceId && File.ReadAllBytes(WindowsPath.ForIo(fence.Full(destination + "/plan"))).SequenceEqual(Payload), "same-parent contained archive preserves directory and file bytes");
-            var current = UpdateWorkPath.New("wholeintent"); var currentId = UpdateWorkPath.Create(fence, current).Text;
-            Reject(() => fence.ArchiveDirectory(current, destination, currentId), "nested archive never overwrites an existing destination", ApplyFailure.FileBusy);
-            Reject(() => fence.ArchiveDirectory(current, "cross-parent-history", currentId), "nested archive rejects cross-parent rename", ApplyFailure.UnsafePath);
             DenyIo(() => Directory.Move(WindowsPath.ForIo(fence.Full(UpdateWorkPath.Root)), WindowsPath.ForIo(root + "-replaced")), "held work parent identity cannot be replaced");
             var flat = "bap-v4-stage-" + new string('a', 32); fence.CreatePrivateDirectory(flat);
-            Check(UpdateWorkPath.Directories(fence, "stage").Contains(flat), "retained flat protocol-4 work remains observable at its original identity");
-            try { UpdateWorkPath.RequireContained(flat, "stage"); throw new Exception("Flat mutation accepted"); }
-            catch (ApplySafetyException error) { Check(error.Failure == ApplyFailure.RecoveryRequired && (string?)error.Data["BapRecoveryReason"] == "LegacyFlatWorkPending", "old flat pending work produces actionable recovery without migration"); }
+            var legacy = UpdateWorkPath.Root + "/bap-v4-stage-" + new string('c', 32); fence.CreatePrivateDirectory(legacy);
+            Check(!UpdateWorkPath.Directories(fence, "stage").Contains(flat) && !UpdateWorkPath.Directories(fence, "stage").Contains(legacy), "protocol-4 work is never adopted as v5 work");
+            Reject(() => UpdateWorkPath.RequireContained(flat, "stage"), "flat protocol-4 work cannot be mutated as v5 work", ApplyFailure.UnsafePath);
             var unknown = UpdateWorkPath.Root + "/unrelated-user-directory"; fence.CreatePrivateDirectory(unknown);
             Check(!UpdateWorkPath.Directories(fence, "stage").Contains(unknown), "unknown container descendants are not adopted as update work");
             Reject(() => UpdateWorkPath.Create(fence, flat), "new work cannot be written to the historical flat namespace", ApplyFailure.UnsafePath);
@@ -257,7 +247,6 @@ internal static class FixtureEntry
         using (var fence = new WindowsFileFence(linked)) {
             Reject(() => UpdateWorkPath.Create(fence, UpdateWorkPath.New("stage")), "linked namespace ancestor rejects creation", ApplyFailure.LinkedFile);
             Reject(() => UpdateWorkPath.Directories(fence, "stage").ToArray(), "linked namespace ancestor rejects discovery", ApplyFailure.LinkedFile);
-            Reject(() => fence.ArchiveDirectory(UpdateWorkPath.New("wholeintent"), UpdateWorkPath.New("wholehist"), "00000000:0000000000000000"), "linked namespace ancestor rejects archive", ApplyFailure.LinkedFile);
         }
         Check(Directory.GetFileSystemEntries(WindowsPath.ForIo(foreign)).Length == 0, "namespace link refusals preserve unrelated target contents");
     }

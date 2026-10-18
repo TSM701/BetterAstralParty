@@ -21,7 +21,7 @@ namespace BetterAstralParty
 #endif
     public static class Plugin
     {
-        public const string Guid = "kr.betterastralparty.mod", Version = "1.3.0", UpdateProtocol = "4", SettingsSchema = "1";
+        public const string Guid = "kr.betterastralparty.mod", Version = "1.4.0", UpdateProtocol = "5", SettingsSchema = "1";
 #if WRONG_NAME
         public const string Name = "OtherPlugin";
 #else

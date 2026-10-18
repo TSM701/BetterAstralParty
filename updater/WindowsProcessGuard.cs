@@ -111,7 +111,10 @@ namespace BetterAstralParty.Updating
                 return captured;
             } catch { captured.Dispose(); throw; }
         }
-        internal static void AssertNoRunning(IEnumerable<string> exactImages)
+        internal static void AssertNoRunning(IEnumerable<string> exactImages) { AssertNoRunning(exactImages, 0); }
+        // In-process apply: the calling game process is the only instance allowed to run.
+        internal static void AssertNoOtherRunning(IEnumerable<string> exactImages) { AssertNoRunning(exactImages, GetCurrentProcessId()); }
+        private static void AssertNoRunning(IEnumerable<string> exactImages, uint allowed)
         {
             var images = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             foreach (var image in exactImages)
@@ -130,7 +133,7 @@ namespace BetterAstralParty.Updating
                 while (more)
                 {
                     List<string> expected;
-                    if (images.TryGetValue(entry.Name, out expected!))
+                    if (entry.Pid != allowed && images.TryGetValue(entry.Name, out expected!))
                     {
                         // Resolve matching names only. An unresolved matching process is unsafe.
                         using (var process = OpenProcess(0x00100000 | 0x1000, false, entry.Pid))

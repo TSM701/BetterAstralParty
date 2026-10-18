@@ -26,7 +26,6 @@ internal static partial class TestCommands
         var project = name switch {
             "updater-transaction" => "updater-safety-tests/BetterAstralParty.TransactionTests.csproj",
             "updater-apply-boundary" => "updater-safety-tests/BetterAstralParty.ApplyBoundaryTests.csproj",
-            "updater-helper" => "updater-safety-tests/BetterAstralParty.HelperTests.csproj",
             "staging" => "updater-safety-tests/BetterAstralParty.StagingTests.csproj",
             _ => throw new ArgumentException("Unknown inert updater fixture: " + name)
         };
@@ -43,15 +42,8 @@ internal static partial class TestCommands
         else if (name == "updater-transaction") {
             if (!options.TryGetValue("plugin-path", out var probe)) throw new ArgumentException("Exact compiled --plugin-path is required for the metadata probe.");
             pin(Path.GetFullPath(probe)); arguments.AddRange(new[] { old, target, inert, Path.GetFullPath(probe) });
-        } else if (name == "updater-helper") {
-            var helper = UpdateFrameworkCompile(context, inputs, "fixture-helper.exe", UpdateFixtureSources(context, true, true), pin, "BetterAstralParty.Updating.UpdateHelperProgram", "NETFRAMEWORK,BAP_FIXTURE_HELPER");
-            var helperBoundary = Path.Combine(Path.GetTempPath(), "bap-v4-helper-fixture-" + Guid.NewGuid().ToString("N"));
-            Check(!Directory.Exists(helperBoundary), "Fresh full helper boundary"); Directory.CreateDirectory(helperBoundary);
-            UpdateGenerated(helperBoundary, ".bap-v4-helper-fixture-root", "BetterAstralParty.HelperFixtureRoot/v1\n");
-            environment["BAP_HELPER_FIXTURE_ROOT"] = helperBoundary; environment["BAP_UPDATER_LAUNCHER_PID"] = null;
-            root = Path.Combine(helperBoundary, "fixtures"); arguments[1] = root; arguments.AddRange(new[] { old, target, inert, helper });
         }
         Ensure(context.Run(Dotnet(context), arguments, cwd: context.Root, env: environment, timeoutMilliseconds: 300000, logPath: Path.Combine(stage, "fixture-run.log")), "Full inert updater fixture: " + name);
-        context.WriteJsonCreateNew(Path.Combine(stage, "updater-safety-parity.json"), new { passed = true, name, root, protocol = 4, ownedNativeFiles = 5, networkUsed = false, operationalKeyUsed = false, liveGameSteamOrUserInstallationUsed = false });
+        context.WriteJsonCreateNew(Path.Combine(stage, "updater-safety-parity.json"), new { passed = true, name, root, protocol = 5, ownedNativeFiles = 4, networkUsed = false, operationalKeyUsed = false, liveGameSteamOrUserInstallationUsed = false });
     }
 }

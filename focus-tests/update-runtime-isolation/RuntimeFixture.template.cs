@@ -22,7 +22,8 @@ public static class Probe {
     public static void Require(bool value, string reason) { if (!value) throw new InvalidOperationException(reason); }
     public static int Count(string name) { return Calls.FindAll(x => x == name).Count; }
 }
-static class Time { internal static int frameCount; }
+static class Time { internal static int frameCount; internal static float realtimeSinceStartup = 0f; }
+static class StartupGuard { internal const float HealthySeconds = 90f; internal static int HealthyCalls; internal static void Healthy() { HealthyCalls++; } }
 enum AutomaticUpdateStatus { Idle, CheckingInstallation }
 enum DiagnosticFeature { Coordinator, CoreUi, Loader }
 enum DiagnosticPhase { None, Catalog }
@@ -93,6 +94,7 @@ static class Plugin {
     private static bool _catalogWarningShown;
     internal static void ResetCatalogObserver() { Catalogs = null; _catalogWarningShown = false; }
     internal static void PollUpdatePreferences() { Probe.Visit("preferences.poll"); }
+    internal static void AdoptConfirmedChannel() { }
     internal static void ObserveUpdateDiagnostics() { Probe.Visit("updates.diagnostics"); }
 __POLL_CATALOGS__
 }

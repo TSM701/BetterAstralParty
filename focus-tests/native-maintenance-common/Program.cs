@@ -40,12 +40,12 @@ internal static partial class NativeCommonFixture
             Write(game + "\\AstralParty_INT.exe", Encoding.ASCII.GetBytes("inert common fixture, never executed"));
             Value = (NativeMaintenanceBundle)FormatterServices.GetUninitializedObject(typeof(NativeMaintenanceBundle));
             using (var fence = new WindowsFileFence(game)) Set("RootIdentity", fence.RootIdentity.Text);
-            Set("GameRoot", game); Set("PackageRoot", package); Set("Version", "1.3.0"); Set("ManifestHash", new string('A', 64)); Set("BuildIdentity", new string('B', 64));
+            Set("GameRoot", game); Set("PackageRoot", package); Set("Version", "1.4.0"); Set("ManifestHash", new string('A', 64)); Set("BuildIdentity", new string('B', 64));
             Set("Source", new WindowsFileFence(package));
             Set("_files", new Dictionary<string, WindowsFileFence.FileLease>(StringComparer.OrdinalIgnoreCase));
             Set("Expected", InstallReceipt.Owned.ToDictionary(key => key, key => new string('A', 64), StringComparer.Ordinal));
             Set("Hashes", new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { { ".deps/bepinex/BepInEx/core/fixture.dll", new string('C', 64) } });
-            Value.Observation = null; Value.Mode = null; Value.Observed = null;
+            Value.Mode = null; Value.Observed = null;
         }
         private void Set(string name, object value) { typeof(NativeMaintenanceBundle).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(Value, value); }
         public void Dispose() { Value.Dispose(); }

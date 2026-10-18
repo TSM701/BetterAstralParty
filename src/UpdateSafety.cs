@@ -26,18 +26,16 @@ internal sealed class FileUpdateSafety(string root, Func<bool, bool, Task> save,
             var operation = UpdateFaults.ReadFile(fence, UpdateFaults.OperationPath);
             if (fault == null && operation != null && UpdateFaults.OwnerAlive(fence, operation)) return new UpdateSafetySnapshot(Busy: true, Stage: operation.Stage == "-" ? null : operation.Stage);
             fault = UpdateFaults.Read(fence); // Includes interrupted guard and save-failure evidence.
-            var stage = UpdateRecovery.PendingTicket(fence, operation, fault);
-            if (stage != null && fault == null) {
-                using var file = fence.OpenFile(stage + "/handoff.ticket"); var ticket = UpdateTicket.Parse(UpdateTicket.Read(file, UpdateTicket.MaxBytes)); ticket.Recheck(fence);
-                fault = UpdateFaults.Fail(fence, ticket.Context, FaultPhase.Recovery, FaultReason.Recovery, stage);
-            }
+            // Startup recovery normally finishes a pending transaction before this probe runs.
+            var pending = UpdateRecovery.PendingWork(fence); var stage = pending?.Stage;
+            if (pending != null && fault == null) fault = UpdateFaults.Fail(fence, UpdateRecovery.RecoveryContext(fence, pending, UpdateTrust.Production()), FaultPhase.Recovery, FaultReason.Recovery, pending.Stage);
             ReceiptChannelState? channels = null; string? installed = null;
             if (fault == null && stage == null) {
                 try { using var file = fence.OpenFile(InstallReceipt.Path); var receipt = InstallReceipt.Parse(UpdateTicket.Read(file, 16384));
                     using var plugin = fence.OpenFile(UpdateTrust.PluginPath); var metadata = InstalledPluginMetadata.Read(UpdateTicket.Read(plugin, UpdateTrust.MaxFileBytes));
                     if (plugin.Hash() != receipt.Files[UpdateTrust.PluginPath]) throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
                     channels = receipt.Channels; installed = metadata.Version;
-                    if (channels != null && (channels.Root != fence.RootIdentity.Text || channels.ActiveVersion != installed || metadata.UpdateProtocol != 4 || metadata.SettingsSchema != 1))
+                    if (channels != null && (channels.Root != fence.RootIdentity.Text || channels.ActiveVersion != installed || metadata.UpdateProtocol != UpdateTrust.Protocol || metadata.SettingsSchema != 1))
                         throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
                 } catch (ApplySafetyException error) when (error.NativeError == 2) { }
                 if (readiness != null) await readiness().ConfigureAwait(false);
