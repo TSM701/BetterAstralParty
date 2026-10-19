@@ -27,6 +27,16 @@ internal static partial class TestCommands
         using var native = Native(context);
         using var cine = AssemblyDefinition.ReadAssembly(Path.Combine(context.Root, ".research/extracted/Cinemachine.dll.dll"));
         using var core = AssemblyDefinition.ReadAssembly(Path.Combine(context.Root, ".research/extracted/mscorlib.dll.dll"));
+        // Field dice: pooled controllers, root placed once by ThrowDice, animation only on the Container child.
+        var dicePool = native.MainModule.GetType("Core.DiceManager").Fields.SingleOrDefault(field => field.Name == "_diceControllerPool");
+        Check(dicePool?.FieldType.FullName == "Core.DiceControllerPool" && native.MainModule.GetType("Core.DiceControllerPool").BaseType.FullName == "Core.BasePool`1<DiceController>"
+            && native.MainModule.GetType("Core.BasePool`1").Fields.Any(field => field.Name == "Cache" && field.FieldType.FullName.StartsWith("System.Collections.Generic.Dictionary`2<T,System.Boolean>", StringComparison.Ordinal)), "Native dice controller pool cache");
+        var throwDice = native.MainModule.GetType("Core.DiceManager").NestedTypes.Single(nested => nested.Name.StartsWith("<ThrowDice>", StringComparison.Ordinal)).Methods.Single(method => method.Name == "MoveNext");
+        Check(throwDice.Body.Instructions.Count(instruction => instruction.Operand is MethodReference reference && reference.Name == "ReadyDiceData") >= 2
+            && throwDice.Body.Instructions.Any(instruction => instruction.Operand is float value && value == 48f), "Native dice root placed above the player by ThrowDice");
+        Check(Operands(NativeMethod(native, "DiceController", "Awake")).Contains("DiceController::Container", StringComparison.Ordinal)
+            && Operands(NativeMethod(native, "DiceController", "Awake")).Contains("Animator", StringComparison.Ordinal), "Native dice animator lives on the Container child, not the moved root");
+        Contains(ReadSource(context, "src/FieldDiceUi.cs"), new[] { "\"_diceControllerPool\"", "\"Cache\"", "FieldZoomUi.DiceViewDelta" }, "Dice follow the camera displacement from the native default view");
         foreach (var (type, name) in new[] { ("Core.Scene.BattleSceneController", "freeCamera"), ("Core.Scene.BattleSceneController", "freeObject"), ("Core.Unit.LandManager", "NodeDict"), ("Core.Camera.CharacterCamera", "vCamera"), ("Core.FreeCameraObject", "status") })
             Check(native.MainModule.GetType(type).Fields.Single(field => field.Name == name).IsPublic, "Public camera field: " + type + "." + name);
         var follow = cine.MainModule.GetType("Cinemachine.CinemachineTransposer").Fields.Single(field => field.Name == "m_FollowOffset");

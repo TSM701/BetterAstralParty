@@ -6,7 +6,9 @@ using System.Linq;
 using System.Reflection;
 
 namespace UnityEngine {
-    public readonly record struct Vector2(float x, float y) { public float sqrMagnitude => x*x+y*y; public static Vector2 operator -(Vector2 a,Vector2 b)=>new(a.x-b.x,a.y-b.y); }
+    public readonly record struct Vector2(float x, float y) { public float sqrMagnitude => x*x+y*y; public static Vector2 up=>new(0,1); public static Vector2 operator -(Vector2 a,Vector2 b)=>new(a.x-b.x,a.y-b.y); public static Vector2 operator *(Vector2 a,float d)=>new(a.x*d,a.y*d); }
+    public sealed class Camera { public Camera(IntPtr pointer)=>throw new Exception("Unexpected field camera in counter fixture"); public bool enabled=>false; public Vector3 WorldToScreenPoint(Vector3 point)=>point; }
+    public static class Screen { public static int height=>throw new Exception("Unexpected screen read in counter fixture"); }
     public readonly record struct Vector3(float x,float y,float z) { public static Vector3 zero=>default; }
     public readonly record struct Color(float r,float g,float b);
     public static class Time { public static float unscaledTime; }
@@ -41,10 +43,11 @@ internal sealed class RuntimeObject {
         object? value=name switch {
             "isDisposed"=>Disposed,"onStage"=>OnStage,"visible"=>Visible,
             "numChildren" when Kind=="Parent"=>Children.Count,
+            "width" or "height" when Kind=="Parent"=>Data.GetValueOrDefault(name) ?? 0f,
             "Count" when Kind=="List"=>Children.Count,
             _=>Data.GetValueOrDefault(name)};
         bool ok=name is "isDisposed" or "onStage" or "visible" || Kind switch {
-            "Parent"=>name=="numChildren","List"=>name=="Count","Player"=>name=="characterType",
+            "Parent"=>name is "numChildren" or "width" or "height","List"=>name=="Count","Player"=>name=="characterType",
             "Info"=>name=="MapType","Property"=>name=="ExtraMovePoint","Reactive"=>name=="Value","RoomPlayer"=>name=="Id",
             "Anchor"=>name is "xMin" or "yMin" or "width" or "height","Icon"=>name is "width" or "height",_=>false};
         if(!ok||value is not T typed)throw new Exception("Strict typed getter "+Kind+"."+name+"/"+typeof(T).Name);
@@ -98,14 +101,19 @@ internal static class NativeUi {
     internal static readonly List<RuntimeObject> Created=new();
     internal static RuntimeObject? Icon(RuntimeObject parent,string name,float x,float y,float size){if(name!="Com_Icon_Counter"||size!=36)throw new Exception("Unknown counter artwork");var icon=new RuntimeObject("Icon"){Parent=parent,Data={{"width",150f},{"height",150f},{"x",x},{"y",y},{"touchable",false}}};parent.Children.Add(icon);Created.Add(icon);return icon;}
     internal static void Position(RuntimeObject icon,float x,float y,float scale){if(icon.Kind!="Icon"||scale!=.24f)throw new Exception("Unexpected layout target");icon.Data["x"]=x;icon.Data["y"]=y;icon.Writes++;}
+    // Owned hero-plate layer: an empty mod component inside the native parent.
+    internal static RuntimeObject Component(RuntimeObject parent,float width,float height){if(width!=0||height!=0)throw new Exception("Unexpected layer size");var layer=new RuntimeObject("Parent");parent.Call("AddChild",layer);return layer;}
 }
+internal static class FieldZoomUi {internal static float IndicatorScale=>1f;}
+internal static class FieldMonsterPlates { internal static readonly List<RuntimeObject> Adopted=new(); internal static IReadOnlyList<RuntimeObject> Plates=>Adopted; }
+internal sealed class FloatSetting {internal float Value=1f;}
 internal static class ModUi {internal static bool IsOpen;}
 internal static class FieldIndicatorOpacity {internal static bool Hidden;}
 internal static class FieldNameFont {internal static bool Apply(RuntimeObject label,RuntimeObject? ui)=>true;}
 internal static class VisibleCombatAdvisor {internal static bool IsPve(int map)=>map==2;}
 internal sealed class Setting {internal bool Value=true;}
 internal sealed class Diagnostics {internal bool IsRecording=>false;internal void State(string key,string value){}internal void Write(string value){}internal void Error(string key,Exception ex)=>throw ex;}
-internal static class Plugin {internal static readonly Setting FieldBuffs=new();internal static readonly Diagnostics Diagnostics=new();}
+internal static class Plugin {internal static readonly Setting FieldBuffs=new();internal static readonly FloatSetting FieldIndicatorHeight=new();internal static readonly Diagnostics Diagnostics=new();}
 internal static class Compatibility {internal static bool Allowed(string feature)=>true;internal static void Block(string feature,Exception ex,Action cleanup){cleanup();throw new Exception("Unexpected production failure",ex);}}
 
 internal sealed class World {

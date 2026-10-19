@@ -31,7 +31,7 @@ using (var zip = ZipFile.OpenRead(bundle.ArchivePath))
     using var text = new StreamReader(entry.Open());
     var value = text.ReadToEnd();
     Check(!value.Contains("FAKE_NET6"), "net6 English/Korean privacy filter");
-    Check(value.Contains("public-phase; phase=7") && value.Contains("performance; frames=42"), "net6 useful public records survive");
+    Check(value.Contains("| phase=7") && value.Contains("performance frames=42"), "net6 useful public records survive");
     using var summaryReader = new StreamReader(zip.GetEntry("summary.json")!.Open());
     using var summary = JsonDocument.Parse(summaryReader.ReadToEnd());
     Check(summary.RootElement.GetProperty("environment").GetProperty("pluginFileProductVersion").GetString() == "1.0.0-rc.2"
@@ -97,9 +97,9 @@ using (var zip = ZipFile.OpenRead(damaged.ArchivePath))
     Check(!json.Contains("FAKE_RAW") && !json.Contains(workId) && !json.Contains(targetKey) && !json.Contains(root), "net6 raw state and original root or operation identities excluded");
     using var summaryReader = new StreamReader(zip.GetEntry("summary.json")!.Open()); using var summary = JsonDocument.Parse(summaryReader.ReadToEnd());
     Check(!summary.RootElement.GetProperty("environment").GetProperty("gameRootValidated").GetBoolean()
-        && summary.RootElement.GetProperty("collectorVersion").GetString() == "7", "net6 shared collection preserves markerless provenance");
+        && summary.RootElement.GetProperty("collectorVersion").GetString() == "8", "net6 shared collection preserves markerless provenance");
     using var logReader = new StreamReader(zip.GetEntry("logs/game-diagnostics-current.log")!.Open()); var logText = logReader.ReadToEnd();
-    Check(logText.Contains("public-phase; phase=7") && !logText.Contains("FAKE_RAW"), "net6 markerless owned logs preserve typed projection privacy");
+    Check(logText.Contains("| phase=7") && !logText.Contains("FAKE_RAW"), "net6 markerless owned logs keep redacted full text");
 }
 Check(receiptHash == Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(receiptPath)))
     && File.Exists(Path.Combine(backups, "pending.json")), "net6 diagnostics never mutates receipt or recovery evidence");

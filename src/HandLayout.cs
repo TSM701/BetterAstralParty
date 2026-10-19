@@ -9,7 +9,6 @@ internal static class HandLayout
     internal static int Mode(bool enabled, string expand) => !enabled ? 0 : expand == "Click" ? 2 : 1;
     internal static int NextMode(bool enabled, string expand) => (Mode(enabled, expand) + 2) % 3;
     internal static string ModeLabel(int mode) => mode == 0 ? "기본" : mode == 2 ? "클릭 펼치기" : "호버 펼치기";
-    internal const float FoldedOpacity = .75f;
     internal const float GuideRightRotation = 90f;
     internal static string DropHint(bool korean) => korean ? "카드를 이곳에\n놓으세요" : "Drop card\nhere";
     internal static Slot ClickRow(float width, float height, int count, int index, float aspect, float pileTop)

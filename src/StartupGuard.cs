@@ -21,6 +21,42 @@ internal static class StartupGuard
 
     internal static string Directory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BetterAstralParty", "Runtime");
 
+    // BetterAstralParty-Mod.cmd writes this empty file right before asking Steam to start app 2622000, so the
+    // Steam overlay and checkout bind to the real game. A later Steam-client launch must stay vanilla:
+    // the request is deleted on every load and honoured only while fresh and only when the delete succeeded.
+    internal const string LaunchRequestName = "mod-launch.request";
+    internal static readonly TimeSpan LaunchRequestLifetime = TimeSpan.FromMinutes(3);
+    internal static bool LaunchRequestFresh(TimeSpan age) => age >= TimeSpan.FromSeconds(-5) && age <= LaunchRequestLifetime;
+    internal static string LaunchRequestReason { get; private set; } = "request-absent";
+    internal static bool ConsumeLaunchRequest()
+    {
+        try
+        {
+            var path = Path.Combine(Directory, LaunchRequestName);
+            var info = new FileInfo(path);
+            if (!info.Exists) { LaunchRequestReason = "request-absent"; return false; }
+            var age = DateTime.UtcNow - info.LastWriteTimeUtc;
+            LaunchRequestReason = age < TimeSpan.FromSeconds(-5) ? "request-future" : age > LaunchRequestLifetime ? "request-stale" : "request-fresh";
+            File.Delete(path);
+            return LaunchRequestFresh(age);
+        }
+        catch { LaunchRequestReason = "request-unreadable"; return false; }
+    }
+
+    // Why BAP was ON or OFF for the latest launch, in fixed tokens the collector keeps. Never throws.
+    internal static void RecordLaunchDecision(bool active, string route)
+    {
+        try
+        {
+            System.IO.Directory.CreateDirectory(Directory);
+            var text = "time=" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture) + "\nactive=" + (active ? "true" : "false")
+                + "\nroute=" + route + "\nrequest=" + LaunchRequestReason + "\n";
+            var path = Path.Combine(Directory, "launch-decision.state"); var temporary = path + ".tmp";
+            File.WriteAllText(temporary, text, Encoding.ASCII); File.Move(temporary, path, true);
+        }
+        catch { }
+    }
+
     // Called first in Load; never throws. Storage failure leaves normal mode on.
     internal static void Begin(string version, string gameRoot)
     {
@@ -105,10 +141,20 @@ internal static class StartupGuard
         var path = Path.Combine(_directory, "safe-mode.state"); var temporary = path + ".tmp";
         File.WriteAllText(temporary, text, Encoding.ASCII); File.Move(temporary, path, true);
     }
-    // Build identity from the game executable's size and write time; never its contents.
+    // Build identity from the size and write time of the game executable and GameAssembly.dll, never their contents.
+    // Game hotfixes usually replace GameAssembly.dll and data while the player executable stays the same.
     private static string GameIdentity(string gameRoot)
     {
-        try { var info = new FileInfo(Path.Combine(gameRoot, "AstralParty_INT.exe")); return info.Length.ToString(CultureInfo.InvariantCulture) + "-" + info.LastWriteTimeUtc.Ticks.ToString(CultureInfo.InvariantCulture); }
+        try
+        {
+            var identity = "";
+            foreach (var name in new[] { "AstralParty_INT.exe", "GameAssembly.dll" })
+            {
+                var info = new FileInfo(Path.Combine(gameRoot, name));
+                identity += (identity.Length == 0 ? "" : "-") + (info.Exists ? info.Length.ToString(CultureInfo.InvariantCulture) + "-" + info.LastWriteTimeUtc.Ticks.ToString(CultureInfo.InvariantCulture) : "0-0");
+            }
+            return identity;
+        }
         catch { return "unknown"; }
     }
 }

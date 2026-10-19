@@ -64,7 +64,8 @@ internal static class GameUi {
 }
 internal static class PvpSafety { internal static bool Suspended; }
 internal sealed class OpacitySetting { internal bool Value=true; }
-internal static class Plugin { internal static readonly OpacitySetting IndicatorFade=new(), IndicatorHide=new(); }
+internal static class Plugin { internal static readonly OpacitySetting IndicatorFade=new(), IndicatorHide=new(); internal static readonly StrengthSetting IndicatorFadeStrength=new(), IndicatorHideDistance=new(){Value=.6f}; }
+internal sealed class StrengthSetting { internal float Value=1f; }
 __SOURCE__
 public static class OpacityCheck {
     public static int Assertions;
@@ -89,6 +90,7 @@ public static class OpacityCheck {
         Equal(.8f*s.Player.Display.Alpha,.18f);Equal(.4f*s.Monster.Display.Alpha,.18f);
         FieldIndicatorOpacity.Tick(0);Equal(s.Monster.Alpha,1);Equal(s.Player.Alpha,.5f);
         int writes=s.Monster.Writes+s.Player.Writes;FieldIndicatorOpacity.Clear();Assert(writes==s.Monster.Writes+s.Player.Writes);
+        var weak=new Scene();Plugin.IndicatorFadeStrength.Value=.5f;FieldIndicatorOpacity.Tick(.5f);Equal(weak.Monster.Alpha,.725f);Plugin.IndicatorFadeStrength.Value=0;FieldIndicatorOpacity.Tick(.5f);Equal(weak.Monster.Alpha,1);Plugin.IndicatorFadeStrength.Value=1;FieldIndicatorOpacity.Clear();
         foreach(float alpha in new[]{0f,.1f,.5f,1f,1.5f}) {
             s=new Scene();s.Monster.NativeAlpha(alpha);s.Player.NativeAlpha(alpha);FieldIndicatorOpacity.Tick(.5f);
             Equal(s.Monster.Alpha,alpha*.45f);Equal(s.Player.Alpha,alpha*.45f);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,alpha);Equal(s.Player.Alpha,alpha);

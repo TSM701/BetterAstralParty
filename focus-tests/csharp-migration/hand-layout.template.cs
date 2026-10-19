@@ -32,7 +32,8 @@ static class Input {
     public static bool GetMouseButtonUp(int button)=>Up;
 }
 static class Application { public static bool isFocused = true; }
-static class Plugin { public static readonly DiagnosticStub Diagnostics=new(); }
+static class Plugin { public static readonly DiagnosticStub Diagnostics=new(); public static readonly FloatSetting FoldedHandOpacity=new(){Value=.75f}; }
+sealed class FloatSetting { public float Value; }
 sealed class DiagnosticStub { public bool IsRecording=false; public readonly List<string> Lines=new(); public void Write(string message)=>Lines.Add(message); }
 static class GameUi {
     public static RuntimeObject[] Path=Array.Empty<RuntimeObject>();
@@ -46,7 +47,7 @@ public static class MotionCheck {
     static Vector2 _pilePressAt;
     static IntPtr _focused;
     static Dictionary<HandGroup,RuntimeObject> PileTargets = new();
-    sealed class Entry { public bool HasLayout, AlphaOwned, Rendered, Owned; public bool? Batching; public Vector2 Applied,LastShow; public RuntimeObject? ScaleTween; public RuntimeObject Card = new(); public HandGroup Group; public int Id,Order,FrameOrder; public float AspectValue; }
+    sealed class Entry { public bool HasLayout, AlphaOwned, Rendered, Owned; public float OwnedAlpha; public bool? Batching; public Vector2 Applied,LastShow; public RuntimeObject? ScaleTween; public RuntimeObject Card = new(); public HandGroup Group; public int Id,Order,FrameOrder; public float AspectValue; }
     static readonly Dictionary<IntPtr,Entry> Entries = new();
     static readonly List<Entry> FrameCards = new();
     static readonly List<HandGroup> FrameGroups = new();
@@ -187,6 +188,11 @@ __FOCUS_BLOCK__
         SetFoldedOpacity(alphaEntry,true); alphaEntry.Card.Set("alpha",.3f);
         SetFoldedOpacity(alphaEntry,false); Check(alphaEntry.Card.Get<float>("alpha")==.3f);
         SetFoldedOpacity(alphaEntry,true); Check(alphaEntry.Card.Get<float>("alpha")==.3f);
+        var tuned = new Entry { Card = Node(null) };
+        SetFoldedOpacity(tuned,true); Plugin.FoldedHandOpacity.Value=.4f; SetFoldedOpacity(tuned,true);
+        Check(tuned.Card.Get<float>("alpha")==.4f);
+        SetFoldedOpacity(tuned,false); Check(tuned.Card.Get<float>("alpha")==1f);
+        Plugin.FoldedHandOpacity.Value=.75f;
         var pileTarget=Node(null); pileTarget.Set("visible",true);
         PileTargets[HandGroup.Attack]=pileTarget;
         var hitPath=new[]{pileTarget};

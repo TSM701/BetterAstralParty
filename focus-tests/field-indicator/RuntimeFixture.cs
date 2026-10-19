@@ -12,7 +12,16 @@ namespace UnityEngine
         public Vector2(float x, float y) { this.x = x; this.y = y; }
         public float sqrMagnitude => x * x + y * y;
         public static Vector2 operator -(Vector2 a, Vector2 b) => new(a.x - b.x, a.y - b.y);
+        public static Vector2 operator *(Vector2 a, float d) => new(a.x * d, a.y * d);
+        public static Vector2 up => new(0, 1);
     }
+    public sealed class Camera
+    {
+        public Camera(IntPtr pointer) => throw new Exception("Unexpected field camera in input fixture");
+        public bool enabled => false;
+        public Vector3 WorldToScreenPoint(Vector3 point) => point;
+    }
+    public static class Screen { public static int height => throw new Exception("Unexpected screen read in input fixture"); }
     public readonly record struct Vector3(float x, float y, float z)
     {
         public static Vector3 zero => default;
@@ -88,7 +97,7 @@ __PRODUCTION__
         internal static bool Visible(RuntimeObject? item) => item != null && !item.Get<bool>("isDisposed") && item.Get<bool>("visible");
         internal static IEnumerable<RuntimeObject> PointerPath() => Path;
         internal static RuntimeObject? Find(RuntimeObject root, string type) => null;
-        internal static void Dispose(RuntimeObject item) => item.Set("isDisposed", true);
+        internal static void Dispose(RuntimeObject? item) => item?.Set("isDisposed", true);
     }
     internal static class FieldNameFont
     { internal static bool Apply(RuntimeObject label, RuntimeObject? ui) => true; }
@@ -96,7 +105,11 @@ __PRODUCTION__
     {
         internal static RuntimeObject? Icon(RuntimeObject parent, string item, float x, float y, float size) => throw new Exception("Unexpected counter creation in click-only fixture");
         internal static void Position(RuntimeObject item, float x, float y, float scale) => throw new Exception("Unexpected counter layout in click-only fixture");
+        internal static RuntimeObject Component(RuntimeObject parent, float width, float height) => throw new Exception("Unexpected layer creation in click-only fixture");
     }
+    internal static class FieldZoomUi { internal static float IndicatorScale => 1f; }
+    internal static class FieldMonsterPlates { internal static readonly List<RuntimeObject> Adopted=new(); internal static IReadOnlyList<RuntimeObject> Plates=>Adopted; }
+    internal sealed class FloatSetting { internal float Value = 1f; }
     internal static class VisibleCombatAdvisor
     { internal static bool IsPve(int map) => map == 2; }
     internal static class ModUi { internal static bool IsOpen; }
@@ -112,6 +125,7 @@ __PRODUCTION__
     internal static class Plugin
     {
         internal static readonly Setting FieldBuffs = new();
+        internal static readonly FloatSetting FieldIndicatorHeight = new();
         internal static readonly Diagnostics Diagnostics = new();
     }
     internal static class Compatibility

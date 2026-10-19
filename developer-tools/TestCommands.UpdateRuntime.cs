@@ -30,6 +30,13 @@ internal static partial class TestCommands
         var plugin = ReadSource(context, "src/Plugin.cs"); var load = plugin.IndexOf("public override void Load()", StringComparison.Ordinal);
         var gate = plugin.IndexOf("Environment.GetEnvironmentVariable(\"BAP_COMPATIBILITY_CHECKED\")", load, StringComparison.Ordinal); var start = plugin.IndexOf("MinimalDiagnostics = DiagnosticOwner.Start(", load, StringComparison.Ordinal);
         Check(load >= 0 && gate > load && gate < start && plugin[gate..start].Contains("return;", StringComparison.Ordinal), "Ordinary Steam launch returns before BetterAstralParty initialization");
+        var consume = plugin.IndexOf("StartupGuard.ConsumeLaunchRequest()", load, StringComparison.Ordinal); Check(consume > load && consume < gate, "Mod launch request is consumed before the activation gate");
+        var guard = ReadSource(context, "src/StartupGuard.cs");
+        Pattern(guard, @"File\.Delete\(path\);\s*return LaunchRequestFresh\(age\);", "Launch request is deleted before it is honoured");
+        Contains(guard, new[] { "TimeSpan.FromMinutes(3)" }, "Launch request is short-lived");
+        var modEntry = ReadSource(context, "tools/BetterAstralParty-Mod.cmd");
+        Contains(modEntry, new[] { "type nul > \"%REQUEST%\\mod-launch.request\"", "start \"\" \"steam://rungameid/2622000\"", "steam://run/2622000//--doorstop-enabled true --bap-compatibility-checked/" }, "Mod entry lets Steam start the owned app");
+        NoPattern(modEntry, @"SteamOverlayGameId|SteamGameId|AstralParty_INT\.exe"" --doorstop", "Mod entry never starts the game itself or overrides Steam overlay identity");
         var image = BuildProject(context, "focus-tests/update-runtime-isolation/SharedLoaderFixture.csproj", stage, pin);
         Ensure(context.Run(Dotnet(context), new[] { image, scratch, Path.Combine(context.Root, "artifacts") }, env: EnvironmentFor(stage), timeoutMilliseconds: 60000, logPath: Path.Combine(stage, "shared-loader.log")), "Actual native shared-loader policy");
     }

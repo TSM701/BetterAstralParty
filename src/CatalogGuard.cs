@@ -11,6 +11,8 @@ internal sealed class CatalogGuard
     private readonly bool _pinnedSettings;
     private DateTime _nextCheck;
     private Task? _pending;
+    // Rehash a catalog only when its size or write time changes; the full hash ran every 10 s before.
+    private readonly Dictionary<string, (long Length, DateTime Written, bool Matches)> _observed = new(StringComparer.OrdinalIgnoreCase);
     internal bool Changed { get; private set; }
 
     internal CatalogGuard(string manifest, string root)
@@ -43,11 +45,16 @@ internal sealed class CatalogGuard
         foreach (var entry in _expected)
         {
             var path = Path.Combine(_root, entry.Key);
-            if (!File.Exists(path)) { changed = true; continue; }
-            using var stream = File.OpenRead(path);
-            using var sha = SHA256.Create();
-            if (!string.Equals(Convert.ToHexString(sha.ComputeHash(stream)), entry.Value, StringComparison.OrdinalIgnoreCase))
-                changed = true;
+            var info = new FileInfo(path);
+            if (!info.Exists) { _observed.Remove(entry.Key); changed = true; continue; }
+            if (!_observed.TryGetValue(entry.Key, out var seen) || seen.Length != info.Length || seen.Written != info.LastWriteTimeUtc)
+            {
+                using var stream = File.OpenRead(path);
+                using var sha = SHA256.Create();
+                seen = (info.Length, info.LastWriteTimeUtc, string.Equals(Convert.ToHexString(sha.ComputeHash(stream)), entry.Value, StringComparison.OrdinalIgnoreCase));
+                _observed[entry.Key] = seen;
+            }
+            if (!seen.Matches) changed = true;
         }
         // Catalog drift is advisory; public API guards isolate actual feature incompatibilities.
         Changed = changed;

@@ -10,7 +10,10 @@ namespace BetterAstralParty.Updating
         internal readonly string Repository, Channel;
         internal readonly long RepositoryId;
         internal bool RequiresAuthentication { get { return Channel == "Beta"; } }
+        // Publishing identity: a PreRelease-channel release must carry the GitHub Pre-release flag.
         internal bool Accepts(bool prerelease) { return Channel == "Beta" || prerelease == (Channel == "PreRelease"); }
+        // What a client on this channel installs: Pre-release users also follow newer full releases.
+        internal bool Delivers(bool prerelease) { return Channel != "Stable" || !prerelease; }
         internal bool Configured { get { return RepositoryId > 0; } }
         internal string Identity { get; }
         internal string AnonymousIdentity { get; }

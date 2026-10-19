@@ -99,9 +99,14 @@ public static class Check {
             s.Controller.Set("selectedIndex",0); CardTargetButtonsUi.Tick();
             Assert(s.Window.Get<int>("sortingOrder")==0 && s.Root.Children.IndexOf(s.Window)==resetIndex);
 
-            foreach(int type in new[]{0,2,3,4,5}){
+            foreach(int type in new[]{0,2,5}){
                 s.Controller.Set("selectedIndex",type); CardTargetButtonsUi.Tick();
                 Assert(a.Get<int>("sortingOrder")==0 && b.Get<int>("sortingOrder")==0 && s.Window.Get<int>("sortingOrder")==0);
+            }
+            foreach(int type in new[]{3,4}){
+                s.Controller.Set("selectedIndex",type); CardTargetButtonsUi.Tick();
+                Assert(a.Get<int>("sortingOrder")==1 && b.Get<int>("sortingOrder")==1 && s.Window.Get<int>("sortingOrder")==1101);
+                Assert(a.Get<float>("y")==height*.7f && b.Get<float>("y")==height*.7f);
             }
             s.Controller.Set("selectedIndex",1); CardTargetButtonsUi.Tick();
             a.Set("sortingOrder",500); GameUi.Window=null; CardTargetButtonsUi.Tick();

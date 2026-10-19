@@ -14,6 +14,20 @@ internal static class FieldFreeCamera
     private static int _override = -1;
     private static bool _returnPending, _dragging, _indicatorPress, _acquireUncertain;
     private static Vector2 _pointer, _pressAt;
+    // Only clicks on the native UI whose click handler moves the camera end the free view: the player icon
+    // (UIBattleInfo_Button_PlayerInfo -> MoveCameraToPlayer / OnClickPlayer -> ControlFreeCamera), a monster target
+    // item (UIButton_MonsterItem -> BattleMonsterWindow.SwitchCamera) and the minimap (OnClickMiniMap).
+    // Turn, move and skill camera switches never do, even right after an unrelated click.
+    private static readonly string[] FocusTypes = { "UIBattleInfo_Button_PlayerInfo", "UIButton_MonsterItem", "UIBattleInfo_Com_Minimap" };
+    private static string? _focusTarget;
+    private static Vector2 _focusPress;
+    internal static string? FocusTarget(IEnumerable<string> pathTypes)
+    {
+        foreach (var type in pathTypes) if (Array.IndexOf(FocusTypes, type) >= 0) return type;
+        return null;
+    }
+    internal static bool ClickGesture(Vector2 press, Vector2 release, int threshold)
+        => threshold >= 0 && (release - press).sqrMagnitude <= threshold * (float)threshold;
     internal static bool Holding => _camera != null;
     internal static RuntimeObject? Camera => _camera == null ? null : new RuntimeObject(_camera.Pointer);
 
@@ -70,6 +84,27 @@ internal static class FieldFreeCamera
         if (blocked || !supported || count != (_override >= 0 ? 2 : 1)
             || _override >= 0 && (stack[1].id != _override || stack[1].blend?.CamB?.Pointer != _camera!.Pointer))
         { Suspend(); return false; }
+        if (Input.GetMouseButtonDown(0))
+        {
+            _focusPress = Input.mousePosition;
+            var types = new List<string>();
+            foreach (var item in GameUi.PointerPath(hitTest: true)) types.Add(item.TypeName);
+            _focusTarget = FocusTarget(types);
+        }
+        else if (_focusTarget != null && Input.GetMouseButtonUp(0))
+        {
+            var target = _focusTarget; _focusTarget = null;
+            var threshold = RuntimeObject.StaticField(RuntimeObject.FindClass("FairyGUI", "UIConfig"), "clickDragSensitivity")!.Value<int>();
+            if (!_returnPending && _override >= 0 && ClickGesture(_focusPress, Input.mousePosition, threshold))
+            {
+                // Same as the exit button, but leave the camera to the native click handler instead of returning home.
+                // Native camera switches are ignored while the base frame still blends; record it for diagnosis.
+                Plugin.Diagnostics.Write("fieldFreeCamera released for native focus; target=" + target
+                    + "; nativeBlending=" + (stack[0].blend is { IsComplete: false } ? "true" : "false"));
+                FieldZoomUi.Clear();
+                return false;
+            }
+        }
         if (_returnPending)
         {
             Suspend();
@@ -196,5 +231,6 @@ internal static class FieldFreeCamera
         if (_anchor) UnityEngine.Object.Destroy(_anchor);
         _cameraObject = _anchor = null; _camera = null; _brain = null; _scene = null;
         _returnPending = _dragging = _indicatorPress = false;
+        _focusTarget = null;
     }
 }

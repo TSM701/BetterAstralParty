@@ -12,6 +12,9 @@ internal static class CharacterNameUi
     private static readonly Stack<(RuntimeObject Node, int Depth, int Child)> Pending = new();
     private static IntPtr _root;
     private static float _scanAt;
+    private static int _rootChildren = -1;
+    // Windows open as root children and panels switch characters on clicks; rescan at once on either, otherwise rarely.
+    private const float IdleRescan = 2f;
 
     internal static void Tick(RuntimeObject root)
     {
@@ -24,13 +27,15 @@ internal static class CharacterNameUi
             if (_root != root.Pointer) { Pending.Clear(); _root = root.Pointer; _scanAt = 0; }
             if (Pending.Count == 0)
             {
+                var children = root.Get<int>("numChildren");
+                if (children != _rootChildren || Input.GetMouseButtonUp(0)) { _rootChildren = children; _scanAt = 0; }
                 if (Time.unscaledTime < _scanAt || !LoadNames()) return;
                 foreach (var (key, edit) in Changed.ToArray())
                     if (edit.Label.Get<bool>("isDisposed")) Changed.Remove(key);
                 Pending.Push((root, 0, -1));
             }
             VisitSlice();
-            if (Pending.Count == 0) _scanAt = Time.unscaledTime + 0.2f;
+            if (Pending.Count == 0) _scanAt = Time.unscaledTime + IdleRescan;
         }
         catch (Exception ex)
         {
@@ -85,8 +90,10 @@ internal static class CharacterNameUi
             var (node, depth, childIndex) = Pending.Pop();
             // Field plates contain player nicknames, not real-name/epithet slots.
             if (CharacterNames.SkipSubtree(node.TypeName)) continue;
-            if (depth > 24 || node.Get<bool>("isDisposed") || !node.Get<bool>("onStage")
-                || !node.Get<bool>("internalVisible") || !node.Get<bool>("internalVisible2")) continue;
+            if (depth > 24 || node.Get<bool>("isDisposed")) continue;
+            // A resumed parent already passed the stage/visibility checks on its first visit.
+            if (childIndex < 0 && (!node.Get<bool>("onStage")
+                || !node.Get<bool>("internalVisible") || !node.Get<bool>("internalVisible2"))) continue;
             if (childIndex < 0)
             {
                 var field = CharacterNames.LabelField(node.TypeName);

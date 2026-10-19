@@ -48,7 +48,8 @@ internal static class FeedIdentityCheck
         var pre = ReleaseFeedPolicy.PreRelease;
         if (pre.Repository != stable.Repository || pre.RepositoryId != stable.RepositoryId || pre.RequiresAuthentication || pre.Identity == stable.Identity
             || pre.Purpose == stable.Purpose || !pre.Accepts(true) || pre.Accepts(false) || stable.Accepts(true) || !stable.Accepts(false)
-            || !ReleaseFeedPolicy.Beta.Accepts(true) || !ReleaseFeedPolicy.Beta.Accepts(false)) throw new Exception("Release channels lost exact identity, prerelease eligibility or authentication separation");
+            || !ReleaseFeedPolicy.Beta.Accepts(true) || !ReleaseFeedPolicy.Beta.Accepts(false)
+            || !pre.Delivers(true) || !pre.Delivers(false) || stable.Delivers(true) || !stable.Delivers(false)) throw new Exception("Release channels lost exact identity, prerelease eligibility or authentication separation");
         Console.WriteLine($"Feed identity: exact Stable/PreRelease/Beta/unconfigured text and invariant culture passed; 10000 anonymous reads: {previousBytes} -> {currentBytes} managed bytes.");
     }
 }

@@ -129,7 +129,7 @@ internal static partial class TestCommands
             "x + obj.Get<float>(\"width\") * obj.Get<float>(\"pivotX\") * restingScale", "y + obj.Get<float>(\"height\") * obj.Get<float>(\"pivotY\") * restingScale", "Position(icon, x, y, scale)", "Position(native, 0f, 0f, 1f)" }, "Common pivot placement");
         foreach (var (file, call) in new[] { ("GameUi", "NativeUi.Position(nativeButton"), ("ModUi", "NativeUi.Position(button"), ("BattleStatusUi", "NativeUi.Position(icon"), ("CardPreviewUi", "NativeUi.Position(_card") })
             Check(ReadSource(context, "src/" + file + ".cs").Contains(call, StringComparison.Ordinal), "Common pivot caller " + file);
-        Contains(ReadSource(context, "src/ModUi.cs"), new[] { "toggle.SetField(\"_downEffect\", 1)", "toggle.Call(\"SetPivot\", 0f, 0f, true)", "toggle.Call(\"SetSize\", width, MenuLayout.ToggleHeight)", "toggle.Call(\"SetXY\", x, y)" }, "Fixed-size native settings toggle");
+        Contains(ReadSource(context, "src/ModUi.cs"), new[] { "toggle.SetField(\"_downEffect\", 1)", "toggle.Call(\"SetPivot\", 0f, 0f, true)", "toggle.Call(\"SetSize\", width, height)", "toggle.Call(\"SetXY\", x, y)" }, "Fixed-size native settings toggle");
         foreach (var dimensions in new[] { (298d, 101d), (298d, 102d), (180d, 107d), (64d, 64d), (86d, 86d) }) foreach (var scale in new[] { .25, .6875, .75, 1, 1.5 }) foreach (var down in new[] { .75, .8, .95, 1 }) foreach (var length in new[] { dimensions.Item1, dimensions.Item2 }) {
             var anchor = 123 + length * .5 * scale; var rest = anchor - length * scale / 2; var pressed = length * scale * down; var left = anchor - pressed / 2;
             Check(Math.Abs(rest - 123) < .00001 && Math.Abs(left + pressed / 2 - anchor) < .00001 && Math.Abs(left - 123 - (length * scale - pressed) / 2) < .00001, "Rest position and symmetric native press scaling");
@@ -154,7 +154,8 @@ internal static partial class TestCommands
         var surfaceCalls = plugin.MainModule.GetType("BetterAstralParty.AdviceBadge").Methods.Single(method => method.Name == ".ctor").Body.Instructions.Count(instruction => instruction.Operand is MethodReference method && method.Name == ".ctor" && method.DeclaringType.FullName == "BetterAstralParty.NativeUi/Surface");
         Check(cardCalls == 1 && surfaceCalls == 1, "Compiled CardUi -> AdviceBadge -> owned Surface chain");
         Contains(ReadSource(context, "src/Plugin.cs"), new[] { "\"배경 불투명도\", 1f", "AcceptableValueRange<float>(0f, 1f)" }, "Default 100 percent opacity and bounds");
-        Contains(ReadSource(context, "src/ModUi.cs"), new[] { "Math.Max(0f, MathF.Round(Plugin.Opacity.Value - 0.05f, 2))", "Plugin.Opacity.Value <= 0.001f" }, "Opacity controls include zero");
+        Contains(ReadSource(context, "src/ModUi.cs"), new[] { "default: Plugin.Opacity.Value = value; break;" }, "Opacity slider writes the setting");
+        Contains(ReadSource(context, "src/MenuLayout.cs"), new[] { "\"Opacity\" }", "_ => (0, 100)" }, "Opacity slider range includes zero");
         static double Luminance(string text) { var values = new[] { 0, 2, 4 }.Select(index => Convert.ToInt32(text.Substring(index, 2), 16) / 255d).Select(value => value <= .04045 ? value / 12.92 : Math.Pow((value + .055) / 1.055, 2.4)).ToArray(); return .2126 * values[0] + .7152 * values[1] + .0722 * values[2]; }
         Check((Luminance("FFFFFF") + .05) / (Luminance("000000") + .05) >= 7, "White text and black outline contrast");
         foreach (var ink in new[] { "17663C", "795000", "B5163B", "005B83" }) Check((Luminance("FFFBF2") + .05) / (Luminance(ink) + .05) >= 4.5, "Cream background contrast " + ink);

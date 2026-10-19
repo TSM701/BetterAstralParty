@@ -222,6 +222,8 @@ internal static partial class FixtureEntry
         var outside = Process(22, "UnrelatedApp", Path.Combine(game + "Outside", "outside.exe"));
         var targets = NativeSteamMaintenance.SelectSteamTargets(new[] { listedGame, outside, helper, selected, unrelated, otherSession }, steam, new[] { game }, 7);
         Check(targets.Count == 3 && targets.Contains(listedGame) && !targets.Contains(outside) && !targets.Contains(otherSession), "remaining-process list includes only installed apps and selected current-session client");
+        var setupInGame = Process(25, "BetterAstralParty-Setup", Path.Combine(game, "BetterAstralParty", "artifacts", "BetterAstralParty-Setup.exe"));
+        Check(NativeSteamMaintenance.SelectSteamTargets(new[] { setupInGame }, steam, new[] { game }, 7).Count == 0, "the maintenance tool extracted under a Steam app folder never waits for itself");
         var updater = Process(23, "BetterAstralParty-UpdateHelper", Path.Combine(game, "BetterAstralParty-UpdateHelper.exe"));
         Reject(() => NativeSteamMaintenance.SelectSteamTargets(new[] { updater }, steam, new[] { game }, 7), "update helper is never a forced Steam target");
         unknown.Exited = false; Reject(() => NativeSteamMaintenance.SelectSteamTargets(new[] { unknown }, steam, new[] { game }, 7), "unknown Steam cannot become an approved force target");
@@ -244,24 +246,36 @@ internal static partial class FixtureEntry
         Text(Path.Combine(steam, "steam.exe"), "inert, never executed");
         var client = Process(91, "steam", Path.Combine(steam, "steam.exe"), session);
         try {
-            foreach (var mode in new[] { "closed", "closed-remaining", "cancel", "blank", "unavailable" }) {
-                var prompts = 0; var closed = false; var shown = new List<string>(); var state = new SteamSessionState();
+
+            NativeSteamMaintenance.RemainingGrace = TimeSpan.FromMilliseconds(200); NativeSteamMaintenance.RemainingPoll = TimeSpan.FromMilliseconds(10);
+            foreach (var mode in new[] { "closed", "closed-lingering", "closed-remaining", "closed-remaining-recheck", "cancel", "blank", "unavailable" }) {
+                var prompts = 0; var closed = false; var shown = new List<string>(); var state = new SteamSessionState(); var lingering = 3; var cleared = false;
+                var helper = new[] { Process(92, "steamwebhelper", Path.Combine(steam, "bin", "steamwebhelper.exe"), session) };
                 NativeSteamMaintenance.SteamStatusObserver = () => new SteamProcessStatus { State = closed ? "Stopped" : "Running" };
-                NativeSteamMaintenance.ProcessObserver = () => closed ? mode == "closed-remaining" ? new[] { Process(92, "steamwebhelper", Path.Combine(steam, "bin", "steamwebhelper.exe"), session) } : new SteamProcessObservation[0] : new[] { client };
+                NativeSteamMaintenance.ProcessObserver = () => !closed ? new[] { client }
+                    : mode == "closed-lingering" ? lingering-- > 0 ? helper : new SteamProcessObservation[0]
+                    : mode.StartsWith("closed-remaining", StringComparison.Ordinal) && !cleared ? helper : new SteamProcessObservation[0];
                 Func<string, string?> consent = prompt => {
                     prompts++; if (mode == "cancel") return ""; if (mode == "blank") return null; if (mode == "unavailable") throw new IOException("fixture input unavailable");
-                    closed = true; return "r";
+                    if (prompts == 1) { closed = true; return "r"; }
+                    if (mode == "closed-remaining-recheck") { cleared = true; return "r"; }
+                    return "";
                 };
                 if (mode == "closed") { NativeSteamMaintenance.StopSteam(steam, state, consent, shown.Add); Check(prompts == 1 && state.Restart && state.Root != null, "manual Steam exit plus recheck continues and Steam is restarted afterwards"); }
+                else if (mode == "closed-lingering") { NativeSteamMaintenance.StopSteam(steam, state, consent, shown.Add); Check(prompts == 1 && state.Restart, "helpers that exit shortly after Steam are waited for without another prompt"); }
+                else if (mode == "closed-remaining-recheck") { NativeSteamMaintenance.StopSteam(steam, state, consent, shown.Add); Check(prompts == 2 && state.Restart && shown.Any(line => line.Contains("steamwebhelper") && line.Contains("helper processes are still exiting")), "remaining processes are named and r rechecks without restarting the tool"); }
                 else if (mode == "closed-remaining") {
                     try { NativeSteamMaintenance.StopSteam(steam, state, consent, shown.Add); throw new Exception("Expected remaining-process barrier."); }
-                    catch (InvalidOperationException error) { Check(error.Message.Contains("SteamGameProcessesRemain") && prompts == 1, "manual Steam exit cannot skip the final remaining-process barrier"); }
+                    catch (InvalidOperationException error) {
+                        Check(error.Message.Contains("SteamGameProcessesRemain") && prompts == 2, "manual Steam exit cannot skip the final remaining-process barrier; cancel is offered first");
+                        Check(((string)error.Data["BapSteamDiagnostic"]!).Contains("\"observedCount\":1"), "remaining processes are recorded in the failure diagnostic");
+                    }
                 }
                 else { Reject(() => NativeSteamMaintenance.StopSteam(steam, state, consent, shown.Add), "refused, blank or unavailable input cancels: " + mode); Check(prompts == 1 && !state.Restart, "cancel never restarts Steam: " + mode); }
                 Check(shown.Any(line => line.Contains("Steam")), "the player is told to exit Steam: " + mode);
             }
         }
-        finally { NativeSteamMaintenance.ProcessObserver = processes; NativeSteamMaintenance.SteamStatusObserver = statusObserver; }
+        finally { NativeSteamMaintenance.ProcessObserver = processes; NativeSteamMaintenance.SteamStatusObserver = statusObserver; NativeSteamMaintenance.RemainingGrace = TimeSpan.FromSeconds(15); NativeSteamMaintenance.RemainingPoll = TimeSpan.FromMilliseconds(500); }
     }
     private static Exception Diagnostic(string reason, string phase, SteamProcessStatus status)
     {

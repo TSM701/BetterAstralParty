@@ -71,13 +71,16 @@ namespace BetterAstralParty.Diagnostics
         public string CrashRoot = "";
         public Func<IList<string>> WindowsEvents;
         public string RuntimeStateRoot = "";
+        // Literal names redacted wherever they appear (Windows account, Steam account/persona). Never written out.
+        public IList<string> IdentityNames = new List<string>();
         public static DiagnosticSources Production()
         {
             var temporary = Path.GetTempPath();
             return new DiagnosticSources {
                 CrashRoot = Path.Combine(temporary, "feimo", "AstralParty_INT", "Crashes"),
                 WindowsEvents = DiagnosticBundle.QueryWindowsEvents,
-                RuntimeStateRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BetterAstralParty", "Runtime")
+                RuntimeStateRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BetterAstralParty", "Runtime"),
+                IdentityNames = DiagnosticBundle.LocalIdentityNames()
             };
         }
     }
@@ -85,9 +88,11 @@ namespace BetterAstralParty.Diagnostics
     public static class DiagnosticBundle
     {
         public const int MaxInputFileBytes = 2 * 1024 * 1024, MaxInputBytes = 8 * 1024 * 1024;
-        public const int MaxOutputFileBytes = 512 * 1024, MaxOutputBytes = 4 * 1024 * 1024;
-        public const int MaxFiles = 40, MaxDirectoryEntries = 512, MaxRecentPerDirectory = 8, RecentDays = 7;
-        public const int MaxEngineInputBytes = 32 * 1024 * 1024, MaxEngineOutputBytes = 256 * 1024, MaxEngineLines = 2000;
+        public const int MaxOutputFileBytes = 512 * 1024, MaxOutputBytes = 24 * 1024 * 1024;
+        public const int MaxFiles = 48, MaxDirectoryEntries = 512, MaxRecentPerDirectory = 8, RecentDays = 7;
+        public const int MaxEngineInputBytes = 32 * 1024 * 1024, MaxEngineOutputBytes = 4 * 1024 * 1024, MaxEngineLines = 100000;
+        // Engine logs: the head carries startup, versions and hardware; the newest tail carries the failure.
+        public const int MaxEngineHeadBytes = 256 * 1024, MaxEngineTailBytes = 3 * 1024 * 1024, MaxRuntimeLogBytes = 2 * 1024 * 1024;
         public const int MaxCrashFolders = 4, MaxCrashTextBytes = 1024 * 1024, MaxWindowsEvents = 16, MaxPluginInventory = 128;
         public const int MaxCatalogs = 64, MaxCatalogFileBytes = 32 * 1024 * 1024, MaxCatalogBytes = 64 * 1024 * 1024;
         private const int MaxRecoveryDirectories = 64, MaxRecoveryFileBytes = 64 * 1024 * 1024, MaxRecoveryBytes = 64 * 1024 * 1024;
@@ -95,10 +100,47 @@ namespace BetterAstralParty.Diagnostics
         private static readonly Regex Names = Pattern(@"\A(?:(?:Launch|Bootstrap)-[0-9a-f]{32}|BetterAstralParty-InstallError-[0-9]{8}-[0-9]{6}-[0-9a-f]{8})\.log\z");
         private static readonly Regex CatalogNames = Pattern(@"(?i)^catalog.*\.(json|hash)$");
         private static readonly Regex Secret = Pattern(@"(?i)(?:\b(?:authorization|proxy-authorization|bearer|basic|cookie|set-cookie|password|passwd|pwd|credential|(?:client[ _-]?)?secret|signature|private[ _-]?key|access[ _-]?key|api[ _-]?key|(?:access|refresh|id|auth)[ _-]?token|token|session[ _-]?id|steam[ _-]?id|user[ _-]?id|account(?:[ _-]?(?:id|name))?|username|nickname|display[ _-]?name|player[ _-]?name|email|chat|ip[ _-]?address)\b|토큰|비밀번호|암호|닉네임|계정|사용자명|인증[ _-]?헤더|비밀[ _-]?키|서명[ _-]?키|gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|-----BEGIN.*(?:PRIVATE|OPENSSH|PGP).*(?:KEY|BLOCK))");
-        private static readonly Regex Private = Pattern(@"(?i)(?:[a-z]:[\\/]|\\\\|(?:https?|wss?|ftp)://|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b(?:[0-9a-f]{1,4}:){4,}[0-9a-f:]+\b|\b[0-9a-f:]*::[0-9a-f:]+\b|\b[0-9]{17}\b|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|(?:^|[\s\""'=])/(?:home|Users|tmp|var|mnt|media|opt|data)/|\b[A-Za-z0-9_+/=-]{32,}\b)");
+        private static readonly Regex Private = Pattern(@"(?i)(?:[a-z]:[\\/]|\\\\|(?:https?|wss?|ftp)://|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b(?:[0-9a-f]{1,4}:){4,}[0-9a-f:]+\b|\b[0-9a-f:]*::[0-9a-f:]+\b|\b[0-9]{17}\b|\[U:[0-9]:[0-9]{1,10}\]|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|(?:^|[\s\""'=])/(?:home|Users|tmp|var|mnt|media|opt|data)/|\b[A-Za-z0-9_+/=-]{32,}\b)");
         private static readonly Regex Boundary = Pattern(@"\A(?:\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}|\[(?:Info|Warning|Error|Debug|Fatal|Message)[ :\]])");
         private static readonly Regex Ansi = Pattern(@"\x1b\[[0-?]*[ -/]*[@-~]");
         private static Regex Pattern(string value) { return new Regex(value, RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(200)); }
+        [ThreadStatic] private static Regex identityNames;
+        private static readonly Regex SteamUserName = Pattern(@"""(?:AccountName|PersonaName)""\s+""([^""\r\n]{1,64})""");
+        // Windows account and Steam account/persona names, used only to redact free text such as exception messages.
+        public static IList<string> LocalIdentityNames()
+        {
+            var names = new List<string>();
+            try { names.Add(Environment.UserName); } catch { }
+            try
+            {
+                string steam = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam", "config", "loginusers.vdf");
+                var info = new FileInfo(steam);
+                if (info.Exists && info.Length <= 256 * 1024)
+                    foreach (Match match in SteamUserName.Matches(File.ReadAllText(steam))) names.Add(match.Groups[1].Value);
+            }
+            catch { }
+            return names;
+        }
+        private static Regex IdentityPattern(IList<string> names)
+        {
+            var parts = new List<string>();
+            if (names != null)
+                foreach (string name in names)
+                {
+                    string trimmed = (name ?? "").Trim();
+                    if (trimmed.Length >= 3 && trimmed.Length <= 64 && !parts.Contains(Regex.Escape(trimmed))) parts.Add(Regex.Escape(trimmed));
+                }
+            if (parts.Count == 0) return null;
+            parts.Sort((a, b) => b.Length.CompareTo(a.Length));
+            return new Regex(String.Join("|", parts.ToArray()), RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(200));
+        }
+        private static string RedactNames(string text, Row row)
+        {
+            if (identityNames == null || text.Length == 0) return text;
+            string clean = identityNames.Replace(text, "[name]");
+            if (clean != text && row != null) row.Redacted++;
+            return clean;
+        }
 
         public const string Guide =
             "BetterAstralParty local diagnostics / 로컬 진단\r\n\r\n" +
@@ -111,20 +153,30 @@ namespace BetterAstralParty.Diagnostics
             "고정 minimal-v1 runtime/helper 현재·이전 JSONL의 단계·오류 위치·hook·writer 관측·회전도 포함합니다.\r\n" +
             "Redacted full text of up to 8 recent install/bootstrap/launcher errors per log folder,\r\n" +
             "and game compatibility/launch errors: messages, DLL names, HRESULT and stacks.\r\n" +
-            "BepInEx LogOutput and Unity Player/Player-prev/crash Player logs: only error, exception, stack, crash\r\n" +
-            "and loader lines, redacted; other lines are dropped and counted.\r\n" +
+            "BepInEx LogOutput and Unity Player/Player-prev/crash Player logs: full text, line-redacted; the first\r\n" +
+            "256 KiB and newest 3 MiB of each file, with the omitted middle marked. Card/hand/deck/chat lines are hidden.\r\n" +
+            "BAP runtime logs (current/previous, combat mismatch) are kept as redacted full text, also from\r\n" +
+            "%LOCALAPPDATA%\\BetterAstralParty\\Runtime\\Logs so they survive removal or reinstallation.\r\n" +
+            "Your Windows user name and Steam account/persona names are replaced with [name] wherever they appear.\r\n" +
             "Unity crash folders: error.log text (redacted) and crash.dmp size only; dumps are never read.\r\n" +
             "Windows Application Error/Hang and .NET Runtime events for AstralParty_INT.exe: module, version,\r\n" +
             "exception code and offset only. plugin-inventory.json: other mods' file names, sizes, SHA-256, versions.\r\n" +
-            "BAP start stage markers (stages-*.log, safe-mode.state) record where an unfinished start stopped.\r\n" +
+            "BAP start stage markers (stages-*.log, safe-mode.state) record where an unfinished start stopped;\r\n" +
+            "launch-decision.state records why BAP was ON or OFF for the last launch. The loader's enabled value,\r\n" +
+            "a pending Mod launch request and the game build (GameAssembly.dll size/time, Steam build ID) are listed in summary.json.\r\n" +
             "수집: 최근 7일 모드/계산 불일치/호환성/실행 오류/BepInEx/Unity 로그,\r\n" +
             "설치·초기 실행·런처·호환성 오류는 민감정보를 가린 본문을 포함합니다.\r\n" +
             "DLL 이름·오류 코드·단계·stack을 남기며, 로컬·임시 폴더별 최근 오류 최대 8개입니다.\r\n" +
-            "BepInEx·Unity 로그와 튕김 폴더의 Player 로그는 오류·예외·스택·튕김·로더 줄만 가려서 포함하고\r\n" +
-            "나머지 줄은 버린 개수만 기록합니다. Unity 튕김 폴더는 error.log 본문(가림 처리)과 crash.dmp 크기만 기록하며\r\n" +
+            "BepInEx·Unity 로그와 튕김 폴더의 Player 로그는 줄 단위로 민감정보를 가린 전체 본문을 포함합니다.\r\n" +
+            "파일마다 앞 256 KiB와 최근 3 MiB를 남기고 생략한 중간 부분을 표시합니다. 카드·손패·덱·채팅 줄은 가립니다.\r\n" +
+            "BAP 실행 로그는 사용자 폴더(%LOCALAPPDATA%\\BetterAstralParty\\Runtime\\Logs)에서도 가림 처리한 전체 본문을 수집합니다.\r\n" +
+            "Windows 사용자 이름과 Steam 계정·프로필 이름은 어디에 나오든 [name]으로 바꿉니다.\r\n" +
+            "Unity 튕김 폴더는 error.log 본문(가림 처리)과 crash.dmp 크기만 기록하며\r\n" +
             "덤프는 읽지 않습니다. Windows 이벤트 로그는 게임의 튕김·응답 없음 기록에서 모듈·버전·오류 코드·위치만 남깁니다.\r\n" +
             "plugin-inventory.json에는 다른 모드의 파일 이름·크기·SHA-256·버전만 담습니다.\r\n" +
             "BAP 시작 단계 표식(stages-*.log, safe-mode.state)은 끝나지 않은 실행이 멈춘 단계를 보여 줍니다.\r\n" +
+            "launch-decision.state는 마지막 실행에서 BAP가 켜지거나 꺼진 이유를 기록합니다. 로더 켜짐 값,\r\n" +
+            "대기 중인 Mod 실행 신호, 게임 빌드(GameAssembly.dll 크기·시각, Steam 빌드 ID)는 summary.json에 있습니다.\r\n" +
             "catalog-inventory.json: top-level com.unity.addressables catalog*.json/hash filenames, sizes and SHA-256 only.\r\n" +
             "catalog-inventory.json에는 com.unity.addressables 최상위 catalog*.json/hash의 파일명·크기·SHA-256만 포함합니다. 원본 내용은 제외합니다.\r\n" +
             "Catalog hashing: 32 MiB/file, 64 MiB total; up to 64 names after scanning at most 512 entries.\r\n" +
@@ -136,18 +188,18 @@ namespace BetterAstralParty.Diagnostics
             "고정 실행 파일 관측은 ZIP 수집 시점의 상태이며 이전 실행 실패나 원인을 재구성하지 않습니다.\r\n" +
             "게임·로더 파일이 일부 없어도 목록을 수집합니다. 이 목록은 설치 정상 판정이나 복구 검증이 아닙니다.\r\n" +
             "Fixed paths and typed fields only; card/hand/chat payload, unknown text, full configs, credential stores,\r\n" +
-            "raw updater/backup state, dumps and arbitrary files are excluded. Mod runtime logs remain typed projections.\r\n" +
+            "raw updater/backup state, dumps and arbitrary files are excluded.\r\n" +
             "고정 경로와 허용 필드만 요약합니다. 카드·손패·채팅·알 수 없는 텍스트·전체 설정·인증 저장소·\r\n" +
             "업데이트·백업 상태 원문·덤프·임의 파일은 제외합니다. 일반 게임 진단은 허용 필드만 요약합니다.\r\n" +
             "Legacy errors retain fixed feature/subfeature/error-class/site codes. Unsupported values become Unknown.\r\n" +
             "Only up to 16 exact owned stack anchors are mapped; missing/async/native sites may remain Unknown.\r\n" +
             "기존 오류의 고정 기능·분류·위치 코드를 남깁니다. 미등록 값과 확인하지 못한 위치는 Unknown입니다.\r\n" +
-            "Limits: 40 logs; 2 MiB input/file, 8 MiB input total; 512 KiB sanitized/file, 4 MiB sanitized total;\r\n" +
-            "engine logs: newest 32 MiB per file read from a line boundary, 256 KiB/2000 kept lines per file.\r\n" +
-            "용량 제한: 40개, 원본 파일당 2 MiB/총 8 MiB, 처리 후 파일당 512 KiB/총 4 MiB.\r\n" +
-            "게임 로그는 파일당 최근 32 MiB를 줄 경계부터 읽고 256 KiB·2000줄까지만 남깁니다.\r\n" +
-            "Oversized inputs are skipped, never tailed, to avoid fragments of secrets.\r\n" +
-            "너무 큰 원본은 제외합니다. 잘린 토큰 조각을 피하기 위해 끝부분만 읽지 않습니다.\r\n" +
+            "Limits: 48 logs; 2 MiB input/file, 8 MiB input total; 512 KiB sanitized/file, 24 MiB sanitized total;\r\n" +
+            "engine logs: head 256 KiB plus newest 3 MiB per file, up to 4 MiB/100000 kept lines per file.\r\n" +
+            "용량 제한: 48개, 원본 파일당 2 MiB/총 8 MiB, 처리 후 파일당 512 KiB/총 24 MiB.\r\n" +
+            "게임 로그는 파일당 앞 256 KiB와 최근 3 MiB를 읽고 4 MiB·100000줄까지 남깁니다.\r\n" +
+            "Oversized mod/installer inputs are skipped, never tailed; engine logs resume only on line boundaries.\r\n" +
+            "너무 큰 모드·설치 원본은 끝부분만 읽지 않고 제외합니다. 게임 로그는 줄 경계에서만 이어 읽습니다.\r\n" +
             "Missing, old, locked, linked, invalid text and limited files are recorded in summary.json.\r\n" +
             "누락·오래됨·잠김·링크·잘못된 텍스트·제한 사유는 summary.json에 기록합니다.\r\n" +
             "Recognized records are reserialized from numeric/bool/enum/version/error-type allowlists.\r\n" +
@@ -215,8 +267,21 @@ namespace BetterAstralParty.Diagnostics
         public static BundleResult Collect(string gameRoot, string localLogs, string fallbackLogs,
             string unityLogs, string primaryHub, string fallbackHub, string hostVersion, string runningPluginVersion, LiveDiagnosticHealth liveHealth, DiagnosticSources sources)
         {
+            identityNames = IdentityPattern(sources == null ? null : sources.IdentityNames);
+            try { return CollectCore(gameRoot, localLogs, fallbackLogs, unityLogs, primaryHub, fallbackHub, hostVersion, runningPluginVersion, liveHealth, sources); }
+            finally { identityNames = null; }
+        }
+        private static BundleResult CollectCore(string gameRoot, string localLogs, string fallbackLogs,
+            string unityLogs, string primaryHub, string fallbackHub, string hostVersion, string runningPluginVersion, LiveDiagnosticHealth liveHealth, DiagnosticSources sources)
+        {
             var rows = new List<Row>(); var payloads = new List<Payload>();
             long raw = 0, engineRaw = 0; int output = 0; DateTime now = DateTime.UtcNow;
+            // Small per-user evidence first, so large engine logs cannot push it out of the bundle budget.
+            if (sources != null)
+            {
+                ReadStageLadder(sources.RuntimeStateRoot, now, rows, payloads, ref raw, ref output);
+                ReadRuntimeLogs(sources.RuntimeStateRoot, now, rows, payloads, ref raw, ref output);
+            }
             string plugins = PluginInventoryUnavailable;
             var identities = new MinimalDiagnosticProjection.ProjectionContext();
             string version = "unknown"; bool gameValid = false; string recovery;
@@ -248,6 +313,8 @@ namespace BetterAstralParty.Diagnostics
                     string[] ids = { "game/diagnostics-current", "game/diagnostics-previous", "game/combat-mismatch", "game/combat-mismatch-previous",
                         "game/compatibility", "game/launch-error" };
                     for (int i = 0; i < paths.Length; ++i) Read(game, paths[i], ids[i], now, rows, payloads, ref raw, ref output, identities);
+                    ObserveLoaderSwitch(game, rows);
+                    ObserveGameBuild(game, gameRoot, rows);
                     if (gameValid)
                     {
                         ReadEngine(game, "BepInEx/LogOutput.log", "loader/log-output", now, rows, payloads, ref engineRaw, ref output);
@@ -284,7 +351,6 @@ namespace BetterAstralParty.Diagnostics
             {
                 ReadCrashes(sources.CrashRoot, now, rows, payloads, ref engineRaw, ref output, identities);
                 ReadWindowsEvents(sources.WindowsEvents, now, rows, payloads, ref output, identities);
-                ReadStageLadder(sources.RuntimeStateRoot, now, rows, payloads, ref raw, ref output);
             }
             string catalogs = CatalogInventory(unityLogs);
             byte[] zip;
@@ -699,41 +765,53 @@ namespace BetterAstralParty.Diagnostics
                 if (matches.Count > MaxRecentPerDirectory) rows.Add(new Row { Source = id, Status = "recent-file-limit", Input = matches.Count - MaxRecentPerDirectory });
             }
         }
-        // Engine/loader logs: only error, exception, stack, crash and loader lines survive, then redaction.
-        private static readonly Regex EngineKeep = Pattern(@"(?:\A\[(?:Error|Fatal|Warning)\s*:|\A\[(?:Message|Info)\s*:\s*(?:BepInEx|Preloader|Il2CppInterop|Doorstop|Chainloader|HarmonyX|BetterAstralParty)\s*\]|Exception\b|\ACrash!!!|\A\s*={5,}\s*(?:OUTPUTTING STACK TRACE|END OF STACKTRACE)|\AERROR:|[Aa]ccess violation|\AReceived signal|\A(?:Read from|Write to) location|\AUnloading \d+ unused Assets)");
-        private static readonly Regex EngineStack = Pattern(@"\A(?:\s+at |\s*--- End of|\s*\(Filename:|\s*0x[0-9A-Fa-f]{8,16} |\s*\[0x[0-9A-Fa-f]+\]|\s+\S+\.(?:dll|exe)!|\s*#[0-9]{1,3} )");
-        private static readonly Regex EngineBlockEnd = Pattern(@"\A\s*={5,}\s*END OF STACKTRACE");
-        private static byte[] FilterEngine(TextReader reader, Row row, int max)
+        private static readonly Regex EmptyValue = Pattern(@"[:=]\s*[""']?\s*\z");
+        // Engine/loader logs: full text after line-level redaction; head and newest tail within fixed caps.
+        private static bool RedactLines(TextReader reader, Row row, StringBuilder result, int max, ref int count, ref int lines, bool gamePayload, bool dropLast)
         {
-            var result = new StringBuilder(); int count = 0, lines = 0, frames = 0; bool attached = false, crash = false;
-            string line;
-            while ((line = reader.ReadLine()) != null)
+            string line, next = reader.ReadLine();
+            bool keyBlock = false, continuation = false, oversized = false, valueNext = false;
+            while ((line = next) != null)
             {
-                if (line.Length > 16384) { row.Dropped++; attached = false; continue; }
+                next = reader.ReadLine();
+                if (next == null && dropLast) { row.Dropped++; break; } // Cut at the head boundary; the line may be partial.
+                // An oversized line may hide a wrapped secret: skip it and what follows until a timestamp/level boundary.
+                if (line.Length > 16384) { row.Dropped++; row.Truncated = true; oversized = true; continue; }
                 line = Ansi.Replace(line.Normalize(NormalizationForm.FormKC), "");
-                bool keep, stack = EngineStack.IsMatch(line);
-                if (line.StartsWith("Crash!!!", StringComparison.Ordinal)) crash = true;
-                if (crash) { keep = true; if (EngineBlockEnd.IsMatch(line)) crash = false; }
-                else if (stack) keep = attached && ++frames <= 64;
-                else { keep = EngineKeep.IsMatch(line); attached = keep; frames = 0; }
-                if (!keep) { row.Dropped++; continue; }
+                if (oversized && !Boundary.IsMatch(line)) { row.Dropped++; continue; }
+                oversized = false;
+                // Indented lines right after a secret continue it, a key with an empty value continues on the next line,
+                // and key blocks run until their END marker.
+                bool valueLine = valueNext; valueNext = false;
+                if (continuation && !valueLine && (line.Length == 0 || !Char.IsWhiteSpace(line[0]))) continuation = false;
+                bool secret = ErrorSecret.IsMatch(line);
+                if (secret && line.IndexOf("-----BEGIN", StringComparison.OrdinalIgnoreCase) >= 0) keyBlock = true;
                 string clean;
-                if (ErrorSecret.IsMatch(line) || GamePayload.IsMatch(line)) { row.Redacted++; clean = "[redacted]"; }
+                if (keyBlock || continuation || valueLine || secret || gamePayload && GamePayload.IsMatch(line))
+                {
+                    row.Redacted++; clean = "[redacted]";
+                    if (keyBlock && line.IndexOf("-----END", StringComparison.OrdinalIgnoreCase) >= 0) keyBlock = false;
+                    if (secret) { continuation = true; valueNext = EmptyValue.IsMatch(line); }
+                }
                 else
                 {
                     string paths = ErrorPath.Replace(line, ErrorPathAlias);
-                    clean = ErrorPrivate.Replace(paths, "[redacted]");
+                    clean = RedactNames(ErrorPrivate.Replace(paths, "[redacted]"), null);
                     if (clean != line) row.Redacted++;
                 }
                 if (clean.Length > 2048) { clean = clean.Substring(0, 2048); row.Truncated = true; }
                 foreach (char c in clean) if (Char.IsControl(c) && c != '\t') { clean = "[redacted]"; break; }
-                if (++lines > MaxEngineLines || !AppendRecord(result, clean, row, max, ref count)) { row.Truncated = true; break; }
+                if (++lines > MaxEngineLines || !AppendRecord(result, clean, row, max, ref count)) { row.Truncated = true; return false; }
             }
-            return Utf8.GetBytes(result.ToString());
+            return true;
+        }
+        private static StreamReader EngineReader(Stream stream, long length)
+        {
+            return new StreamReader(new LimitedStream(stream, length), new UTF8Encoding(false, false), true, 16384);
         }
         private static void ReadEngine(Fence root, string relative, string id, DateTime now, List<Row> rows, List<Payload> payloads, ref long engineRaw, ref int totalOutput)
         {
-            var row = new Row { Source = id, Content = "filtered-error-lines", SourceKind = "engine-log" }; rows.Add(row);
+            var row = new Row { Source = id, Content = "redacted-full-log", SourceKind = "engine-log" }; rows.Add(row);
             try
             {
                 using (var file = root.Open(relative, false))
@@ -742,20 +820,27 @@ namespace BetterAstralParty.Diagnostics
                     if (file.Modified < now.AddDays(-RecentDays)) { row.Status = "older-than-7-days"; return; }
                     if (file.Modified > now.AddDays(1)) { row.Status = "invalid-future-time"; return; }
                     if (payloads.Count >= MaxFiles || totalOutput >= MaxOutputBytes) { row.Status = "bundle-limit"; return; }
-                    // The newest part matters for crashes; reading starts on a line boundary, never mid-line.
-                    long start = Math.Max(0, file.Length - MaxEngineInputBytes);
-                    if (engineRaw + (file.Length - start) > 2L * MaxEngineInputBytes) { row.Status = "bundle-limit"; return; }
-                    engineRaw += file.Length - start;
-                    file.Stream.Position = start;
-                    using (var reader = new StreamReader(new LimitedStream(file.Stream, file.Length - start), new UTF8Encoding(false, false), true, 16384))
+                    long head = Math.Min(file.Length, MaxEngineHeadBytes), tailStart = Math.Max(head, file.Length - MaxEngineTailBytes);
+                    long read = head + (file.Length - tailStart);
+                    if (engineRaw + read > 2L * MaxEngineInputBytes) { row.Status = "bundle-limit"; return; }
+                    engineRaw += read;
+                    var result = new StringBuilder(); int count = 0, lines = 0, max = Math.Min(MaxEngineOutputBytes, MaxOutputBytes - totalOutput);
+                    bool more;
+                    file.Stream.Position = 0;
+                    using (var reader = EngineReader(file.Stream, head)) more = RedactLines(reader, row, result, max, ref count, ref lines, true, tailStart > head);
+                    if (more && tailStart > head)
                     {
-                        if (start > 0) { reader.ReadLine(); row.Truncated = true; }
-                        var clean = FilterEngine(reader, row, Math.Min(MaxEngineOutputBytes, MaxOutputBytes - totalOutput));
-                        row.ReadBytes = file.Length - start;
-                        if (clean.Length == 0) { row.Status = "no-error-lines"; return; }
-                        row.Output = clean.Length; row.Entry = "logs/" + id.Replace('/', '-') + ".log"; row.Status = "included";
-                        payloads.Add(new Payload(row, clean)); totalOutput += clean.Length;
+                        // The middle is omitted, never the newest lines; reading resumes on a line boundary.
+                        row.Truncated = true;
+                        more = AppendRecord(result, "[... " + (tailStart - head).ToString(CultureInfo.InvariantCulture) + " bytes omitted ...]", row, max, ref count);
+                        file.Stream.Position = tailStart;
+                        if (more) using (var reader = EngineReader(file.Stream, file.Length - tailStart)) { reader.ReadLine(); RedactLines(reader, row, result, max, ref count, ref lines, true, false); }
                     }
+                    row.ReadBytes = read;
+                    var clean = Utf8.GetBytes(result.ToString());
+                    if (clean.Length == 0) { row.Status = "empty-log"; return; }
+                    row.Output = clean.Length; row.Entry = "logs/" + id.Replace('/', '-') + ".log"; row.Status = "included";
+                    payloads.Add(new Payload(row, clean)); totalOutput += clean.Length;
                 }
             }
             catch (FileNotFoundException) { row.Status = "missing"; }
@@ -765,6 +850,69 @@ namespace BetterAstralParty.Diagnostics
             catch (UnauthorizedAccessException) { row.Status = "unsafe-or-denied"; }
             catch (IOException) { row.Status = "locked-or-unreadable"; }
             catch { row.Status = "read-failed"; }
+        }
+        // Plugin runtime text logs moved to the per-user runtime folder so removal or reinstallation keeps them.
+        private static void ReadRuntimeLogs(string runtimeRoot, DateTime now, List<Row> rows, List<Payload> payloads, ref long raw, ref int totalOutput)
+        {
+            if (String.IsNullOrEmpty(runtimeRoot)) return;
+            using (var root = TryRoot(Path.Combine(runtimeRoot, "Logs"), rows, "runtime-logs"))
+            {
+                if (root == null) return;
+                string[] names = { "current.log", "previous.log", "combat-mismatch.log", "combat-mismatch-previous.log" };
+                string[] ids = { "runtime/diagnostics-current", "runtime/diagnostics-previous", "runtime/combat-mismatch", "runtime/combat-mismatch-previous" };
+                for (int i = 0; i < names.Length; ++i) Read(root, names[i], ids[i], now, rows, payloads, ref raw, ref totalOutput);
+            }
+        }
+        // The shared loader's own [General] enabled value decides the Mod.cmd route; only that value is recorded.
+        private static readonly Regex LoaderEnabled = Pattern(@"(?im)^\s*enabled\s*=\s*(true|false)\s*$");
+        private static void ObserveLoaderSwitch(Fence game, List<Row> rows)
+        {
+            var row = new Row { Source = "loader/doorstop-enabled", Content = "single-setting", SourceKind = "loader-config" }; rows.Add(row);
+            try
+            {
+                using (var file = game.Open("doorstop_config.ini", false))
+                {
+                    row.Input = file.Length; row.Modified = file.Modified.ToString("O", CultureInfo.InvariantCulture);
+                    if (file.Length > 64 * 1024) { row.Status = "input-file-limit"; return; }
+                    var bytes = new byte[(int)file.Length]; int used = 0;
+                    while (used < bytes.Length) { int n = file.Stream.Read(bytes, used, bytes.Length - used); if (n == 0) break; used += n; }
+                    var match = LoaderEnabled.Match(new UTF8Encoding(false, false).GetString(bytes, 0, used));
+                    row.Status = match.Success ? "enabled-" + match.Groups[1].Value.ToLowerInvariant() : "enabled-not-found";
+                }
+            }
+            catch (FileNotFoundException) { row.Status = "missing"; }
+            catch { row.Status = "unavailable"; }
+        }
+        // Game hotfixes change GameAssembly.dll and data, not always the player executable; Steam's manifest names the build.
+        private static readonly Regex SteamBuild = Pattern(@"""buildid""\s+""([0-9]{1,12})""");
+        private static void ObserveGameBuild(Fence game, string gameRoot, List<Row> rows)
+        {
+            foreach (string name in new[] { "AstralParty_INT.exe", "GameAssembly.dll" })
+            {
+                var row = new Row { Source = "game/build/" + name, Content = "size-and-time", SourceKind = "game-build" }; rows.Add(row);
+                try { using (var file = game.Open(name, false)) { row.Input = file.Length; row.Modified = file.Modified.ToString("O", CultureInfo.InvariantCulture); row.Status = "observed"; } }
+                catch (FileNotFoundException) { row.Status = "missing"; }
+                catch { row.Status = "unavailable"; }
+            }
+            var steam = new Row { Source = "game/build/steam-manifest", Content = "build-id-only", SourceKind = "game-build" }; rows.Add(steam);
+            try
+            {
+                // <library>/steamapps/common/<game>/<INT folder>: the manifest sits three levels up.
+                string library = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(Fence.Canonical(gameRoot).TrimEnd('\\'))));
+                using (var root = new Fence(library))
+                using (var file = root.Open("appmanifest_2622000.acf", false))
+                {
+                    steam.Input = file.Length; steam.Modified = file.Modified.ToString("O", CultureInfo.InvariantCulture);
+                    if (file.Length > 64 * 1024) { steam.Status = "input-file-limit"; return; }
+                    var bytes = new byte[(int)file.Length]; int used = 0;
+                    while (used < bytes.Length) { int n = file.Stream.Read(bytes, used, bytes.Length - used); if (n == 0) break; used += n; }
+                    var match = SteamBuild.Match(new UTF8Encoding(false, false).GetString(bytes, 0, used));
+                    steam.Status = match.Success ? "buildid-" + match.Groups[1].Value : "buildid-not-found";
+                }
+            }
+            catch (FileNotFoundException) { steam.Status = "missing"; }
+            catch (DirectoryNotFoundException) { steam.Status = "missing"; }
+            catch { steam.Status = "unavailable"; }
         }
         // Bounded view so a growing log cannot extend the read past the snapshot length.
         private sealed class LimitedStream : Stream
@@ -934,7 +1082,11 @@ namespace BetterAstralParty.Diagnostics
             using (var root = TryRoot(runtimeRoot, rows, "runtime-root"))
             {
                 if (root == null) return;
-                foreach (var name in new[] { "stages-current.log", "stages-previous.log", "safe-mode.state" })
+                var request = new Row { Source = "runtime/mod-launch-request", Content = "metadata-only", SourceKind = "launch-request" }; rows.Add(request);
+                try { using (var file = root.Open("mod-launch.request", false)) { request.Input = file.Length; request.Modified = file.Modified.ToString("O", CultureInfo.InvariantCulture); request.Status = "pending"; } }
+                catch (FileNotFoundException) { request.Status = "absent"; }
+                catch { request.Status = "unavailable"; }
+                foreach (var name in new[] { "stages-current.log", "stages-previous.log", "safe-mode.state", "launch-decision.state" })
                 {
                     var row = new Row { Source = "runtime/" + name.Replace(".log", "").Replace(".state", "-state"), Content = "fixed-stage-tokens" }; rows.Add(row);
                     try
@@ -951,7 +1103,7 @@ namespace BetterAstralParty.Diagnostics
                             foreach (var line in Encoding.ASCII.GetString(bytes, 0, used).Replace("\r", "").Split('\n'))
                             {
                                 if (line.Length == 0) continue;
-                                if (StageLine.IsMatch(line) || name == "safe-mode.state" && Regex.IsMatch(line, @"\A[a-z-]{1,32}=[0-9A-Za-z.+:-]{0,64}\z", RegexOptions.CultureInvariant)) { result.Append(line).Append('\n'); row.Projected++; }
+                                if (StageLine.IsMatch(line) || name.EndsWith(".state", StringComparison.Ordinal) && Regex.IsMatch(line, @"\A[a-z-]{1,32}=[0-9A-Za-z.+:-]{0,64}\z", RegexOptions.CultureInvariant)) { result.Append(line).Append('\n'); row.Projected++; }
                                 else row.Dropped++;
                             }
                             var clean = Utf8.GetBytes(result.ToString());
@@ -1079,7 +1231,7 @@ namespace BetterAstralParty.Diagnostics
                     if (id.StartsWith("unity/", StringComparison.Ordinal) || id == "loader/log-output") { row.Status = "metadata-only"; return; }
                     if (file.Modified < now.AddDays(-RecentDays)) { row.Status = "older-than-7-days"; return; }
                     if (file.Modified > now.AddDays(1)) { row.Status = "invalid-future-time"; return; }
-                    if (row.Input > MaxInputFileBytes) { row.Status = "input-file-limit"; return; }
+                    if (row.Input > (id.StartsWith("runtime/", StringComparison.Ordinal) ? MaxRuntimeLogBytes : MaxInputFileBytes)) { row.Status = "input-file-limit"; return; }
                     if (raw + row.Input > MaxInputBytes || payloads.Count >= MaxFiles || totalOutput >= MaxOutputBytes) { row.Status = "bundle-limit"; return; }
                     raw += row.Input; var bytes = new byte[(int)row.Input]; int used = 0;
                     while (used < bytes.Length) { int n = file.Stream.Read(bytes, used, bytes.Length - used); if (n == 0) break; used += n; }
@@ -1110,6 +1262,15 @@ namespace BetterAstralParty.Diagnostics
                     {
                         row.Content = "redacted-error-text";
                         clean = SanitizeError(text, row, Math.Min(MaxOutputFileBytes, MaxOutputBytes - totalOutput), identities);
+                    }
+                    else if (id.StartsWith("game/diagnostics-", StringComparison.Ordinal) || id.StartsWith("game/combat-", StringComparison.Ordinal) || id.StartsWith("runtime/", StringComparison.Ordinal))
+                    {
+                        // Full text; card/hand/chat preview lines are still hidden as a whole, as in game logs.
+                        row.Content = "redacted-full-log";
+                        var full = new StringBuilder(); int fullCount = 0, fullLines = 0;
+                        // A running writer may be mid-record: an unfinished final line is omitted and counted.
+                        using (var reader = new StringReader(text)) RedactLines(reader, row, full, MaxRuntimeLogBytes, ref fullCount, ref fullLines, true, text.Length != 0 && text[text.Length - 1] != '\n');
+                        clean = Utf8.GetBytes(full.ToString());
                     }
                     else clean = Sanitize(text, row, Math.Min(MaxOutputFileBytes, MaxOutputBytes - totalOutput));
                     if (clean.Length == 0) { row.Status = row.Truncated ? "output-limit" : "metadata-only-no-allowed-records"; return; }
@@ -1365,7 +1526,7 @@ namespace BetterAstralParty.Diagnostics
         private static readonly Regex ErrorBoundary = Pattern(@"\A(?:BetterAstralParty |BAP-[A-Z-]+|(?:Code|Time|Run|Version|Stage|PowerShell|Package|Game|ErrorType|ErrorId|HResult|Message|Location|Stack|Exception|Allowed|Issues|Warnings|SteamDiagnostic|SteamProcess|SteamObservationProcess|SteamObservationCoverage|DiagnosticCoverage|LaunchRoot|LaunchFile|LaunchFailure):|\s*(?:at (?:System|Microsoft|BetterAstralParty)\.|System\.[A-Za-z.]+Exception\b|--- End of))");
         private static readonly Regex ErrorPath = Pattern(@"(?i)(?:[a-z]:[\\/]|\\\\|%USERPROFILE%[\\/]|/(?:home|Users|tmp|var|mnt|media|opt|data)/)(?:[^\r\n""'<>|]*?\.(?:dll|exe|ps1|cs|cmd|json|hash|log|vdf)(?=[:\s""'<>|,;)]|$)|[^\r\n""'<>|]*)");
         private static readonly Regex ErrorSecret = Pattern(@"(?i)(?:\b(?:authorization|proxy-authorization|cookie|set-cookie|password|passwd|pwd|credential|(?:client[ _-]?)?secret|signature|private[ _-]?key|access[ _-]?key|api[ _-]?key|(?:access|refresh|id|auth)[ _-]?token|token|session[ _-]?id|steam[ _-]?id|user[ _-]?id|account(?:[ _-]?(?:id|name))?|username|nickname|display[ _-]?name|player[ _-]?name|email|chat|ip[ _-]?address|토큰|비밀번호|암호|닉네임|계정|사용자명)\b\s*[""']?\s*[:=]|\b(?:bearer|basic)\s+\S+|gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|-----BEGIN.*(?:PRIVATE|OPENSSH|PGP).*(?:KEY|BLOCK))");
-        private static readonly Regex ErrorPrivate = Pattern(@"(?i)(?:(?:https?|wss?|ftp)://[^\s""'<>]*|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b(?:[0-9a-f]{1,4}:){4,}[0-9a-f:]+\b|\b[0-9a-f:]*::[0-9a-f:]+\b|\b[0-9]{17}\b|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|\b[A-Za-z0-9_+/=-]{64,}\b|(?<=Run: )[0-9a-f]{32}\b)");
+        private static readonly Regex ErrorPrivate = Pattern(@"(?i)(?:(?:https?|wss?|ftp)://[^\s""'<>]*|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b(?:[0-9a-f]{1,4}:){4,}[0-9a-f:]+\b|\b[0-9a-f:]*::[0-9a-f:]+\b|\b[0-9]{17}\b|\[U:[0-9]:[0-9]{1,10}\]|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|\b[A-Za-z0-9_+/=-]{64,}\b|(?<=Run: )[0-9a-f]{32}\b)");
         private static string ErrorPathAlias(Match match)
         {
             // Preserve code filenames, not directories or arbitrary personal filenames.
@@ -1427,6 +1588,7 @@ namespace BetterAstralParty.Diagnostics
                         if (Regex.IsMatch(value.Value, @"\A[0-9A-Fa-f]{64}\z") && Regex.IsMatch(prefix, @"(?i)\b(?:SHA256|Expected(?:Sha256)?|Actual(?:Sha256)?)\s*[:=]\s*\z")) return value.Value;
                         return "[redacted]";
                     });
+                    clean = RedactNames(clean, null);
                     if (clean != line) row.Redacted++;
                     if (!AppendRecord(result, clean, row, max, ref count)) break;
                 }
@@ -1454,7 +1616,7 @@ namespace BetterAstralParty.Diagnostics
         {
             string host = Regex.IsMatch(hostVersion ?? "", @"\A[0-9]{1,5}(?:\.[0-9]{1,5}){1,3}\z") ? hostVersion : "unknown";
             string plugin = Version.IsMatch(runningPluginVersion ?? "") ? runningPluginVersion : "unknown";
-            var json = new StringBuilder("{\n\"schema\":1,\"collectorVersion\":\"7\",\"createdUtc\":").Append(Quote(now.ToString("O", CultureInfo.InvariantCulture)));
+            var json = new StringBuilder("{\n\"schema\":1,\"collectorVersion\":\"8\",\"createdUtc\":").Append(Quote(now.ToString("O", CultureInfo.InvariantCulture)));
             json.Append(",\"environment\":{\"osVersion\":").Append(Quote(Environment.OSVersion.Version.ToString()))
                 .Append(",\"runtimeVersion\":").Append(Quote(Environment.Version.ToString())).Append(",\"hostVersion\":").Append(Quote(host))
                 .Append(",\"os64Bit\":").Append(Environment.Is64BitOperatingSystem ? "true" : "false")
@@ -1462,12 +1624,12 @@ namespace BetterAstralParty.Diagnostics
                 .Append(",\"gameRootValidated\":").Append(gameValid ? "true" : "false").Append(",\"pluginVersion\":").Append(Quote(plugin))
                 .Append(",\"pluginVersionSource\":").Append(Quote(plugin == "unknown" ? "unknown" : "running-plugin"))
                 .Append(",\"pluginFileProductVersion\":").Append(Quote(fileProductVersion)).Append("},\n")
-                .Append("\"limits\":{\"recentDays\":7,\"maxLogs\":40,\"engineInputFileBytes\":33554432,\"engineOutputFileBytes\":262144,\"engineLines\":2000,\"crashFolders\":4,\"windowsEvents\":16,\"pluginInventory\":128,\"inputFileBytes\":2097152,\"inputTotalBytes\":8388608,\"outputFileBytes\":524288,\"outputTotalBytes\":4194304},\n")
-                .Append("\"privacy\":{\"configurationIncluded\":false,\"rawDumpsIncluded\":false,\"credentialStoresAccessed\":false,\"gamePayloadIncluded\":false,\"memoryDumpsRead\":false,\"engineLogContent\":\"filtered-redacted-error-lines\",\"windowsEvents\":\"typed-game-crash-fields\",\"uploaded\":false,\"completeAnonymisation\":false},\n")
+                .Append("\"limits\":{\"recentDays\":7,\"maxLogs\":48,\"engineHeadBytes\":262144,\"engineTailBytes\":3145728,\"engineOutputFileBytes\":4194304,\"engineLines\":100000,\"runtimeLogBytes\":2097152,\"crashFolders\":4,\"windowsEvents\":16,\"pluginInventory\":128,\"inputFileBytes\":2097152,\"inputTotalBytes\":8388608,\"outputFileBytes\":524288,\"outputTotalBytes\":25165824},\n")
+                .Append("\"privacy\":{\"configurationIncluded\":false,\"rawDumpsIncluded\":false,\"credentialStoresAccessed\":false,\"gamePayloadIncluded\":false,\"memoryDumpsRead\":false,\"engineLogContent\":\"redacted-full-head-and-tail\",\"identityNamesRedacted\":true,\"windowsEvents\":\"typed-game-crash-fields\",\"uploaded\":false,\"completeAnonymisation\":false},\n")
                 .Append("\"catalogInventory\":{\"zipEntry\":\"catalog-inventory.json\",\"contentKind\":\"filename-size-sha256-only\",\"contentsIncluded\":false,\"logQuotaShared\":false},\n")
                 .Append("\"recoveryInventory\":{\"zipEntry\":\"recovery-inventory.json\",\"contentKind\":\"presence-size-sha256-only\",\"contentsIncluded\":false,\"authenticated\":false,\"logQuotaShared\":false},\n")
                 .Append("\"structuredProjection\":{\"schema\":\"bap.minimal-diagnostic/v1\",\"identities\":\"bundle-local-aliases\",\"maxSessionAliases\":64,\"maxOperationAliases\":512,\"unknownEvents\":\"omitted-and-counted-by-fixed-reason\",\"snapshotsAreNewEvents\":false},\n")
-                .Append("\"scope\":{\"writerHealth\":\"unknown\",\"requestedRecording\":\"unknown\",\"sessionCorrelation\":\"not-reconstructed\",\"crossSourceOrder\":\"unknown\",\"combatVerification\":\"public-hp-comparison-only\",\"missingMeans\":\"not-observed\",\"engineLogs\":\"filtered-error-lines\"},\n\"files\":[");
+                .Append("\"scope\":{\"writerHealth\":\"unknown\",\"requestedRecording\":\"unknown\",\"sessionCorrelation\":\"not-reconstructed\",\"crossSourceOrder\":\"unknown\",\"combatVerification\":\"public-hp-comparison-only\",\"missingMeans\":\"not-observed\",\"engineLogs\":\"redacted-full-head-and-tail\"},\n\"files\":[");
             // Only a live owner snapshot can provide current writer health; historical logs cannot.
             json.Length -= "\"files\":[".Length;
             json.Append("\"liveHostHealth\":{\"runtime\":")

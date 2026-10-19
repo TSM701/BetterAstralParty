@@ -87,6 +87,8 @@ public unsafe class RuntimeObject {
     private static RuntimeObject? Wrap(IntPtr pointer) => pointer == IntPtr.Zero ? null : new(pointer);
     private static IntPtr MethodInfo(IntPtr klass, string name, int count) => klass;
     private static UnityEngine.Quaternion Captured;
+    private static double CapturedDouble;
+    private static Type ParamType = typeof(UnityEngine.Quaternion);
     private static IntPtr Id(Type type) {
         foreach (var entry in Types) if (entry.Value == type) return entry.Key;
         var id = (IntPtr)(Types.Count + 1); Types.Add(id, type); return id;
@@ -102,9 +104,9 @@ public unsafe class RuntimeObject {
         internal static bool il2cpp_class_is_assignable_from(IntPtr target, IntPtr value) => Types[target].IsAssignableFrom(Types[value]);
         internal static string il2cpp_type_get_name_(IntPtr type) => Types[type].FullName!;
         internal static IntPtr ManagedStringToIl2Cpp(string text) => Id(typeof(string));
-        internal static IntPtr il2cpp_method_get_param(IntPtr method, uint index) => Id(typeof(UnityEngine.Quaternion));
+        internal static IntPtr il2cpp_method_get_param(IntPtr method, uint index) => Id(ParamType);
         internal static IntPtr il2cpp_runtime_invoke(IntPtr method, IntPtr instance, void** args, ref IntPtr exception) {
-            Captured = *(UnityEngine.Quaternion*)args[0]; return IntPtr.Zero;
+            if (ParamType == typeof(double)) CapturedDouble = *(double*)args[0]; else Captured = *(UnityEngine.Quaternion*)args[0]; return IntPtr.Zero;
         }
     }
 __CHECK_ARGUMENT__
@@ -122,6 +124,16 @@ __INVOKE__
         catch (InvalidCastException) { return false; }
         return Captured.x == value.x && Captured.y == value.y && Captured.z == value.z && Captured.w == value.w;
     }
+    // GSlider.value/max are System.Double; the settings marker slider writes them.
+    public static bool AcceptsDouble() => Accepts(typeof(double), .375d);
+    public static bool InvokesDouble() {
+        ParamType = typeof(double);
+        try { Invoke((IntPtr)1, IntPtr.Zero, "DoubleProbe", new object?[] { 62.5d }); }
+        catch (ArgumentException) { return false; }
+        catch (InvalidCastException) { return false; }
+        finally { ParamType = typeof(UnityEngine.Quaternion); }
+        return CapturedDouble == 62.5d;
+    }
     public static void Run() {
         foreach (var target in new[] { typeof(string), typeof(object), typeof(IComparable), typeof(IEnumerable<char>) })
             foreach (var text in new[] { "", "중첩·진행 3 · 남은 턴 2" })
@@ -137,6 +149,8 @@ __INVOKE__
         if (!AcceptsQuaternion() || !InvokesQuaternion()) throw new Exception("Quaternion check/marshaling failed");
         foreach (var target in new[] { typeof(UnityEngine.Vector3), typeof(object), typeof(UnityEngine.Quaternion).MakeByRefType() })
             if (Accepts(target, new UnityEngine.Quaternion())) throw new Exception("Invalid Quaternion target accepted");
+        if (!AcceptsDouble() || !InvokesDouble()) throw new Exception("Double check/marshaling failed");
+        if (Accepts(typeof(float), .5d) || Accepts(typeof(double), .5f) || Accepts(typeof(double), 1)) throw new Exception("Double guard is not exact");
     }
 }
 }

@@ -21,8 +21,9 @@ internal static class CardTargetButtonsUi
         // Poll every frame, but do not walk unrelated hand artwork, labels and effects.
         var window = root == null ? null : GameUi.Find(root, "CardWindow", maxDepth: 1);
         var use = window?.Get("contentPane")?.Field("com_UseCard");
-        // Native RefreshCardInfo_SelectPlayer selects type 1. Land/dice/other windows stay native.
-        if (use == null || !GameUi.Visible(use) || use.Field("type")!.Get<int>("selectedIndex") != 1)
+        // Target steps whose cancel/confirm sit over the hand: RefreshCardInfo_SelectPlayer selects type 1,
+        // RefreshPointList (dice point) type 3 and InitSelectLandStatus type 4. Other card-window states stay native.
+        if (use == null || !GameUi.Visible(use) || !TargetStep(use.Field("type")!.Get<int>("selectedIndex")))
         { Clear(); return; }
         if (_use?.Pointer != use.Pointer) { Clear(); _use = use; }
         // A button's local order cannot escape a hand panel drawn over its whole window.
@@ -34,6 +35,8 @@ internal static class CardTargetButtonsUi
         foreach (var name in new[] { "btn_Cancel", "btn_Sure" })
             Raise(use.Field(name)!, cardOrder + 1);
     }
+
+    internal static bool TargetStep(int type) => type is 1 or 3 or 4;
 
     private static void Raise(RuntimeObject item, int minimum)
     {

@@ -59,7 +59,7 @@ namespace BetterAstralParty.Installation
                 string? steamObservation = null;
                 var steam = updateOnly ? null : FindSteamRoot(account == 0, value => {
                     steamObservation = value;
-                    Console.WriteLine("Steam 자동 탐색을 사용할 수 없어 바로가기는 변경하지 않습니다. / Steam discovery unavailable; shortcuts will remain unchanged.");
+                    Console.WriteLine("Steam 자동 탐색을 사용할 수 없어 Steam 라이브러리 항목은 변경하지 않습니다. / Steam discovery unavailable; shortcuts will remain unchanged.");
                 });
                 try { _game = ResolveOperationGame(supplied, steam, _package, removing, emergency); }
                 catch (InvalidOperationException) when (supplied == null && !_preview) {
@@ -76,7 +76,7 @@ namespace BetterAstralParty.Installation
                         catch (Exception error) when (account == 0 && (error is SteamProfileUnavailableException || error is IOException || error is InvalidDataException || error is InvalidOperationException || error is UnauthorizedAccessException || error is System.Security.SecurityException || error is DecoderFallbackException)) {
                             Observe("NativeInstallShortcut: action=Skipped; reason=SteamProfileUnavailable; exception=" + error.GetType().Name
                                 + "; hresult=0x" + error.HResult.ToString("X8", CultureInfo.InvariantCulture));
-                            Console.WriteLine("Steam 계정을 확인하지 못해 파일 설치만 진행합니다. / Steam profile unavailable; install files without changing shortcuts.");
+                            Console.WriteLine("Steam 계정을 확인하지 못해 파일 설치만 진행합니다. Steam 라이브러리에 Astral Party - Mod가 추가되지 않습니다. / Steam profile unavailable; install files without changing shortcuts.");
                         }
                 }
                 var recoveryPlan = Get(values, "recoveryplan");

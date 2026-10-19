@@ -134,8 +134,19 @@ internal static class GameUi
         return true;
     }
 
+    private static int _childrenFrame = -1;
+    private static IntPtr _childrenParent;
+    private static bool _childrenVisible;
+    private static readonly Dictionary<string, RuntimeObject> VisibleChildren = new(StringComparer.Ordinal);
+
     internal static RuntimeObject? Find(RuntimeObject node, string type, int depth = 0, int maxDepth = 4)
     {
+        // Several features look up root windows every frame; walk the root's direct children once per frame.
+        // shortcut: a child shown later in the same frame is seen next frame, upgrade if a same-frame caller needs it.
+        if (depth == 0 && maxDepth == 1) return VisibleChild(node, type);
+        // Default-depth window searches from the root share one walk for a short window instead of each feature
+        // walking the whole tree on its own 0.2 s timer; aligned walks made 20-40 ms frames.
+        if (depth == 0 && maxDepth == DeepDepth && node.Pointer == _root?.Pointer) return DeepWindow(node, type);
         // Ancestors were already checked by the preceding recursive call.
         if (depth == 0 ? !Visible(node) : node.Get<bool>("isDisposed") || !node.Get<bool>("onStage")
             || !node.Get<bool>("internalVisible") || !node.Get<bool>("internalVisible2")) return null;
@@ -153,6 +164,60 @@ internal static class GameUi
             if (found != null) return found;
         }
         return null;
+    }
+
+    private const int DeepDepth = 4;
+    private const float DeepLifetime = 0.1f;
+    private static float _deepUntil = -1;
+    private static IntPtr _deepRoot;
+    private static readonly Dictionary<string, RuntimeObject> DeepWindows = new(StringComparer.Ordinal);
+
+    // shortcut: a window shown less than DeepLifetime ago can be missed until the next walk; callers poll at 0.2 s.
+    private static RuntimeObject? DeepWindow(RuntimeObject root, string type)
+    {
+        var stale = _deepRoot != root.Pointer || Time.unscaledTime >= _deepUntil;
+        if (!stale && DeepWindows.TryGetValue(type, out var cached) && !Visible(cached)) stale = true;
+        if (stale)
+        {
+            _deepRoot = root.Pointer; _deepUntil = Time.unscaledTime + DeepLifetime; DeepWindows.Clear();
+            if (Visible(root)) CollectWindows(root, 0);
+        }
+        return DeepWindows.TryGetValue(type, out var found) ? found : null;
+    }
+
+    // Same order, visibility rules and pruning as Find, recording the first match of every type.
+    private static void CollectWindows(RuntimeObject node, int depth)
+    {
+        if (depth > 0 && (node.Get<bool>("isDisposed") || !node.Get<bool>("onStage")
+            || !node.Get<bool>("internalVisible") || !node.Get<bool>("internalVisible2"))) return;
+        var type = node.TypeName;
+        DeepWindows.TryAdd(type, node);
+        if (type is "UICom_AttrInfo" or "UIButton_Buff") return;
+        if (depth >= DeepDepth || node.Get("asCom") == null) return;
+        for (int i = 0, count = node.Get<int>("numChildren"); i < count; i++)
+        {
+            var child = node.Call("GetChildAt", i);
+            if (child != null) CollectWindows(child, depth + 1);
+        }
+    }
+
+    private static RuntimeObject? VisibleChild(RuntimeObject parent, string type)
+    {
+        if (_childrenFrame != Time.frameCount || _childrenParent != parent.Pointer)
+        {
+            _childrenFrame = Time.frameCount; _childrenParent = parent.Pointer; VisibleChildren.Clear();
+            _childrenVisible = Visible(parent);
+            if (_childrenVisible && parent.Get("asCom") != null)
+                for (int i = 0, count = parent.Get<int>("numChildren"); i < count; i++)
+                {
+                    var child = parent.Call("GetChildAt", i);
+                    if (child == null || child.Get<bool>("isDisposed") || !child.Get<bool>("onStage")
+                        || !child.Get<bool>("internalVisible") || !child.Get<bool>("internalVisible2")) continue;
+                    VisibleChildren.TryAdd(child.TypeName, child);
+                }
+        }
+        if (!_childrenVisible) return null;
+        return parent.TypeName == type ? parent : VisibleChildren.TryGetValue(type, out var found) ? found : null;
     }
 
     internal static IReadOnlyList<RuntimeObject> PointerPath(bool refresh = false, bool hitTest = false)

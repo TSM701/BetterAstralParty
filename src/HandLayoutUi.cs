@@ -25,6 +25,7 @@ internal static class HandLayoutUi
         internal Vector2 Center;
         internal bool CenterLocked;
         internal bool AlphaOwned;
+        internal float OwnedAlpha; // The folded alpha this mod last wrote.
         internal float? GuideRotation;
     }
     private static readonly Dictionary<IntPtr, Entry> Entries = new();
@@ -49,7 +50,7 @@ internal static class HandLayoutUi
     private static (Vector2 Size, float Unit, bool Korean)? _dropHintLayout;
     private static Vector2 _hotPosition, _hotSize;
     private static float _scanAt, _diagnosticAt;
-    private static IntPtr _tween, _tweenManager, _gobject, _logic, _pool;
+    private static IntPtr _tween, _tweenManager, _gobject, _logic, _pool, _cardClass;
     private static HandGroup? _expanded;
     private static IntPtr _focused;
     private static bool _cardPress;
@@ -78,6 +79,7 @@ internal static class HandLayoutUi
         if (!Plugin.GroupHand.Value || root == null) { Clear(); return; }
         if (_tween == IntPtr.Zero) _tween = RuntimeObject.FindClass("FairyGUI", "GTween");
         if (_tweenManager == IntPtr.Zero) _tweenManager = RuntimeObject.FindClass("FairyGUI", "TweenManager");
+        if (_cardClass == IntPtr.Zero) _cardClass = RuntimeObject.FindClass("UI", "UIHandCard_Button_Card");
         if (_gobject == IntPtr.Zero) _gobject = RuntimeObject.FindClass("FairyGUI", "GObject");
         if (_pool == IntPtr.Zero) _pool = RuntimeObject.FindClass("GameLogic", "CardPool");
         if (Time.unscaledTime >= _scanAt)
@@ -444,10 +446,12 @@ internal static class HandLayoutUi
     {
         if (e.Card.Get<bool>("isDisposed")) { e.AlphaOwned = false; return; }
         var alpha = e.Card.Get<float>("alpha");
-        if (e.AlphaOwned && Math.Abs(alpha - HandLayout.FoldedOpacity) > .0001f) e.AlphaOwned = false;
+        var target = Math.Clamp(Plugin.FoldedHandOpacity.Value, 0f, 1f);
+        if (e.AlphaOwned && Math.Abs(alpha - e.OwnedAlpha) > .0001f) e.AlphaOwned = false;
         // Only resting opaque cards: never brighten, stop, or restart native fades.
-        if (folded && !e.AlphaOwned && Math.Abs(alpha - 1f) < .0001f)
-        { e.Card.Set("alpha", HandLayout.FoldedOpacity); e.AlphaOwned = true; }
+        if (folded && !e.AlphaOwned && Math.Abs(alpha - 1f) < .0001f
+            || folded && e.AlphaOwned && Math.Abs(e.OwnedAlpha - target) > .0001f)
+        { e.Card.Set("alpha", target); e.AlphaOwned = true; e.OwnedAlpha = target; }
         else if (!folded && e.AlphaOwned)
         { e.Card.Set("alpha", 1f); e.AlphaOwned = false; }
     }
@@ -622,8 +626,11 @@ internal static class HandLayoutUi
             if (item == null) continue;
             var motion = new RuntimeObject(item); // Reuse the array element's native GC handle.
             if (motion.Field<bool>("_killed")) continue;
-            var target = motion.Get("target");
-            if (target?.TypeName != "UIHandCard_Button_Card" || target.Get("parent")?.Pointer != _container?.Pointer) continue;
+            // Most active tweens belong to unrelated UI; reject them by class before wrapping the target.
+            var targetPointer = motion.FieldPointer("_target");
+            if (_cardClass == IntPtr.Zero || RuntimeObject.ClassOf(targetPointer) != _cardClass) continue;
+            var target = new RuntimeObject(targetPointer);
+            if (target.Get("parent")?.Pointer != _container?.Pointer) continue;
             if (!result.TryGetValue(target.Pointer, out var list))
                 result[target.Pointer] = list = MotionPool.Count > 0 ? MotionPool.Pop() : new();
             list.Add(motion);

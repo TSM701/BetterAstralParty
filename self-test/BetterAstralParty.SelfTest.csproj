@@ -13,6 +13,7 @@
     <Compile Include="..\src\Observability\*.cs" Link="Observability\%(Filename)%(Extension)" />
     <Compile Include="..\diagnostics\MinimalDiagnosticProjection.cs" Link="MinimalDiagnosticProjection.cs" />
     <Compile Include="..\src\AutomaticUpdates.cs" Link="AutomaticUpdates.cs" />
+    <Compile Include="..\src\SettingsBackup.cs" Link="SettingsBackup.cs" />
     <Compile Include="..\src\PrivateReleaseSession.cs" Link="PrivateReleaseSession.cs" />
     <Compile Include="..\src\WindowsReleaseCredentialInput.cs" Link="WindowsReleaseCredentialInput.cs" />
     <Compile Include="..\src\WindowsReleaseCredentialStore.cs" Link="WindowsReleaseCredentialStore.cs" />

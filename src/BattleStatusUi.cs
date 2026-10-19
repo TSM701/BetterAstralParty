@@ -7,7 +7,7 @@ internal static class BattleStatusUi
 {
     internal const string CounterFeature = "CounterIndicators";
     private static readonly List<Row> Rows = new();
-    private static IntPtr _logicClass, _battleClass, _helperClass, _commonClass, _parent;
+    private static IntPtr _logicClass, _battleClass, _helperClass, _commonClass, _parent, _stageClass;
     private static RuntimeObject? _fight, _ui, _tooltip, _tooltipItem, _counter;
     private static NativeUi.Surface? _tooltipBackground;
     private static float _scanAt, _hoverAt, _tipRefreshAt;
@@ -226,7 +226,7 @@ internal static class BattleStatusUi
             // Follow the world-space header every frame, independently of the slower buff scan.
             UpdateCounter(director?.Get("victim")?.Field("_UI"));
             // Do not spend another polling interval waiting to construct/bind the first spectator rows.
-            if (Rows.Count != 2 || Rows.Any(row => row.NeedsData) || Time.unscaledTime >= _scanAt)
+            if (Rows.Count != 2 || Rows[0].NeedsData || Rows[1].NeedsData || Time.unscaledTime >= _scanAt)
             {
                 _scanAt = Time.unscaledTime + 0.2f;
                 Scan(room!, map, director);
@@ -366,8 +366,8 @@ internal static class BattleStatusUi
         var step = _ui?.Field("step")?.Get<int>("selectedIndex") ?? 0;
         if (!blocked)
         {
-            var point = RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "Stage"), "get_inst")!
-                .Get<Vector2>("touchPosition");
+            if (_stageClass == IntPtr.Zero) _stageClass = RuntimeObject.FindClass("FairyGUI", "Stage");
+            var point = RuntimeObject.StaticCall(_stageClass, "get_inst")!.Get<Vector2>("touchPosition");
             foreach (var row in Rows)
             {
                 if (!row.Visible || !GameUi.Visible(row.Panel) || !ContainsPoint(row.Panel, point)) continue;
@@ -388,7 +388,8 @@ internal static class BattleStatusUi
         if (_hovered != pointer) { _hovered = pointer; _hoverAt = Time.unscaledTime; _tipText = ""; _tipRefreshAt = 0; }
         if (icon == null || Time.unscaledTime - _hoverAt < 0.15f)
         {
-            _tooltip?.Set("visible", false);
+            // Writing visible re-runs native display updates; skip it once the tooltip is already hidden.
+            if (_tooltip?.Get<bool>("visible") == true) _tooltip.Set("visible", false);
             return;
         }
         EnsureTooltip();

@@ -22,12 +22,21 @@ internal sealed class DiagnosticLog
     internal const int CombatMaxBytes = 64 * 1024;
     internal string CombatId { get; private set; } = "";
     internal bool IsRecording => _writer != null;
-    private double _sampleStart = -1, _uiTotal, _uiMax, _gameMax, _popupMax, _statusMax, _frameMax;
+    private double _sampleStart = -1, _uiTotal, _uiMax, _gameMax, _popupMax, _statusMax, _frameMax, _coreMax;
     private long _sampleBytes, _frames, _slowFrames;
     private double _fieldTotal, _fieldMax;
     private double _handTotal, _handMax;
     private long _handBytes;
     private int _fieldPlates, _fieldEffects;
+    // ModUi tick segments, in call order; mark i ends segment i - 1.
+    internal static readonly string[] TickFeatures = { "core", "battleMenu", "autoThanks", "characterGuide", "font", "language",
+        "updateNotice", "fieldZoom", "fieldDice", "cardTargets", "cardPreview", "hand", "shushu", "battleStatus", "encounter",
+        "fieldBuffs", "settings" };
+    private readonly double[] _featureMax = new double[TickFeatures.Length];
+    private double _spikeMs, _spikeTopMs;
+    private string _spikeTop = "none";
+    private bool _spikeClrGc, _spikeNativeGc;
+    private int _clrGcs, _nativeGcsInTick, _nativeGcsOutside;
 
     internal DiagnosticLog(string directory, Action<string> warning)
     {
@@ -134,7 +143,7 @@ internal sealed class DiagnosticLog
     // Called only with diagnostics ON; aggregate numbers, never emit per-frame lines.
     internal void Performance(double seconds, double uiMs, double gameMs, double popupMs,
         double statusMs, long managedBytes, double frameMs, double fieldMs = 0, int fieldPlates = 0, int fieldEffects = 0,
-        double handMs = 0, long handBytes = 0)
+        double handMs = 0, long handBytes = 0, double coreMs = 0)
     {
         lock (_gate)
         {
@@ -143,7 +152,7 @@ internal sealed class DiagnosticLog
             if (_sampleStart < 0) _sampleStart = seconds;
             _frames++; _sampleBytes += managedBytes;
             _uiTotal += uiMs; _uiMax = Math.Max(_uiMax, uiMs);
-            _gameMax = Math.Max(_gameMax, gameMs); _popupMax = Math.Max(_popupMax, popupMs);
+            _gameMax = Math.Max(_gameMax, gameMs); _popupMax = Math.Max(_popupMax, popupMs); _coreMax = Math.Max(_coreMax, coreMs);
             _statusMax = Math.Max(_statusMax, statusMs); _frameMax = Math.Max(_frameMax, frameMs);
             // Field Tick only: native per-frame placement/rendering occurs outside ModUi.Tick.
             _fieldTotal += fieldMs; _fieldMax = Math.Max(_fieldMax, fieldMs);
@@ -151,17 +160,55 @@ internal sealed class DiagnosticLog
             _handTotal += handMs; _handMax = Math.Max(_handMax, handMs); _handBytes += handBytes;
             if (frameMs >= 50) _slowFrames++;
             if (seconds - _sampleStart < 10) return;
-            Write(FormattableString.Invariant($"performance frames={_frames}; ui_avg_ms={_uiTotal / _frames:F3}; ui_max_ms={_uiMax:F3}; gameui_max_ms={_gameMax:F3}; popup_max_ms={_popupMax:F3}; status_max_ms={_statusMax:F3}; managed_bytes_per_frame={_sampleBytes / _frames}; game_frame_max_ms={_frameMax:F2}; game_frames_ge50ms={_slowFrames}"));
+            Write(FormattableString.Invariant($"performance frames={_frames}; ui_avg_ms={_uiTotal / _frames:F3}; ui_max_ms={_uiMax:F3}; gameui_max_ms={_gameMax:F3}; gameui_core_max_ms={_coreMax:F3}; popup_max_ms={_popupMax:F3}; status_max_ms={_statusMax:F3}; managed_bytes_per_frame={_sampleBytes / _frames}; game_frame_max_ms={_frameMax:F2}; game_frames_ge50ms={_slowFrames}"));
             Write(FormattableString.Invariant($"performance_field tick_avg_ms={_fieldTotal / _frames:F3}; tick_max_ms={_fieldMax:F3}; plates_max={_fieldPlates}; effects_max={_fieldEffects}; native_layout_excluded=True"));
             Write(FormattableString.Invariant($"performance_hand tick_avg_ms={_handTotal / _frames:F3}; tick_max_ms={_handMax:F3}; managed_bytes_per_frame={_handBytes / _frames}; native_layout_excluded=True"));
+            WriteSpikes();
             ResetPerformance();
         }
     }
 
+    // Called just before Performance for the same frame. GC flags are attached to the slowest mod tick of the window;
+    // a native GC between ticks is counted separately because it lands in the game's own frame time.
+    internal void TickSpikes(long[] marks, double milliseconds, int clrGcs, bool nativeGcInTick, bool nativeGcOutside)
+    {
+        lock (_gate)
+        {
+            if (_writer == null) return;
+            _clrGcs += clrGcs;
+            if (nativeGcInTick) _nativeGcsInTick++;
+            if (nativeGcOutside) _nativeGcsOutside++;
+            double total = 0, topMs = 0;
+            var top = "none";
+            for (var i = 0; i < TickFeatures.Length; i++)
+            {
+                if (marks[i] == 0 || marks[i + 1] == 0) continue;
+                var ms = (marks[i + 1] - marks[i]) * milliseconds;
+                total += ms;
+                _featureMax[i] = Math.Max(_featureMax[i], ms);
+                if (ms > topMs) { topMs = ms; top = TickFeatures[i]; }
+            }
+            if (total <= _spikeMs) return;
+            _spikeMs = total; _spikeTop = top; _spikeTopMs = topMs; _spikeClrGc = clrGcs > 0; _spikeNativeGc = nativeGcInTick;
+        }
+    }
+
+    private void WriteSpikes()
+    {
+        var features = new StringBuilder();
+        for (var i = 0; i < TickFeatures.Length; i++)
+            features.Append(FormattableString.Invariant($"{(i == 0 ? "" : "; ")}{TickFeatures[i]}={_featureMax[i]:F2}"));
+        Write(FormattableString.Invariant($"performance_spike tick_max_ms={_spikeMs:F3}; top={_spikeTop}; top_ms={_spikeTopMs:F3}; clr_gc={_spikeClrGc}; native_gc={_spikeNativeGc}; window_clr_gcs={_clrGcs}; window_native_gcs_in_tick={_nativeGcsInTick}; window_native_gcs_between_ticks={_nativeGcsOutside}"));
+        Write("performance_features_max_ms " + features);
+    }
+
     private void ResetPerformance()
     {
+        Array.Clear(_featureMax);
+        _spikeMs = _spikeTopMs = 0; _spikeTop = "none"; _spikeClrGc = _spikeNativeGc = false;
+        _clrGcs = _nativeGcsInTick = _nativeGcsOutside = 0;
         _sampleStart = -1;
-        _uiTotal = _uiMax = _gameMax = _popupMax = _statusMax = _frameMax = 0;
+        _uiTotal = _uiMax = _gameMax = _popupMax = _statusMax = _frameMax = _coreMax = 0;
         _sampleBytes = _frames = _slowFrames = 0;
         _fieldTotal = _fieldMax = 0;
         _handTotal = _handMax = 0; _handBytes = 0;

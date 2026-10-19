@@ -26,7 +26,7 @@ internal sealed class AutomaticUpdates : IDisposable {
     private UpdateDownloadRequest? _request;
     private UpdateDownloadRequest? _explicitTransition;
     private int _transitionSourceGeneration;
-    private bool _transitionApplyOnce;
+    private bool _applyOnce;
     private ReceiptChannelState? _channels;
     private string? _installedVersion;
     private bool _requiresTransition, _transitionCandidate;
@@ -66,6 +66,9 @@ internal sealed class AutomaticUpdates : IDisposable {
     internal bool AccessLost => _downloads.Result.Status == UpdateDownloadStatus.AccessUnavailable;
     private bool Configured => !_disposed && _downloads.IsConfigured && _handoff?.Configured == true;
     internal bool CanDownload => Configured && !_blocked && !_requiresTransition && _request != null && _pending == null && _cancel == null && _begin == null && _completion == null && _inspection == null && Status is not (AutomaticUpdateStatus.Downloading or AutomaticUpdateStatus.Ready or AutomaticUpdateStatus.Queued or AutomaticUpdateStatus.Cancelling or AutomaticUpdateStatus.CheckingInstallation or AutomaticUpdateStatus.RecoveryRequired or AutomaticUpdateStatus.CancelFailed or AutomaticUpdateStatus.RetryWaiting or AutomaticUpdateStatus.Preparing);
+    // A downloaded update waits while automatic apply is off; the user can apply it once.
+    internal bool CanApply => !_blocked && !ApplyAfterExit && !_applyOnce && Status == AutomaticUpdateStatus.Ready && _ready != null && _handoff != null && _completion == null;
+    internal void ApplyOnce() { if (!CanApply) return; _applyOnce = true; Revision++; }
     internal bool CanCancel => !_blocked && Status is (AutomaticUpdateStatus.Downloading or AutomaticUpdateStatus.Preparing or AutomaticUpdateStatus.Ready or AutomaticUpdateStatus.Queued or AutomaticUpdateStatus.RetryWaiting);
     internal bool CanReactivate => _blocked && Fault != null && !_preferencesRepair && !_recovery && _failure == null && _reactivation == null && _cancel == null;
     internal AutomaticUpdates(UpdateDownloads downloads, IUpdateHandoff? handoff = null, IUpdateSafety? safety = null) { _downloads = downloads; _handoff = handoff; _safety = safety; }
@@ -123,7 +126,7 @@ internal sealed class AutomaticUpdates : IDisposable {
             _cancel = Task.WhenAll(waits);
         }
         _ready = null; _job?.Dispose(); _job = null; _downloads.Clear();
-        if (clearRequest) { _request = null; _requestIdentity = ""; _autoSeen = ""; _attempts = 0; _explicitTransition = null; _transitionApplyOnce = false; _requiresTransition = false; }
+        if (clearRequest) { _request = null; _requestIdentity = ""; _autoSeen = ""; _attempts = 0; _explicitTransition = null; _applyOnce = false; _requiresTransition = false; }
     }
     internal void Configure(IReleaseAuthentication? authentication) {
         if (_configuredOnce && _downloads.Feed is { RequiresAuthentication: false }) { _authentication = authentication; return; }
@@ -143,7 +146,7 @@ internal sealed class AutomaticUpdates : IDisposable {
         if (AutoDownload == download && ApplyAfterExit == apply) return;
         var stop = AutoDownload && !download || ApplyAfterExit && !apply && (Status == AutomaticUpdateStatus.Queued || _pending?.Queue == true);
         AutoDownload = download; ApplyAfterExit = apply; Revision++;
-        if (stop) { _explicitTransition = null; _transitionApplyOnce = false; Retire(); Set(Configured ? _cancel != null ? AutomaticUpdateStatus.Cancelling : AutomaticUpdateStatus.Cancelled : AutomaticUpdateStatus.NotConfigured); }
+        if (stop) { _explicitTransition = null; _applyOnce = false; Retire(); Set(Configured ? _cancel != null ? AutomaticUpdateStatus.Cancelling : AutomaticUpdateStatus.Cancelled : AutomaticUpdateStatus.NotConfigured); }
     }
     // A switched channel with no eligible target waits instead of asking for a review that cannot start.
     internal bool TransitionWaiting => Status == AutomaticUpdateStatus.TransitionRequired && _request == null && !_transitionCandidate;
@@ -181,7 +184,7 @@ internal sealed class AutomaticUpdates : IDisposable {
             || Status is not (AutomaticUpdateStatus.Idle or AutomaticUpdateStatus.MissingAssets or AutomaticUpdateStatus.Cancelled or AutomaticUpdateStatus.TransitionRequired)) return false;
         _explicitTransition = null; Context(request, sourceGeneration);
         if (!CanDownload) return false;
-        _explicitTransition = request; _transitionSourceGeneration = sourceGeneration; _transitionApplyOnce = applyOnceAfterExit;
+        _explicitTransition = request; _transitionSourceGeneration = sourceGeneration; _applyOnce = applyOnceAfterExit;
         Download(now); return true;
     }
     internal void Download(DateTimeOffset now) {
@@ -190,13 +193,13 @@ internal sealed class AutomaticUpdates : IDisposable {
         else { var context = _request!.Context; _begin = Task.Run(() => _safety.Begin(context)); Set(AutomaticUpdateStatus.Preparing); }
     }
     private void StartDownload(DateTimeOffset now) { _diagnosticAttempt=default;_diagnosticAttemptTarget=null;CaptureDiagnosticOperation(_operation);_attempts++; _downloads.Start(_request!, now, DiagnosticOperation.VerifiedGuid(_operation?.Operation)); Set(AutomaticUpdateStatus.Downloading); }
-    internal void Cancel() { if (!CanCancel) return; _explicitTransition = null; _transitionApplyOnce = false; _contextAfterCancel = false; Retire(); Set(Configured ? _cancel != null ? AutomaticUpdateStatus.Cancelling : AutomaticUpdateStatus.Cancelled : AutomaticUpdateStatus.NotConfigured); }
+    internal void Cancel() { if (!CanCancel) return; _explicitTransition = null; _applyOnce = false; _contextAfterCancel = false; Retire(); Set(Configured ? _cancel != null ? AutomaticUpdateStatus.Cancelling : AutomaticUpdateStatus.Cancelled : AutomaticUpdateStatus.NotConfigured); }
     private void CompleteOperation() { var operation = _operation; CaptureDiagnosticOperation(operation); _operation = null; if (_safety != null && operation != null) _completion = Task.Run(() => _safety.Complete(operation)); }
     private void Disable(FaultPhase phase, FaultReason reason, AutomaticUpdateStatus status = AutomaticUpdateStatus.FaultDisabled, UpdateFault? known = null) {
         if (_blocked && _failure != null) return;
         var context = known?.Context ?? _retiredContext ?? _request?.Context;
         var operation = _operation; var stage = _retiredStage ?? RecoveryStage ?? (_ready as IPreparedUpdate)?.Stage;
-        Retire(fault: true); _explicitTransition = null; _transitionApplyOnce = false; _blocked = true; AutoDownload = ApplyAfterExit = false; Revision++; Fault = known ?? Fault; Set(status);
+        Retire(fault: true); _explicitTransition = null; _applyOnce = false; _blocked = true; AutoDownload = ApplyAfterExit = false; Revision++; Fault = known ?? Fault; Set(status);
         if (_safety == null || context == null) return;
         _failure = Task.Run(async () => {
             UpdateFault? fault = known; var failed = false;
@@ -293,11 +296,11 @@ internal sealed class AutomaticUpdates : IDisposable {
         try {
             if (_job?.Poll() is { } completed) {
                 if (completed is AutomaticUpdateStatus.RecoveryRequired or AutomaticUpdateStatus.Failed or AutomaticUpdateStatus.FaultDisabled) { RecoveryStage = (_ready as IPreparedUpdate)?.Stage; _recovery = completed == AutomaticUpdateStatus.RecoveryRequired; Disable(FaultPhase.Apply, FaultReason.Apply, _recovery ? completed : AutomaticUpdateStatus.FaultDisabled); }
-                else { _job.Dispose(); _job = null; _ready = null; _explicitTransition = null; _transitionApplyOnce = false; Set(completed); }
+                else { _job.Dispose(); _job = null; _ready = null; _explicitTransition = null; _applyOnce = false; Set(completed); }
             }
         } catch (Exception ex) { DiagnosticHub.Failure(DiagnosticFeature.Coordinator, DiagnosticPhase.Apply, DiagnosticCode.InterruptedUnknown, ex); RecoveryStage = (_ready as IPreparedUpdate)?.Stage; _recovery = true; Disable(FaultPhase.Apply, FaultReason.Interrupted, AutomaticUpdateStatus.RecoveryRequired); }
         if (_blocked) return;
-        if ((ApplyAfterExit || _transitionApplyOnce) && Status == AutomaticUpdateStatus.Ready && _completion == null && _ready != null && _handoff != null) {
+        if ((ApplyAfterExit || _applyOnce) && Status == AutomaticUpdateStatus.Ready && _completion == null && _ready != null && _handoff != null) {
             var ready = _ready; var cancellation = new CancellationTokenSource();
             _pending = new(Task.Run(() => _handoff.Queue(ready, cancellation.Token)), cancellation, _generation, true); Set(AutomaticUpdateStatus.Preparing);
         }

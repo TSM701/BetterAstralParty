@@ -107,8 +107,10 @@ internal sealed class PrivateReleaseSession : IDisposable
             Set(ReleaseSessionStatus.Restoring);
         }
     }
+    // The production keys are compiled-in constants; rebuilding them on every Poll cost a key review per frame.
+    private static readonly Lazy<bool> ProductionConfigured = new(() => UpdateTrust.Production().Configured);
     internal static PrivateReleaseSession Production(ReleaseUpdates updates, AutomaticUpdates automatic) =>
-        new(updates, automatic, () => PrivateUpdateApproval.CredentialInputEnabled && UpdateTrust.Production().Configured,
+        new(updates, automatic, () => PrivateUpdateApproval.CredentialInputEnabled && ProductionConfigured.Value,
             store: new WindowsReleaseCredentialStore());
     private void Set(ReleaseSessionStatus status) { if (Status != status) { Status = status; Revision++; DiagnosticHub.Status(DiagnosticFeature.Authentication, SafeEnum.Parse<DiagnosticUpdateState>(status.ToString())); } }
     internal void Connect(IReleaseCredentialInput input, bool korean)

@@ -173,7 +173,7 @@ namespace BetterAstralParty.Installation
                 if (receipt != null && !receipt.Legacy) SetupHost.ValidateInstalledHistory(game);
                 var plan = PlanFiles(bundle, receipt, output);
                 if (plan.Targets.Count == 0 && !removeShortcut)
-                { output("제거할 확인된 파일·바로가기가 없습니다. / No verified mod files or shortcut to remove."); return 0; }
+                { output("제거할 확인된 파일·Steam 라이브러리 항목이 없습니다. / No verified mod files or shortcut to remove."); return 0; }
                 var loaderPath = Full(game, "doorstop_config.ini"); string? loaderUpdated = null, loaderSkipped = null;
                 if (!restoreLoader.Equals("Keep", StringComparison.OrdinalIgnoreCase) && plan.Targets.Count != 0)
                     try { loaderUpdated = LoaderChange(bundle, receipt, restoreLoader, whatIf, consent, output, reason => loaderSkipped = reason); }
@@ -185,7 +185,7 @@ namespace BetterAstralParty.Installation
                 output("제거 대상 / Files to remove (" + game + "):"); foreach (var path in plan.Targets) output("  " + path);
                 if (loaderUpdated != null) output("공용 로더 enabled 설정을 명시한 선택으로 복원합니다. / Restore shared loader enabled setting; other settings preserved.");
                 if (removeShortcut) output("Remove the matching Astral Party - Mod shortcut only; keep all other Steam entries.");
-                if (shortcutSkipped != null) output("Steam 정보를 확정할 수 없어 바로가기는 남겨 둡니다. 확인된 모드 파일만 백업 후 제거합니다. / Steam discovery unavailable or ambiguous; keep shortcuts and back up/remove only verified mod files. Reason: " + shortcutSkipped);
+                if (shortcutSkipped != null) output("Steam 정보를 확정할 수 없어 Steam 라이브러리 항목은 남겨 둡니다. 확인된 모드 파일만 백업 후 제거합니다. / Steam discovery unavailable or ambiguous; keep shortcuts and back up/remove only verified mod files. Reason: " + shortcutSkipped);
                 output("전용 설정·로그도 백업 후 제거합니다. 공용 로더·다른 모드는 유지합니다. / Includes mod settings/logs; shared loader and other mods stay.");
                 var legacyWork = LegacyWork.Finished(game).Count;
                 if (legacyWork != 0) output("끝난 1.3.x 업데이트 작업 기록 " + legacyWork + "개도 정리합니다. / Also removes " + legacyWork + " finished 1.3.x update work records.");
@@ -239,8 +239,8 @@ namespace BetterAstralParty.Installation
                 output(plan.Retained || receipt == null
                     ? "확인된 파일 제거를 마쳤습니다. 미확인·변경 파일과 기록은 남아 있습니다. / Verified files removed; unknown or modified files and evidence remain."
                     : shortcutSkipped != null
-                        ? "모드 파일 제거 완료. Steam 바로가기는 확인하지 못해 남겨 두었습니다. 공용 로더·다른 모드는 유지합니다. / Removed verified mod files; Steam shortcut cleanup skipped. Shared loader and other mods preserved."
-                        : "제거 완료. 모드 파일·바로가기를 정리했습니다. 공용 로더 설정과 다른 모드는 유지합니다. / Removed mod files and shortcut; shared loader settings and other mods preserved.");
+                        ? "모드 파일 제거 완료. Steam 라이브러리 항목은 확인하지 못해 남겨 두었습니다. Astral Party - Mod가 남아 있으면 Steam에서 직접 제거하세요. 공용 로더·다른 모드는 유지합니다. / Removed verified mod files; Steam shortcut cleanup skipped. Shared loader and other mods preserved."
+                        : "제거 완료. 모드 파일과 Steam 라이브러리의 Astral Party - Mod를 정리했습니다. 공용 로더 설정과 다른 모드는 유지합니다. / Removed mod files and shortcut; shared loader settings and other mods preserved.");
                 return 0;
             }
             catch (Exception error)

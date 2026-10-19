@@ -108,7 +108,7 @@ static class HandLayoutCheck
             Check(Math.Abs(start + (end-start)-end) < .01f);
         }
         ModText.Select("English");
-        Check(ModText.Text(MenuLayout.Help("HandLayout").Title) == "Grouped Hand");
+        Check(ModText.Text(MenuLayout.Help("HandLayout").Title) == "Group Hand");
         Check(!ModText.Text(MenuLayout.Help("HandLayout").Body).Contains("필드"));
         ModText.Select("한국어");
         Console.WriteLine("Grouped hand: classification, KO/EN, non-overlapping equal-size unfolded cards, fixed bottom/column centre and gap hover; 1-7 groups and 1-11 rows across seven resolutions (including HD through 4K) passed.");

@@ -141,6 +141,7 @@ static class FieldCameraReturnUi {
     public static void Tick(bool visible)=>Visible=visible&&Available;
     public static void Clear(){Visible=false;ConsumedInput=false;}
 }
+static class FieldMonsterPlates { public static int Ticks, Clears; public static float LastScale=1f; internal static void Tick(float scale){Ticks++;LastScale=scale;} internal static void Clear(){Clears++;} }
 static class FieldIndicatorOpacity {
     public static float Progress;
     public static bool Dimmed=>Progress>0;
@@ -162,7 +163,7 @@ static class FieldFreeCamera {
     public static void Clear(){ClearAttempts++;if(ClearFailures>0){ClearFailures--;throw new CleanupFailure();}Holding=false;Camera=null;}
 }
 static class VisibleCombatAdvisor { public static bool IsPve(int map)=>map==2; }
-static class Plugin { public static Setting FieldZoom=new(); public static readonly Diagnostics Diagnostics=new(); public sealed class Setting {public bool Value=true;} }
+static class Plugin { public static Setting FieldZoom=new(); public static readonly FloatSetting ZoomSensitivity=new(); public static readonly Diagnostics Diagnostics=new(); public sealed class Setting {public bool Value=true;} public sealed class FloatSetting {public float Value=1f;} }
 sealed class Diagnostics {
     public readonly List<string> States=new();
     public bool IsRecording; public readonly List<string> Geometry=new();

@@ -46,14 +46,14 @@ namespace BetterAstralParty.Installation
             return !updateOnly && steamRoot != null && account != 0 && NativeSteamMaintenance.PlanRegister(steamRoot, account, bundle.GameRoot, error => {
                 var detail = "NativeInstallShortcut: action=Skipped; reason=SteamShortcutPlanUnavailable; exception=" + error.GetType().Name
                     + "; hresult=0x" + error.HResult.ToString("X8", System.Globalization.CultureInfo.InvariantCulture);
-                output("Steam 바로가기 정보를 읽지 못해 기존 정보를 보존하고 파일만 설치합니다. / Steam shortcut planning unavailable; preserve profile data and install files only. " + detail);
+                output("Steam 라이브러리 항목 정보를 읽지 못해 기존 정보를 보존하고 파일만 설치합니다. Steam 라이브러리에 Astral Party - Mod가 추가되지 않습니다. / Steam shortcut planning unavailable; preserve profile data and install files only. " + detail);
                 try { observation?.Invoke(detail); } catch { }
             });
         }
         internal static void Run(NativeMaintenanceBundle bundle, bool updateOnly, string? steamRoot, uint account, Func<string, string?> consent, Action<string> output, bool restartSteam = false, bool checkOnly = false, Action<string>? observation = null)
         {
             if (updateOnly && (restartSteam || account != 0 || steamRoot != null)) throw new InvalidOperationException("UpdateOnly cannot register or restart Steam. / UpdateOnly는 Steam을 변경할 수 없습니다.");
-            if (!updateOnly && (steamRoot == null || account == 0)) output("Steam 바로가기를 변경하지 않고 파일을 설치합니다. Steam에서 순정 게임 실행 후 설치기를 다시 실행하면 바로가기를 추가할 수 있습니다. / Install files without changing Steam shortcuts; run the original game through Steam and rerun installation to add the shortcut.");
+            if (!updateOnly && (steamRoot == null || account == 0)) output("Steam 라이브러리 항목을 바꾸지 않고 파일만 설치합니다. Steam에서 순정 게임 실행 후 설치기를 다시 실행하면 Steam 라이브러리에 Astral Party - Mod를 추가할 수 있습니다. / Install files without changing Steam shortcuts; run the original game through Steam and rerun installation to add the shortcut.");
             if (checkOnly) { Preview(bundle, updateOnly, steamRoot, account, consent, output); return; }
             var session = new SteamSessionState(); NativeMaintenance.Transaction? transaction = null;
             NativeMaintenance.InstallLock? installLock = null;

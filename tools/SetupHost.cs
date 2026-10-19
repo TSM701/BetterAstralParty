@@ -12,7 +12,7 @@ internal static class SetupHost
     // The host's own component version, independent of the release version, so an unchanged host
     // stays byte-identical across releases (a stable hash keeps antivirus clearance and reputation).
     // Bump it whenever this host or anything it compiles changes.
-    public const string SetupVersion = "1.4.0";
+    public const string SetupVersion = "1.4.1";
     internal const string Image = "BetterAstralParty-Setup.exe";
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]

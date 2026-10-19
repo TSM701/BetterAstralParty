@@ -97,6 +97,23 @@ internal static class NativeUi
             OutlineTree(root.Call("GetChildAt", i)!);
     }
 
+    private static readonly Dictionary<string, RuntimeObject> PackageLoads = new(StringComparer.Ordinal);
+    // On-demand native package load (as CharacterGuideUi does for Hero); false until the package is registered.
+    internal static bool PackageReady(string package)
+    {
+        var type = RuntimeObject.FindClass("FairyGUI", "UIPackage");
+        if (PackageLoads.TryGetValue(package, out var load))
+        {
+            if (!load.Get<bool>("IsCompleted")) return false;
+            PackageLoads.Remove(package);
+            if (load.Call("GetResult") == null) throw new InvalidOperationException(package + " UI package load failed");
+        }
+        if (RuntimeObject.StaticCall(type, "GetByName", package) != null) return true;
+        PackageLoads[package] = RuntimeObject.StaticCall(type, "AddPackageAsync", package, "")!.Call("GetAwaiter")
+            ?? throw new InvalidOperationException(package + " UI load awaiter unavailable");
+        return false;
+    }
+
     internal static RuntimeObject? Create(string package, string item)
     {
         try

@@ -18,6 +18,7 @@ public struct Vector3 {
     public float sqrMagnitude => x*x+y*y+z*z;
     public static Vector3 operator +(Vector3 a, Vector3 b) => new(a.x+b.x,a.y+b.y,a.z+b.z);
     public static Vector3 operator -(Vector3 a, Vector3 b) => new(a.x-b.x,a.y-b.y,a.z-b.z);
+    public static implicit operator Vector2(Vector3 v) => new(v.x, v.y);
     public static Vector3 operator *(Vector3 a, float s) => new(a.x*s,a.y*s,a.z*s);
 }
 public struct Quaternion { public float x,y,z,w; }
@@ -60,13 +61,14 @@ public class Component : Object {
 }
 public class Camera : Component { public Camera(GameObject game) : base(game) { } }
 public static class Input {
-    public static int touchCount; public static readonly bool[] Buttons=new bool[3],Down=new bool[3]; public static float Horizontal,Vertical;
+    public static int touchCount; public static readonly bool[] Buttons=new bool[3],Down=new bool[3],Up=new bool[3]; public static float Horizontal,Vertical; public static Vector3 mousePosition;
     public static bool GetMouseButton(int i) => Buttons[i];
     public static bool GetMouseButtonDown(int i) => Down[i];
+    public static bool GetMouseButtonUp(int i) => Up[i];
     public static float GetAxis(string name) => name switch { "Horizontal"=>Horizontal, "Vertical"=>Vertical, _=>throw new Exception("Unexpected input axis") };
 }
 public static class Application { public static bool isFocused=true; }
-public static class Time { public static float deltaTime=1f/60f; }
+public static class Time { public static float deltaTime=1f/60f,unscaledTime; }
 }
 namespace Cinemachine {
 public struct LensSettings { public float FieldOfView,NearClipPlane,FarClipPlane,Dutch; }
@@ -202,6 +204,8 @@ internal static class FieldZoomUi {
     internal static bool TryPanBounds(out Bounds bounds) { bounds=Bounds; return BoundsAvailable; }
     internal static void Clear() { Clears++; FieldFreeCamera.Clear(); }
 }
+internal static class GameUi { public static readonly List<RuntimeObject> Path=new(); public static IReadOnlyList<RuntimeObject> PointerPath(bool refresh=false,bool hitTest=false)=>Path; }
+internal static class Plugin { public static readonly Diagnostic Diagnostics=new(); public sealed class Diagnostic { public readonly List<string> Lines=new(); public void Write(string line)=>Lines.Add(line); } }
 __PRODUCTION_SOURCE__
 public static class Check {
     public static bool TouchScreen,ClickCancelled; public static int DragThreshold=2;
@@ -416,6 +420,12 @@ public static class Check {
             FieldFreeCamera.Clear();Assert(s.NativeCamera.m_Lens.Dutch==dutch);
         }
     }
-    public static void Run() { Ownership();ReturnAndCleanup();Pan();RenderedOrientation();Console.WriteLine("Free-camera production assertions: "+assertions); }
+    static void FocusRelease() {
+        IntPtr a=(IntPtr)1,b=(IntPtr)2; var p=new Vector3(1,2,3);
+        Assert(FieldFreeCamera.FocusTarget(new[]{"GRoot","UIBattleInfo_Com_Player","UIBattleInfo_Button_PlayerInfo","GGraph"})=="UIBattleInfo_Button_PlayerInfo" && FieldFreeCamera.FocusTarget(new[]{"UIButton_MonsterItem"})=="UIButton_MonsterItem" && FieldFreeCamera.FocusTarget(new[]{"UIBattleInfo_Com_Minimap"})!=null);
+        Assert(FieldFreeCamera.FocusTarget(new[]{"GRoot","UIButton_ThrowDice","UICom_AttrInfo"})==null && FieldFreeCamera.FocusTarget(System.Array.Empty<string>())==null);
+        Assert(FieldFreeCamera.ClickGesture(new(100,100),new(102,100),2) && !FieldFreeCamera.ClickGesture(new(100,100),new(140,100),2) && !FieldFreeCamera.ClickGesture(new(1,1),new(1,1),-1));
+    }
+    public static void Run() { FocusRelease();Ownership();ReturnAndCleanup();Pan();RenderedOrientation();Console.WriteLine("Free-camera production assertions: "+assertions); }
 }
 }

@@ -16,6 +16,14 @@ internal static class FieldZoomUi
     private static int _nodeCount;
     private static float _scanAt;
     private static float _pendingWheel;
+    // On-screen size of field characters relative to the native camera distance (perspective follow offset).
+    // How far the rendered camera sits from where the native default view of the current player would put it
+    // (player follow target + native default follow offset). Zero at the native view; covers zoom and free-view pan.
+    internal static Vector3 DiceViewDelta => _fieldVisible ? _viewDelta : default;
+    private static Vector3 _viewDelta, _nativeOriginal;
+    private static bool _hasNativeOriginal;
+    internal static float IndicatorScale => _owned && _fieldVisible && _applied.magnitude > 0
+        ? Math.Clamp(_original.magnitude / _applied.magnitude, 0.2f, 5f) : 1f;
     private static IntPtr _wheelBrain, _wheelCamera, _wheelFrame;
 
     internal static void Tick()
@@ -24,6 +32,7 @@ internal static class FieldZoomUi
         {
             if (!Compatibility.Allowed("FieldZoom")) { Clear(); return; }
             Update();
+            FieldMonsterPlates.Tick(IndicatorScale);
             var distance = _original.magnitude;
             FieldIndicatorOpacity.Tick(_fieldVisible && _owned && _zoomOutLimit > distance
                 ? Math.Clamp((_applied.magnitude - distance) / (_zoomOutLimit - distance), 0, 1) : 0);
@@ -33,7 +42,7 @@ internal static class FieldZoomUi
 
     private static void Update()
     {
-        _fieldVisible = false;
+        _fieldVisible = false; _viewDelta = default;
         var root = GameUi.Root;
         if (!Plugin.FieldZoom.Value || PvpSafety.Suspended || root == null) { Clear(); return; }
         var scene = RuntimeObject.StaticField(RuntimeObject.FindClass("Core.Scene", "BattleSceneController"), "inst");
@@ -84,6 +93,9 @@ internal static class FieldZoomUi
         var offset = body.Field<Vector3>("m_FollowOffset");
         if (!Finite(offset)) { _pendingWheel = 0; WheelState("camera-offset"); return; }
         _fieldVisible = true;
+        var playerFollow = player?.Get("Follow");
+        _viewDelta = (owned || _owned && !Same(_applied, _original)) && _hasNativeOriginal && Alive(playerFollow)
+            ? camera.transform.position - (playerFollow!.Get<Vector3>("position") + _nativeOriginal) : default;
         if (!owned)
         {
             var frames = brain!.Field("mFrameStack");
@@ -110,11 +122,13 @@ internal static class FieldZoomUi
         if (_body?.Pointer != body.Pointer)
         {
             Restore(); _body = body; _original = _applied = _target = offset; _zoomOutLimit = 0;
+            if (!owned) { _nativeOriginal = offset; _hasNativeOriginal = true; }
         }
         else if (!Same(offset, _applied))
         {
             // A native/external change becomes the new baseline; never restore across it.
             _original = _applied = _target = offset; _owned = false; _zoomOutLimit = 0;
+            if (!owned) { _nativeOriginal = offset; _hasNativeOriginal = true; }
         }
         var inputAllowed = FieldInputAllowed(root, pan: true);
         var onUi = inputAllowed && Input.GetMouseButton(0)
@@ -144,7 +158,7 @@ internal static class FieldZoomUi
             FieldZoomGeometry.Point Project(Vector3 v) => new(Vector3.Dot(v, right), Vector3.Dot(v, up), Vector3.Dot(v, forward));
             BoardCorners(position, right, up, forward, target.y);
             if (_target.sqrMagnitude != 0 && FieldZoomGeometry.TryStep(Corners, Project(_target), Project(target - position), camera.fieldOfView,
-                camera.aspect, camera.nearClipPlane, camera.farClipPlane, _original.magnitude / _target.magnitude, wheel, out var scale, out var maximum))
+                camera.aspect, camera.nearClipPlane, camera.farClipPlane, _original.magnitude / _target.magnitude, wheel * Math.Clamp(Plugin.ZoomSensitivity.Value, .5f, 2f), out var scale, out var maximum))
             {
                 _zoomOutLimit = maximum > 0 ? _target.magnitude * maximum : 0;
                 var zoomTarget = _target * scale;
@@ -308,7 +322,7 @@ internal static class FieldZoomUi
     {
         Exception? failure = null;
         void Attempt(Action action) { try { action(); } catch (Exception ex) { failure ??= ex; } }
-        Attempt(Restore); Attempt(FieldFreeCamera.Clear); Attempt(FieldCameraReturnUi.Clear); Attempt(FieldIndicatorOpacity.Clear);
+        Attempt(Restore); Attempt(FieldFreeCamera.Clear); Attempt(FieldCameraReturnUi.Clear); Attempt(FieldIndicatorOpacity.Clear); Attempt(FieldMonsterPlates.Clear);
         _fieldVisible = false; _zoomOutLimit = 0;
         _scene = null; Renderers.Clear(); Corners.Clear(); _nodes = IntPtr.Zero; _nodeCount = 0; _scanAt = 0;
         _pendingWheel = 0; _wheelBrain = _wheelCamera = _wheelFrame = IntPtr.Zero;

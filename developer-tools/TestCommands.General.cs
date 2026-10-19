@@ -97,6 +97,13 @@ internal static partial class TestCommands
             "if (BapArgumentFixture.RuntimeObject.AcceptsQuaternion() || BapArgumentFixture.RuntimeObject.InvokesQuaternion()) throw new System.Exception(\"Missing Quaternion guard accepted\")", pin, allowUnsafe: true);
         RunGeneralFixture(context, Path.Combine(stage, "absent-quaternion-marshaling"), Code(check, absentInvoke),
             "if (BapArgumentFixture.RuntimeObject.InvokesQuaternion()) throw new System.Exception(\"Missing Quaternion marshaling accepted\")", pin, allowUnsafe: true);
+        var absentDoubleCheck = Regex.Replace(check, @"case double:.*?return;", "", RegexOptions.Singleline);
+        var absentDoubleInvoke = Regex.Replace(invoke, @"case double d:.*?break;", "", RegexOptions.Singleline);
+        Check(absentDoubleCheck != check && absentDoubleInvoke != invoke, "Double guard and marshaling regression anchors exist");
+        RunGeneralFixture(context, Path.Combine(stage, "absent-double"), Code(absentDoubleCheck, invoke),
+            "if (BapArgumentFixture.RuntimeObject.AcceptsDouble()) throw new System.Exception(\"Missing Double guard accepted\")", pin, allowUnsafe: true);
+        RunGeneralFixture(context, Path.Combine(stage, "absent-double-marshaling"), Code(check, absentDoubleInvoke),
+            "if (BapArgumentFixture.RuntimeObject.InvokesDouble()) throw new System.Exception(\"Missing Double marshaling accepted\")", pin, allowUnsafe: true);
     }
 
     private static void RuntimeGetters(DevContext context, string stage, Action<string> pin)

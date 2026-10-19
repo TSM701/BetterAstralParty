@@ -9,10 +9,10 @@ internal static class LanguageCheck
             if (!valid) throw new Exception(message);
         }
         ModText.Select("Auto", "Event");
-        Check(ModText.Text(MenuLayout.Help("MuteUnfocused").Title + ": ON") == "Mute When Unfocused: ON", "Mute label and separator in English");
-        Check(ModText.Text(MenuLayout.Help("Enabled").Title + ": OFF") == "Battle Advice: OFF", "Toggle separator in English");
+        Check(ModText.Text(MenuLayout.Help("MuteUnfocused").Title + ": ON") == "Mute in Background: ON", "Mute label and separator in English");
+        Check(ModText.Text(MenuLayout.Help("Enabled").Title + ": OFF") == "Action Advice: OFF", "Toggle separator in English");
         ModText.Select("한국어");
-        Check(ModText.Text(MenuLayout.Help("MuteUnfocused").Title + ": ON") == "창 비활성화 시 음소거: ON", "Mute label and separator in Korean");
+        Check(ModText.Text(MenuLayout.Help("MuteUnfocused").Title + ": ON") == "백그라운드 음소거: ON", "Mute label and separator in Korean");
         ModText.Select("Auto", "Event");
         Check(MenuLayout.HelpScrollOffset(10, 0, 26) == 0, "Short help must stay still");
         Check(MenuLayout.HelpScrollOffset(1.5f, 52, 26) == 0, "Help initial reading pause");
@@ -55,7 +55,7 @@ internal static class LanguageCheck
         ModText.Select("English");
         Check(ModText.Text("계산 정보 부족") == "Insufficient data", "Unknown data label");
         foreach (var action in new[] { "", "Enabled", "Details", "KoMinimum", "CardPopups", "BattleStatus", "ShushuShield", "FieldBuffs",
-            "Names", "Diagnostics", "MuteUnfocused", "FieldZoom", "MatchFocus", "ScaleMinus", "OpacityPlus", "Close", "Language", "General", "Features",
+            "Names", "Diagnostics", "MuteUnfocused", "FieldZoom", "MatchFocus", "Scale", "Opacity", "IndicatorFadeStrength", "FoldedHandOpacity", "Close", "Language", "General", "Features",
             "UpdateChannel", "UpdateCheck", "UpdateDownload" })
         {
             var (title, body) = MenuLayout.Help(action);
@@ -69,9 +69,9 @@ internal static class LanguageCheck
         Check(MenuLayout.GeneralControl("MatchFocus") && !MenuLayout.GeneralControl("FieldZoom")
             && !MenuLayout.FixedControl("MatchFocus") && !MenuLayout.FixedControl("FieldZoom"), "Focus is General; wheel zoom is Features");
         foreach (var (action, korean, english) in new[] {
-            ("MatchFocus", "매칭 성사 시 창 포커스", "Focus on Match Found"),
-            ("FieldZoom", "필드 휠 줌", "Field Wheel Zoom"),
-            ("FieldBuffs", "플레이어 필드 인디케이터", "Player Field Indicator") })
+            ("MatchFocus", "매칭 시 게임 창 띄우기", "Bring Game Forward on Match"),
+            ("FieldZoom", "휠 줌·자유 시점", "Wheel Zoom and Free View"),
+            ("FieldBuffs", "플레이어 인디케이터", "Player Indicators") })
         {
             Check(MenuLayout.Options(action).Length == 0, "New preference remains binary: " + action);
             foreach (var enabled in new[] { false, true })
@@ -102,7 +102,7 @@ internal static class LanguageCheck
         ModText.Select("한국어"); // Existing calculation/presentation regression tests retain their baseline.
         var booleanActions = new[] { "Enabled", "Details", "KoMinimum", "CardPopups", "BattleStatus", "ShushuShield", "ShushuShieldRestrictions",
             "FieldBuffs", "FieldZoom", "MatchFocus", "Names", "Diagnostics", "MuteUnfocused", "AutoThanks", "CharacterRoles", "CharacterGuide",
-            "IndicatorFade", "IndicatorHide", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "AutomaticChecks", "UpdateNotifications", "AutoDownload", "AfterExit" };
+            "IndicatorFade", "IndicatorHide", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications" };
         var padding = new[] { "이 기능을 끕니다", "다른 설정", "별도", "independent", "other settings" };
         foreach (var action in booleanActions)
         {
@@ -125,18 +125,20 @@ internal static class LanguageCheck
         Check(sections.Any(section => section.General) && sections.Any(section => !section.General)
             && sections.Select(section => section.Title).Distinct().Count() == sections.Length, "Both settings tabs have distinct category titles");
         var categoryActions = sections.SelectMany(section => section.Actions).ToArray();
-        Check(sections.Single(section => section.Title == "카드").Actions.SequenceEqual(new[] { "HandLayout", "CardPopups" })
+        Check(sections.Single(section => section.Title == "손패·카드").Actions.SequenceEqual(new[] { "HandLayout", "FoldedHandOpacity", "CardPopups" })
             && sections.Single(section => section.Title == "캐릭터").Actions.SequenceEqual(new[] { "Names", "CharacterRoles", "CharacterGuide" })
             && !categoryActions.Contains("CardTargetButtons"), "Cards and characters are separate; target button priority is always applied");
-        Check(MenuLayout.SectionLineHeight == 2, "Category separator uses a thin two-pixel fill");
-        foreach (var textWidth in new[] { 44f, 88f, 170f, 240f, 460f, 480f, 700f })
+        Check(MenuLayout.SectionBandX + MenuLayout.SectionBandWidth <= 490 && MenuLayout.SectionBandHeight < MenuLayout.SectionHeight, "Category band stays inside the switch column and header row");
+        foreach (var action in categoryActions)
         {
-            var line = MenuLayout.SectionLine(10, 480, textWidth, 490);
-            Check(line.X == Math.Min(490, 10 + Math.Min(480, textWidth) + 12)
-                && line.Width >= 0 && line.X + line.Width == 490, "Separator follows rendered text with a gap and a fixed right edge");
+            if (MenuLayout.Parent(action) is { } parent)
+                Check(categoryActions.Contains(parent) && MenuLayout.Parent(parent) == null && MenuLayout.ToggleWidth(action) + MenuLayout.Indent(action) + MenuLayout.ChildRightInset == 480, "Dependent option sits indented under a top-level parent: " + action);
+            if (MenuLayout.Subtitle(action) is not { } subtitle) continue;
+            ModText.Select("English");
+            var english = ModText.Text(subtitle);
+            Check(english != subtitle && !english.Any(c => c is >= '가' and <= '힣'), "Subtitle translated: " + action);
+            ModText.Select("한국어");
         }
-        foreach (var textWidth in new[] { 0f, -1f, float.NaN, float.PositiveInfinity })
-            Check(MenuLayout.SectionLine(10, 480, textWidth, 490) == (490f, 0f), "Unavailable text measurement hides only the separator");
         Check(categoryActions.Distinct().Count() == categoryActions.Length && booleanActions.All(categoryActions.Contains), "Every boolean preference belongs to exactly one category");
         foreach (var section in sections)
         foreach (var language in new[] { "한국어", "English" })
@@ -180,13 +182,40 @@ internal static class LanguageCheck
                 "Preview description localization");
         }
         Check(MenuLayout.OptionHelp("HandLayout", "Native").Contains("기본 배치"), "Native preview ignores active grouped mode");
-        Check(MenuLayout.OptionHelp("InputAttention", "Off").Contains("보내지 않습니다"), "Off alert preview");
+        Check(MenuLayout.OptionHelp("InputAttention", "Off").Contains("알리지 않습니다"), "Off alert preview");
         Check(!MenuLayout.StateHelp("Names", true, "").Contains("이명")
             && !MenuLayout.StateHelp("Names", false, "").Contains("본명"), "Names help must not describe the other state");
         Check(!MenuLayout.Help("Details").Body.Contains("KO·생존")
             && MenuLayout.StateHelp("KoMinimum", true, "").Contains("KO")
             && MenuLayout.StateHelp("KoMinimum", true, "").Contains("생존")
             && MenuLayout.Options("KoMinimum").Length == 0, "Separate binary indicator help");
+        foreach (var mode in MenuLayout.Options("AutoUpdate"))
+        {
+            var (check, download, apply) = MenuLayout.AutoUpdateValues(mode);
+            Check(MenuLayout.AutoUpdateMode(check, download, apply) == mode, "Automatic update step round-trips: " + mode);
+        }
+        Check(MenuLayout.AutoUpdateMode(false, true, true) == "Custom" && MenuLayout.OptionLabel("AutoUpdate", "Custom") == "사용자 지정", "Saved combinations outside the steps stay visible as Custom");
+        Check(MenuLayout.ScrollFromMarker(MenuLayout.SettingsY, 390, 1000, 100) == 0 && MenuLayout.ScrollFromMarker(MenuLayout.SettingsY + 290, 390, 1000, 100) == 610            && MenuLayout.ScrollFromMarker(MenuLayout.SettingsY + 999, 390, 1000, 100) == 610 && MenuLayout.ScrollFromMarker(MenuLayout.SettingsY + 50, 390, 300, 100) == 0, "Dragged scroll marker maps to the clamped list position");
+        var backupRoot = Path.Combine(Path.GetTempPath(), "bap-settings-backup-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var folder = Path.Combine(backupRoot, "keep"); var config = Path.Combine(backupRoot, "game", "mod.cfg");
+            Check(!SettingsBackup.RestoreIfMissing(config, folder) && !File.Exists(config), "Nothing to restore leaves the game folder untouched");
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Combine(folder, SettingsBackup.SavedName), "saved");
+            Check(SettingsBackup.RestoreIfMissing(config, folder) && File.ReadAllText(config) == "saved", "Saved copy restores a missing settings file");
+            File.WriteAllText(Path.Combine(folder, SettingsBackup.AutoName), "auto");
+            File.WriteAllText(config, "current");
+            Check(!SettingsBackup.RestoreIfMissing(config, folder) && File.ReadAllText(config) == "current", "An existing settings file is never overwritten");
+            File.Delete(config);
+            Check(SettingsBackup.RestoreIfMissing(config, folder) && File.ReadAllText(config) == "auto", "The newest automatic copy wins over the saved one");
+            SettingsBackup.Copy(config, Path.Combine(folder, SettingsBackup.SavedName));
+            Check(File.ReadAllText(Path.Combine(folder, SettingsBackup.SavedName)) == "auto" && !File.Exists(Path.Combine(folder, SettingsBackup.SavedName) + ".tmp"), "Manual save replaces the saved copy without leftovers");
+            SettingsBackup.MarkChanged(1000);
+            Check(!SettingsBackup.AutoDue(1500) && SettingsBackup.AutoDue(2000) && !SettingsBackup.AutoDue(3000), "Automatic copy waits for changes to settle and writes once");
+        }
+        finally { try { Directory.Delete(backupRoot, true); } catch { } }
+        Check(MenuLayout.Parent("UpdateAuth") == "UpdateChannel" && MenuLayout.Sections[^1].Actions[^1] == "UpdateSignOut", "Beta sign-in rows sit last under the channel");
         ModText.Select("한국어");
         Console.WriteLine("Korean/English auto/manual modes, UI coverage, tabs and English card parsing passed.");
     }

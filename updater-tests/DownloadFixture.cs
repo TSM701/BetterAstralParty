@@ -272,7 +272,7 @@ internal static class DownloadFixture
                 : r.RequestUri.AbsolutePath.EndsWith("/458", StringComparison.Ordinal) ? Body(envelope)
                 : r.RequestUri.AbsolutePath.EndsWith("/releases/123", StringComparison.Ordinal) ? Body(Metadata(prerelease)) : Body(fixture.Zip)) };
             using var client = new UpdateDownloads(fixture.Trust, privateSpy, handler, feed: feed); client.Start(request, Now); var result = await Complete(client);
-            var accepted = prerelease == (channel == "PreRelease");
+            var accepted = channel == "PreRelease" || !prerelease; // Pre-release users also follow full releases.
             Check(result.Status == (accepted ? UpdateDownloadStatus.Ready : UpdateDownloadStatus.Cancelled), "same exact public signature follows live classification " + channel + " " + prerelease);
             Check(privateSpy.Calls == 0 && handler.Count == 6 && handler.Snapshot().All(sent => sent.Authorization == null), "live public classification is bounded and anonymous");
             if (accepted) {

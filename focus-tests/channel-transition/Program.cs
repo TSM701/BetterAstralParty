@@ -41,7 +41,7 @@ internal static class ChannelTransitionTests
                 var assets=new[]{new{id=456,name="BetterAstralParty-1.4.1-update.zip"},new{id=457,name=ReleaseFeedPolicy.UpdateManifestAsset},new{id=458,name=ReleaseFeedPolicy.UpdateSignatureAsset}};
                 var body=Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new[]{new{id=123,tag_name="1.4.1",name="fixture",body="",draft=false,prerelease=flag,html_url="https://github.com/"+feed.Repository+"/releases/tag/1.4.1",assets}}));
                 var selected=ReleaseUpdates.Select(ReleaseUpdates.Parse(body,feed.Repository),"1.4.0",Enum.Parse<ReleaseChannel>(feed.Channel));
-                Check((selected!=null)==feed.Accepts(flag),"live GitHub classification alone selects the channel without changing signed assets");
+                Check((selected!=null)==feed.Delivers(flag),"live GitHub classification alone selects the channel without changing signed assets");
             }
         }
         Refuse(()=>trust.VerifyProposal(bytes,"ephemeral-transition-fixture",signature,Context(ReleaseFeedPolicy.Beta,"1.4.0","1.4.1")),"shared public scope never enters the private repository");
@@ -121,7 +121,8 @@ internal static class ChannelTransitionTests
             var identity=request.RequestUri.AbsolutePath=="/repos/"+feed.Repository;
             Check(UpdateVersion.Parse(older).CompareTo(UpdateVersion.Parse(target))<0,"secondary fixture release is older than the selected latest release");
             var releases=new List<object>{Release(target,900,!missingLatest),Release(older,800,true)};
-            if(!feed.RequiresAuthentication)releases.Add(Release("9.0.0",1000,true,feed.Channel!="PreRelease"));
+            // Decoy outside the channel: a flagged release for Release users, an unflagged suffix tag for Pre-release users.
+            if(!feed.RequiresAuthentication)releases.Add(feed.Channel=="PreRelease"?Release("9.0.0-rc.1",1000,true,false):Release("9.0.0",1000,true,true));
             var json=identity?JsonSerializer.Serialize(new{id=feed.RepositoryId,full_name=feed.Repository,@private=feed.RequiresAuthentication}):JsonSerializer.Serialize(releases);
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK){RequestMessage=request,Content=new StringContent(json,Encoding.UTF8,"application/json")});
         }
@@ -134,8 +135,10 @@ internal static class ChannelTransitionTests
         const string local="1.4.0-rc.3.local.12";
         foreach(var source in new[]{"1.4.0","1.4.1","1.5.0",local,"1.4.0-rc.3.local.13"})
             Check(ReleaseFeedPolicy.SupportsAutomaticSource(source),"fresh baseline and local 1.3 test builds remain automatic sources: "+source);
+        foreach(var (version,isLocal) in new[]{("1.5.1-dev.1",true),("1.5.1-dev.12",true),(local,true),("1.5.1-beta.1",false),("1.5.1-dev.0",false),("1.5.1-devel.1",false),("1.5.1",false),("1.5.1-dev.1+meta",false)})
+            Check(UpdateVersion.Parse(version).IsLocalPrerelease==isLocal,"development version classification: "+version);
         foreach(var feed in Feeds()){
-            foreach(var target in new[]{"1.3.1","1.3.99","1.4.0-rc.1",local,"1.4.0","1.4.1"}){
+            foreach(var target in new[]{"1.3.1","1.3.99","1.4.0-rc.1",local,"1.4.0","1.4.1","1.4.1-dev.3"}){
                 var allowed=target is "1.4.0" or "1.4.1" || feed.Channel=="Beta"&&target=="1.4.0-rc.1";
                 Check(ReleaseFeedPolicy.SupportsAutomaticTarget(target,feed.Channel)==allowed,"channel-aware destination baseline: "+feed.Channel+"/"+target);
                 var context=Context(feed,"1.5.0",target);var bytes=Descriptor(context);var signature=Sign(key,bytes);

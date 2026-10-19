@@ -264,15 +264,14 @@ foreach (var renderedHeight in new[] { 60f, 85f, 100f, 120f })
 if (125 + 200 > 330 || 255 + MenuLayout.ToggleHeight > 320 || 320 + MenuLayout.ToggleHeight > 390 || 455 + 60 > 520)
     throw new Exception("왼쪽 표시 설정·진단 로그 겹침/설정창 경계 침범");
 foreach (var action in new[] { "Enabled", "Details", "CardPopups", "BattleStatus", "FieldBuffs", "Names", "Diagnostics", "MuteUnfocused", "InputAttention",
-    "ScaleMinus", "ScalePlus", "OpacityMinus", "OpacityPlus", "Close" })
+    "Scale", "Opacity", "IndicatorFadeStrength", "FoldedHandOpacity", "Close" })
 {
     var help = MenuLayout.Help(action);
     if (help == MenuLayout.Help("") || help.Title.Length == 0 || help.Body.Length == 0 || help.Body.Length > 80)
         throw new Exception($"호버 설명 누락/장문: {action}");
 }
-if (MenuLayout.Help("ScaleMinus") != MenuLayout.Help("ScalePlus")
-    || MenuLayout.Help("OpacityMinus") != MenuLayout.Help("OpacityPlus"))
-    throw new Exception("같은 설정의 증감 버튼 설명 불일치");
+if (MenuLayout.SliderRange("Scale") != (75, 150) || MenuLayout.SliderRange("Opacity") != (0, 100) || MenuLayout.Percent(75) != "75%")
+    throw new Exception("슬라이더 범위·표기 불일치");
 Console.WriteLine("고정 토글 크기·행 간격·좌우 경계·전체 버튼 호버 설명 검증 통과");
 HandLayoutCheck.Run();
 ResolutionCheck.Run();
@@ -940,7 +939,7 @@ foreach (var invalid in new[] { encounter with { Hp = 0 }, encounter with { Enem
     if (EncounterAdvisor.Calculate(invalid) != null) throw new Exception("조우 입력 범위 검증 실패");
 if (harmless.Quick.Split('\n').Length != 2 || !harmless.Quick.EndsWith('%'))
     throw new Exception("조우 요약 두 줄/확률 뒤 부가 문구 제거 실패");
-if (MenuLayout.Help("BattleStatus").Title != "전투 정보 표시"
+if (MenuLayout.Help("BattleStatus").Title != "전투 상태"
     || !MenuLayout.Help("Enabled").Body.Contains("놓아주기")) throw new Exception("설정 기능 연결 안내 누락");
 Console.WriteLine("조우 단일 공격·놓아주기/득실 동률·반격 생존 조건·PvE 제한 검증 통과");
 

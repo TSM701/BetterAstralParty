@@ -55,7 +55,9 @@ namespace BetterAstralParty.Installation
     internal static class NativeSteamMaintenance
     {
         private const string ShortcutName = "Astral Party - Mod";
-        private static readonly string[] ClientNames = { "steam", "steamwebhelper", "GameOverlayUI", "steamerrorreporter", "steamerrorreporter64" };
+        internal const string SetupProcessName = "BetterAstralParty-Setup";
+        internal static TimeSpan RemainingGrace = TimeSpan.FromSeconds(15), RemainingPoll = TimeSpan.FromMilliseconds(500);
+        private static readonly string[] ClientNames ={ "steam", "steamwebhelper", "GameOverlayUI", "steamerrorreporter", "steamerrorreporter64" };
         private static readonly string[] GameNames = { "AstralParty_INT", "AstralParty_CN", "BetterAstralParty-Launcher" }; // 1.3.x launcher included for takeover
         private static readonly UTF8Encoding Utf8 = new UTF8Encoding(false, true);
         private static readonly RegexOptions Rx = RegexOptions.CultureInvariant | RegexOptions.IgnoreCase;
@@ -359,7 +361,7 @@ namespace BetterAstralParty.Installation
                 }
             }
             if (remove) recovery.Artwork.AddRange(RemoveHero(WindowsPath.Parent(path), appId, game, output));
-            try { output?.Invoke(remove ? "Removed Astral Party - Mod. / Mod 바로가기를 제거했습니다." : "Registered Astral Party - Mod. Restart Steam to load it. / Steam을 다시 실행해 Mod 바로가기를 불러오세요."); } catch { }
+            try { output?.Invoke(remove ? "Removed Astral Party - Mod. / Steam 라이브러리에서 Astral Party - Mod를 제거했습니다." : "Registered Astral Party - Mod. Restart Steam to load it. / Steam 라이브러리에 Astral Party - Mod를 추가했습니다. Steam을 다시 실행하면 표시됩니다."); } catch { }
             return recovery;
         }
         private static IEnumerable<SteamArtworkRecovery> RemoveHero(string config, uint id, string game, Action<string>? output)
@@ -593,6 +595,8 @@ namespace BetterAstralParty.Installation
             var result = new List<SteamProcessObservation>();
             foreach (var item in observations) {
                 if (item.Exited || item.Available && item.Session != session) continue;
+                // The maintenance tool itself may run from a package extracted under a Steam app folder.
+                if (string.Equals(item.Name, SetupProcessName, StringComparison.OrdinalIgnoreCase)) continue;
                 if (item.Image.Length == 0) { if (item.Name.Length == 0 || Named(item.Name, ClientNames)) throw Failure("ProcessObservationUnavailable", "ShutdownObservation", item); continue; }
                 var client = Named(item.Name, ClientNames) && Under(item.Image, root); var game = games.Any(value => Under(item.Image, value));
                 if (!client && !game) continue;
@@ -609,8 +613,23 @@ namespace BetterAstralParty.Installation
             while (true) {
                 var status = Status(root);
                 if (status.State == "Stopped") {
-                    if (shutdownAttempted && SteamTargets(root).Count != 0) throw Failure("SteamGameProcessesRemain", "ShutdownCompletion");
-                    return;
+                    if (!shutdownAttempted) return;
+                    // steamwebhelper and similar children exit a few seconds after steam.exe; wait before asking again.
+                    var remaining = SteamTargets(root);
+                    for (var waited = TimeSpan.Zero; remaining.Count != 0 && waited < RemainingGrace; waited += RemainingPoll) {
+                        System.Threading.Thread.Sleep(RemainingPoll); remaining = SteamTargets(root);
+                    }
+                    if (remaining.Count == 0) return;
+                    var left = new SteamProcessStatus { State = "Stopped" }; left.Facts.AddRange(remaining);
+                    Waiting(Failure("SteamGameProcessesRemain", "ShutdownCompletion", left));
+                    // Say which kind remains: Steam's own helpers, or programs under a Steam app folder while Steam itself is closed.
+                    var names = string.Join(", ", remaining.Select(item => item.Name).Distinct(StringComparer.OrdinalIgnoreCase));
+                    output(remaining.Any(item => item.Client)
+                        ? "Steam 관련 프로세스가 아직 종료 중입니다. 잠시 뒤 재확인하세요: " + names + " / Steam helper processes are still exiting. Recheck shortly: " + names
+                        : "Steam은 종료됐지만 Steam 게임 폴더의 프로그램이 실행 중입니다. 종료한 뒤 재확인하세요: " + names + " / Steam is closed, but a program from a Steam app folder is still running. Close it, then recheck: " + names);
+                    if (!string.Equals(Choice(consent, "r: 종료 후 재확인 / recheck after exiting, Enter: 취소 / cancel"), "r", StringComparison.OrdinalIgnoreCase))
+                        throw Failure("SteamGameProcessesRemain", "ShutdownCompletion", left);
+                    continue;
                 }
                 if (status.State == "Unknown" || status.State == "OtherSession") {
                     Waiting(Failure(status.State == "Unknown" ? "SteamOwnershipUnknown" : "SteamOtherSession", "ShutdownObservation", status));
@@ -622,7 +641,7 @@ namespace BetterAstralParty.Installation
                 // Steam is never terminated; the player exits it so it saves its own state.
                 state.Root = root; state.Restart = true; shutdownAttempted = true;
                 Waiting(Failure("SteamRunning", "ShutdownConsent", status));
-                output("바로가기를 등록하려면 Steam을 종료해야 합니다. Steam 메뉴에서 나가기로 종료한 뒤 재확인하세요. 등록 후 Steam을 다시 실행합니다. / Steam must be closed to register the shortcut. Exit Steam from its menu, then recheck. Steam is started again afterwards.");
+                output("Steam 라이브러리의 Astral Party - Mod 항목을 바꾸려면 Steam을 종료해야 합니다. Steam 메뉴에서 나가기로 종료한 뒤 재확인하세요. 작업이 끝나면 Steam을 다시 실행합니다. / Steam must be closed to change the Astral Party - Mod library entry. Exit Steam from its menu, then recheck. Steam is started again afterwards.");
                 string choice; try { choice = Choice(consent, "r: 종료 후 재확인 / recheck after exiting, Enter: 취소 / cancel"); } catch { state.Restart = false; throw; }
                 if (!string.Equals(choice, "r", StringComparison.OrdinalIgnoreCase)) { state.Restart = false; throw Failure("ConsentCancelled", "ShutdownConsent", status); }
             }

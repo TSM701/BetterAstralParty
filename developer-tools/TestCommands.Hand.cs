@@ -110,6 +110,9 @@ internal static partial class TestCommands
         foreach (var (type, name, pattern) in new[] { ("FairyGUI.Window", "Show", "FairyGUI.GRoot::ShowWindow"), ("FairyGUI.Window", "ShowOn", "FairyGUI.GRoot::ShowWindow"), ("FairyGUI.GRoot", "ShowWindow", "FairyGUI.GComponent::AddChild"),
             ("FairyGUI.GObject", "set_sortingOrder", "ChildSortingOrderChanged"), ("FairyGUI.GComponent", "ChildSortingOrderChanged", "SetChildIndex"), ("UI.HandCardPanel", "Show", "UI.BasePanel.*::Show"), ("UI.BasePanel`1", "Show", "FairyGUI.GComponent::AddChild"), ("UI.BasePanel`1", "Show", "set_sortingOrder") }) Pattern(Operands(NativeMethod(native, type, name)), pattern, "Native target order: " + type + "." + name);
         foreach (var name in new[] { "type", "btn_Cancel", "btn_Sure", "com_ShowCard" }) Check(native.MainModule.GetType("UI.UICardWin_Com_UseCard").Fields.Any(field => field.Name == name), "Native target field: " + name);
+        // Target steps raised above the hand: each native entry selects its exact com_UseCard.type index.
+        foreach (var (method, index) in new[] { ("RefreshCardInfo_SelectPlayer", "ldc.i4.1"), ("RefreshPointList", "ldc.i4.3"), ("InitSelectLandStatus", "ldc.i4.4") })
+            Pattern(Il(NativeMethod(native, "UI.CardWindow", method)), @"UICardWin_Com_UseCard::type\n[^\n]*: " + index + @"\n[^\n]*Controller::set_selectedIndex", "Native target step type: " + method + " " + index);
         var source = WithoutNamespace(ReadSource(context, "src/CardTargetButtonsUi.cs")); NoPattern(source, "Set\\(\"[xy]\"|SetXY|SetScale|AddChild", "Target geometry/hierarchy stays native");
         Check(!source.Contains("Plugin.CardTargetButtons", StringComparison.Ordinal)
             && !ReadSource(context, "src/Plugin.cs").Contains("CardTargetButtons", StringComparison.Ordinal), "Target button priority has no saved preference gate");

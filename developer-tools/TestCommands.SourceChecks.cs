@@ -113,6 +113,14 @@ internal static partial class TestCommands
         using var native = Native(context);
         var coordinate = native.MainModule.GetType("FairyGUI.GObject").Methods.Single(method => method.Name == "LocalToGlobal" && method.Parameters.Count == 1 && method.Parameters[0].ParameterType.FullName == "UnityEngine.Vector2");
         Check(coordinate.Parameters[0].ParameterType.FullName == "UnityEngine.Vector2" && coordinate.ReturnType.FullName == "UnityEngine.Vector2", "Diagnostic coordinate ABI");
+        // In-battle menu entry: both native windows, their settings buttons and the clone path the mod uses.
+        foreach (var (window, pane) in new[] { ("UI.SettingInBattleWindow", "UI.UISettingInBattleWindow"), ("UI.SinglePlayerSettingInBattleWindow", "UI.UISinglePlayerSettingInBattleWindow") })
+            Check(native.MainModule.GetType(window) != null && native.MainModule.GetType(pane)?.Fields.Any(field => field.Name == "btn_OpenSetting" && field.FieldType.FullName == "FairyGUI.GButton") == true, "In-battle menu window and settings button: " + window);
+        Check(native.MainModule.GetType("UI.UISettingInBattleWindow").Fields.Any(field => field.Name == "btn_AudienceOpenSetting"), "Spectator settings button");
+        Check(native.MainModule.GetType("FairyGUI.GObject").Methods.Any(method => method.Name == "get_resourceURL" && method.ReturnType.FullName == "System.String")
+            && native.MainModule.GetType("FairyGUI.UIPackage").Methods.Any(method => method.Name == "CreateObjectFromURL" && method.Parameters.Count == 1), "Native button clone by resource URL");
+        Contains(ReadSource(context, "src/BattleMenuUi.cs"), new[] { "\"SettingInBattleWindow\", \"SinglePlayerSettingInBattleWindow\"", "\"btn_OpenSetting\", \"btn_AudienceOpenSetting\"", "ModUi.OpenFromBattleMenu()" }, "Mod settings entry uses audited in-battle windows");
+        NoPattern(ReadSource(context, "src/BattleMenuUi.cs"), @"onClick|AddListener|item\.(?:Set|Call)\(|template\.(?:Set|Call)\(", "In-battle entry adds no native listeners and changes no native buttons");
         var source = ReadSource(context, "src/ModUi.cs");
         Contains(source, new[] { "case \"UpdateChannel\": Plugin.UpdateChannel.Value = value; Plugin.Updates.CheckTransition(DateTimeOffset.UtcNow); break;",
             "(Plugin.AutomaticChecks.Value || Plugin.Updates.TransitionCheckPending)" }, "Explicit channel selection remains manual when periodic discovery is OFF");
@@ -127,14 +135,13 @@ internal static partial class TestCommands
         var features = new[] { "Enabled", "Details", "KoMinimum", "CardPopups", "BattleStatus", "ShushuShield", "FieldBuffs", "Names", "HandLayout", "FieldZoom",
             "ShushuShieldRestrictions", "AutoThanks", "CharacterRoles", "CharacterGuide", "IndicatorFade", "IndicatorHide", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage" };
         for (var row = 0; row < features.Length; row++) Check(source.Contains($"AddToggle(\"{features[row]}\", 440, MenuLayout.ToggleY({row}));", StringComparison.Ordinal), "Feature right column: " + features[row]);
-        var general = new[] { "UpdateChannel", "UpdateCheck", "UpdateDownload", "AutoDownload", "AfterExit", "UpdateGet", "UpdateCancel", "UpdateAuth", "UpdateSignOut", "DiagnosticsOpen", "DiagnosticsCollect",
-            "SuppressNotices", "AutomaticChecks", "UpdateNotifications" };
+        var general = new[] { "UpdateChannel", "Update", "UpdateDownload", "AutoUpdate", "UpdateAuth", "UpdateSignOut", "DiagnosticsOpen", "DiagnosticsCollect",
+            "SuppressNotices", "UpdateNotifications", "SettingsAutoKeep", "SettingsSave", "SettingsLoad", "SettingsFolder", "SettingsReset" };
         for (var row = 0; row < general.Length; row++) Check(source.Contains($"AddToggle(\"{general[row]}\", 440, MenuLayout.ToggleY({row + 7}));", StringComparison.Ordinal), "General setting row: " + general[row]);
-        Contains(source, new[] { "AddToggle(\"MatchFocus\", 440, MenuLayout.ToggleY(4));", "AddStepper(\"Scale\", ModText.Text(\"표시 크기\"), MenuLayout.ToggleY(5));",
-            "AddStepper(\"Opacity\", ModText.Text(\"배경 불투명도\"), MenuLayout.ToggleY(6));", "AddToggle(\"Diagnostics\", 440, 190);", "AddToggle(\"MuteUnfocused\", 440, 255);",
-            "AddToggle(\"InputAttention\", 440, 320);", "MoveIntoSettings(button, MenuLayout.SettingY(action)", "toggle.Call(\"SetSize\", width, MenuLayout.ToggleHeight);",
-            "if (!MenuLayout.FixedControl(action)) MoveIntoSettings(button, MenuLayout.SettingY(action)", "MoveIntoSettings(Labels[key], MenuLayout.SettingY(key) + 7);", "Labels[\"Saved\"] = NativeUi.Label(_sheet, \"\", 675, MenuLayout.FooterY + 7, 315, 30, 18);",
-            "Labels[\"HelpTitle\"] = NativeUi.Label(helpArea, \"\", 18, 22, 324, 44, 27);", "Labels[\"HelpTitle\"].Set(\"singleLine\", true);", "Labels[\"HelpTitle\"].Set(\"autoSize\", 3);",
+        Contains(source, new[] { "AddToggle(\"MatchFocus\", 440, MenuLayout.ToggleY(4));", "foreach (var action in MenuLayout.Sliders)", "AddToggle(\"Diagnostics\", 440, 190);", "AddToggle(\"MuteUnfocused\", 440, 255);",
+            "AddToggle(\"InputAttention\", 440, 320);", "MoveIntoSettings(button, MenuLayout.SettingY(action)", "toggle.Call(\"SetSize\", width, height);",
+            "if (!MenuLayout.FixedControl(action)) MoveIntoSettings(button, MenuLayout.SettingY(action)", "MoveIntoSettings(Labels[action], MenuLayout.SettingY(action) + MenuLayout.SliderLabelOffsetY(action));", "Labels[\"Saved\"] = NativeUi.Label(_sheet, \"\", 675, MenuLayout.FooterY + 7, 315, 30, 18);",
+            "Labels[\"HelpTitle\"] = NativeUi.Label(helpArea, \"\", 18, 14, 324, 40, 27);", "Labels[\"HelpTitle\"].Set(\"singleLine\", true);", "Labels[\"HelpTitle\"].Set(\"autoSize\", 3);",
             "Labels[\"Saved\"].Set(\"singleLine\", true);", "Labels[\"Saved\"].Set(\"autoSize\", 3);",
             "var saved = Time.unscaledTime - _changedAt < 1.6f ? ModText.Text(\"✓ 저장됨\") : $\"BetterAstralParty {Plugin.Version}\";",
             "if (_savedText != saved) { _savedText = saved; Labels[\"Saved\"].Set(\"text\", saved); }" }, "Settings geometry and footer");
@@ -163,7 +170,7 @@ internal static partial class TestCommands
 
     private static void SettingsPreferenceInventory(DevContext context, string source, string plugin)
     {
-        var added = new[] { "ShushuShieldRestrictions", "AutoThanks", "CharacterRoles", "CharacterGuide", "IndicatorFade", "IndicatorHide", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "AutomaticChecks", "UpdateNotifications" };
+        var added = new[] { "ShushuShieldRestrictions", "AutoThanks", "CharacterRoles", "CharacterGuide", "IndicatorFade", "IndicatorHide", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications" };
         var layout = ReadSource(context, "src/MenuLayout.cs"); var text = ReadSource(context, "src/ModText.cs");
         var enabled = MethodFragment(source, "private static bool ToggleEnabled"); var apply = MethodFragment(source, "private static void ApplyCore");
         var help = layout[layout.IndexOf("internal static (string Title, string Body) Help(", StringComparison.Ordinal)..];
@@ -187,7 +194,7 @@ internal static partial class TestCommands
                 Check(translations[key].Count() == 1 && translations[key].Single() != key && translations[key].Single().Length > 2, "Korean/English " + field + " resolves exactly once: " + setting);
             }
             Check(state.Contains("\"" + setting + "\"", StringComparison.Ordinal), "Disabled preference has state-specific guidance: " + setting);
-            Check(groups.Contains("\"" + setting + "\"", StringComparison.Ordinal) == (setting is "SuppressNotices" or "AutomaticChecks" or "UpdateNotifications"), "Preference belongs to the intended scrolling tab: " + setting);
+            Check(groups.Contains("\"" + setting + "\"", StringComparison.Ordinal) == (setting is "SuppressNotices" or "UpdateNotifications"), "Preference belongs to the intended scrolling tab: " + setting);
         }
         Contains(source, new[] { "ModText.Text(MenuLayout.Help(action).Title)", "MenuLayout.StateHelp(action, ToggleEnabled(action), mode)", "ModText.Text(title) + \": \" + ModText.Text(state)" }, "Preference labels and help retain the localization path");
         foreach (var body in Regex.Matches(state, literal)
@@ -249,25 +256,20 @@ internal static partial class TestCommands
             && open.IndexOf("DiagnosticOutcome.Completed", StringComparison.Ordinal) > open.IndexOf("Layout();", StringComparison.Ordinal), "Always-on open boundaries enclose settings creation and layout");
         var trace = MethodFragment(source, "private static void TraceSettingsOpen");
         Contains(trace, new[] { "DiagnosticHub.Stage(DiagnosticFeature.Settings, stage, DiagnosticOutcome.Observed)", "DiagnosticHub.FlushSoon()", "Plugin.Logger.LogInfo", "catch { }" }, "Native-hang breadcrumbs use the always-on typed writer and survive logger failure");
-        Check(Regex.IsMatch(create, @"MoveIntoSettings\(button,\s*MenuLayout\.SettingY\(action\)[\s\S]*?9\s*\+\s*button\.Get<float>\(""height""\)\s*\*\s*button\.Get<float>\(""pivotY""\)\s*\*\s*button\.Get<float>\(""scaleY""\)"),
-            "Categorized steppers preserve the native anchored visual origin below their header");
         var headers = MethodFragment(source, "private static void CreateSections");
         foreach (var part in new[] { ".label", ".fit", ".style", ".separator" })
             Check(headers.Contains("index + \"" + part + "\"", StringComparison.Ordinal), "Category native-call checkpoint: " + part);
         Contains(headers, new[] { "MenuLayout.Sections", "MenuLayout.SectionY(i)", "MenuLayout.SectionHeight", "ModText.Text(section.Title)",
             "header.Set(\"touchable\", false)", "title.Set(\"touchable\", false)", "title.Set(\"singleLine\", true)", "title.Set(\"autoSize\", 3)",
-            "RuntimeObject.FindClass(\"FairyGUI\", \"GGraph\")", "line.Set(\"touchable\", false)", "SectionHeaders.Add((header, title, line, section.General));", "UpdateSectionLines();" }, "Category headings and separators are localized noninteractive scrolling content");
+            "RuntimeObject.FindClass(\"FairyGUI\", \"GGraph\")", "band.Set(\"touchable\", false)", "SectionHeaders.Add((header, title, band, section.General));", "MenuLayout.SectionBandWidth" }, "Category headings and bands are localized noninteractive scrolling content");
         Check(!headers.Contains("Controls[", StringComparison.Ordinal) && !headers.Contains("Button(", StringComparison.Ordinal), "Category headings never become actionable controls");
-        Check(headers.IndexOf("UpdateSectionLines();", StringComparison.Ordinal) > headers.IndexOf("GameUi.StyleText(title, 22, align: 0);", StringComparison.Ordinal), "Heading measurement follows positive bounds, single-line Shrink and final styling");
+        Check(headers.IndexOf("band.Call(\"SetSize\"", StringComparison.Ordinal) < headers.IndexOf("NativeUi.Label(header", StringComparison.Ordinal), "Category band is drawn beneath its title");
         Contains(MethodFragment(ReadSource(context, "src/NativeUi.cs"), "internal static RuntimeObject Label"),
             new[] { "label.Call(\"SetSize\", width, height)", "return label" }, "Fresh labels have bounds before category measurement");
-        var lines = MethodFragment(source, "private static void UpdateSectionLines");
-        Contains(lines, new[] { "section.Title.Get<float>(\"textWidth\")", "MenuLayout.SectionLine(", "bounds.Width > 0", "MenuLayout.SectionLineHeight", "Call(\"DrawRect\", 0f, Color.black, Color.black)" }, "Separator uses measured native text width and a thin borderless fill");
-        Contains(MethodFragment(source, "private static void AnimateHelp"),
-            new[] { "if (_helpFontRevision != ModFont.Revision)", "UpdateSectionLines();" }, "Font fallback changes refresh category lines without per-frame measurements");
+        Check(!source.Contains("UpdateSectionLines", StringComparison.Ordinal), "Category bands need no text-width measurement");
         var help = MethodFragment(source, "private static void SetHelp");
         Check(help.Contains("MenuLayout.StateHelp(action, ToggleEnabled(action), mode)", StringComparison.Ordinal)
-            && help.Contains("action is \"UpdateGet\" or \"UpdateCancel\"", StringComparison.Ordinal)
+            && help.Contains("action is \"UpdateGet\" or \"UpdateApply\" or \"UpdateCancel\"", StringComparison.Ordinal)
             && !Regex.IsMatch(help, "action is[^\\r\\n]*(?:\\\"AutoDownload\\\"|\\\"AfterExit\\\")"), "Download preferences show their own current-state help, not transient updater status");
     }
 }

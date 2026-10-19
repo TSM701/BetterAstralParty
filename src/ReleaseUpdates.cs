@@ -41,7 +41,7 @@ internal sealed record ReleaseUpdate(string Version, string Title, string Notes,
         if (RepositoryId > 0 && (!ReleaseFeedPolicy.SupportsAutomaticSource(current)
             || !ReleaseFeedPolicy.SupportsAutomaticTarget(Version, channel.ToString()))) return null;
         if (ReleaseId <= 0 || ZipAssetId <= 0 || DescriptorAssetId <= 0 || SignatureAssetId <= 0) return null;
-        if (channel == ReleaseChannel.Stable && Beta || channel == ReleaseChannel.PreRelease && !GitHubPrerelease) return null;
+        if (channel == ReleaseChannel.Stable && Beta || channel == ReleaseChannel.PreRelease && !GitHubPrerelease && Beta) return null;
         if (TransitionCandidate && transition == null) return null;
         // A production feed fixes both repository and channel; repositories are never merged here.
         var repository = Repository.Length == 0 ? "TSM701/BetterAstralParty" : Repository;
@@ -519,7 +519,8 @@ internal sealed class ReleaseUpdates : IDisposable
         {
             if (!TryVersion(release.Version, out var version) || version.CompareTo(installed) <= 0
                 || channel == ReleaseChannel.Stable && (release.Beta || version.Major == 0 || version.IsPreRelease)
-                || channel == ReleaseChannel.PreRelease && !release.GitHubPrerelease) continue;
+                // Pre-release follows flagged releases and newer full releases; unflagged suffixes and 0.x never qualify.
+                || channel == ReleaseChannel.PreRelease && !release.GitHubPrerelease && release.Beta) continue;
             if (highest != null && version.CompareTo(highest) <= 0) continue;
             highest = version; selected = release;
         }

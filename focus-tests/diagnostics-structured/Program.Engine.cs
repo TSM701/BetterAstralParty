@@ -18,7 +18,8 @@ internal static partial class Program
         Put(Path.Combine(r.Game, "BepInEx/LogOutput.log"), string.Join("\n", new[] {
             "[Message:   BepInEx] BepInEx 6.0.0-be.788 - AstralParty_INT",
             "[Info   :   BepInEx] Loading [Better Astral Party 1.4.0]",
-            "[Message:     Unity] FAKE_CHAT_LINE hello friend",
+            "[Message:     Unity] chat FAKE_CHAT_LINE hello friend",
+            "[Info   :     Unity] Welcome FakeWinUser, persona 트세FAKE, ally [U:1:123456789]",
             "[Error  :Il2CppInterop] System.NullReferenceException: Object reference not set at C:\\Users\\FAKE_PERSON\\Games\\Other.dll",
             "  at OtherMod.Patch.Postfix () [0x00000] in <00000000000000000000000000000000>:0",
             "[Info   :     Unity] FAKE_PLAIN_INFO",
@@ -54,22 +55,34 @@ internal static partial class Program
         var runtime = Path.Combine(r.Root, "runtime");
         Put(Path.Combine(runtime, "stages-current.log"), "2026-10-18T10:00:00.0000000Z session=" + new string('a', 32) + " version=1.4.0 stage=PluginLoad outcome=Begin\n2026-10-18T10:00:01.0000000Z stage=HomeMenu outcome=Completed\n2026-10-18T10:00:02Z stage=Home FAKE_STAGE_TEXT\n");
         Put(Path.Combine(runtime, "safe-mode.state"), "failures=2\nmode=safe\nnote=FAKE STATE WITH SPACES\n");
+        Put(Path.Combine(runtime, "launch-decision.state"), "time=2026-10-19T03:00:00Z\nactive=false\nroute=none\nrequest=request-stale\nnote=FAKE DECISION TEXT\n");
+        Put(Path.Combine(runtime, "mod-launch.request"), "");
+        Put(Path.Combine(runtime, "Logs", "current.log"), "2026-10-19T03:00:01Z | phase=3 from C:\\Users\\FAKE_PERSON\\x.log for FakeWinUser\n2026-10-19T03:00:02Z | card={FAKE_HAND_PREVIEW}\n");
+        Put(Path.Combine(r.Game, "doorstop_config.ini"), "[General]\nenabled = true\ntarget_assembly = x\n[Il2Cpp]\nenabled = false\n");
+        Put(Path.Combine(r.Game, "GameAssembly.dll"), "FORBIDDEN_GAME_ASSEMBLY");
         Put(Path.Combine(r.Game, "BepInEx/plugins/OtherMod/OtherMod.dll"), "FORBIDDEN_PLUGIN_CONTENT");
         Put(Path.Combine(r.Game, "BepInEx/patchers/Patcher.dll"), "FORBIDDEN_PATCHER_CONTENT");
-        var sources = new DiagnosticSources { CrashRoot = crashes, WindowsEvents = () => events, RuntimeStateRoot = runtime };
+        var sources = new DiagnosticSources { CrashRoot = crashes, WindowsEvents = () => events, RuntimeStateRoot = runtime, IdentityNames = new[] { "FakeWinUser", "트세FAKE", "ab" } };
         var i = Inspect(CollectSources(r, sources));
         var loader = i.Entries["logs/loader-log-output.log"];
-        Check(loader.Contains("BepInEx 6.0.0-be.788") && loader.Contains("Loading [Better Astral Party 1.4.0]") && loader.Contains("System.NullReferenceException") && loader.Contains("at OtherMod.Patch.Postfix"), "loader start, error and attached stack lines kept");
+        Check(loader.Contains("BepInEx 6.0.0-be.788") && loader.Contains("Loading [Better Astral Party 1.4.0]") && loader.Contains("System.NullReferenceException") && loader.Contains("at OtherMod.Patch.Postfix"), "loader start, error and stack lines kept");
         Check(loader.Contains("[path]/Other.dll") && !loader.Contains("FAKE_PERSON"), "engine paths reduced to code file names");
-        Check(!loader.Contains("FAKE_CHAT_LINE") && !loader.Contains("FAKE_PLAIN_INFO") && !loader.Contains("FAKE_ORPHAN_FRAME"), "non-error and orphan stack lines dropped");
+        Check(loader.Contains("FAKE_PLAIN_INFO") && loader.Contains("FAKE_ORPHAN_FRAME") && !loader.Contains("FAKE_CHAT_LINE"), "full engine text kept except chat/card payload lines");
         Check(!loader.Contains("FAKE_TOKEN_VALUE") && !loader.Contains("76561198000000001") && !loader.Contains("FAKE_CARD_PAYLOAD") && loader.Contains("[redacted]"), "secrets, Steam IDs and game payload redacted");
+        Check(!i.All.Contains("FakeWinUser") && !i.All.Contains("트세FAKE") && !i.All.Contains("[U:1:123456789]") && loader.Contains("Welcome [name], persona [name]"), "Windows/Steam names and Steam ID3 redacted in free text");
         var loaderRow = FileRow(i, "loader/log-output");
-        Check(Text(loaderRow, "contentKind") == "filtered-error-lines" && loaderRow.GetProperty("droppedLines").GetInt32() >= 3 && loaderRow.GetProperty("redactedLines").GetInt32() >= 3, "engine filter counts dropped and redacted lines");
+        Check(Text(loaderRow, "contentKind") == "redacted-full-log" && loaderRow.GetProperty("redactedLines").GetInt32() >= 3, "engine log declares full redacted content");
         var player = i.Entries["logs/unity-player.log"];
-        Check(player.Contains("Crash!!!") && player.Contains("0x00007FF6A1B2C3D4 (UnityPlayer)") && player.Contains("END OF STACKTRACE") && !player.Contains("FAKE_AFTER_CRASH") && !player.Contains("FAKE_USERNAME") && !player.Contains("FAKE_PERSON"), "Unity crash block kept and redacted, ordinary lines dropped");
+        Check(player.Contains("Initialize engine version") && player.Contains("Crash!!!") && player.Contains("0x00007FF6A1B2C3D4 (UnityPlayer)") && player.Contains("FAKE_AFTER_CRASH") && !player.Contains("FAKE_USERNAME") && !player.Contains("FAKE_PERSON"), "Unity log kept in full and redacted");
         var error = i.Entries["logs/crash-01-error.log"];
         Check(error.Contains("Access Violation (0xc0000005)") && error.Contains("UnityPlayer.dll") && !error.Contains("FAKE_PERSON") && !error.Contains("FAKE_CRASH_SECRET"), "crash error.log kept with paths and secrets redacted");
-        Check(i.Entries["logs/crash-01-player.log"].Contains("Plugin load failed") && !i.All.Contains("FAKE_CRASH_PLAYER_INFO"), "crash-time Player.log filtered");
+        Check(i.Entries["logs/crash-01-player.log"].Contains("Plugin load failed") && i.All.Contains("FAKE_CRASH_PLAYER_INFO"), "crash-time Player.log kept in full");
+        var runtimeLog = i.Entries["logs/runtime-diagnostics-current.log"];
+        Check(runtimeLog.Contains("phase=3") && !runtimeLog.Contains("FAKE_HAND_PREVIEW") && runtimeLog.Contains("[name]") && !runtimeLog.Contains("FAKE_PERSON"), "per-user BAP runtime log kept as redacted full text");
+        var decision = i.Entries["logs/runtime-launch-decision-state.log"];
+        Check(decision.Contains("active=false") && decision.Contains("request=request-stale") && !decision.Contains("FAKE"), "launch decision keeps fixed key-values only");
+        Check(Text(FileRow(i, "runtime/mod-launch-request"), "status") == "pending" && Text(FileRow(i, "loader/doorstop-enabled"), "status") == "enabled-true", "pending Mod request and loader switch observed");
+        Check(Text(FileRow(i, "game/build/GameAssembly.dll"), "status") == "observed" && FileRow(i, "game/build/GameAssembly.dll").GetProperty("inputBytes").GetInt64() == 23 && !i.All.Contains("FORBIDDEN_GAME_ASSEMBLY") && FileRow(i, "game/build/steam-manifest").ValueKind == JsonValueKind.Object, "game build observed by size/time and Steam manifest");
         Check(Text(FileRow(i, "crash/01/dump"), "status") == "metadata-only" && FileRow(i, "crash/01/dump").GetProperty("inputBytes").GetInt64() == 20 && !i.All.Contains("FORBIDDEN_DUMP") && !i.All.Contains("FORBIDDEN_OTHER_FOLDER"), "dump size only and non-crash folders ignored");
         var eventLines = i.Entries["logs/windows-application-events.jsonl"].Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(line => JsonDocument.Parse(line).RootElement.Clone()).ToArray();
         Check(eventLines.Length == 3, "only recent game-process Windows events kept");
@@ -86,7 +99,7 @@ internal static partial class Program
         Check(stages.Contains("stage=PluginLoad outcome=Begin") && stages.Contains("stage=HomeMenu outcome=Completed") && !stages.Contains("FAKE_STAGE_TEXT"), "stage ladder keeps fixed tokens only");
         var state = i.Entries["logs/runtime-safe-mode-state.log"];
         Check(state.Contains("failures=2") && state.Contains("mode=safe") && !state.Contains("FAKE"), "safe-mode state keeps fixed key-values only");
-        Check(i.Summary.GetProperty("privacy").GetProperty("memoryDumpsRead").ValueKind == JsonValueKind.False && Text(i.Summary.GetProperty("scope"), "engineLogs") == "filtered-error-lines", "summary declares the filtered scope");
+        Check(i.Summary.GetProperty("privacy").GetProperty("memoryDumpsRead").ValueKind == JsonValueKind.False && Text(i.Summary.GetProperty("scope"), "engineLogs") == "redacted-full-head-and-tail", "summary declares the full redacted scope");
 
         var plain = New("engine-defaults"); Put(Path.Combine(plain.Unity, "Player.log"), "[Error  :  BepInEx] Plugin load failed\n");
         var defaults = Inspect(Collect(plain));
@@ -98,10 +111,12 @@ internal static partial class Program
         {
             writer.Write("[Error  :  OtherMod] FAKE_HEAD_ERROR_OUTSIDE_WINDOW\n");
             var filler = "[Info   :     Unity] filler line for the engine tail window\n";
-            for (long written = 0; written < DiagnosticBundle.MaxEngineInputBytes + 1024; written += filler.Length) writer.Write(filler);
+            for (long written = 0; written < DiagnosticBundle.MaxEngineHeadBytes; written += filler.Length) writer.Write(filler);
+            writer.Write("[Error  :  OtherMod] FAKE_MIDDLE_OMITTED\n");
+            for (long written = 0; written < DiagnosticBundle.MaxEngineTailBytes + 1024; written += filler.Length) writer.Write(filler);
             writer.Write("[Error  :  OtherMod] Newest failure kept\n");
         }
-        var tail = Inspect(Collect(big));
-        Check(tail.Entries["logs/loader-log-output.log"].Contains("Newest failure kept") && !tail.All.Contains("FAKE_HEAD_ERROR") && FileRow(tail, "loader/log-output").GetProperty("truncated").GetBoolean(), "oversized engine log reads the newest window from a line boundary");
+        var tail = Inspect(Collect(big)); var tailText = tail.Entries["logs/loader-log-output.log"];
+        Check(tailText.Contains("FAKE_HEAD_ERROR_OUTSIDE_WINDOW") && tailText.Contains("Newest failure kept") && tailText.Contains("bytes omitted") && !tail.All.Contains("FAKE_MIDDLE_OMITTED") && FileRow(tail, "loader/log-output").GetProperty("truncated").GetBoolean(), "oversized engine log keeps head and newest tail and marks the omitted middle");
     }
 }

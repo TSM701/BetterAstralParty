@@ -15,7 +15,8 @@ namespace BetterAstralParty.Updating
         internal readonly string Tag;
         private readonly string[] _prerelease;
         internal bool IsPrerelease { get { return _prerelease.Length != 0; } }
-        internal bool IsLocalPrerelease { get { return IsPrerelease && Tag.IndexOf('+') < 0 && Regex.IsMatch(Tag, @"\.local\.[1-9][0-9]*\z", RegexOptions.CultureInvariant); } }
+        // Development builds: X.Y.Z-dev.N (current form) or the older X.Y.Z-<tag>.local.N; never remote update targets.
+        internal bool IsLocalPrerelease { get { return IsPrerelease && Tag.IndexOf('+') < 0 && Regex.IsMatch(Tag, @"(?:[-.]dev|\.local)\.[1-9][0-9]*\z", RegexOptions.CultureInvariant); } }
         private UpdateVersion(int major, int minor, int patch, string tag, string[] prerelease)
         { Major = major; Minor = minor; Patch = patch; Tag = tag; _prerelease = prerelease; }
 

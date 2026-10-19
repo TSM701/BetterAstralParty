@@ -14,11 +14,40 @@ internal static partial class TestCommands
         var layout = Il("UI.UIBattleInfoPanel", "UpdateAttrInfoPosition", 0); Pattern(Il("UI.UIBattleInfoPanel", "OnUpdate", 0), "::UpdateAttrInfoPosition", "Native per-frame plate position hook");
         Contains(layout, new[] { "::com_AttrInfos", "::GetOwnerPos", "::WorldToScreenPoint", "::UpdateOffset", "::UpdateGuideLine" }, "Native plate tracking/layout");
         Contains(Il("UI.UICom_AttrInfo", "GetOwnerPos", 0), new[] { "BattleProperty::HP", "::CharacterInst", "::IsHide" }, "Death/hidden player protections");
+        // Hero clones live in an owned layer: native layout must only walk direct UICom_AttrInfo children,
+        // and the mod reuses its exact lifts and per-plate helpers.
+        Pattern(layout, @"::get_Item\(System.Int32\)\nIL_[0-9a-f]+: isinst UI.UICom_AttrInfo", "Native plate pass skips non-plate children");
+        Pattern(layout, @"ldc.r4 200\n[\s\S]*ldc.r4 120\n", "Native plate and marker lifts");
+        foreach (var name in new[] { "UpdateOffset", "UpdateGuideLine" })
+            Check(NativeMethod(native, "UI.UICom_AttrInfo", name, 1).Parameters[0].ParameterType.FullName == "UnityEngine.Vector2", "Native plate helper signature: " + name);
+        Pattern(layout, @"::get_canStep\(\)[\s\S]*::graph_ShowBuff", "Native step-phase buff hint gate");
         var publicBuffs = Il("Core.Unit.BuffContainer", "GetShowBuffs", 2); Pattern(publicBuffs, @"::get_IsShow\(", "Public effect visibility"); Pattern(publicBuffs, @"::get_IsShowIconProgressZero\(", "Public zero-progress effect filter");
         var description = Il("UI.UICom_AttrInfo", "OpenBuffInfo", 1); Pattern(description, "::GetShowBuffs", "Native description public buffs"); Pattern(description, "::RefreshMonsterInfo", "Native monster info"); NoPattern(description, "Request|RPC", "Native description no RPC");
         var popupMethod = NativeAsyncMoveNext(native, "UI.BattlePlayerInfoWindow", "RefreshMonsterInfo"); var popup = Body(popupMethod); NoPattern(popup, "Request|RPC", "Popup no RPC"); Pattern(popup, "::RefreshMonsterBuffList", "Native monster buff list");
         foreach (var name in new[] { "UpdateHP", "UpdateATK", "UpdateDEF", "UpdateExtraMovePoint", "SwitchInfo", "Dispose" }) NoPattern(Il("UI.UICom_AttrInfo", name, name == "UpdateHP" ? 2 : name == "Dispose" ? 0 : 1), "Request|RPC|AddListener|Delegate::Combine", "No plate update/dispose side effects: " + name);
         var source = ReadSource(context, "src/FieldBuffUi.cs"); var list = Il("UI.BattlePlayerInfoWindow", "RefreshMonsterBuffList", 3);
+        Contains(source, new[] { "Call(\"UpdateOffset\", target)", "Call(\"UpdateGuideLine\", point)", "PlateLift = 200f, MarkerLift = 120f", "FieldZoomUi.IndicatorScale", "Plugin.FieldIndicatorHeight.Value" }, "Owned hero plate layout");
+        // Monster plate zoom-follow: native plates move into an owned layer the native pass skips; a hidden owned
+        // direct child keeps receiving the native long-press SwitchMonsterInfo state.
+        Pattern(Il("UI.UIBattleInfoPanel", "SwitchMonsterInfo", 1), @"::com_AttrInfos\n[\s\S]*::_children[\s\S]*isinst UI.UICom_AttrInfo[\s\S]*::SwitchInfo\(System.Boolean\)", "Native long-press info walks direct plate children");
+        Contains(Il("UI.UICom_AttrInfo", "SwitchInfo", 1), new[] { "::ShowInfo", "set_selectedIndex" }, "Native plate info state is the ShowInfo controller");
+        Pattern(Il("UI.UICom_AttrInfo", "get_PlayerData", 0), @"::_PlayerId\n[\s\S]*::GetPlayerDataById\(System.Int64\)", "Plate owner resolves from _PlayerId");
+        Check(native.MainModule.GetType("UI.UICom_AttrInfo").Fields.Single(field => field.Name == "_PlayerId").FieldType.FullName == "System.Int64", "Native plate owner id is Int64");
+        var monsters = ReadSource(context, "src/FieldMonsterPlates.cs");
+        Contains(monsters, new[] { "PlateLift = 200f, MarkerLift = 120f", "Call(\"UpdateOffset\", target)", "Call(\"UpdateGuideLine\", point)", "Math.Abs(scale - 1f) > 0.01f", "_parent!.Call(\"AddChild\", ui)", "ui.Call(\"SwitchInfo\", info == 1)" }, "Monster plates follow zoom and return to com_AttrInfos");
+        NoPattern(monsters, "FieldIndicatorHeight", "Monster dot height stays native");
+        Contains(ReadSource(context, "src/FieldZoomUi.cs"), new[] { "FieldMonsterPlates.Tick(IndicatorScale);", "Attempt(FieldMonsterPlates.Clear);" }, "Zoom drives and clears the monster plate layer");
+        // Settings marker slider: exact native GSlider members the mod writes (value/max are properties, changeOnClick a field).
+        var slider = native.MainModule.GetType("FairyGUI.GSlider");
+        foreach (var name in new[] { "set_max", "set_value" })
+            Check(slider.Methods.Single(method => method.Name == name).Parameters.Single().ParameterType.FullName == "System.Double", "Native slider setter ABI: " + name);
+        Check(slider.Methods.Single(method => method.Name == "get_value").ReturnType.FullName == "System.Double", "Native slider value getter ABI");
+        Check(slider.Fields.Single(field => field.Name == "changeOnClick") is { IsPublic: true, IsStatic: false } click && click.FieldType.FullName == "System.Boolean"
+            && !slider.Methods.Any(method => method.Name == "set_changeOnClick"), "Native slider changeOnClick is a public field");
+        Check(slider.Fields.Single(field => field.Name == "_barMaxWidth") is { IsStatic: false } barWidth && barWidth.FieldType.FullName == "System.Single", "Native slider bar width field");
+        Check(slider.Fields.Single(field => field.Name == "_gripObject") is { IsStatic: false } gripField && gripField.FieldType.FullName == "FairyGUI.GObject", "Native slider grip field");
+        Pattern(Il("FairyGUI.GSlider", "__barTouchBegin", 1), @"::_gripObject[\s\S]*::GlobalToLocal[\s\S]*::_barMaxWidth", "Native bar press measures from the grip over the bar width");
+        Contains(ReadSource(context, "src/ModUi.cs"), new[] { "slider.SetField(\"changeOnClick\", true);", "slider.Set(\"max\", (double)(max - min));", "slider.Get<double>(\"value\")" }, "Settings sliders use native member kinds");
         Pattern(list, "::set_numItems", "Native full-data list");
         Pattern(list, @"::buffs[\s\S]*::get_Count\(\)[\s\S]*::propertyBuffs[\s\S]*::get_Count\(\)\nIL_[0-9a-f]+: add[\s\S]*::buffCount[\s\S]*::buffCount[\s\S]*::set_numItems", "Native list retains every public buff and property");
         var nativeResize = native.MainModule.GetType("UI.BattlePlayerInfoWindow").Methods.Where(method => method.Name == "ResizeAndPlaceMonsterInfo").ToArray();
@@ -62,7 +91,7 @@ internal static partial class TestCommands
         }, "Public read/native UI/cache/lifetime guards");
         var nickname = Il("GameLogic.RoomPlayer", "GetNick", 1); Pattern(nickname, "IncoverMode", "Native display-name privacy"); Pattern(nickname, "GetDisplayNick", "Native display-name mapping"); Contains(source, new[] { "Call(\"GetNick\", false)" }, "Native displayed player nickname");
         Check(!source.Contains("Count\") == 0) continue", StringComparison.Ordinal), "Players without public buffs retain name/HP plate");
-        NoPattern(source, "GetCharacterName|new Material|renderQueue\\s*=|\"_ZTest\"|StyleWorldGraphics|SortingGroup|_world|WorldToScreenPoint|ScreenToWorldPoint|DelegateSupport|Il2CppSystem.Action|beforeUpdate|PositionAboveHeads|NativeUi.OutlineTree", "No unsafe custom positioning/native callback/world renderer");
+        NoPattern(source, "GetCharacterName|new Material|renderQueue\\s*=|\"_ZTest\"|StyleWorldGraphics|SortingGroup|_world|ScreenToWorldPoint|DelegateSupport|Il2CppSystem.Action|beforeUpdate|PositionAboveHeads|NativeUi.OutlineTree", "No unsafe custom positioning/native callback/world renderer");
         var baselinePath = Path.Combine(context.Root, "artifacts/backup-before-0.4.30/BetterAstralParty.dll"); var builtPath = options.TryGetValue("plugin-path", out var selected) ? Path.GetFullPath(selected) : Path.Combine(context.Root, "artifacts/BetterAstralParty.dll"); pin(baselinePath); pin(builtPath);
         using (var baseline = AssemblyDefinition.ReadAssembly(baselinePath)) using (var built = AssemblyDefinition.ReadAssembly(builtPath)) {
             var old = baseline.MainModule.GetTypes().Single(type => type.FullName == "BetterAstralParty.FieldBuffUi/Plate").Methods.Single(method => method.Name == "Refresh");

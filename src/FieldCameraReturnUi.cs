@@ -104,7 +104,6 @@ internal static class FieldCameraReturnUi
                 NativeUi.Position(titleLabel, _titlePadding.x / 2, _titlePadding.y / 2, 1f);
             }
             button.Set("visible", true);
-            Plugin.Diagnostics.State("fieldCameraReturn.gate", "visible");
             // Input locks cancel a click, not the exit surface of an already owned free view.
             if (!Application.isFocused || ModUi.IsOpen || Input.touchCount > 0
                 || root.Get<bool>("hasModalWindow") || root.Get<bool>("modalWaiting") || root.Get<bool>("hasAnyPopup")
@@ -116,6 +115,8 @@ internal static class FieldCameraReturnUi
             if (topWindow != null && GameUi.Visible(topWindow)
                 && (topWindow.Get<bool>("modal") || path.Any(hit => hit.Pointer == topWindow.Pointer)))
             { CancelInput("window-occluded"); return; }
+            // One gate state per frame: reporting "visible" before an input block flipped the state twice every frame.
+            Plugin.Diagnostics.State("fieldCameraReturn.gate", "visible");
             var hit = path.Any(item => item.Pointer == button.Pointer);
             if (hit != _hovered) { NativeUi.Play(button, hit ? "Switchin" : "Switchout"); _hovered = hit; }
             var mouse = Input.mousePosition;

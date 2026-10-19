@@ -24,6 +24,7 @@ internal sealed unsafe class RuntimeObject
     private static readonly Dictionary<(IntPtr, string), IntPtr> Fields = new();
     private static readonly Dictionary<IntPtr, string> Names = new();
     private static readonly HashSet<(IntPtr, Type)> CheckedValues = new();
+    private static readonly HashSet<IntPtr> CheckedReferences = new();
     private static readonly HashSet<string> CheckedFeatures = new();
     private static readonly Dictionary<string, string> Getters = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, string> Setters = new(StringComparer.Ordinal);
@@ -87,6 +88,22 @@ internal sealed unsafe class RuntimeObject
         GC.KeepAlive(this);
         return value;
     }
+    // Reference-field identity without a managed wrapper or GC handle. Compare it within the frame only; never retain it.
+    internal IntPtr FieldPointer(string name)
+    {
+        var field = FieldInfo(Class, name);
+        if (!CheckedReferences.Contains(field))
+        {
+            if (IL2CPP.il2cpp_class_is_valuetype(IL2CPP.il2cpp_class_from_type(IL2CPP.il2cpp_field_get_type(field))))
+                throw new InvalidCastException("Expected reference field " + name);
+            CheckedReferences.Add(field);
+        }
+        IntPtr value = IntPtr.Zero;
+        IL2CPP.il2cpp_field_get_value(Pointer, field, &value);
+        GC.KeepAlive(this);
+        return value;
+    }
+    internal static IntPtr ClassOf(IntPtr pointer) => pointer == IntPtr.Zero ? IntPtr.Zero : IL2CPP.il2cpp_object_get_class(pointer);
     internal static RuntimeObject? StaticField(IntPtr klass, string name) => Wrap(IL2CPP.il2cpp_field_get_value_object(FieldInfo(klass, name), IntPtr.Zero));
     internal static int EnumValue(string ns, string name, string field) => StaticField(FindClass(ns, name), field)!.Value<int>();
     internal T Value<T>() where T : unmanaged
@@ -201,6 +218,7 @@ internal sealed unsafe class RuntimeObject
                     break;
                 case int n: *(int*)slot = n; break;
                 case float f: *(float*)slot = f; break;
+                case double d: *(double*)slot = d; break;
                 case bool b: *slot = b ? (byte)1 : (byte)0; break;
                 case UnityEngine.Color color: *(UnityEngine.Color*)slot = color; break;
                 case UnityEngine.Vector2 point: *(UnityEngine.Vector2*)slot = point; break;
@@ -242,6 +260,7 @@ internal sealed unsafe class RuntimeObject
         {
             case int: CheckValue<int>(klass); return;
             case float: CheckValue<float>(klass); return;
+            case double: CheckValue<double>(klass); return;
             case bool: CheckValue<bool>(klass); return;
             case UnityEngine.Color: CheckValue<UnityEngine.Color>(klass); return;
             case UnityEngine.Vector2: CheckValue<UnityEngine.Vector2>(klass); return;

@@ -87,8 +87,9 @@ namespace BetterAstralParty.Updating
                 else if (name == ReleaseFeedPolicy.UpdateSignatureAsset) signature = id;
             }
             if (zip != descriptor.AssetId || manifest == 0 || signature == 0 || descriptorAsset != 0 && manifest != descriptorAsset || signatureAsset != 0 && signature != signatureAsset) throw Bad();
-            return !Flag(item, "draft") && ReleaseFeedPolicy.For(context.Channel).Accepts(Flag(item, "prerelease"))
-                && (context.Channel != "Stable" || !UpdateVersion.Parse(tag).IsPrerelease);
+            var flagged = Flag(item, "prerelease");
+            return !Flag(item, "draft") && ReleaseFeedPolicy.For(context.Channel).Delivers(flagged)
+                && (context.Channel == "Beta" || flagged && context.Channel == "PreRelease" || !UpdateVersion.Parse(tag).IsPrerelease);
         }
 #if BAP_FIXTURE_HELPER || BAP_LAUNCHER_RECOVERY_FIXTURE
         internal static Func<Uri, UpdateContext, VerifiedUpdateDescriptor, byte[]>? FixtureRead = null;

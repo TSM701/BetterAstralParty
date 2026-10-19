@@ -33,7 +33,7 @@ public static class Check {
     static RuntimeObject? _ui,_container,_hotZone;
     static Vector2 _hotPosition,_hotSize;
     static float _scanAt;
-    static IntPtr _tween,_tweenManager,_gobject,_logic,_pool,_focused;
+    static IntPtr _tween,_tweenManager,_gobject,_logic,_pool,_cardClass,_focused;
     static int _mode,Layouts,Clears;
     static int? _expanded;
     static bool _cardPress;
