@@ -16,6 +16,11 @@ internal static class GameUi
     private static float _menuOffsetX;
     private static int _menuLanguageRevision = -1;
     private static (IntPtr Menu, int Language, string? Version)? _releaseNotice;
+    // Progress capsule hung under the Mod Settings button while an update runs; it moves and fades with the button.
+    private static RuntimeObject? _progressCap, _progressLabel, _progressPercent, _progressFill, _progressDoor, _progressReason, _progressCode;
+    private static float _progressTrackWidth;
+    private static bool _progressStoppedLayout, _progressHover;
+    private static (IntPtr Menu, int Progress, int Language)? _progressShown;
     private static (float X, float Y, float Alpha, bool Visible, bool Touchable)? _menuState;
     private static RuntimeObject? _defButton, _dodgeButton;
     private static ChoiceVisual? _observerSummary;
@@ -369,6 +374,106 @@ internal static class GameUi
         _releaseNotice = state;
     }
 
+    internal static void RefreshUpdateProgress()
+    {
+        var snapshot = Plugin.Automatic.Snapshot;
+        var fault = Plugin.Automatic.Fault;
+        var download = Plugin.Automatic.DownloadProgress;
+        UpdateProgress.Shared.Observe(Plugin.Automatic.Status, snapshot.TargetVersion, snapshot.IsTransition, download.Read, download.Total,
+            fault == null ? "" : UpdateProgress.FaultCode(fault.Phase.ToString(), fault.Reason.ToString()), fault?.Reason.ToString().ToLowerInvariant() ?? "");
+        if (!Compatibility.Allowed("HomeMenu") || _menu == null || _menu.Get<bool>("isDisposed")) return;
+        var progress = UpdateProgress.Shared;
+        var shown = (_menu.Pointer, progress.Revision, ModText.Revision);
+        if (_progressShown == shown) return;
+        _progressShown = shown;
+        if (!progress.Visible) { _progressCap?.Set("visible", false); return; }
+        // A stopped update needs a second row for the reason and code, so its capsule is rebuilt taller.
+        if (_progressCap == null || _progressCap.Get<bool>("isDisposed") || _progressStoppedLayout != progress.Stopped)
+        {
+            if (_progressCap != null && !_progressCap.Get<bool>("isDisposed")) Dispose(_progressCap);
+            CreateProgressCapsule(progress.Stopped);
+        }
+        _progressCap!.Set("visible", true);
+        var accent = progress.Stopped ? new Color(0.88f, 0.29f, 0.29f) : progress.Done ? new Color(0.49f, 0.78f, 0.42f) : new Color(1f, 0.76f, 0.05f);
+        _progressLabel!.Set("text", ModText.UpdateProgressCapsule(progress.Version, progress.Status, progress.Step, progress.Stopped, progress.Done));
+        _progressPercent!.Set("text", progress.Percent + "%");
+        _progressFill!.Call("SetSize", Math.Max(10f, _progressTrackWidth * progress.Percent / 100f), 10f);
+        _progressFill.Set("color", accent);
+        _progressDoor!.Set("color", accent);
+        ModFont.Track(_progressLabel); ModFont.Track(_progressPercent);
+        if (_progressReason != null)
+        {
+            _progressReason.Set("text", ModText.UpdateStopReason(progress.Reason));
+            _progressCode!.Set("text", progress.Code);
+            ModFont.Track(_progressReason); ModFont.Track(_progressCode);
+        }
+    }
+
+    private static RuntimeObject ProgressShape(RuntimeObject parent, float x, float y, float width, float height, Color fill,
+        float topLeft, float topRight, float bottomLeft, float bottomRight, float line = 0f)
+    {
+        var graph = RuntimeObject.New(RuntimeObject.FindClass("FairyGUI", "GGraph"));
+        graph.Set("touchable", false);
+        parent.Call("AddChild", graph);
+        graph.Call("SetSize", width, height);
+        graph.Call("SetXY", x, y);
+        graph.Get("shape")!.Call("DrawRoundRect", line, Color.black, fill, topLeft, topRight, bottomLeft, bottomRight);
+        return graph;
+    }
+
+    // Cream capsule as wide as the button: title, one continuous bar, percent, and a coloured door section on the
+    // right carrying an open-outward arrow. The whole capsule is the click target.
+    private static void CreateProgressCapsule(bool stopped)
+    {
+        var width = _menu!.Get<float>("width"); const float row = 44f, door = 50f;
+        // Stopped: row 1 status and bar, row 2 the reason, row 3 the error code on its own full-width line.
+        var height = stopped ? row + 26f + 26f : row;
+        _progressStoppedLayout = stopped; _progressHover = false;
+        _progressCap = NativeUi.Component(_menu, width, height);
+        _progressCap.Call("SetXY", 0f, _menu.Get<float>("height") + 8f);
+        _progressCap.Call("SetPivot", 0.5f, 0.5f, false);
+        _progressCap.Set("opaque", true);
+        ProgressShape(_progressCap, 0, 0, width, height, stopped ? new Color(1f, 0.914f, 0.902f) : new Color(1f, 0.985f, 0.95f), 22, 22, 22, 22, 3f);
+        _progressDoor = ProgressShape(_progressCap, width - door, 0, door, height, new Color(1f, 0.76f, 0.05f), 0, 22, 0, 22, 3f);
+        // Open-outward arrow: an open frame with a diagonal arrow leaving its top-right corner.
+        float x0 = width - door / 2f - 11f, y0 = row / 2f - 11f;
+        var ink = new Color(0.067f, 0.067f, 0.067f);
+        ProgressShape(_progressCap, x0, y0 + 5, 3, 17, ink, 1, 1, 1, 1);
+        ProgressShape(_progressCap, x0, y0 + 19, 17, 3, ink, 1, 1, 1, 1);
+        ProgressShape(_progressCap, x0, y0 + 5, 7, 3, ink, 1, 1, 1, 1);
+        ProgressShape(_progressCap, x0 + 14, y0 + 12, 3, 10, ink, 1, 1, 1, 1);
+        ProgressShape(_progressCap, x0 + 11, y0, 11, 3, ink, 1, 1, 1, 1);
+        ProgressShape(_progressCap, x0 + 19, y0, 3, 11, ink, 1, 1, 1, 1);
+        var shaft = ProgressShape(_progressCap, 0, 0, 14, 3, ink, 1, 1, 1, 1);
+        shaft.Call("SetPivot", 0.5f, 0.5f, true);
+        shaft.Call("SetXY", x0 + 14f, y0 + 8f);
+        shaft.Set("rotation", -45f);
+        var titleWidth = width * 0.42f;
+        _progressLabel = NativeUi.Label(_progressCap, "", 14f, 4f, titleWidth, row - 8f, 22);
+        _progressLabel.Set("touchable", false);
+        StyleText(_progressLabel, 22, align: 0);
+        const float percentWidth = 58f;
+        var trackX = 14f + titleWidth + 6f;
+        var percentX = width - door - 8f - percentWidth;
+        _progressTrackWidth = Math.Max(20f, percentX - 6f - trackX);
+        ProgressShape(_progressCap, trackX, (row - 14f) / 2f, _progressTrackWidth + 4f, 14f, new Color(0.9f, 0.875f, 0.8f), 7, 7, 7, 7, 2.5f);
+        _progressFill = ProgressShape(_progressCap, trackX + 2f, (row - 10f) / 2f, 10f, 10f, new Color(1f, 0.76f, 0.05f), 5, 5, 5, 5);
+        _progressPercent = NativeUi.Label(_progressCap, "", percentX, 6f, percentWidth, row - 12f, 18, dark: true);
+        _progressPercent.Set("touchable", false);
+        StyleText(_progressPercent, 18, align: 2);
+        _progressReason = _progressCode = null;
+        if (!stopped) return;
+        var rowWidth = width - door - 14f - 8f;
+        _progressReason = NativeUi.Label(_progressCap, "", 14f, row - 2f, rowWidth, 26f, 16, dark: true);
+        _progressCode = NativeUi.Label(_progressCap, "", 14f, row + 24f, rowWidth, 24f, 15, dark: true);
+        foreach (var label in new[] { _progressReason, _progressCode })
+        {
+            label.Set("touchable", false);
+            StyleText(label, label == _progressCode ? 15 : 16, align: 0);
+            label.Set("autoSize", 3); // Shrink to fit instead of cutting off a long reason or code.
+        }
+    }
+
     internal static void RefreshLanguage()
     {
         // UpdateHome may already have created the menu in the new language this
@@ -457,12 +562,24 @@ internal static class GameUi
     {
         if (!HomeAvailable || !Visible(_menu) || _root == null || !_menu!.Get<bool>("touchable")
             || _menu.Get<float>("alpha") <= 0) { _pressed = null; return; }
+        // Hover feedback like native buttons: a slight lift. The pointer path is read only while the capsule shows.
+        if (_progressCap != null && Visible(_progressCap))
+        {
+            var over = PointerPath().Any(item => item.Pointer == _progressCap.Pointer);
+            if (over != _progressHover) { _progressHover = over; var lift = over ? 1.03f : 1f; _progressCap.Call("SetScale", lift, lift); }
+        }
         if (!Input.GetMouseButtonDown(0) && !Input.GetMouseButtonUp(0)) return;
-        var hit = PointerPath().FirstOrDefault(item => item.Pointer == _menu.Pointer);
+        var path = PointerPath().ToList();
+        var hit = (_progressCap != null && Visible(_progressCap) ? path.FirstOrDefault(item => item.Pointer == _progressCap.Pointer) : null)
+            ?? path.FirstOrDefault(item => item.Pointer == _menu.Pointer);
         if (Input.GetMouseButtonDown(0)) _pressed = hit;
         if (Input.GetMouseButtonUp(0))
         {
-            if (hit != null && _pressed?.Pointer == hit.Pointer) ModUi.TogglePanel();
+            if (hit != null && _pressed?.Pointer == hit.Pointer)
+            {
+                if (hit.Pointer == _progressCap?.Pointer) UpdateNotificationUi.ShowProgress();
+                else ModUi.TogglePanel();
+            }
             _pressed = null;
         }
     }

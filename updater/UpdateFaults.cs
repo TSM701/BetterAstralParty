@@ -105,9 +105,13 @@ namespace BetterAstralParty.Updating
             catch (ApplySafetyException error) when (error.NativeError == 80 || error.NativeError == 183) { }
         }
         // The owner is the game process that ran the in-process update.
+        // An exited owner can linger while another program still holds its handle; its image path is then
+        // unreadable (error 31), so check exit first. A reused PID with another image or start time is not the owner.
         internal static bool OwnerAlive(WindowsFileFence fence, UpdateFault guard) {
             if (guard.GamePid == 0) return false;
-            try { using (var process = WindowsProcessGuard.Capture(guard.GamePid, fence.Full("AstralParty_INT.exe"), guard.GameCreation, guard.GameSession)) return !process.Exited; }
+            try { using (var process = WindowsProcessGuard.Observe(guard.GamePid, allowExited: true))
+                return !process.Exited && string.Equals(process.Image, WindowsPath.Absolute(fence.Full("AstralParty_INT.exe")), StringComparison.OrdinalIgnoreCase)
+                    && process.Creation == guard.GameCreation && process.Session == guard.GameSession; }
             catch (ApplySafetyException error) when (error.NativeError == 87 || error.NativeError == 1168) { return false; }
         }
         internal static void Acknowledge(WindowsFileFence fence) {

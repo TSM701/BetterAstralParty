@@ -25,6 +25,15 @@ internal static class UpdateNotificationUi
     private static PendingTransition? _pendingTransition;
     private static Transition? _transition;
     private static ReleaseUpdate? _failedTransition;
+    private static string _failedReason = "";
+    // An approved switch keeps its window open: it downloads and applies in this session, and only a
+    // committed switch enables Exit and Switch.
+    private sealed record Switching(string Version, DiagnosticOperation Operation, bool Transition = true) { internal bool Committed; }
+    // One continuous progress bar with its percentage above the buttons, shared with the home progress capsule.
+    private static RuntimeObject? _barTrack, _barFill, _barText;
+    private const float BarX = 110, BarY = 426, BarWidth = 560, BarHeight = 18;
+    private static int _progressRevision = -1;
+    private static Switching? _switching;
     internal static bool ConsumedInput => _consumedFrame == Time.frameCount;
     internal static bool CanConfirmTransition => _pendingTransition == null && _transition == null && Plugin.Automatic.CanReviewTransition
         && Plugin.Updates.Result.Release is { } release && Plugin.Updates.CurrentRelease(release) && release.ProposalRequest(Plugin.Automatic.Snapshot.InstalledVersion) != null;
@@ -57,7 +66,21 @@ internal static class UpdateNotificationUi
         }
     }
 
-    private static bool CurrentTransition(Transition transition) => Plugin.Updates.CurrentRelease(transition.Release)
+    // A newer scan still running or finding the same release keeps the review; only a different target retires it.
+    private static bool TargetHolds(ReleaseUpdate release) => Plugin.Updates.Result.Status == ReleaseUpdateStatus.Checking || Plugin.Updates.SameRelease(release);
+    // The home progress capsule reopens the running update here, even after its window was closed.
+    internal static void ShowProgress()
+    {
+        var progress = UpdateProgress.Shared;
+        if (!progress.Visible || _switching != null && _panel != null) return;
+        var release = Plugin.Updates.Result.Release;
+        if (release == null || !GameUi.NotificationHome().Eligible) { ModUi.OpenUpdateSettings(); return; }
+        Clear(false);
+        _switching = new(progress.Version, DiagnosticOperation.New(), progress.Transition) { Committed = progress.Done };
+        Create(GameUi.Root!, new UpdateNotificationTarget(release, "progress"));
+    }
+
+    private static bool CurrentTransition(Transition transition) => TargetHolds(transition.Release)
         && Plugin.Automatic.CurrentTransitionProposal(transition.Proposal)
         && transition.Review.Target.DescriptorSha256 == transition.Proposal.Descriptor.DescriptorSha256;
     private static void TransitionFailure(Exception error, DiagnosticOperation operation, ReleaseUpdate release)
@@ -67,6 +90,11 @@ internal static class UpdateNotificationUi
             : validation?.Failure == UpdateFailure.WrongTarget ? DiagnosticCode.WrongTarget
             : validation != null ? DiagnosticCode.Integrity : DiagnosticCode.Prerequisite;
         _failedTransition = release;
+        var retryAt = error.Data["BapRetryAt"] as DateTimeOffset?;
+        var reason = retryAt != null ? "retry" : validation != null ? "verify" : safety != null ? "install"
+            : error is InvalidOperationException ? "changed" : "network";
+        _failedReason = ModText.ChannelTransitionReason(reason, retryAt is { } at ? Math.Max(1, (int)Math.Ceiling((at - DateTimeOffset.UtcNow).TotalSeconds)) : 0);
+        Plugin.Diagnostics.Write("updateTransition stopped=" + reason + "; code=" + code);
         DiagnosticHub.Failure(DiagnosticFeature.Settings, DiagnosticPhase.UiAction, code, error,
             safety?.NativeError ?? 0, validation != null ? (int)validation.Failure : 0, operation, safety != null ? (int)safety.Failure : 0, release.Version);
         DiagnosticHub.FlushSoon();
@@ -75,7 +103,7 @@ internal static class UpdateNotificationUi
     {
         var pending = _pendingTransition;
         if (pending == null) return;
-        if (!Plugin.Updates.CurrentRelease(pending.Release)) {
+        if (!TargetHolds(pending.Release)) {
             Clear(false); TransitionFailure(new InvalidOperationException("Channel transition target changed during review"), pending.Operation, pending.Release); return;
         }
         if (!pending.Task.IsCompleted) return;
@@ -98,13 +126,13 @@ internal static class UpdateNotificationUi
     private static void TickCore()
     {
         PollTransition();
-        if (!Plugin.UpdateNotifications.Value && _pendingTransition == null && _transition == null && _failedTransition == null) { Clear(); return; }
+        if (!Plugin.UpdateNotifications.Value && _pendingTransition == null && _transition == null && _failedTransition == null && _switching == null) { Clear(); return; }
         var home = GameUi.NotificationHome();
         if (!home.Eligible) { Clear(); return; }
         if (_pendingTransition != null) return; // Ordinary notices must not replace an in-flight explicit review.
         var root = GameUi.Root!;
         if (_panel != null && (_panel.Get<bool>("isDisposed") || _parent != root.Pointer
-            || _transition == null && _failedTransition == null && (_contextGeneration != State.ContextGeneration
+            || _transition == null && _failedTransition == null && _switching == null && (_contextGeneration != State.ContextGeneration
             || _target == null || State.Active?.Key != _target.Key && State.Next?.Key != _target.Key)))
             Clear();
         if (_transition != null && !CurrentTransition(_transition)) {
@@ -123,10 +151,10 @@ internal static class UpdateNotificationUi
         }
         Layout(root);
         if (_target == null) return;
-        if (_transition == null && _failedTransition == null && State.Active == null && GameUi.Visible(_panel) && _panel!.Get<float>("alpha") > 0)
+        if (_transition == null && _failedTransition == null && _switching == null && State.Active == null && GameUi.Visible(_panel) && _panel!.Get<float>("alpha") > 0)
             State.Shown(_target.Key);
         if (_languageRevision != ModText.Revision || _fontRevision != ModFont.Revision || _automaticRevision != Plugin.Automatic.Revision
-            || _releaseRevision != Plugin.Updates.Revision) Refresh();
+            || _releaseRevision != Plugin.Updates.Revision || _progressRevision != UpdateProgress.Shared.Revision) Refresh();
         UpdateScrollMarker();
         if (!Application.isFocused) { InputState.Reset(); return; }
         HandleInput();
@@ -191,12 +219,25 @@ internal static class UpdateNotificationUi
             fill: new Color(1f, 0.8f, 0f)).Graph;
         _scrollTrack.Call("SetXY", 958f, 110f);
         _scrollMarker = null;
+        CreateBar();
         AddButton(UpdateNoticeAction.Close, "Button_ReturnRounded", 168);
-        AddButton(_transition != null ? UpdateNoticeAction.ConfirmTransition : UpdateNoticeAction.Settings, "Button_ConfirmRounded", 610);
+        AddButton(_switching != null ? UpdateNoticeAction.ExitGame : _transition != null ? UpdateNoticeAction.ConfirmTransition : UpdateNoticeAction.Settings, "Button_ConfirmRounded", 610);
         _languageRevision = _fontRevision = _automaticRevision = _releaseRevision = -1;
         Refresh();
         scroll.Call("ScrollTop", false);
         _panel.Set("visible", true);
+    }
+
+    // The progress bar between the text and the buttons: a pale track, a coloured fill and the percentage.
+    private static void CreateBar()
+    {
+        _barTrack = new NativeUi.Surface(_panel!, BarWidth, BarHeight, fixedOpacity: true, fill: new Color(0.9f, 0.875f, 0.8f)).Graph;
+        _barTrack.Call("SetXY", BarX, BarY);
+        _barFill = new NativeUi.Surface(_panel!, BarHeight - 4, BarHeight - 4, fixedOpacity: true, fill: new Color(1f, 0.76f, 0.05f)).Graph;
+        _barFill.Call("SetXY", BarX + 2, BarY + 2);
+        _barText = NativeUi.Label(_panel!, "", BarX + BarWidth + 14, BarY - 9, 950 - (BarX + BarWidth + 14), 36, 22);
+        _barText.Set("touchable", false);
+        GameUi.StyleText(_barText, 22, align: 0);
     }
 
     private static void AddButton(UpdateNoticeAction action, string item, float x)
@@ -215,22 +256,60 @@ internal static class UpdateNotificationUi
         _languageRevision = ModText.Revision;
         _automaticRevision = Plugin.Automatic.Revision;
         _releaseRevision = Plugin.Updates.Revision;
-        _frame!.Call("GetChild", "title")!.Set("text", _transition != null || _failedTransition != null ? ModText.ChannelTransitionTitle : ModText.Text("새 업데이트"));
+        _progressRevision = UpdateProgress.Shared.Revision;
+        var transitionView = _transition != null || _failedTransition != null || _switching is { Transition: true };
+        _frame!.Call("GetChild", "title")!.Set("text", transitionView ? ModText.ChannelTransitionTitle
+            : _switching != null ? ModText.UpdateProgressTitle : ModText.Text("새 업데이트"));
         var review = _transition?.Review;
-        _body!.Set("text", _failedTransition != null ? ModText.ChannelTransitionUnavailable
+        var status = Plugin.Automatic.Status;
+        var progress = UpdateProgress.Shared;
+        if (_switching != null && (status == AutomaticUpdateStatus.Committed || progress.Done)) _switching.Committed = true;
+        var committed = _switching?.Committed == true;
+        _body!.Set("text", _failedTransition != null ? ModText.ChannelTransitionUnavailable + "\n\n" + _failedReason
+            : _switching != null && progress.Stopped && !committed ? ModText.UpdateStopDetails(_switching.Version, progress.Percent, progress.Reason, progress.Code)
+            : _switching is { Transition: true } ? committed ? ModText.ChannelTransitionReady(_switching.Version)
+                : SwitchRunning(status) ? ModText.ChannelTransitionProgress(_switching.Version, status) : ModText.ChannelTransitionStopped(status)
+            : _switching != null ? committed ? ModText.UpdateProgressReady(_switching.Version)
+                : SwitchRunning(status) ? ModText.UpdateProgressBody(_switching.Version, status) : ModText.UpdateProgressStopped(status)
             : review != null ? ModText.ChannelTransitionDetails(review.SourceChannel, review.CurrentVersion, review.Target.Channel, review.Target.Version, review.Target.Repository)
             : ModText.UpdateNotificationDetails(_target!.Release, Plugin.Version,
                 Plugin.Automatic.Status, Plugin.Updates.Result.Status, Plugin.Automatic.Snapshot.Matches(_target.Release)));
         ModFont.Track(_body);
         _content!.Call("SetSize", _body.Get<float>("width"), Math.Max(300f, _body.Get<float>("textHeight")));
         _view!.Call("EnsureBoundsCorrect");
+        var retry = _switching != null && progress.Stopped && !committed;
+        foreach (var key in Controls.Keys.ToList())
+            if (Controls[key].Action is UpdateNoticeAction.ExitGame or UpdateNoticeAction.Retry)
+                Controls[key] = (Controls[key].Button, retry ? UpdateNoticeAction.Retry : UpdateNoticeAction.ExitGame);
         foreach (var (button, action) in Controls.Values)
         {
             if (button.Pointer == _frame.Call("GetChild", "closeButton")!.Pointer) continue;
-            NativeUi.StyleTitle(button, action == UpdateNoticeAction.ConfirmTransition ? ModText.ChannelTransitionConfirm : ModText.Text(action == UpdateNoticeAction.Settings ? "업데이트 설정" : "닫기"));
+            NativeUi.StyleTitle(button, action == UpdateNoticeAction.ConfirmTransition ? ModText.ChannelTransitionConfirm
+                : action == UpdateNoticeAction.Retry ? ModText.UpdateRetry
+                : action == UpdateNoticeAction.ExitGame ? _switching is { Transition: false } ? ModText.UpdateProgressExit : ModText.ChannelTransitionExit
+                : ModText.Text(action == UpdateNoticeAction.Settings ? "업데이트 설정" : "닫기"));
+            // Exit and Switch stays gray and inert until the switch is committed.
+            if (action == UpdateNoticeAction.ExitGame) button.Set("grayed", !committed);
+            if (action == UpdateNoticeAction.Retry) button.Set("grayed", false);
         }
+        RefreshBar();
         _fontRevision = ModFont.Revision;
     }
+
+    // Yellow while running, green when done, red when stopped; hidden while nothing runs.
+    private static void RefreshBar()
+    {
+        var progress = UpdateProgress.Shared;
+        foreach (var part in new[] { _barTrack, _barFill, _barText }) part?.Set("visible", progress.Visible);
+        if (!progress.Visible || _barFill == null || _barText == null) return;
+        _barFill.Call("SetSize", Math.Max(BarHeight - 4, (BarWidth - 4) * progress.Percent / 100f), BarHeight - 4);
+        _barFill.Set("color", progress.Stopped ? new Color(0.88f, 0.29f, 0.29f) : progress.Done ? new Color(0.49f, 0.78f, 0.42f) : new Color(1f, 0.76f, 0.05f));
+        _barText.Set("text", ModText.UpdatePercent(progress.Percent, progress.Read, progress.Total));
+        ModFont.Track(_barText);
+    }
+
+    private static bool SwitchRunning(AutomaticUpdateStatus status) => status is AutomaticUpdateStatus.Preparing or AutomaticUpdateStatus.Downloading
+        or AutomaticUpdateStatus.Ready or AutomaticUpdateStatus.Queued or AutomaticUpdateStatus.RetryWaiting;
 
     private static void Layout(RuntimeObject root)
     {
@@ -283,12 +362,27 @@ internal static class UpdateNotificationUi
                 if (!CurrentTransition(transition)) throw new InvalidOperationException("Channel transition review became stale");
                 var intent = ChannelTransitionIntent.Approve(transition.Review);
                 var request = transition.Release.DownloadRequest(transition.Review.CurrentVersion, Plugin.Updates.Channel, intent);
-                if (request == null || !Plugin.Automatic.ConfirmTransition(request, transition.Release.Generation, DateTimeOffset.UtcNow, true))
+                if (request == null || !Plugin.Automatic.ConfirmTransition(request, Plugin.Updates.Generation, DateTimeOffset.UtcNow, true))
                     throw new InvalidOperationException("Channel transition could not be started");
                 DiagnosticHub.Stage(DiagnosticFeature.Settings, DiagnosticPhase.UiAction, DiagnosticOutcome.Completed, transition.Operation, transition.Release.Version);
                 DiagnosticHub.FlushSoon();
-                Clear(false);
+                _transition = null; _switching = new(transition.Release.Version, transition.Operation);
+                if (Controls.TryGetValue(pointer, out var confirm)) Controls[pointer] = (confirm.Button, UpdateNoticeAction.ExitGame);
+                Refresh();
             } catch (Exception error) { Clear(false); TransitionFailure(error, transition.Operation, transition.Release); }
+            return;
+        }
+        if (dispatched == UpdateNoticeAction.Retry) {
+            // The notice stays presentation-only: Update Settings performs the retry, as its Update button would.
+            Clear(); ModUi.RetryUpdateFromNotice();
+            return;
+        }
+        if (dispatched == UpdateNoticeAction.ExitGame) {
+            if (_switching is not { Committed: true }) return;
+            DiagnosticHub.Stage(DiagnosticFeature.Settings, DiagnosticPhase.UiAction, DiagnosticOutcome.Completed, _switching.Operation, _switching.Version);
+            DiagnosticHub.FlushSoon(); Plugin.Diagnostics.Write("updateTransition exit=" + _switching.Version);
+            Clear(false);
+            Application.Quit(); // The game's normal exit; the switched version runs from the next launch.
             return;
         }
         Clear();
@@ -301,7 +395,7 @@ internal static class UpdateNotificationUi
     private static void Clear(bool cancelled)
     {
         var pending = _pendingTransition; var transition = _transition;
-        _pendingTransition = null; _transition = null; _failedTransition = null;
+        _pendingTransition = null; _transition = null; _failedTransition = null; _switching = null; _failedReason = "";
         if (pending != null) {
             try { pending.Cancellation.Cancel(); } catch { }
             pending.Cancellation.Dispose();
@@ -314,7 +408,7 @@ internal static class UpdateNotificationUi
         }
         State.Close(); InputState.Reset();
         var panel = _panel;
-        _frame = _view = _content = _body = _scrollTrack = _scrollThumb = null; _target = null;
+        _frame = _view = _content = _body = _scrollTrack = _scrollThumb = _barTrack = _barFill = _barText = null; _target = null; _progressRevision = -1;
         _scrollMarker = null;
         _parent = _hovered = IntPtr.Zero; Controls.Clear();
         if (panel == null) return;

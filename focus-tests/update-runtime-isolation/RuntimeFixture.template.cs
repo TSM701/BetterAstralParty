@@ -102,6 +102,7 @@ static class UpdateDiscoveryBridge { internal static void Apply(ReleaseUpdates u
 static class GameUi {
     internal static bool HomeAvailable { get { Probe.HomeReads++; Probe.Visit("native.home", true); return Probe.Home; } }
     internal static void RefreshReleaseNotification() { Probe.Visit("native.refresh", true); if (Probe.ThrowRefresh) throw new Exception("inert native notification failure"); }
+    internal static void RefreshUpdateProgress() { }
 }
 static class UpdateNotificationUi {
     internal const string Feature = "UpdateNotification";

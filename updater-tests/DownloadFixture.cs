@@ -353,7 +353,8 @@ internal static class DownloadFixture
             for (var i = 0; i < 1000; i++) { client.Start(Request, Now.AddHours(1)); client.Poll(); }
             Check(stopwatch.Elapsed < TimeSpan.FromSeconds(1) && handler.Count == 1 && client.Result.Status == UpdateDownloadStatus.Downloading, "1000 Start/Poll calls nonblocking/singleflight");
             client.Cancel(); Check(client.Result.Status == UpdateDownloadStatus.Cancelled && client.Result.Update == null, "cancel detaches worker");
-            client.Start(Request, Now.AddSeconds(1)); Check(client.Result.Status == UpdateDownloadStatus.RateLimited && handler.Count == 1, "cancel retains cooldown");
+            client.Start(Request, Now.AddSeconds(1)); await Until(() => handler.Count == 2, "restart after cancel");
+            Check(client.Result.Status == UpdateDownloadStatus.Downloading, "a cancelled download can restart at once"); client.Cancel();
             var late = new Response(HttpStatusCode.OK) { Content = new ByteArrayContent(fixture.Descriptor) }; gate.SetResult(late);
             await Until(() => late.WasDisposed, "late response disposal"); client.Poll(); Check(client.Result.Update == null, "late response cannot resurrect artifact");
         }
@@ -366,7 +367,8 @@ internal static class DownloadFixture
         {
             client.Start(Request, Now); await Until(() => identityHandler.Count == 1, "identity request"); identityAuth.Value = "fixture-account-b"; client.Poll();
             Check(client.Result.Status == UpdateDownloadStatus.Idle && client.Result.Update == null, "identity change clears active private context");
-            client.Start(Request, Now.AddSeconds(1)); Check(client.Result.Status == UpdateDownloadStatus.RateLimited && identityHandler.Count == 1, "account switch cannot bypass cooldown");
+            client.Start(Request, Now.AddSeconds(1)); await Until(() => identityHandler.Count == 2, "new account request");
+            Check(client.Result.Status == UpdateDownloadStatus.Downloading, "account switch starts a fresh request"); client.Cancel();
             var late = new Response(HttpStatusCode.OK) { Content = new ByteArrayContent(fixture.Descriptor) }; oldGate.SetResult(late);
             await Until(() => late.WasDisposed, "identity late response"); client.Poll(); Check(client.Result.Update == null, "old account response ignored");
         }
@@ -390,7 +392,8 @@ internal static class DownloadFixture
         {
             client.Start(Request, Now); await Until(() => contextHandler.Count == 1, "context blocked request");
             var changed = new UpdateDownloadRequest(new UpdateContext(UpdateDownloads.Repository, "Stable", "1.4.0-dev", "1.4.1", 124, 459, UpdateTrust.PlatformId), 460, 461);
-            client.Start(changed, Now.AddSeconds(1)); Check(client.Result.Status == UpdateDownloadStatus.RateLimited && contextHandler.Count == 1, "active release replacement clears worker/retains cooldown");
+            client.Start(changed, Now.AddSeconds(1)); await Until(() => contextHandler.Count == 2, "replacement request");
+            Check(client.Result.Status == UpdateDownloadStatus.Downloading, "active release replacement clears the old worker and starts the new one"); client.Cancel();
             var late = new Response(HttpStatusCode.OK) { Content = new ByteArrayContent(fixture.Descriptor) }; contextGate.SetResult(late);
             await Until(() => late.WasDisposed, "context late disposal"); client.Poll(); Check(client.Result.Update == null, "old release result ignored");
         }
@@ -398,8 +401,7 @@ internal static class DownloadFixture
         {
             client.Start(Request, Now); await Complete(client);
             var other = new UpdateDownloadRequest(new UpdateContext(UpdateDownloads.Repository, "Beta", "1.4.0-dev", "1.4.0", 123, 456, UpdateTrust.PlatformId), 457, 458);
-            client.Start(other, Now.AddSeconds(1)); Check(client.Result.Status == UpdateDownloadStatus.RateLimited && client.Result.Update == null && readyHandler.Count == 3, "channel change clears ready/cooldown retained");
-            client.Start(other, Now.AddSeconds(61)); Check((await Complete(client)).Status == UpdateDownloadStatus.VerificationFailed && client.Result.Update == null, "failed new context never returns old ready binary");
+            client.Start(other, Now.AddSeconds(1)); Check((await Complete(client)).Status == UpdateDownloadStatus.VerificationFailed && client.Result.Update == null, "channel change clears ready; failed new context never returns old ready binary");
         }
         var rate = new Handler { Reply = (_, _) => { var r = new HttpResponseMessage(HttpStatusCode.Forbidden); r.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromMinutes(3)); return Task.FromResult(r); } };
         using (var client = new UpdateDownloads(fixture.Trust, new Auth(), rate))

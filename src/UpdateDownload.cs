@@ -45,7 +45,7 @@ internal sealed class DownloadedUpdate
     internal Stream OpenDescriptor() => new MemoryStream(_descriptor, 0, _descriptor.Length, false, false);
     internal Stream OpenSignature() => new MemoryStream(_signature, 0, _signature.Length, false, false);
 }
-internal sealed record ChannelTransitionProposal(VerifiedUpdateDescriptor Descriptor, int Generation, string FeedIdentity);
+internal sealed record ChannelTransitionProposal(VerifiedUpdateDescriptor Descriptor, string FeedIdentity, string AccountIdentity);
 
 // Main-thread-owned coordinator. No filesystem, native UI, process or install operations.
 // Start/Poll never wait for a network task; one worker owns a complete verified memory snapshot.
@@ -110,7 +110,10 @@ internal sealed class UpdateDownloads : IDisposable
     private string _identity = "", _requestIdentity = "";
     private int _generation;
     private bool _disposed;
-    private DateTimeOffset _lastStarted = DateTimeOffset.MinValue, _retryAt = DateTimeOffset.MinValue;
+    private DateTimeOffset _retryAt = DateTimeOffset.MinValue; // Server-requested backoff only; explicit actions start at once.
+    // Bytes of the update ZIP received so far, for the progress display only; never used for decisions.
+    private long _packageRead, _packageTotal;
+    internal (long Read, long Total) PackageProgress => (Interlocked.Read(ref _packageRead), Interlocked.Read(ref _packageTotal));
     private long _serverRetryTicks;
     internal UpdateDownloadResult Result { get; private set; } = new(UpdateDownloadStatus.NotConfigured);
     internal int Revision { get; private set; }
@@ -190,10 +193,10 @@ internal sealed class UpdateDownloads : IDisposable
             || !ReleaseFeedPolicy.SupportsAutomaticTarget(request.Context.ReleaseTag, _feed.Channel)))
         { Set(new(UpdateDownloadStatus.NotConfigured)); return; }
         if (_pending != null || Result.Status == UpdateDownloadStatus.Ready) return;
-        if (now < _retryAt || now < _lastStarted.AddSeconds(60))
-        { Set(new(UpdateDownloadStatus.RateLimited, RetryAt: _retryAt > _lastStarted.AddSeconds(60) ? _retryAt : _lastStarted.AddSeconds(60))); return; }
+        if (now < _retryAt) { Set(new(UpdateDownloadStatus.RateLimited, RetryAt: _retryAt)); return; }
         var cancellation = new CancellationTokenSource(); var token = cancellation.Token;
-        var authentication = _feed is { RequiresAuthentication: false } ? null : _authentication; var identity = _identity; var feed = _feed; _lastStarted = now;
+        var authentication = _feed is { RequiresAuthentication: false } ? null : _authentication; var identity = _identity; var feed = _feed;
+        Interlocked.Exchange(ref _packageRead, 0); Interlocked.Exchange(ref _packageTotal, 0);
         _pending = new(Task.Run(() => Read(request, authentication, feed, identity, now, token, diagnosticParent)), cancellation,
             _generation, identity, requestIdentity);
         Set(new(UpdateDownloadStatus.Downloading));
@@ -221,13 +224,16 @@ internal sealed class UpdateDownloads : IDisposable
     internal Task<ChannelTransitionProposal> Propose(UpdateDownloadRequest request, DateTimeOffset now, CancellationToken cancellation)
     {
         SyncBackoff(); SyncIdentity();
-        var feed = _feed; var generation = _generation; var identity = _identity;
+        var feed = _feed; var identity = _identity;
         if (!Configured || feed == null || request.Context.Repository != feed.Repository || request.Context.RepositoryId != feed.RepositoryId
             || request.Context.Channel != feed.Channel || !ReleaseFeedPolicy.SupportsAutomaticSource(request.Context.CurrentVersion)
             || !ReleaseFeedPolicy.SupportsAutomaticTarget(request.Context.ReleaseTag, feed.Channel)
-            || _pending != null || now < _retryAt || now < _lastStarted.AddSeconds(60))
-            throw new InvalidOperationException("Transition prerequisites unavailable");
-        _lastStarted = now;
+            || _pending != null || now < _retryAt)
+        {
+            var error = new InvalidOperationException("Transition prerequisites unavailable");
+            if (now < _retryAt) error.Data["BapRetryAt"] = _retryAt; // Lets the review say when to try again.
+            throw error;
+        }
         var authentication = feed.RequiresAuthentication ? _authentication : null;
         return Task.Run(async () => {
             using var operation = new Operation(cancellation, _totalTimeout, _idleTimeout);
@@ -238,11 +244,12 @@ internal sealed class UpdateDownloads : IDisposable
             var verified = _trust.VerifyProposal(descriptor, envelope.KeyId, envelope.Signature, request.Context, operation.Token);
             Account(authentication, feed, identity, operation);
             await CurrentPublicRelease(request, verified, feed, identity, now, operation).ConfigureAwait(false);
-            return new ChannelTransitionProposal(verified, generation, feed.Identity);
+            return new ChannelTransitionProposal(verified, feed.Identity, identity);
         }, cancellation);
     }
+    // Bound to the feed and account, not to a scan counter: an unrelated refresh must not retire a verified proposal.
     internal bool CurrentProposal(ChannelTransitionProposal proposal) => !_disposed && Configured
-        && proposal.Generation == _generation && proposal.FeedIdentity == _feed?.Identity;
+        && proposal.FeedIdentity == _feed?.Identity && proposal.AccountIdentity == _identity;
     internal void Clear()
     {
         Stop(); _requestIdentity = ""; Set(Initial());
@@ -323,7 +330,7 @@ internal sealed class UpdateDownloads : IDisposable
         if (Limited(response)) RememberBackoff(Backoff(response, now));
     }
     private async Task<byte[]> Asset(long assetId, long limit, long? expected, IReleaseAuthentication? authentication,
-        ReleaseFeed? feed, string identity, DateTimeOffset now, Operation operation, bool identityProof = false, Uri? metadataEndpoint = null)
+        ReleaseFeed? feed, string identity, DateTimeOffset now, Operation operation, bool identityProof = false, Uri? metadataEndpoint = null, Action<long>? progress = null)
     {
         var endpoint = metadataEndpoint ?? (identityProof ? ReleaseFeedTransport.IdentityEndpoint(feed!)
             : new Uri("https://api.github.com/repos/" + (feed?.Repository ?? Repository) + "/releases/assets/" + assetId.ToString(CultureInfo.InvariantCulture)));
@@ -368,6 +375,7 @@ internal sealed class UpdateDownloads : IDisposable
                 if (total > limit) throw new DownloadFailure(UpdateDownloadStatus.TooLarge);
                 if (expected.HasValue && total > expected.Value) throw new DownloadFailure(UpdateDownloadStatus.VerificationFailed);
                 output.Write(buffer, 0, length);
+                progress?.Invoke(total);
             }
             if (total == 0 || declared.HasValue && total != declared.Value || expected.HasValue && total != expected.Value)
                 throw new DownloadFailure(UpdateDownloadStatus.VerificationFailed);
@@ -442,7 +450,9 @@ internal sealed class UpdateDownloads : IDisposable
             var verified = _trust.VerifyDescriptor(descriptor, envelope.KeyId, envelope.Signature, request.Context, operation.Token);
             Account(authentication, feed, identity, operation);
             Enter(DiagnosticPhase.PackageAsset);
-            var zip = await Asset(verified.AssetId, UpdateTrust.MaxZipBytes, verified.ZipBytes, authentication, feed, identity, now, operation).ConfigureAwait(false);
+            Interlocked.Exchange(ref _packageTotal, verified.ZipBytes);
+            var zip = await Asset(verified.AssetId, UpdateTrust.MaxZipBytes, verified.ZipBytes, authentication, feed, identity, now, operation,
+                progress: read => Interlocked.Exchange(ref _packageRead, read)).ConfigureAwait(false);
             Enter(DiagnosticPhase.PayloadVerification);
             var payload = UpdatePackage.VerifyPayload(zip, verified, operation.Token);
             Account(authentication, feed, identity, operation);

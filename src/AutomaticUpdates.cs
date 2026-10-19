@@ -65,7 +65,7 @@ internal sealed class AutomaticUpdates : IDisposable {
     internal bool AuthenticationLost => _downloads.Result.Status is UpdateDownloadStatus.AuthenticationRequired or UpdateDownloadStatus.AccessUnavailable;
     internal bool AccessLost => _downloads.Result.Status == UpdateDownloadStatus.AccessUnavailable;
     private bool Configured => !_disposed && _downloads.IsConfigured && _handoff?.Configured == true;
-    internal bool CanDownload => Configured && !_blocked && !_requiresTransition && _request != null && _pending == null && _cancel == null && _begin == null && _completion == null && _inspection == null && Status is not (AutomaticUpdateStatus.Downloading or AutomaticUpdateStatus.Ready or AutomaticUpdateStatus.Queued or AutomaticUpdateStatus.Cancelling or AutomaticUpdateStatus.CheckingInstallation or AutomaticUpdateStatus.RecoveryRequired or AutomaticUpdateStatus.CancelFailed or AutomaticUpdateStatus.RetryWaiting or AutomaticUpdateStatus.Preparing);
+    internal bool CanDownload => Configured && !_blocked && !_requiresTransition && Status != AutomaticUpdateStatus.Committed && _request != null && _pending == null && _cancel == null && _begin == null && _completion == null && _inspection == null && Status is not (AutomaticUpdateStatus.Downloading or AutomaticUpdateStatus.Ready or AutomaticUpdateStatus.Queued or AutomaticUpdateStatus.Cancelling or AutomaticUpdateStatus.CheckingInstallation or AutomaticUpdateStatus.RecoveryRequired or AutomaticUpdateStatus.CancelFailed or AutomaticUpdateStatus.RetryWaiting or AutomaticUpdateStatus.Preparing);
     // A downloaded update waits while automatic apply is off; the user can apply it once.
     internal bool CanApply => !_blocked && !ApplyAfterExit && !_applyOnce && Status == AutomaticUpdateStatus.Ready && _ready != null && _handoff != null && _completion == null;
     internal void ApplyOnce() { if (!CanApply) return; _applyOnce = true; Revision++; }
@@ -73,6 +73,9 @@ internal sealed class AutomaticUpdates : IDisposable {
     internal bool CanReactivate => _blocked && Fault != null && !_preferencesRepair && !_recovery && _failure == null && _reactivation == null && _cancel == null;
     internal AutomaticUpdates(UpdateDownloads downloads, IUpdateHandoff? handoff = null, IUpdateSafety? safety = null) { _downloads = downloads; _handoff = handoff; _safety = safety; }
     private void Set(AutomaticUpdateStatus status) {
+        // After a commit the next launch runs the new version; later refreshes in this session must not
+        // re-offer a switch or download against the old running image.
+        if (Status == AutomaticUpdateStatus.Committed && status != AutomaticUpdateStatus.NotConfigured) return;
         if (Status != status) { Status = status; Revision++; }
         if (status is AutomaticUpdateStatus.Idle or AutomaticUpdateStatus.NotConfigured or AutomaticUpdateStatus.CheckingInstallation or AutomaticUpdateStatus.TransitionRequired or AutomaticUpdateStatus.MissingAssets) {
             _diagnosticAttempt=default;_diagnosticAttemptTarget=null;
@@ -165,7 +168,8 @@ internal sealed class AutomaticUpdates : IDisposable {
         _requiresTransition = _request?.Context.Transition == null && _channels != null && _downloads.Feed is { } feed
             && _channels.ActiveChannel != feed.Channel;
     }
-    internal bool CanReviewTransition => Configured && !_blocked && _channels != null && _installedVersion == _channels.ActiveVersion && _downloads.Feed is { } feed
+    internal (long Read, long Total) DownloadProgress => _downloads.PackageProgress;
+    internal bool CanReviewTransition => Configured && !_blocked && Status != AutomaticUpdateStatus.Committed && _channels != null && _installedVersion == _channels.ActiveVersion && _downloads.Feed is { } feed
         && _channels.ActiveChannel != feed.Channel && _pending == null && _ready == null && _cancel == null
         && _inspection == null && _begin == null && _completion == null && _operation == null;
     internal Task<ChannelTransitionProposal> ProposeTransition(UpdateDownloadRequest request, DateTimeOffset now, CancellationToken cancellation)

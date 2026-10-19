@@ -95,7 +95,7 @@ internal static class ModUi
         }
         if (Compatibility.Allowed(UpdateNotificationUi.Feature))
         {
-            try { GameUi.RefreshReleaseNotification(); }
+            try { GameUi.RefreshReleaseNotification(); GameUi.RefreshUpdateProgress(); }
             catch (Exception ex) { Compatibility.Block(UpdateNotificationUi.Feature, ex, UpdateNotificationUi.Clear); }
         }
         try { UpdateNotificationUi.Observe(); }
@@ -754,6 +754,15 @@ internal static class ModUi
         TraceSettingsOpen(DiagnosticPhase.SettingsReturn);
         DiagnosticHub.UiAction(DiagnosticUiAction.Open, DiagnosticOutcome.Completed, default);
         DiagnosticHub.FlushSoon();
+    }
+
+    // Try Again from the update notice: open Update Settings and re-enable updates, exactly as its Update button does.
+    internal static void RetryUpdateFromNotice()
+    {
+        OpenUpdateSettings();
+        if (!Compatibility.Allowed("SettingsUi") || !IsOpen) return;
+        if (Plugin.Automatic.CanReactivate) Plugin.Automatic.Reactivate(); else if (Plugin.Automatic.CanRecheck) Plugin.Automatic.Recheck();
+        Refresh();
     }
 
     internal static void OpenUpdateSettings()

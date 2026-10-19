@@ -115,6 +115,13 @@ internal sealed class ReleaseUpdates : IDisposable
         && release.FeedChannel == current.FeedChannel && release.Version == current.Version && release.ReleaseId == current.ReleaseId
         && release.ZipAssetId == current.ZipAssetId && release.DescriptorAssetId == current.DescriptorAssetId && release.SignatureAssetId == current.SignatureAssetId;
 
+    // The identical release found again by a newer scan: a channel-switch review survives such refreshes.
+    internal bool SameRelease(ReleaseUpdate release) => !_disposed && Result.Status == ReleaseUpdateStatus.Available
+        && Result.Release is { } current && release.FeedChannel == Channel.ToString() && release.Repository == current.Repository
+        && release.RepositoryId == current.RepositoryId && release.FeedChannel == current.FeedChannel && release.Version == current.Version
+        && release.ReleaseId == current.ReleaseId && release.ZipAssetId == current.ZipAssetId
+        && release.DescriptorAssetId == current.DescriptorAssetId && release.SignatureAssetId == current.SignatureAssetId;
+
     internal ReleaseUpdates(string current, string repository, HttpClient? client = null,
         IReleaseAuthentication? authentication = null, TimeSpan? timeout = null)
     {

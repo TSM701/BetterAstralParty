@@ -11,12 +11,87 @@ internal static class ModText
         : !required ? Korean ? "필요 없음" : "Not Needed" : waiting ? Korean ? "새 버전 대기" : "Waiting for a Release" : Korean ? "확인 중" : "Checking";
     internal static string InstalledChannelSuffix(string channel) => " (" + (Korean ? "설치: " : "Installed: ") + ChannelName(channel) + ")";
     internal static string ChannelTransitionTitle => Korean ? "채널 전환 확인" : "Confirm Channel Switch";
-    internal static string ChannelTransitionConfirm => Korean ? "종료 후 전환" : "Switch After Exit";
-    internal static string ChannelTransitionUnavailable => Korean ? "채널 전환 승인을 중단했습니다. 업데이트 설정에서 대상과 설치 상태를 다시 확인하세요. 원인은 진단 로그에 기록됩니다."
-        : "Channel switch approval stopped. Recheck the target and installation in Update Settings. The reason is recorded in diagnostics.";
+    internal static string ChannelTransitionConfirm => Korean ? "전환 시작" : "Start Switch";
+    internal static string ChannelTransitionExit => Korean ? "종료 및 전환" : "Exit and Switch";
+    internal static string ChannelTransitionUnavailable => Korean ? "채널 전환 확인을 멈췄습니다." : "The channel switch check stopped.";
+    internal static string ChannelTransitionReason(string reason, int seconds = 0) => Korean ? reason switch
+    {
+        "retry" => $"방금 확인을 시도했습니다. {seconds}초 뒤 다시 시도하세요.",
+        "changed" => "확인하는 동안 업데이트 정보가 바뀌었습니다. 다시 시도하세요.",
+        "verify" => "서명된 업데이트 정보를 확인하지 못했습니다.",
+        "install" => "설치 상태가 전환 조건과 맞지 않습니다. 원인은 진단 로그에 기록됩니다.",
+        _ => "GitHub에 연결하지 못했습니다. 잠시 후 다시 시도하세요."
+    } : reason switch
+    {
+        "retry" => $"A check just ran. Try again in {seconds} seconds.",
+        "changed" => "Update information changed during the check. Try again.",
+        "verify" => "The signed update information could not be verified.",
+        "install" => "The installation does not meet the switch requirements. The reason is recorded in diagnostics.",
+        _ => "Could not reach GitHub. Try again shortly."
+    };
+    // Shown after approval: the switch downloads and applies in this game session, so the game must stay open.
+    internal static string ChannelTransitionProgress(string version, AutomaticUpdateStatus status) => Korean
+        ? $"{version} 전환 중: {AutomaticStatus(status)}\n\n받기와 적용이 끝날 때까지 게임을 끄지 마세요. 끝나면 '종료 및 전환' 버튼이 켜집니다."
+        : $"Switching to {version}: {AutomaticStatus(status)}\n\nKeep the game open until the download and apply finish. Exit and Switch turns on when they are done.";
+    internal static string ChannelTransitionReady(string version) => Korean
+        ? $"{version} 전환 준비가 끝났습니다.\n\n'종료 및 전환'을 누르면 게임이 종료되고, 다음 실행부터 새 버전을 사용합니다."
+        : $"{version} is ready.\n\nExit and Switch closes the game; the new version is used from the next launch.";
+    internal static string UpdateProgressTitle => Korean ? "업데이트 진행" : "Update Progress";
+    internal static string UpdateProgressExit => Korean ? "게임 종료" : "Exit Game";
+    internal static string UpdateProgressBody(string version, AutomaticUpdateStatus status) => Korean
+        ? $"{version} 업데이트 중: {AutomaticStatus(status)}\n\n받기와 적용이 끝날 때까지 게임을 끄지 마세요. 끝나면 '게임 종료' 버튼이 켜집니다."
+        : $"Updating to {version}: {AutomaticStatus(status)}\n\nKeep the game open until the download and apply finish. Exit Game turns on when they are done.";
+    internal static string UpdateProgressReady(string version) => Korean
+        ? $"{version} 업데이트 준비가 끝났습니다.\n\n'게임 종료'를 누르면 게임이 종료되고, 다음 실행부터 새 버전을 사용합니다."
+        : $"{version} is ready.\n\nExit Game closes the game; the new version is used from the next launch.";
+    internal static string UpdateProgressStopped(AutomaticUpdateStatus status) => Korean
+        ? $"업데이트를 끝내지 못했습니다: {AutomaticStatus(status)}\n\n업데이트 설정에서 다시 시도하세요. 지금 버전은 그대로 사용할 수 있습니다."
+        : $"The update did not finish: {AutomaticStatus(status)}\n\nTry again in Update Settings. The current version keeps working.";
+    // Home capsule under the Mod Settings button while an update runs.
+    internal static string UpdateProgressCapsule(string version, AutomaticUpdateStatus status, int step, bool stopped, bool done) => $"{version} " + (Korean
+        ? done ? "적용 완료" : stopped ? "오류" : step == 1 ? "확인 중" : status == AutomaticUpdateStatus.Downloading ? "받는 중" : AutomaticStatus(status)
+        : done ? "Ready" : stopped ? "Error" : step == 1 ? "Checking" : AutomaticStatus(status));
+    internal static string UpdatePercent(int percent, long read, long total) =>
+        total > 0 ? $"{percent}% · {(read + 1023) / 1024} / {(total + 1023) / 1024}KB" : $"{percent}%";
+    internal static string UpdateRetry => Korean ? "다시 시도" : "Try Again";
+    // Short reason (capsule) and what to do (window) for a stopped update, keyed by the recorded failure reason.
+    internal static string UpdateStopReason(string key) => Korean ? key switch
+    {
+        "network" => "GitHub에 연결하지 못했습니다", "timeout" => "연결 시간이 초과됐습니다", "ratelimited" => "GitHub 요청 한도에 걸렸습니다",
+        "integrity" => "받은 파일의 서명이 맞지 않습니다", "storage" => "게임 폴더에 쓰지 못했습니다", "preparation" => "적용 준비에 실패했습니다",
+        "apply" => "파일 교체에 실패해 되돌렸습니다", "interrupted" => "적용 중에 중단됐습니다", "recovery" => "업데이트 복구가 필요합니다",
+        "authentication" or "access" => "비공개 베타 인증이 필요합니다", "manualupgrade" => "수동 다운로드가 필요합니다", _ => "업데이트를 끝내지 못했습니다"
+    } : key switch
+    {
+        "network" => "Could not reach GitHub", "timeout" => "The connection timed out", "ratelimited" => "GitHub's request limit was reached",
+        "integrity" => "The downloaded file's signature did not match", "storage" => "Could not write to the game folder", "preparation" => "Preparing the update failed",
+        "apply" => "Replacing files failed and was rolled back", "interrupted" => "Applying was interrupted", "recovery" => "Update recovery is required",
+        "authentication" or "access" => "Private Beta sign-in is required", "manualupgrade" => "A manual download is required", _ => "The update did not finish"
+    };
+    internal static string UpdateStopAdvice(string key) => Korean ? key switch
+    {
+        "network" => "인터넷 연결을 확인하고 다시 시도하세요.", "timeout" => "연결을 확인하고 잠시 뒤 다시 시도하세요.", "ratelimited" => "잠시 뒤 다시 시도하세요.",
+        "integrity" => "적용하지 않았습니다. 다시 시도하고, 계속되면 진단 ZIP을 보내 주세요.", "storage" => "게임 폴더 권한이나 백신 차단을 확인한 뒤 다시 시도하세요.",
+        "apply" => "원래 버전 그대로입니다. 다시 시도하세요.", "interrupted" => "게임을 다시 실행하면 정리됩니다. 계속되면 Install.cmd를 실행하세요.",
+        "recovery" => "게임을 닫고 Install.cmd를 다시 실행하세요.", "authentication" or "access" => "업데이트 설정에서 베타 인증을 다시 하세요.",
+        "manualupgrade" => "다운로드 페이지에서 설치 ZIP을 받아 Install.cmd로 설치하세요.", _ => "다시 시도하고, 계속되면 진단 ZIP을 보내 주세요."
+    } : key switch
+    {
+        "network" => "Check your internet connection and try again.", "timeout" => "Check the connection and try again shortly.", "ratelimited" => "Try again shortly.",
+        "integrity" => "Nothing was applied. Try again; if it repeats, send a diagnostics ZIP.", "storage" => "Check game folder permissions or antivirus blocking, then try again.",
+        "apply" => "The current version is unchanged. Try again.", "interrupted" => "Restarting the game cleans it up. If it repeats, run Install.cmd.",
+        "recovery" => "Close the game and run Install.cmd again.", "authentication" or "access" => "Sign in to the Beta again in Update Settings.",
+        "manualupgrade" => "Download the installation ZIP from the download page and install it with Install.cmd.", _ => "Try again; if it repeats, send a diagnostics ZIP."
+    };
+    internal static string UpdateStopDetails(string version, int percent, string key, string code) => Korean
+        ? $"{version} 업데이트 중 오류가 발생했습니다 ({percent}%).\n\n이유: {UpdateStopReason(key)}\n할 일: {UpdateStopAdvice(key)}\n오류 코드: {code}\n\n지금 버전은 그대로 사용할 수 있습니다. 문의할 때는 오류 코드와 진단 ZIP을 함께 보내 주세요."
+        : $"The {version} update hit an error at {percent}%.\n\nReason: {UpdateStopReason(key)}\nWhat to do: {UpdateStopAdvice(key)}\nError code: {code}\n\nThe current version keeps working. When asking for help, include the error code and a diagnostics ZIP.";
+    internal static string ChannelTransitionStopped(AutomaticUpdateStatus status) => Korean
+        ? $"전환을 끝내지 못했습니다: {AutomaticStatus(status)}\n\n업데이트 설정에서 다시 시도하세요. 지금 버전은 그대로 사용할 수 있습니다."
+        : $"The switch did not finish: {AutomaticStatus(status)}\n\nTry again in Update Settings. The current version keeps working.";
     internal static string ChannelTransitionDetails(string source, string current, string target, string version, string repository) => Korean
-        ? $"현재: {ChannelName(source)} {current}\n대상: {ChannelName(target)} {version}\n저장소: {repository}\n\n선택한 채널의 서명된 최신 대상을 확인했습니다. 승인하면 다운로드하여 한 번 적용합니다. 설정은 보존하며 저장된 자동 다운로드·자동 적용 선택은 바꾸지 않습니다. 다음 실행부터 대상 버전을 사용합니다.\n\n대상이나 설치 상태가 바뀌면 다시 확인해야 합니다."
-        : $"Installed: {ChannelName(source)} {current}\nTarget: {ChannelName(target)} {version}\nRepository: {repository}\n\nThe signed latest target from the selected channel has been checked. Confirm to download and apply it once. Settings and saved automatic-download/apply choices are preserved. The target version is used on the next launch.\n\nA changed target or installation requires a new review.";
+        ? $"현재: {ChannelName(source)} {current}\n대상: {ChannelName(target)} {version}\n저장소: {repository}\n\n선택한 채널의 서명된 최신 대상을 확인했습니다. '전환 시작'을 누르면 게임 안에서 바로 받아 적용합니다. 끝날 때까지 게임을 끄지 마세요. 설정과 저장된 자동 업데이트 선택은 바꾸지 않습니다."
+        : $"Installed: {ChannelName(source)} {current}\nTarget: {ChannelName(target)} {version}\nRepository: {repository}\n\nThe signed latest target from the selected channel has been checked. Start Switch downloads and applies it right away in this game session; keep the game open until it finishes. Settings and saved automatic update choices are kept.";
     internal static string SessionTitle(string action) => Korean ? (action == "UpdateAuth" ? "업데이트 인증" : "업데이트 로그아웃") : (action == "UpdateAuth" ? "Connect Updates" : "Sign Out of Updates");
     internal static string SessionDetails(ReleaseSessionStatus status) => (Korean ? "비공개 베타 인증: " : "Private Beta access: ") + (Korean ? status switch {
         ReleaseSessionStatus.NotConfigured => "업데이트 인증이 준비되지 않았습니다.",

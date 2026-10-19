@@ -11,7 +11,7 @@ public sealed class Plugin : BasePlugin
 {
     public const string Guid = "kr.betterastralparty.mod";
     public const string Name = "BetterAstralParty";
-    public const string Version = "1.4.1-rc.1.local.27";
+    public const string Version = "1.5.1-dev.6";
     public const int InstallBundleProtocol = 1;
     public const string UpdateProtocol = "5";
     public const string SettingsSchema = "1";
@@ -152,7 +152,7 @@ public sealed class Plugin : BasePlugin
         VisibleCombatAdvisor.PveClassifier = RuntimeObject.IsPve;
         LoadStage(DiagnosticPhase.BootstrapGate);
         Logger = Log;
-        if (!UpdateStartup.Recover(Path.GetDirectoryName(Paths.BepInExRootPath)!, Version, Updating.UpdateTrust.Production())) { StartupGuard.Stage("BootstrapGate", "Failed"); return; }
+        if (!UpdateStartup.Recover(Path.GetDirectoryName(Paths.BepInExRootPath)!, Version, Updating.UpdateTrust.Production())) { StartupGuard.Stage("BootstrapGate", "Failed"); StartupGuard.Stopped(); return; }
         DiagnosticHub.Stage(DiagnosticFeature.Loader, DiagnosticPhase.BootstrapGate, DiagnosticOutcome.Completed);
         StartupGuard.Stage("BootstrapGate");
         LoadStage(DiagnosticPhase.Configuration);

@@ -69,7 +69,8 @@ internal static class StartupGuard
             if (File.Exists(current))
             {
                 var text = Ladder(current);
-                unfinished = text != null && !text.Contains(" stage=HomeMenu ", StringComparison.Ordinal) && !text.Contains(" stage=Healthy ", StringComparison.Ordinal) && !text.Contains(" stage=SessionEnd ", StringComparison.Ordinal);
+                unfinished = text != null && !text.Contains(" stage=HomeMenu ", StringComparison.Ordinal) && !text.Contains(" stage=Healthy ", StringComparison.Ordinal)
+                    && !text.Contains(" stage=SessionEnd ", StringComparison.Ordinal) && !text.Contains(" stage=Stopped ", StringComparison.Ordinal);
                 File.Copy(current, Path.Combine(_directory, "stages-previous.log"), true);
                 File.Delete(current);
             }
@@ -117,6 +118,9 @@ internal static class StartupGuard
         try { var state = ReadState(); WriteState(0, "normal", _version, state.GetValueOrDefault("game") ?? "unknown", 0); Failures = 0; } catch { }
     }
     internal static void SessionEnd() => Stage("SessionEnd");
+    // A start BAP itself stopped for safety (pending update recovery, another updating game window) is not a crash:
+    // it must not push the next launch toward safe mode.
+    internal static void Stopped() => Stage("Stopped");
 
     private static string? Ladder(string path)
     {

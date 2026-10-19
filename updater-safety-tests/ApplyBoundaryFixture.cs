@@ -168,11 +168,19 @@ internal static class ApplyBoundaryFixture
         {
             try {
                 Check(!captured.WaitForExit(1), "bounded held wait observes the unreleased inert process alive");
+                var owner = new UpdateFault { GamePid = (uint)child.Id, GameCreation = captured.Creation, GameSession = captured.Session };
+                using (var fence = new WindowsFileFence(root)) {
+                    Check(UpdateFaults.OwnerAlive(fence, owner), "live update owner is recognized");
+                    Check(!UpdateFaults.OwnerAlive(fence, new UpdateFault { GamePid = owner.GamePid, GameCreation = owner.GameCreation + 1, GameSession = owner.GameSession }), "reused PID with another start time is not the owner");
+                }
                 bool rejected = false;
                 try { captured.WaitForExit(5001); } catch (ArgumentOutOfRangeException) { rejected = true; }
                 Check(rejected, "held exit wait rejects a timeout above its finite bound");
                 child.StandardInput.WriteLine("release"); child.StandardInput.Flush();
                 Check(captured.WaitForExit(5000) && captured.Exited, "bounded wait confirms natural exit on the original retained handle");
+                // Handles held here keep the exited process object alive, so its image is unreadable (error 31).
+                using (var fence = new WindowsFileFence(root))
+                    Check(!UpdateFaults.OwnerAlive(fence, owner), "exited owner still referenced by a handle is not alive");
             } finally {
                 if (!child.HasExited) { child.StandardInput.WriteLine("release"); child.StandardInput.Flush(); }
                 child.StandardInput.Close(); Check(child.WaitForExit(5000) && child.ExitCode == 0, "bounded-wait inert child exited and was reaped");

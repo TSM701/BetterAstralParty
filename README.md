@@ -131,7 +131,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 - 시작 공지 끄기: 기본 ON. 로그인 공지가 자동으로 열리는 것만 막습니다.
 
 진단
-- 진단 로그: 기본 OFF. 오류·성능·공개 전투 계산의 상세 진단을 기록합니다.
+- 진단 로그: 기본 OFF. 오류·성능·공개 전투 계산의 상세 진단을 기록하고, 최근 다섯 개의 로그를 보관합니다.
 
 설정 보관
 - 자동 보관: 기본 ON. 설정을 바꿀 때마다 `%LOCALAPPDATA%\BetterAstralParty\Settings`에 보관합니다. 제거·재설치나 게임 폴더를 새로 받아 설정 파일이 없을 때만 다음 실행에서 되살리고, 이미 있는 설정은 덮어쓰지 않습니다.
@@ -159,7 +159,9 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 <summary>채널 전환과 세부 동작</summary>
 
 - 릴리즈와 프리 릴리즈는 공개 저장소에서 로그인 없이 확인하며, 공개 채널에서는 1.4.0 이상만 자동 업데이트 대상으로 선택합니다. 지원 버전이 없으면 현재 설치를 유지합니다.
-- 채널 전환은 선택한 채널의 지원되는 최신 릴리스를 확인합니다. 설치된 버전보다 낮아도 전환할 수 있으며, 업데이트 채널 아래의 `채널 전환` 버튼에서 대상 버전을 확인하고 직접 승인해야 합니다. 같은 버전만 있으면 `채널 전환 대기`로 표시합니다. 업데이트 채널을 다시 바꾸면 승인이 취소됩니다. 같은 채널의 일반 업데이트는 버전 역행을 허용하지 않습니다.
+- 채널 전환은 선택한 채널의 지원되는 최신 릴리스를 확인합니다. 설치된 버전보다 낮아도 전환할 수 있습니다. 업데이트 버튼을 누르면 대상 버전을 보여주고, `전환 시작`을 눌러야 받기 시작합니다. 받기와 적용은 게임 안에서 진행되니 끝날 때까지 게임을 끄지 마세요. 끝나면 `종료 및 전환` 버튼이 켜지고, 누르면 게임이 종료되며 다음 실행부터 새 버전을 사용합니다. 같은 버전만 있으면 `채널 전환 대기`로 표시합니다. 업데이트 채널을 다시 바꾸면 승인이 취소됩니다. 같은 채널의 일반 업데이트는 버전 역행을 허용하지 않습니다.
+- 업데이트나 채널 전환을 받고 적용하는 동안 홈 화면의 모드 설정 버튼 아래에 진행 캡슐이 나타납니다. 받은 용량에 따라 채워지는 막대와 퍼센트를 보여주고, 누르면 진행 창이 다시 열립니다. 진행 창에도 같은 막대와 받은 용량이 표시됩니다.
+- 업데이트 중 오류가 나면 캡슐에 "오류"와 함께 이유와 오류 코드(예: `BAP-UPD-DOWNLOAD-TIMEOUT`)가 표시되고, 진행 창에서 할 일 안내와 `다시 시도` 버튼을 볼 수 있습니다. 문의할 때는 오류 코드와 진단 ZIP을 함께 보내 주세요.
 - 같은 공개 버전이 프리 릴리즈↔릴리즈로 바뀌어도 설치된 파일과 저장한 채널은 그대로 둡니다.
 - 수동 업데이트는 버전 역행과 같은 버전의 다른 파일 덮어쓰기를 차단합니다.
 - Mod 실행 시 공용 로더가 OFF라면 안내창 없이 ON으로 전환하며, 변경 전 원본은 `BepInEx/config/BetterAstralParty.loader-before-*.bak`에 보관합니다.
@@ -330,7 +332,7 @@ Alerts / Audio
 - Skip Startup Notice: ON by default. Only stops login notices from opening automatically.
 
 Diagnostics
-- Diagnostic Log: OFF by default. Records detailed errors, performance and public combat calculations.
+- Diagnostic Log: OFF by default. Records detailed errors, performance and public combat calculations, keeping the five most recent logs.
 
 Settings Backup
 - Keep Automatically: ON by default. Keeps a copy in `%LOCALAPPDATA%\BetterAstralParty\Settings` whenever settings change. It is restored at the next launch only when the settings file is missing, such as after removal, reinstallation or a fresh game folder; existing settings are never overwritten.
@@ -358,7 +360,9 @@ Updates
 <summary>Channel switching and details</summary>
 
 - Release and Pre-release are checked in the public repository without login, and public channels select only 1.4.0 or newer. If no supported release exists, the current installation stays unchanged.
-- Channel switching checks the latest supported release in the selected channel. It can be lower than the installed version; review the target with the `Switch Channel` button below Update Channel and approve it. If only the same version exists, the status shows `Channel Switch Waiting`. Changing the update channel again cancels the approval. Ordinary updates within the same channel reject downgrades.
+- Channel switching checks the latest supported release in the selected channel. It can be lower than the installed version. The Update button shows the target, and the download starts only after `Start Switch`. Downloading and applying happen inside the game, so keep it open until they finish. Then `Exit and Switch` turns on; it closes the game, and the new version is used from the next launch. If only the same version exists, the status shows `Channel Switch Waiting`. Changing the update channel again cancels the approval. Ordinary updates within the same channel reject downgrades.
+- While an update or channel switch downloads and applies, a progress capsule appears under the Mod Settings button on the home screen. Its bar and percentage follow the downloaded size; clicking it reopens the progress window, which shows the same bar with the downloaded size.
+- If an update hits an error, the capsule shows "Error" with the reason and an error code (for example `BAP-UPD-DOWNLOAD-TIMEOUT`); the progress window also explains what to do and offers `Try Again`. When asking for help, include the error code and a diagnostics ZIP.
 - Reclassifying the same public version between Pre-release and Release leaves installed files and your saved channel unchanged.
 - Manual updates block downgrades and replacing a version with different files at the same version.
 - A Mod launch turns an OFF shared loader ON without a prompt and keeps the original configuration at `BepInEx/config/BetterAstralParty.loader-before-*.bak`.

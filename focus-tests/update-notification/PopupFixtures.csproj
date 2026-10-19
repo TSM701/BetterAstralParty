@@ -5,6 +5,7 @@
   <Compile Include="../../src/UpdateNotificationState.cs" />
   <Compile Include="../../src/UpdateNotificationUi.cs" />
   <Compile Include="../../src/ModText.cs" />
+  <Compile Include="../../src/UpdateProgress.cs" />
   <Compile Include="../../src/ReleaseUpdates.cs" />
   <Compile Include="../../src/Observability/*.cs" />
   <Compile Include="../../diagnostics/DiagnosticBundle.cs" />

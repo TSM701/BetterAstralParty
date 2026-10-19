@@ -59,8 +59,7 @@ internal sealed class DiagnosticLog
             try
             {
                 Directory.CreateDirectory(_directory);
-                var current = Path.Combine(_directory, "current.log");
-                if (File.Exists(current)) File.Copy(current, Path.Combine(_directory, "previous.log"), true);
+                Rotate();
                 _header = header;
                 _session = Guid.NewGuid().ToString("N")[..12];
                 _combatSequence = 0;
@@ -73,6 +72,21 @@ internal sealed class DiagnosticLog
                 Fail();
             }
         }
+    }
+
+    // Keeps the five newest logs (current, previous, previous-2..4) so evidence survives a few restarts.
+    internal const int KeptLogs = 5;
+    private void Rotate()
+    {
+        var current = Path.Combine(_directory, "current.log");
+        if (!File.Exists(current)) return;
+        string Name(int age) => age == 1 ? "previous.log" : $"previous-{age}.log";
+        for (var age = KeptLogs - 1; age >= 2; age--)
+        {
+            var older = Path.Combine(_directory, Name(age - 1));
+            if (File.Exists(older)) File.Copy(older, Path.Combine(_directory, Name(age)), true);
+        }
+        File.Copy(current, Path.Combine(_directory, "previous.log"), true);
     }
 
     internal void Write(string message)
@@ -89,7 +103,7 @@ internal sealed class DiagnosticLog
                 if (_bytes + bytes > MaxBytes)
                 {
                     Close();
-                    File.Copy(Path.Combine(_directory, "current.log"), Path.Combine(_directory, "previous.log"), true);
+                    Rotate();
                     OpenCurrent();
                     var continuation = $"diagnostics CONTINUE | {_header}; session={_session}{Environment.NewLine}";
                     _writer!.Write(continuation);

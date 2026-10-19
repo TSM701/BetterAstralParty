@@ -25,7 +25,7 @@ void Frame(Action? input=null)
 int Live() => NativeUi.Panels.Count(p=>p.Parent?.Kind=="Root" && !p.Get<bool>("isDisposed") && p.Get<bool>("visible"));
 RuntimeObject NoticePanel() => NativeUi.Panels.Last(p=>p.Parent?.Kind=="Root");
 IEnumerable<RuntimeObject> Descendants(RuntimeObject parent) => parent.Children.Values.SelectMany(child=>new[]{child}.Concat(Descendants(child)));
-RuntimeObject Body() => Descendants(NoticePanel()).Single(child=>child.Kind=="Label");
+RuntimeObject Body() => Descendants(NoticePanel()).First(child=>child.Kind=="Label"); // The body label precedes the progress percentage label.
 RuntimeObject ScrollView() => Descendants(NoticePanel()).Single(child=>child.Kind=="GList");
 RuntimeObject Marker(bool thumb) => NoticePanel().Children.Values.Where(child=>child.Kind=="GGraph").ElementAt(thumb?1:0);
 int MarkerWrites(RuntimeObject marker) => marker.SetCalls.Values.Sum()+marker.CallCounts.GetValueOrDefault("SetXY")+marker.CallCounts.GetValueOrDefault("SetSize");
@@ -372,14 +372,76 @@ Case("explicit lower-channel native confirmation displays source target and one-
     Check(Body().Get<string>("text").Contains("3.0.0")&&Body().Get<string>("text").Contains("2.0.0"),"both versions are visible before approval");
     Check(Plugin.Automatic.ConfirmCalls==before,"showing review does not approve");
     Click("Button_ConfirmRounded",true);Click("Button_ConfirmRounded",false);
-    Check(Plugin.Automatic.ConfirmCalls==before+1&&Plugin.Automatic.ApplyOnce&&Live()==0,"only exact confirm click approves once after exit");
+    Check(Plugin.Automatic.ConfirmCalls==before+1&&Plugin.Automatic.ApplyOnce&&Live()==1,"only exact confirm click approves once and keeps the window");
+    Plugin.Automatic.Status=AutomaticUpdateStatus.Downloading;Plugin.Automatic.Revision++;Frame();
+    var exit=Button("Button_ConfirmRounded");
+    Check(exit.Get<string>("title")==ModText.ChannelTransitionExit&&exit.Get<bool>("grayed")&&Body().Get<string>("text").Contains("2.0.0"),"Exit and Switch stays gray while downloading");
+    var quits=UnityEngine.Application.QuitCalls;
+    Click("Button_ConfirmRounded",true);Click("Button_ConfirmRounded",false);
+    Check(UnityEngine.Application.QuitCalls==quits&&Live()==1,"gray Exit and Switch never closes the game");
+    Plugin.Automatic.Status=AutomaticUpdateStatus.Committed;Plugin.Automatic.Revision++;Frame();
+    Check(!Button("Button_ConfirmRounded").Get<bool>("grayed")&&Body().Get<string>("text")==ModText.ChannelTransitionReady("2.0.0"),"committed switch enables Exit and Switch");
+    Plugin.Automatic.Status=AutomaticUpdateStatus.TransitionRequired;Plugin.Automatic.Revision++;Frame();
+    Check(!Button("Button_ConfirmRounded").Get<bool>("grayed")&&Body().Get<string>("text")==ModText.ChannelTransitionReady("2.0.0"),"a later status refresh cannot undo a seen commit");
+    Click("Button_ConfirmRounded",true);Click("Button_ConfirmRounded",false);
+    Check(UnityEngine.Application.QuitCalls==quits+1&&Live()==0,"Exit and Switch closes the game normally once");
+    Plugin.Automatic.Status=AutomaticUpdateStatus.Idle;Plugin.Automatic.Revision++;
+});
+Case("update progress stages never step back and a commit stays until restart",()=>{
+    var p=new UpdateProgress();
+    p.Observe(AutomaticUpdateStatus.Idle,"",false);Check(!p.Visible,"idle shows nothing");
+    var steps=new List<int>();
+    foreach(var s in new[]{AutomaticUpdateStatus.Preparing,AutomaticUpdateStatus.Downloading,AutomaticUpdateStatus.Preparing,AutomaticUpdateStatus.Ready,AutomaticUpdateStatus.Preparing,AutomaticUpdateStatus.Queued,AutomaticUpdateStatus.Committed})
+    { p.Observe(s,"1.5.0",true); steps.Add(p.Step); }
+    Check(string.Join(",",steps)=="1,2,3,4,4,4,5"&&p.Done&&p.Version=="1.5.0"&&p.Transition,"check, download, verify, apply, done in order");
+    p.Observe(AutomaticUpdateStatus.TransitionRequired,"",false);Check(p.Done&&p.Visible,"a later status cannot undo a commit");
+    var q=new UpdateProgress();q.Observe(AutomaticUpdateStatus.Downloading,"2.0.0",false);q.Observe(AutomaticUpdateStatus.FaultDisabled,"",false);
+    Check(q.Stopped&&q.Step==2,"a failure keeps the reached step and marks it stopped");
+    q.Observe(AutomaticUpdateStatus.Preparing,"2.0.0",false);Check(!q.Stopped&&q.Step==1,"a new attempt starts over");
+    q.Observe(AutomaticUpdateStatus.Cancelled,"",false);Check(!q.Visible,"cancel hides the capsule");
+});
+Case("update progress percent follows received bytes and a stop keeps its code",()=>{
+    var p=new UpdateProgress();
+    p.Observe(AutomaticUpdateStatus.Preparing,"1.5.0",false);Check(p.Percent==2,"operation guard starts at 2%");
+    p.Observe(AutomaticUpdateStatus.Downloading,"1.5.0",false,0,400);Check(p.Percent==5,"download starts at 5%");
+    p.Observe(AutomaticUpdateStatus.Downloading,"1.5.0",false,200,400);Check(p.Percent==45&&p.Read==200&&p.Total==400,"half the bytes is 45%");
+    p.Observe(AutomaticUpdateStatus.Preparing,"1.5.0",false);Check(p.Percent==88,"verification 88%");
+    p.Observe(AutomaticUpdateStatus.Ready,"1.5.0",false);p.Observe(AutomaticUpdateStatus.Queued,"1.5.0",false);Check(p.Percent==95,"applying 95%");
+    p.Observe(AutomaticUpdateStatus.Committed,"",false);Check(p.Percent==100&&p.Read==400,"done 100%");
+    var q=new UpdateProgress();q.Observe(AutomaticUpdateStatus.Downloading,"2.0.0",false,100,400);
+    q.Observe(AutomaticUpdateStatus.FaultDisabled,"",false,0,0,UpdateProgress.FaultCode("Download","Timeout"),"timeout");
+    Check(q.Stopped&&q.Code=="BAP-UPD-DOWNLOAD-TIMEOUT"&&q.Reason=="timeout"&&q.Percent==25,"a stop keeps its percentage, code and reason");
+    Check(ModText.UpdateStopDetails("2.0.0",q.Percent,q.Reason,q.Code).Contains("BAP-UPD-DOWNLOAD-TIMEOUT"),"window text carries the code");
+    var r=new UpdateProgress();r.Observe(AutomaticUpdateStatus.Downloading,"2.0.0",false);r.Observe(AutomaticUpdateStatus.RecoveryRequired,"",false);
+    Check(r.Code=="BAP-UPD-RECOVERYREQUIRED","a stop without a fault record still has a code");
+});
+Case("a stopped switch shows the reason and Try Again re-enables updates",()=>{
+    Plugin.Automatic.ProposalWorker=null; ReviewSwitch();
+    Click("Button_ConfirmRounded",true);Click("Button_ConfirmRounded",false);
+    UpdateProgress.Shared.Observe(AutomaticUpdateStatus.Downloading,"2.0.0",true,100,400);
+    UpdateProgress.Shared.Observe(AutomaticUpdateStatus.FaultDisabled,"",false,0,0,"BAP-UPD-DOWNLOAD-NETWORK","network");
+    Plugin.Automatic.Status=AutomaticUpdateStatus.FaultDisabled;Plugin.Automatic.Revision++;Frame();
+    Check(Button("Button_ConfirmRounded").Get<string>("title")==ModText.UpdateRetry&&Body().Get<string>("text").Contains("BAP-UPD-DOWNLOAD-NETWORK"),"stopped window shows the code and Try Again");
+    Plugin.Automatic.CanReactivate=true;var calls=Plugin.Automatic.ReactivateCalls;
+    Click("Button_ConfirmRounded",true);Click("Button_ConfirmRounded",false);
+    Check(Plugin.Automatic.ReactivateCalls==calls+1&&Live()==0,"Try Again re-enables updates once and closes the window");
+    Plugin.Automatic.CanReactivate=false;Plugin.Automatic.Status=AutomaticUpdateStatus.Idle;Plugin.Automatic.Revision++;
+    UpdateProgress.Shared.Observe(AutomaticUpdateStatus.Preparing,"",false);UpdateProgress.Shared.Observe(AutomaticUpdateStatus.Cancelled,"",false);
+});
+Case("a newer scan finding the same release keeps the review",()=>{
+    Plugin.Automatic.ProposalWorker=null; ReviewSwitch();
+    Inject(Plugin.Updates.Result with {Release=Plugin.Updates.Result.Release! with{Generation=Plugin.Updates.Result.Release!.Generation+7}});
+    Frame();Frame();
+    Check(Live()==1&&Button("Button_ConfirmRounded").Get<string>("title")==ModText.ChannelTransitionConfirm,"same target survives a rescan");
+    UpdateNotificationUi.Clear();
 });
 Case("ordinary notification OFF preserves an explicit channel-switch approval",()=>{
     Plugin.UpdateNotifications.Value=false; Plugin.Automatic.ProposalWorker=null; ReviewSwitch();
     var before=Plugin.Automatic.ConfirmCalls; Frame();
     Check(Live()==1 && Plugin.Automatic.ConfirmCalls==before,"explicit approval remains visible without automatic confirmation");
     Click("Button_ConfirmRounded",true); Click("Button_ConfirmRounded",false);
-    Check(Live()==0 && Plugin.Automatic.ConfirmCalls==before+1,"only the explicit confirm still applies a one-shot transition");
+    Check(Live()==1 && Plugin.Automatic.ConfirmCalls==before+1,"only the explicit confirm still applies a one-shot transition");
+    UpdateNotificationUi.Clear();
     Plugin.UpdateNotifications.Value=true;
 });
 Case("Escape Enter and close never approve a channel switch",()=>{
@@ -414,7 +476,7 @@ Case("pending explicit review suppresses a newer ordinary notice and reports cha
     var worker=new TaskCompletionSource<ChannelTransitionProposal>(TaskCreationOptions.RunContinuationsAsynchronously);Plugin.Automatic.ProposalWorker=worker;
     UpdateNotificationUi.BeginTransition();Frame();Frame();Check(Live()==0,"ordinary notice cannot occupy confirmation UI while proposal is pending");
     Inject(Plugin.Updates.Result with{Release=Plugin.Updates.Result.Release! with{SignatureAssetId=96}});Frame();Frame();
-    Check(Live()==1&&Body().Get<string>("text")==ModText.ChannelTransitionUnavailable,"changed pending target reports a stop without approval");
+    Check(Live()==1&&Body().Get<string>("text").StartsWith(ModText.ChannelTransitionUnavailable)&&Body().Get<string>("text").Contains(ModText.ChannelTransitionReason("changed")),"changed pending target reports a stop and its reason without approval");
     worker.SetResult(new(new("fixture","Stable","9.0.0",new string('A',64))));Thread.Sleep(10);
     UpdateNotificationUi.Clear();Plugin.Automatic.ProposalWorker=null;
 });

@@ -858,8 +858,8 @@ namespace BetterAstralParty.Diagnostics
             using (var root = TryRoot(Path.Combine(runtimeRoot, "Logs"), rows, "runtime-logs"))
             {
                 if (root == null) return;
-                string[] names = { "current.log", "previous.log", "combat-mismatch.log", "combat-mismatch-previous.log" };
-                string[] ids = { "runtime/diagnostics-current", "runtime/diagnostics-previous", "runtime/combat-mismatch", "runtime/combat-mismatch-previous" };
+                string[] names = { "current.log", "previous.log", "previous-2.log", "previous-3.log", "previous-4.log", "combat-mismatch.log", "combat-mismatch-previous.log" };
+                string[] ids = { "runtime/diagnostics-current", "runtime/diagnostics-previous", "runtime/diagnostics-previous-2", "runtime/diagnostics-previous-3", "runtime/diagnostics-previous-4", "runtime/combat-mismatch", "runtime/combat-mismatch-previous" };
                 for (int i = 0; i < names.Length; ++i) Read(root, names[i], ids[i], now, rows, payloads, ref raw, ref totalOutput);
             }
         }

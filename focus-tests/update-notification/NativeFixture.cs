@@ -2,7 +2,7 @@
 namespace UnityEngine
 {
     internal static class Time { internal static int frameCount; internal static float unscaledTime; }
-    internal static class Application { internal static bool isFocused = true; }
+    internal static class Application { internal static bool isFocused = true; internal static int QuitCalls; internal static void Quit() => QuitCalls++; }
     internal readonly record struct Color(float r,float g,float b,float a=1f);
     internal enum KeyCode { Escape, Return, F8 }
     internal static class Input
@@ -54,6 +54,9 @@ namespace BetterAstralParty
         internal int Revision;
         internal bool AutoDownload = true, ApplyAfterExit = true, SnapshotMismatch;
         internal bool CanReviewTransition, ProposalCurrent = true;
+        internal bool CanReactivate, CanRecheck = false; internal int ReactivateCalls, RecheckCalls;
+        internal void Reactivate() => ReactivateCalls++;
+        internal void Recheck() => RecheckCalls++;
         internal int ConfirmCalls;
         internal bool ApplyOnce;
         internal TaskCompletionSource<ChannelTransitionProposal>? ProposalWorker;
@@ -79,7 +82,9 @@ namespace BetterAstralParty
         internal static readonly ReleaseUpdates Updates = new(Version, "Fixture/Repo");
         internal static readonly FixtureAutomatic Automatic = new();
         internal static readonly BoolPreference UpdateNotifications = new();
+        internal static readonly FixtureLog Diagnostics = new();
     }
+    internal sealed class FixtureLog { internal readonly List<string> Lines = new(); internal void Write(string line) => Lines.Add(line); }
     internal sealed class RuntimeObject
     {
         private static int _sequence;
@@ -123,12 +128,12 @@ namespace BetterAstralParty
             SetCalls[name]=SetCalls.GetValueOrDefault(name)+1;
             if(Kind=="Panel" && name=="visible" && Equals(value,false) && FailNextVisibleWrite) { FailNextVisibleWrite=false;throw new InvalidOperationException("Injected visibility failure"); }
             var type = name switch {
-                "visible" or "touchable" or "opaque" or "UBBEnabled" or "singleLine" => typeof(bool),
+                "visible" or "touchable" or "opaque" or "UBBEnabled" or "singleLine" or "grayed" => typeof(bool),
                 "autoResizeItem" when Kind == "GList" => typeof(bool),
                 "mouseWheelEnabled" or "bouncebackEffect" when Kind == "ScrollPane" => typeof(bool),
                 "layout" when Kind == "GList" => typeof(int),
                 "scrollStep" when Kind == "ScrollPane" => typeof(float),
-                "sortingOrder" or "autoSize" => typeof(int), "alpha" => typeof(float),
+                "sortingOrder" or "autoSize" => typeof(int), "alpha" => typeof(float), "color" => typeof(UnityEngine.Color),
                 "text" => typeof(string), _ => throw new InvalidOperationException("Unsupported setter "+name) };
             if (value.GetType() != type) throw new InvalidOperationException("Setter type mismatch "+name);
             Values[name] = value;
@@ -209,7 +214,7 @@ namespace BetterAstralParty
         internal sealed class Surface {
             internal readonly RuntimeObject Graph;
             internal Surface(RuntimeObject parent,float width,float height,bool fixedOpacity=false,UnityEngine.Color? fill=null) {
-                if(!fixedOpacity||width!=12||height is not (24 or 300)||fill==null) throw new InvalidOperationException("Unexpected position-only scroll surface");
+                if(!fixedOpacity||fill==null||!(width==12&&height is 24 or 300||height==18&&width==560||height==14&&width==14)) throw new InvalidOperationException("Unexpected scroll or progress surface");
                 Graph=new RuntimeObject("GGraph");Graph.Values["fill"]=fill.Value;
                 Graph.Set("touchable",false);Graph.Call("SetSize",width,height);parent.Call("AddChild",Graph);
             }
@@ -274,7 +279,8 @@ namespace BetterAstralParty
         internal static float FitScale(float width,float height) => MathF.Min(width / Width,height / Height);
     }
     internal static class AdviceText { internal static float Reveal(float elapsed,float duration=.22f) => Math.Clamp(elapsed / duration,0,1); }
-    internal static class ModUi { internal static int Opens; internal static void OpenUpdateSettings() => Opens++; }
+    internal static class ModUi { internal static int Opens; internal static void OpenUpdateSettings() => Opens++;
+        internal static void RetryUpdateFromNotice() { Opens++; if (Plugin.Automatic.CanReactivate) Plugin.Automatic.Reactivate(); else if (Plugin.Automatic.CanRecheck) Plugin.Automatic.Recheck(); } }
     internal static class Compatibility
     {
         internal static readonly HashSet<string> Blocked = new();

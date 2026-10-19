@@ -34,6 +34,8 @@ internal static partial class TestCommands
         var guard = ReadSource(context, "src/StartupGuard.cs");
         Pattern(guard, @"File\.Delete\(path\);\s*return LaunchRequestFresh\(age\);", "Launch request is deleted before it is honoured");
         Contains(guard, new[] { "TimeSpan.FromMinutes(3)" }, "Launch request is short-lived");
+        Contains(guard, new[] { "!text.Contains(\" stage=Stopped \", StringComparison.Ordinal)", "internal static void Stopped() => Stage(\"Stopped\");" }, "A deliberate safety stop is not a failed start");
+        Contains(plugin, new[] { "StartupGuard.Stage(\"BootstrapGate\", \"Failed\"); StartupGuard.Stopped(); return;" }, "Update recovery gate marks its stop as deliberate");
         var modEntry = ReadSource(context, "tools/BetterAstralParty-Mod.cmd");
         Contains(modEntry, new[] { "type nul > \"%REQUEST%\\mod-launch.request\"", "start \"\" \"steam://rungameid/2622000\"", "steam://run/2622000//--doorstop-enabled true --bap-compatibility-checked/" }, "Mod entry lets Steam start the owned app");
         NoPattern(modEntry, @"SteamOverlayGameId|SteamGameId|AstralParty_INT\.exe"" --doorstop", "Mod entry never starts the game itself or overrides Steam overlay identity");
