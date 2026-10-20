@@ -25,7 +25,8 @@ internal static class FieldDiceUi
 
     private static void Update()
     {
-        var delta = Plugin.FieldZoom.Value && !PvpSafety.Suspended ? FieldZoomUi.DiceViewDelta : Vector3.zero;
+        // Pin Dice to Screen OFF returns tracked dice to their native field position and stops tracking.
+        var delta = Plugin.FieldZoom.Value && Plugin.DiceLock.Value && !PvpSafety.Suspended ? FieldZoomUi.DiceViewDelta : Vector3.zero;
         if (delta == Vector3.zero && Dice.Count == 0) return;
         // Picks up a new throw on its first frame; the pool holds only a few controllers.
         if (delta != Vector3.zero) Scan();

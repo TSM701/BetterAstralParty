@@ -36,7 +36,8 @@ namespace BetterAstralParty.Updating
         internal string ActiveVersion { get { return VersionFor(ActiveChannel) ?? throw new ApplySafetyException(ApplyFailure.RecoveryRequired); } }
         internal long ActiveRepositoryId { get { return RepositoryIdFor(ActiveChannel); } }
         internal string ActiveRepository { get { return ReleaseFeedPolicy.For(ActiveChannel).Repository; } }
-        internal ReceiptChannelState Applied(string root, VerifiedUpdateDescriptor descriptor, string operation, ChannelTransitionIntent? intent = null)
+        // reinstall: a signed whole package may return to its channel row only with the exact package recorded there.
+        internal ReceiptChannelState Applied(string root, VerifiedUpdateDescriptor descriptor, string operation, ChannelTransitionIntent? intent = null, bool reinstall = false)
         {
             if (Root != root || descriptor.Protocol != UpdateTrust.Protocol) throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
             var stable = descriptor.Channel == "Stable"; var beta = descriptor.Channel == "Beta"; var preRelease = descriptor.Channel == "PreRelease";
@@ -45,7 +46,8 @@ namespace BetterAstralParty.Updating
             var comparison = old == null ? 1 : UpdateVersion.Parse(descriptor.Version).CompareTo(UpdateVersion.Parse(old));
             var exactReplay = intent != null && intent.TargetChannel == descriptor.Channel && intent.SourceChannel == ActiveChannel
                 && intent.DescriptorHash == descriptor.DescriptorSha256 && DescriptorFor(descriptor.Channel) == descriptor.DescriptorSha256 && comparison == 0;
-            if (id != 0 && id != descriptor.RepositoryId || comparison <= 0 && !exactReplay)
+            var exactReinstall = reinstall && comparison == 0 && DescriptorFor(descriptor.Channel) == descriptor.DescriptorSha256;
+            if (id != 0 && id != descriptor.RepositoryId || comparison <= 0 && !exactReplay && !exactReinstall)
                 throw new UpdateValidationException(UpdateFailure.NotNewer);
             return new ReceiptChannelState(root, descriptor.Channel, operation,
                 stable ? descriptor.RepositoryId : StableRepositoryId, stable ? UpdateVersion.Parse(descriptor.Version).Tag : StableVersion, stable ? descriptor.DescriptorSha256 : StableDescriptor,

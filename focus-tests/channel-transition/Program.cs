@@ -69,9 +69,24 @@ internal static class ChannelTransitionTests
             Check(ReceiptChannelState.Parse(applied.Encoded).Encoded==applied.Encoded&&applied.Text().StartsWith("BetterAstralParty.ChannelState/v2\n",StringComparison.Ordinal),"three-channel receipt canonical roundtrip");
             var retained=Source(source,"1.4.2",target,version,descriptor.DescriptorSha256);
             Check(retained.Applied(Root,descriptor,intent.Operation,intent).ActiveChannel==target.Channel,"receipt permits only exact destination-floor replay");
+            Check(retained.Applied(Root,descriptor,intent.Operation,reinstall:true).ActiveChannel==target.Channel,"whole reinstall of the exact recorded package returns to its channel");
+            Refuse(()=>retained.Applied(Root,descriptor,intent.Operation),"equal channel row without intent or reinstall stays refused");
+            Refuse(()=>Source(source,"1.4.2",target,version,new string('F',64)).Applied(Root,descriptor,intent.Operation,reinstall:true),"whole reinstall of a different same-version package is refused");
             if(UpdateVersion.Parse(version).CompareTo(UpdateVersion.Parse("1.4.2"))>0){
                 InstallProof.ValidateChannel(state,Root,"1.4.2",5,1,descriptor,"1.4.2");Check(true,"manual whole-package cross-channel upgrade preserves its strict newer-only policy");
             }else Refuse(()=>InstallProof.ValidateChannel(state,Root,"1.4.2",5,1,descriptor,"1.4.2"),"manual whole-package channel selection cannot bypass the existing installed/global floor");
+            if(UpdateVersion.Parse(version).CompareTo(UpdateVersion.Parse("1.4.2"))>0){
+                InstallProof.ValidateChannel(state,Root,"1.4.2",5,1,descriptor,version,descriptor.DescriptorSha256);Check(true,"exact high-water package reinstalls above a lower installed release");
+                Refuse(()=>InstallProof.ValidateChannel(state,Root,"1.4.2",5,1,descriptor,version,new string('F',64)),"equal high-water requires the exact recorded descriptor");
+                Refuse(()=>InstallProof.ValidateChannel(state,Root,"1.4.2",5,1,descriptor,version),"equal high-water without a recorded descriptor is refused");
+            }
+            if(version=="1.4.2"){
+                var active=new ReceiptChannelState(Root,source.Channel,new string('a',32),
+                    source.Channel=="Stable"?source.RepositoryId:0,source.Channel=="Stable"?"1.4.2":null,source.Channel=="Stable"?descriptor.DescriptorSha256:"-",
+                    source.Channel=="Beta"?source.RepositoryId:0,source.Channel=="Beta"?"1.4.2":null,source.Channel=="Beta"?descriptor.DescriptorSha256:"-",
+                    source.Channel=="PreRelease"?source.RepositoryId:0,source.Channel=="PreRelease"?"1.4.2":null,source.Channel=="PreRelease"?descriptor.DescriptorSha256:"-");
+                InstallProof.ValidateChannel(active,Root,"1.4.2",5,1,descriptor,"1.4.2",descriptor.DescriptorSha256);Check(true,"same signed release repairs across channel rows");
+            }
             Refuse(()=>trust.VerifyDescriptor(bytes,"ephemeral-transition-fixture",signature,Context(target,"1.4.2",version,"9.0.0",intent,descriptor.DescriptorSha256)),"destination floor cannot be lowered");
             Refuse(()=>trust.VerifyDescriptor(bytes,"ephemeral-transition-fixture",signature,Context(target,"1.4.2",version,version,intent,new string('F',64))),"equal destination floor requires exact descriptor");
             Refuse(()=>Context(target,"1.4.4",version,intent:intent),"changed installed source cannot reuse approval");

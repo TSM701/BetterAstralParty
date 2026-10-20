@@ -17,11 +17,10 @@ internal static class FieldZoomUi
     private static float _scanAt;
     private static float _pendingWheel;
     // On-screen size of field characters relative to the native camera distance (perspective follow offset).
-    // How far the rendered camera sits from where the native default view of the current player would put it
-    // (player follow target + native default follow offset). Zero at the native view; covers zoom and free-view pan.
+    // How far the rendered camera sits from where the native view would put it: the same native camera without our
+    // zoom, or (free view) the current player's native camera at its own follow offset. Zero at the native view.
     internal static Vector3 DiceViewDelta => _fieldVisible ? _viewDelta : default;
-    private static Vector3 _viewDelta, _nativeOriginal;
-    private static bool _hasNativeOriginal;
+    private static Vector3 _viewDelta;
     internal static float IndicatorScale => _owned && _fieldVisible && _applied.magnitude > 0
         ? Math.Clamp(_original.magnitude / _applied.magnitude, 0.2f, 5f) : 1f;
     private static IntPtr _wheelBrain, _wheelCamera, _wheelFrame;
@@ -93,9 +92,10 @@ internal static class FieldZoomUi
         var offset = body.Field<Vector3>("m_FollowOffset");
         if (!Finite(offset)) { _pendingWheel = 0; WheelState("camera-offset"); return; }
         _fieldVisible = true;
-        var playerFollow = player?.Get("Follow");
-        _viewDelta = (owned || _owned && !Same(_applied, _original)) && _hasNativeOriginal && Alive(playerFollow)
-            ? camera.transform.position - (playerFollow!.Get<Vector3>("position") + _nativeOriginal) : default;
+        // Each view is read this frame; a cached baseline from another native camera (free/skill camera) shifted the dice.
+        var nativeView = owned ? NativePlayerView(player)
+            : _owned && _body?.Pointer == body.Pointer && !Same(_applied, _original) ? follow!.Get<Vector3>("position") + _original : (Vector3?)null;
+        _viewDelta = nativeView is { } view ? camera.transform.position - view : default;
         if (!owned)
         {
             var frames = brain!.Field("mFrameStack");
@@ -122,13 +122,11 @@ internal static class FieldZoomUi
         if (_body?.Pointer != body.Pointer)
         {
             Restore(); _body = body; _original = _applied = _target = offset; _zoomOutLimit = 0;
-            if (!owned) { _nativeOriginal = offset; _hasNativeOriginal = true; }
         }
         else if (!Same(offset, _applied))
         {
             // A native/external change becomes the new baseline; never restore across it.
             _original = _applied = _target = offset; _owned = false; _zoomOutLimit = 0;
-            if (!owned) { _nativeOriginal = offset; _hasNativeOriginal = true; }
         }
         var inputAllowed = FieldInputAllowed(root, pan: true);
         var onUi = inputAllowed && Input.GetMouseButton(0)
@@ -198,6 +196,16 @@ internal static class FieldZoomUi
         if (Same(next, offset)) return;
         _applied = next; _owned = true;
         body.SetField("m_FollowOffset", next);
+    }
+
+    // The current player's native camera pose (follow target + its own follow offset), or null when unreadable.
+    private static Vector3? NativePlayerView(RuntimeObject? player)
+    {
+        var follow = player?.Get("Follow");
+        var body = player?.Call("GetCinemachineComponent", 0);
+        if (!Alive(follow) || !Alive(body) || body!.TypeName != "CinemachineTransposer") return null;
+        var offset = body.Field<Vector3>("m_FollowOffset");
+        return Finite(offset) ? follow!.Get<Vector3>("position") + offset : null;
     }
 
     private static void WheelState(string reason)

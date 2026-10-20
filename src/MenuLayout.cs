@@ -15,7 +15,7 @@ internal static class MenuLayout
     {
         ("전투 추천", false, new[] { "Enabled", "Details", "KoMinimum", "FinalDamage" }),
         ("전투 표시", false, new[] { "BattleStatus", "ShushuShield", "ShushuShieldRestrictions", "CounterAnimation", "CounterSound" }),
-        ("필드·카메라", false, new[] { "FieldBuffs", "FieldMarker", "FieldZoom", "ZoomSensitivity", "IndicatorFade", "IndicatorFadeStrength", "IndicatorHide", "IndicatorHideDistance" }),
+        ("필드·카메라", false, new[] { "FieldBuffs", "FieldMarker", "FieldZoom", "ZoomSensitivity", "IndicatorFade", "IndicatorFadeStrength", "IndicatorHide", "IndicatorHideDistance", "DiceLock" }),
         ("손패·카드", false, new[] { "HandLayout", "FoldedHandOpacity", "CardPopups" }),
         ("캐릭터", false, new[] { "Names", "CharacterRoles", "CharacterGuide" }),
         ("편의 기능", false, new[] { "AutoThanks", "PingFocus" }),
@@ -85,7 +85,7 @@ internal static class MenuLayout
     {
         "Details" => "Enabled",
         "FieldMarker" => "FieldBuffs",
-        "ZoomSensitivity" or "IndicatorFade" or "IndicatorFadeStrength" or "IndicatorHide" or "IndicatorHideDistance" => "FieldZoom",
+        "ZoomSensitivity" or "IndicatorFade" or "IndicatorFadeStrength" or "IndicatorHide" or "IndicatorHideDistance" or "DiceLock" => "FieldZoom",
         "FoldedHandOpacity" => "HandLayout",
         "UpdateAuth" or "UpdateSignOut" => "UpdateChannel",
         _ => null
@@ -125,6 +125,7 @@ internal static class MenuLayout
         "FieldZoom" => "필드",
         "IndicatorFade" => "필드 인디케이터",
         "IndicatorHide" => "필드 인디케이터",
+        "DiceLock" => "필드 주사위",
         "HandLayout" => "내 필드 손패",
         "CardPopups" => "카드·칩 핑 말풍선",
         "Names" => "캐릭터 이름이 나오는 곳",
@@ -230,6 +231,7 @@ internal static class MenuLayout
         "CharacterGuide" when !enabled => "설명을 보여주지 않습니다.",
         "IndicatorFade" when !enabled => "줌 아웃해도 그대로 보여줍니다.",
         "IndicatorHide" when !enabled => "거리와 상관없이 보여줍니다.",
+        "DiceLock" when !enabled => "게임 기본처럼 필드 위에 두어\n줌에 따라 크기가 바뀝니다.",
         "CounterSound" when !enabled => "알림음을 내지 않습니다.",
         "CounterAnimation" when !enabled => "반격 아이콘을 멈춘 채 보여줍니다.",
         "PingFocus" when !enabled => "핑 선택 모드를 그대로 둡니다.",
@@ -278,6 +280,7 @@ internal static class MenuLayout
         "CharacterGuide" => ("준비 화면 스킬 설명", "준비 화면 초상화에 마우스를 올리면\n스킬·재사용 대기시간·잠재력이 나옵니다."),
         "IndicatorFade" => ("줌 아웃 시 반투명", "줌 아웃할수록 플레이어·몬스터\n인디케이터를 반투명하게 합니다."),
         "IndicatorHide" => ("멀면 숨기기", "멀리 줌 아웃하면 숨기고\n다시 확대하면 보여줍니다."),
+        "DiceLock" => ("주사위 화면 고정", "줌·자유 시점에서도 굴린 주사위를\n기본 시점과 같은 위치·크기로 보여줍니다."),
         "CounterSound" => ("반격 아이콘 소리", "반격 아이콘이 나타날 때\n알림음을 냅니다."),
         "CounterAnimation" => ("반격 아이콘 애니메이션", "인카운트·전투 반격 아이콘을\n움직여 보여줍니다."),
         "PingFocus" => ("Alt+Tab 핑 모드 해제", "Alt+Tab 후 남은 핑 선택 모드를\n핑을 보내지 않고 끕니다."),

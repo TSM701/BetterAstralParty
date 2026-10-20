@@ -271,7 +271,9 @@ internal static class UpdateNotificationUi
                 : SwitchRunning(status) ? ModText.ChannelTransitionProgress(_switching.Version, status) : ModText.ChannelTransitionStopped(status)
             : _switching != null ? committed ? ModText.UpdateProgressReady(_switching.Version)
                 : SwitchRunning(status) ? ModText.UpdateProgressBody(_switching.Version, status) : ModText.UpdateProgressStopped(status)
-            : review != null ? ModText.ChannelTransitionDetails(review.SourceChannel, review.CurrentVersion, review.Target.Channel, review.Target.Version, review.Target.Repository)
+            : review != null ? ModText.ChannelTransitionDetails(review.SourceChannel, review.CurrentVersion, review.Target.Channel,
+                // The Pre-release channel also offers a newer full Release; name the target by its own kind.
+                _transition!.Release.Beta ? "Beta" : _transition.Release.GitHubPrerelease ? "PreRelease" : "Stable", review.Target.Version, review.Target.Repository)
             : ModText.UpdateNotificationDetails(_target!.Release, Plugin.Version,
                 Plugin.Automatic.Status, Plugin.Updates.Result.Status, Plugin.Automatic.Snapshot.Matches(_target.Release)));
         ModFont.Track(_body);

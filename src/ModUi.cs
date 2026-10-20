@@ -542,6 +542,7 @@ internal static class ModUi
         AddToggle("CounterAnimation", 440, MenuLayout.ToggleY(17));
         AddToggle("PingFocus", 440, MenuLayout.ToggleY(18));
         AddToggle("FinalDamage", 440, MenuLayout.ToggleY(19));
+        AddToggle("DiceLock", 440, MenuLayout.ToggleY(20));
         TraceSettingsOpen(DiagnosticPhase.SettingsReparent);
         foreach (var (button, action) in Controls.Values)
             if (!MenuLayout.FixedControl(action)) MoveIntoSettings(button, MenuLayout.SettingY(action) + MenuLayout.ChildOffsetY(action));
@@ -917,6 +918,7 @@ internal static class ModUi
         "CharacterGuide" => Plugin.CharacterGuide.Value,
         "IndicatorFade" => Plugin.IndicatorFade.Value,
         "IndicatorHide" => Plugin.IndicatorHide.Value,
+        "DiceLock" => Plugin.DiceLock.Value,
         "CounterSound" => Plugin.CounterSound.Value,
         "CounterAnimation" => Plugin.CounterAnimation.Value,
         "PingFocus" => Plugin.PingFocus.Value,
@@ -1234,6 +1236,7 @@ internal static class ModUi
             case "CharacterGuide": Plugin.CharacterGuide.Value = !Plugin.CharacterGuide.Value; break;
             case "IndicatorFade": Plugin.IndicatorFade.Value = !Plugin.IndicatorFade.Value; FieldIndicatorOpacity.Clear(); break;
             case "IndicatorHide": Plugin.IndicatorHide.Value = !Plugin.IndicatorHide.Value; FieldIndicatorOpacity.Clear(); break;
+            case "DiceLock": Plugin.DiceLock.Value = !Plugin.DiceLock.Value; FieldDiceUi.Clear(); break;
             case "CounterSound": Plugin.CounterSound.Value = !Plugin.CounterSound.Value; BattleStatusUi.Clear(); EncounterCounterUi.Clear(); break;
             case "CounterAnimation": Plugin.CounterAnimation.Value = !Plugin.CounterAnimation.Value; BattleStatusUi.Clear(); EncounterCounterUi.Clear(); break;
             case "PingFocus": Plugin.PingFocus.Value = !Plugin.PingFocus.Value; if (!Plugin.PingFocus.Value) PingFocusGuard.Reset(); break;

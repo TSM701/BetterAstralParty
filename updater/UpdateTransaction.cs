@@ -221,6 +221,11 @@ namespace BetterAstralParty.Updating
         {
             string? hash; return ReadHighWater(fence, out hash);
         }
+        // Descriptor hash recorded with the high-water version, or null when no high-water exists.
+        internal static string? HighWaterDescriptor(WindowsFileFence fence)
+        {
+            using (var file = Maybe(fence, HighWaterPath, false)) return file == null ? null : ParseWater(Read(file, 2048), fence).Descriptor;
+        }
         internal static string? ReadHighWater(WindowsFileFence fence, out string? hash)
         {
             using (var file = Maybe(fence, HighWaterPath, false)) {

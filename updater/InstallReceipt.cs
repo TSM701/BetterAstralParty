@@ -105,7 +105,7 @@ namespace BetterAstralParty.Updating
                 var currentDigest = Channels.DescriptorFor(descriptor.Channel);
                 if (Channels.ActiveChannel == descriptor.Channel && Channels.ActiveVersion == UpdateVersion.Parse(descriptor.Version).Tag && currentDigest == descriptor.DescriptorSha256)
                     return Updated(descriptor, Channels);
-                channels = Channels.Applied(root, descriptor, Guid.NewGuid().ToString("N"));
+                channels = Channels.Applied(root, descriptor, Guid.NewGuid().ToString("N"), reinstall: true);
             } else throw Bad();
             return Updated(descriptor, channels);
         }

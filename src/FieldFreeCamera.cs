@@ -14,16 +14,23 @@ internal static class FieldFreeCamera
     private static int _override = -1;
     private static bool _returnPending, _dragging, _indicatorPress, _acquireUncertain;
     private static Vector2 _pointer, _pressAt;
-    // Only clicks on the native UI whose click handler moves the camera end the free view: the player icon
-    // (UIBattleInfo_Button_PlayerInfo -> MoveCameraToPlayer / OnClickPlayer -> ControlFreeCamera), a monster target
-    // item (UIButton_MonsterItem -> BattleMonsterWindow.SwitchCamera) and the minimap (OnClickMiniMap).
-    // Turn, move and skill camera switches never do, even right after an unrelated click.
-    private static readonly string[] FocusTypes = { "UIBattleInfo_Button_PlayerInfo", "UIButton_MonsterItem", "UIBattleInfo_Com_Minimap" };
+    // Only clicks on the native UI whose click handler moves the camera end the free view: the player icon's head
+    // (btn_Head -> SwitchCamera -> MoveCameraToPlayer; the whole button only for watchers, OnClickPlayer -> ControlFreeCamera),
+    // a monster target item (UIButton_MonsterItem -> BattleMonsterWindow.SwitchCamera) and the minimap (OnClickMiniMap).
+    // The player label (btn_Label -> ShowBattlePlayerInfo) only opens details. Turn, move and skill camera switches never do.
+    private const string PlayerInfo = "UIBattleInfo_Button_PlayerInfo", PlayerHead = "btn_Head";
+    private static readonly string[] FocusTypes = { PlayerInfo, "UIButton_MonsterItem", "UIBattleInfo_Com_Minimap" };
     private static string? _focusTarget;
     private static Vector2 _focusPress;
-    internal static string? FocusTarget(IEnumerable<string> pathTypes)
+    // pathTypes runs from the hit object up to the root; the player head graph is listed by its name.
+    internal static string? FocusTarget(IEnumerable<string> pathTypes, bool watcher = false)
     {
-        foreach (var type in pathTypes) if (Array.IndexOf(FocusTypes, type) >= 0) return type;
+        var head = false;
+        foreach (var type in pathTypes)
+        {
+            if (type == PlayerHead) head = true;
+            else if (Array.IndexOf(FocusTypes, type) >= 0) return type != PlayerInfo || head || watcher ? type : null;
+        }
         return null;
     }
     internal static bool ClickGesture(Vector2 press, Vector2 release, int threshold)
@@ -88,8 +95,10 @@ internal static class FieldFreeCamera
         {
             _focusPress = Input.mousePosition;
             var types = new List<string>();
-            foreach (var item in GameUi.PointerPath(hitTest: true)) types.Add(item.TypeName);
-            _focusTarget = FocusTarget(types);
+            foreach (var item in GameUi.PointerPath(hitTest: true))
+                types.Add(item.Field("name")?.String() == PlayerHead ? PlayerHead : item.TypeName); // GObject.name is a field, not a property.
+            _focusTarget = FocusTarget(types, types.Contains(PlayerInfo) && RuntimeObject.StaticField(RuntimeObject.FindClass("GameLogic", "GameLogicManager"), "_inst")
+                ?.Get("watch")?.Call("PlayerIsWatcher")?.Value<bool>() == true);
         }
         else if (_focusTarget != null && Input.GetMouseButtonUp(0))
         {

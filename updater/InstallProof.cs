@@ -120,8 +120,11 @@ namespace BetterAstralParty.Updating {
             foreach(var path in new[]{"pending.json","pending.json.lock",id+"/pending.json",id+"/completed.json",id+"/restored.json",id+"/299.bin"})
                 WindowsFileFence.ValidatePlannedPath(System.IO.Path.Combine(journalRoot,path.Replace('/','\\')));
         }
-        // A signed whole package may switch channels only by advancing the installed version.
-        internal static void ValidateChannel(ReceiptChannelState? state,string root,string currentVersion,int currentProtocol,int currentSettings,VerifiedUpdateDescriptor incoming,string? high) {
+        // A signed whole package may switch channels only by advancing the installed version, or by repairing the installed
+        // version with the exact signed release recorded for the active channel (public proofs are channel-neutral, so a
+        // release received in game on Pre-release is the same descriptor as its complete ZIP). It may return to the global
+        // high-water version only with that exact signed package (e.g. reinstalling it after switching to a lower release).
+        internal static void ValidateChannel(ReceiptChannelState? state,string root,string currentVersion,int currentProtocol,int currentSettings,VerifiedUpdateDescriptor incoming,string? high,string? highDescriptor=null) {
             if(state==null)throw Bad("ChannelStateMissing");
             if(state.Root!=root || state.ActiveVersion!=currentVersion || state.ActiveRepositoryId!=ReleaseFeedPolicy.For(state.ActiveChannel).RepositoryId)throw Bad("ChannelStateMismatch");
             var feed=ReleaseFeedPolicy.For(incoming.Channel);
@@ -130,7 +133,9 @@ namespace BetterAstralParty.Updating {
                 || !(incoming.ReleaseId>0 && incoming.AssetId>0 || incoming.ReleaseId==0 && incoming.AssetId==0))throw Bad("ChannelProofMismatch");
             if(state.ActiveChannel==incoming.Channel)return;
             var next=UpdateVersion.Parse(incoming.Version);
-            if(next.CompareTo(UpdateVersion.Parse(currentVersion))<=0 || high!=null && next.CompareTo(UpdateVersion.Parse(high))<=0)
+            var floor=high==null?1:next.CompareTo(UpdateVersion.Parse(high));
+            var installed=next.CompareTo(UpdateVersion.Parse(currentVersion));
+            if(installed<0 || installed==0 && incoming.DescriptorSha256!=state.DescriptorFor(state.ActiveChannel) || floor<0 || floor==0 && incoming.DescriptorSha256!=highDescriptor)
                 throw new UpdateValidationException(UpdateFailure.NotNewer);
         }
         // Receipt bytes for the package: preserve existing protocol-5 channel history, or start a new one.
@@ -144,7 +149,7 @@ namespace BetterAstralParty.Updating {
                         using(var plugin=Maybe(f,UpdateTrust.PluginPath)) {
                             if(plugin==null)throw Bad("InstalledPluginMissing");
                             var current=InstalledPluginMetadata.Read(UpdateTicket.Read(plugin,UpdateTrust.MaxFileBytes));
-                            ValidateChannel(old.Channels,f.RootIdentity.Text,current.Version,current.UpdateProtocol,current.SettingsSchema,input.Update,UpdateTransaction.ReadHighWater(f));
+                            ValidateChannel(old.Channels,f.RootIdentity.Text,current.Version,current.UpdateProtocol,current.SettingsSchema,input.Update,UpdateTransaction.ReadHighWater(f),UpdateTransaction.HighWaterDescriptor(f));
                         }
                         var target=InstallReceipt.Parse(old.Updated(input.Update));
                         return Encoding.ASCII.GetString(target.InitializeChannel(f.RootIdentity.Text,input.Update));

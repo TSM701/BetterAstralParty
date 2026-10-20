@@ -80,7 +80,7 @@ internal static class InputAttention
     {
         if (!GameUi.Visible(node) || !node.Get<bool>("touchable") || node.Get<bool>("grayed")) return false;
         var button = node.Get("asButton");
-        if (button != null) return node.Get("name")?.String() != "closeButton";
+        if (button != null) return node.Field("name")?.String() != "closeButton"; // GObject.name is a field.
         if (depth >= 8 || node.Get("asCom") == null) return false;
         for (var i = 0; i < node.Get<int>("numChildren"); i++)
             if (HasButton(node.Call("GetChildAt", i)!, depth + 1)) return true;

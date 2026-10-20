@@ -169,6 +169,7 @@ internal sealed class RuntimeObject {
     public RuntimeObject? Get(string name)=>(RuntimeObject?)Read("Get",name,typeof(RuntimeObject));
     public T Get<T>(string name) where T:unmanaged=>(T)Read("Get",name,typeof(T))!;
     public T Value<T>() where T:unmanaged=>(T)Read("Value","value",typeof(T))!;
+    public string String()=>throw new Exception("Unexpected native string read");
     public static IntPtr FindClass(string ns,string name) {
         var key=ns+"."+name;
         if (key is not ("Core.Camera.CameraManager" or "GameLogic.GameLogicManager" or "Core.GameSettings" or "FairyGUI.Stage" or "FairyGUI.UIConfig")) throw new Exception("Unexpected native class "+key);
@@ -422,7 +423,9 @@ public static class Check {
     }
     static void FocusRelease() {
         IntPtr a=(IntPtr)1,b=(IntPtr)2; var p=new Vector3(1,2,3);
-        Assert(FieldFreeCamera.FocusTarget(new[]{"GRoot","UIBattleInfo_Com_Player","UIBattleInfo_Button_PlayerInfo","GGraph"})=="UIBattleInfo_Button_PlayerInfo" && FieldFreeCamera.FocusTarget(new[]{"UIButton_MonsterItem"})=="UIButton_MonsterItem" && FieldFreeCamera.FocusTarget(new[]{"UIBattleInfo_Com_Minimap"})!=null);
+        Assert(FieldFreeCamera.FocusTarget(new[]{"btn_Head","UIBattleInfo_Button_PlayerInfo","UIBattleInfo_Com_Player","GRoot"})=="UIBattleInfo_Button_PlayerInfo" && FieldFreeCamera.FocusTarget(new[]{"UIButton_MonsterItem"})=="UIButton_MonsterItem" && FieldFreeCamera.FocusTarget(new[]{"UIBattleInfo_Com_Minimap"})!=null);
+        Assert(FieldFreeCamera.FocusTarget(new[]{"GGraph","UIBattleInfo_Button_PlayerInfo","UIBattleInfo_Com_Player","GRoot"})==null
+            && FieldFreeCamera.FocusTarget(new[]{"GGraph","UIBattleInfo_Button_PlayerInfo"},watcher:true)=="UIBattleInfo_Button_PlayerInfo");
         Assert(FieldFreeCamera.FocusTarget(new[]{"GRoot","UIButton_ThrowDice","UICom_AttrInfo"})==null && FieldFreeCamera.FocusTarget(System.Array.Empty<string>())==null);
         Assert(FieldFreeCamera.ClickGesture(new(100,100),new(102,100),2) && !FieldFreeCamera.ClickGesture(new(100,100),new(140,100),2) && !FieldFreeCamera.ClickGesture(new(1,1),new(1,1),-1));
     }

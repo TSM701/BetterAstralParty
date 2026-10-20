@@ -94,7 +94,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 필드·카메라
 - 플레이어 인디케이터: 기본 ON. 필드에 플레이어 이름·HP·공개 효과와 추가 반격 아이콘을 표시합니다. 효과 아이콘을 짧게 클릭하면 게임 기본 설명을 엽니다. 휠 줌으로 확대·축소해도 캐릭터 옆 위치를 유지합니다.
 - 인디케이터 높이: 기본 100%. 플레이어 인디케이터의 점을 캐릭터 발밑(0%)부터 원래 위치(100%) 사이 높이에 표시합니다. 슬라이더로 조절합니다.
-- 휠 줌·자유 시점: 기본 ON. PvE 필드에서 휠 줌과 자유 시점을 사용하며 턴이 바뀌어도 유지합니다. 턴 바의 핀 오른쪽 자유 시점 카메라 종료 버튼으로 기본 시점에 복귀합니다. 줌 중에도 몬스터 인디케이터는 몬스터 옆 같은 자리에 표시됩니다. 굴린 주사위는 줌과 자유 시점에서도 기본 시점과 같은 화면 위치에 보입니다.
+- 휠 줌·자유 시점: 기본 ON. PvE 필드에서 휠 줌과 자유 시점을 사용하며 턴이 바뀌어도 유지합니다. 턴 바의 핀 오른쪽 자유 시점 카메라 종료 버튼으로 기본 시점에 복귀합니다. 플레이어 칸의 얼굴을 누르면 그 플레이어로 시점이 옮겨지고, 이름·칩 부분을 누르면 줌을 유지한 채 상세정보만 열립니다. 줌 중에도 몬스터 인디케이터는 몬스터 옆 같은 자리에 표시됩니다. 주사위 화면 고정(기본 ON)을 켜 두면 굴린 주사위가 줌과 자유 시점에서도 기본 시점과 같은 화면 위치·크기로 보이고, 끄면 게임 기본처럼 필드 위에 남아 줌에 따라 크기가 바뀝니다.
 - 줌 아웃 시 반투명·멀면 숨기기: 각각 기본 ON. 휠 줌을 사용할 때 인디케이터에 적용합니다.
 - 반투명 정도: 기본 100%, 0~100%. 줌 아웃했을 때 인디케이터가 흐려지는 정도를 슬라이더로 조절합니다.
 - 줌 감도: 기본 100%, 50~200%. 휠 한 칸에 확대·축소되는 양입니다.
@@ -295,7 +295,7 @@ Battle Display
 Field / Camera
 - Player Indicators: ON by default. Shows field player names, HP, public effects and added counter icons. A short click on an effect opens its native description. It stays beside the character when you zoom with wheel zoom.
 - Indicator Height: 100% by default. Places the player indicator marker between the character's base (0%) and its original height (100%), adjusted with a slider.
-- Wheel Zoom and Free View: ON by default. Enables PvE field wheel zoom and free view that persist across turns. Select Exit Free Camera to the right of the turn-bar pin to restore the default view. Monster indicators stay in the same place beside the monster while zoomed. Thrown dice appear at the same screen position as in the default view, also while zoomed or in free view.
+- Wheel Zoom and Free View: ON by default. Enables PvE field wheel zoom and free view that persist across turns. Select Exit Free Camera to the right of the turn-bar pin to restore the default view. Clicking a player's portrait moves the view to that player; clicking the name and chip area opens the details and keeps the zoom. Monster indicators stay in the same place beside the monster while zoomed. With Pin Dice to Screen (ON by default), thrown dice keep the default view's screen position and size while zoomed or in free view; turn it off to leave them on the field as in the base game, so zoom changes their size.
 - Fade When Zoomed Out / Hide When Far: both ON by default. Apply to field indicators while wheel zoom is in use.
 - Fade Strength: 100% by default, 0–100%. A slider for how much indicators fade when zoomed out.
 - Zoom Sensitivity: 100% by default, 50–200%. How far one wheel tick zooms.

@@ -1353,7 +1353,7 @@ namespace BetterAstralParty.Diagnostics
                 if (line.StartsWith("prediction ", StringComparison.Ordinal)) projected = Fields("public-prediction", line.Substring(11), "before,atk,def,attackDie,damage", "dodge");
                 if (line.StartsWith("damage.result ", StringComparison.Ordinal)) projected = Fields("public-hp-result", line.Substring(14), "before,predictedDamage,expectedHP,observedHP,expectedDisplayHP", "monsterDefeatPresentation,hpMismatch,overkillUnverifiable");
                 if (line.StartsWith("settings=", StringComparison.Ordinal)) projected = Fields("settings-subset", line.Substring(9), "scale,opacity", "advice,details,koMinimum,names,cardPopups,battleStatus,shushuShield,fieldBuffs,fieldZoom,matchFocus,muteUnfocused");
-                if (line.StartsWith("settings.features=", StringComparison.Ordinal)) projected = Fields("settings-features", line.Substring(18), "", "autoThanks,cardTargetButtons,characterGuide,characterRoles,indicatorFade,indicatorHide,counterSound,counterAnimation,suppressNotices,pingFocus,updateNotifications,automaticChecks,shushuShieldRestrictions,finalDamage");
+                if (line.StartsWith("settings.features=", StringComparison.Ordinal)) projected = Fields("settings-features", line.Substring(18), "", "autoThanks,cardTargetButtons,characterGuide,characterRoles,indicatorFade,indicatorHide,diceLock,counterSound,counterAnimation,suppressNotices,pingFocus,updateNotifications,automaticChecks,shushuShieldRestrictions,finalDamage");
             }
             else if (source == "game/compatibility")
             {

@@ -89,9 +89,9 @@ internal static class ModText
     internal static string ChannelTransitionStopped(AutomaticUpdateStatus status) => Korean
         ? $"전환을 끝내지 못했습니다: {AutomaticStatus(status)}\n\n업데이트 설정에서 다시 시도하세요. 지금 버전은 그대로 사용할 수 있습니다."
         : $"The switch did not finish: {AutomaticStatus(status)}\n\nTry again in Update Settings. The current version keeps working.";
-    internal static string ChannelTransitionDetails(string source, string current, string target, string version, string repository) => Korean
-        ? $"현재: {ChannelName(source)} {current}\n대상: {ChannelName(target)} {version}\n저장소: {repository}\n\n선택한 채널의 서명된 최신 대상을 확인했습니다. '전환 시작'을 누르면 게임 안에서 바로 받아 적용합니다. 끝날 때까지 게임을 끄지 마세요. 설정과 저장된 자동 업데이트 선택은 바꾸지 않습니다."
-        : $"Installed: {ChannelName(source)} {current}\nTarget: {ChannelName(target)} {version}\nRepository: {repository}\n\nThe signed latest target from the selected channel has been checked. Start Switch downloads and applies it right away in this game session; keep the game open until it finishes. Settings and saved automatic update choices are kept.";
+    internal static string ChannelTransitionDetails(string source, string current, string target, string kind, string version, string repository) => Korean
+        ? $"전환할 채널: {ChannelName(target)}\n현재: {ChannelName(source)} {current}\n대상: {ChannelName(kind)} {version}\n저장소: {repository}\n\n선택한 채널의 서명된 최신 대상을 확인했습니다. '전환 시작'을 누르면 게임 안에서 바로 받아 적용합니다. 끝날 때까지 게임을 끄지 마세요. 설정과 저장된 자동 업데이트 선택은 바꾸지 않습니다."
+        : $"Switch to: {ChannelName(target)}\nInstalled: {ChannelName(source)} {current}\nTarget: {ChannelName(kind)} {version}\nRepository: {repository}\n\nThe signed latest target from the selected channel has been checked. Start Switch downloads and applies it right away in this game session; keep the game open until it finishes. Settings and saved automatic update choices are kept.";
     internal static string SessionTitle(string action) => Korean ? (action == "UpdateAuth" ? "업데이트 인증" : "업데이트 로그아웃") : (action == "UpdateAuth" ? "Connect Updates" : "Sign Out of Updates");
     internal static string SessionDetails(ReleaseSessionStatus status) => (Korean ? "비공개 베타 인증: " : "Private Beta access: ") + (Korean ? status switch {
         ReleaseSessionStatus.NotConfigured => "업데이트 인증이 준비되지 않았습니다.",
@@ -210,6 +210,9 @@ internal static class ModText
         ["준비 화면 스킬 설명"] = "Skill Info in Preparation",
         ["줌 아웃 시 반투명"] = "Fade When Zoomed Out",
         ["멀면 숨기기"] = "Hide When Far",
+        ["주사위 화면 고정"] = "Pin Dice to Screen",
+        ["줌·자유 시점에서도 굴린 주사위를\n기본 시점과 같은 위치·크기로 보여줍니다."] = "Shows thrown dice at the default\nview's position and size while zoomed.",
+        ["게임 기본처럼 필드 위에 두어\n줌에 따라 크기가 바뀝니다."] = "Leaves dice on the field as in the\nbase game, so zoom changes their size.",
         ["반격 아이콘 소리"] = "Counter Icon Sound",
         ["반격 아이콘 애니메이션"] = "Counter Icon Animation",
         ["Alt+Tab 핑 모드 해제"] = "Clear Ping Mode on Alt+Tab",
@@ -313,6 +316,7 @@ internal static class ModText
         ["필드 캐릭터 위"] = "Above field characters",
         ["필드"] = "Field",
         ["필드 인디케이터"] = "Field indicators",
+        ["필드 주사위"] = "Field dice",
         ["내 필드 손패"] = "Your field hand",
         ["카드·칩 핑 말풍선"] = "Card and chip ping bubbles",
         ["캐릭터 이름이 나오는 곳"] = "Wherever character names appear",

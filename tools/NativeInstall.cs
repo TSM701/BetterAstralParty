@@ -170,7 +170,11 @@ namespace BetterAstralParty.Installation
             } else if (LegacyTakeover(bundle, output) != null) {
                 if (updateOnly) throw new InvalidOperationException("Taking over 1.3.x requires a normal installation, not UpdateOnly.");
                 output("CheckOnly: 1.3.x installation will be taken over after confirmation. / 1.3.x 설치는 동의 후 인계합니다.");
-            } else Transition(bundle);
+            } else {
+                Transition(bundle);
+                // Read-only: the same receipt/channel validation the real installation runs, so CheckOnly reports its refusal.
+                SetupHost.PrepareWholeReceipt(bundle.GameRoot, bundle.PackageRoot, bundle.Version, "null");
+            }
             var existingLoader = ExistingSharedLoader(bundle, output);
             if (updateOnly && (bundle.ReadTarget(InstallReceipt.Path, 16384) == null || bundle.TargetHash(UpdateTrust.PluginPath) == null)) throw new InvalidOperationException("UpdateOnly requires an existing installation.");
             if (!existingLoader) SharedLoaderPlan(bundle, new Dictionary<string, string?>(StringComparer.Ordinal));
