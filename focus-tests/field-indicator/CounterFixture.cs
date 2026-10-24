@@ -106,6 +106,7 @@ internal static class NativeUi {
 }
 internal static class FieldZoomUi {internal static float IndicatorScale=>1f;}
 internal static class FieldMonsterPlates { internal static readonly List<RuntimeObject> Adopted=new(); internal static IReadOnlyList<RuntimeObject> Plates=>Adopted; }
+internal static class FieldStatePlates { internal static readonly List<RuntimeObject> Adopted=new(); internal static IReadOnlyList<RuntimeObject> Players=>Adopted; }
 internal sealed class FloatSetting {internal float Value=1f;}
 internal static class ModUi {internal static bool IsOpen;}
 internal static class FieldIndicatorOpacity {internal static bool Hidden;}

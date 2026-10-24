@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Text;
 using Il2CppInterop.Runtime;
 
 namespace BetterAstralParty;
@@ -29,6 +31,53 @@ internal sealed unsafe class RuntimeObject
     private static readonly Dictionary<string, string> Getters = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, string> Setters = new(StringComparer.Ordinal);
 
+    // Native access ledger: each class/member is resolved once and then cached, so this records one entry per
+    // distinct access while diagnostics run. Names only, never values. Read by the developer native-coverage command.
+    private static readonly StringBuilder Ledger = new();
+    private static readonly HashSet<string> LedgerMisses = new(StringComparer.Ordinal);
+    private static long _ledgerAt;
+    private static void Note(string entry)
+    {
+        if (Plugin.Diagnostics?.IsRecording != true) return;
+        lock (Ledger)
+        {
+            if (entry.StartsWith("missing ", StringComparison.Ordinal) && !LedgerMisses.Add(entry)) return;
+            if (Ledger.Length > 0) Ledger.Append("; ");
+            Ledger.Append(entry);
+            if (Ledger.Length >= 1500) FlushLedger();
+        }
+    }
+    // Called every frame; writes the pending entries at most every five seconds.
+    internal static void FlushLedger(bool due = false)
+    {
+        lock (Ledger)
+        {
+            if (Ledger.Length == 0 || due && Stopwatch.GetTimestamp() - _ledgerAt < 5 * Stopwatch.Frequency) return;
+            Plugin.Diagnostics?.Write("native.access " + Ledger);
+            Ledger.Clear(); _ledgerAt = Stopwatch.GetTimestamp();
+        }
+    }
+    // Namespace-qualified native class name for failure messages and the ledger.
+    internal static string ClassName(IntPtr klass)
+    {
+        if (klass == IntPtr.Zero) return "?";
+        var ns = IL2CPP.il2cpp_class_get_namespace_(klass);
+        var name = IL2CPP.il2cpp_class_get_name_(klass) ?? "?";
+        return string.IsNullOrEmpty(ns) ? name : ns + "." + name;
+    }
+    private static bool HasField(IntPtr klass, string name)
+    {
+        for (var c = klass; c != IntPtr.Zero; c = IL2CPP.il2cpp_class_get_parent(c))
+            if (IL2CPP.il2cpp_class_get_field_from_name(c, name) != IntPtr.Zero) return true;
+        return false;
+    }
+    private static bool HasMethod(IntPtr klass, string name, int count)
+    {
+        for (var c = klass; c != IntPtr.Zero; c = IL2CPP.il2cpp_class_get_parent(c))
+            if (IL2CPP.il2cpp_class_get_method_from_name(c, name, count) != IntPtr.Zero) return true;
+        return false;
+    }
+
     internal static void RequireClasses(string feature, params (string Namespace, string Name)[] classes)
     {
         if (CheckedFeatures.Contains(feature)) return;
@@ -50,8 +99,9 @@ internal sealed unsafe class RuntimeObject
         {
             var image = IL2CPP.il2cpp_assembly_get_image(assemblies[i]);
             var klass = IL2CPP.il2cpp_class_from_name(image, ns, name);
-            if (klass != IntPtr.Zero) { Classes[(ns, name)] = klass; return klass; }
+            if (klass != IntPtr.Zero) { Classes[(ns, name)] = klass; Note("class " + ClassName(klass)); return klass; }
         }
+        Note("missing class " + (ns.Length == 0 ? name : ns + "." + name));
         return IntPtr.Zero;
     }
 
@@ -72,9 +122,13 @@ internal sealed unsafe class RuntimeObject
         for (var c = klass; c != IntPtr.Zero; c = IL2CPP.il2cpp_class_get_parent(c))
         {
             var field = IL2CPP.il2cpp_class_get_field_from_name(c, name);
-            if (field != IntPtr.Zero) { Fields[(klass, name)] = field; return field; }
+            if (field != IntPtr.Zero) { Fields[(klass, name)] = field; Note("field " + ClassName(klass) + "." + name); return field; }
         }
-        throw new MissingFieldException(name);
+        // Name the class and point at the likely mix-up (a property read as a field).
+        var target = ClassName(klass) + "." + name;
+        var hint = HasMethod(klass, "get_" + name, 0) ? " (a property of that name exists, read it with Get)" : "";
+        Note("missing field " + target + hint);
+        throw new MissingFieldException("Native field missing: " + target + hint);
     }
 
     internal RuntimeObject? Field(string name) => Wrap(IL2CPP.il2cpp_field_get_value_object(FieldInfo(Class, name), Pointer));
@@ -190,8 +244,18 @@ internal sealed unsafe class RuntimeObject
                 method = IL2CPP.il2cpp_class_get_method_from_name(c, name, count);
                 if (method != IntPtr.Zero) break;
             }
-            if (method == IntPtr.Zero) throw new MissingMethodException(name);
+            if (method == IntPtr.Zero)
+            {
+                // Name the class and point at the likely mix-up (a field read as a property, or another overload).
+                var target = ClassName(klass) + "." + name + "/" + count;
+                var property = name.StartsWith("get_", StringComparison.Ordinal) || name.StartsWith("set_", StringComparison.Ordinal) ? name[4..] : null;
+                var hint = property != null && HasField(klass, property) ? " (a field of that name exists, read it with Field)"
+                    : HasMethod(klass, name, -1) ? " (it exists with a different argument count)" : "";
+                Note("missing method " + target + hint);
+                throw new MissingMethodException("Native method missing: " + target + hint);
+            }
             Methods[key] = method;
+            Note("method " + ClassName(klass) + "." + name + "/" + count);
         }
         return method;
     }

@@ -2,6 +2,7 @@
 using System;
 using System.Globalization;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -74,10 +75,11 @@ namespace BetterAstralParty.Updating
         internal static bool Same(UpdateContext left, UpdateContext right) { return left.Repository == right.Repository && left.RepositoryId == right.RepositoryId && left.Channel == right.Channel && left.CurrentVersion == right.CurrentVersion && left.ReleaseTag == right.ReleaseTag && left.ReleaseId == right.ReleaseId && left.AssetId == right.AssetId && left.Transition?.Identity == right.Transition?.Identity; }
         internal static void Complete(WindowsFileFence fence, UpdateFault? expected) {
             if (expected == null) return;
-            try { using (var file = fence.OpenFile(OperationPath, true)) {
+            for (var attempt = 0; ; attempt++) try { using (var file = fence.OpenFile(OperationPath, true)) {
                 var actual = UpdateFault.Parse(UpdateTicket.Read(file, UpdateTicket.MaxBytes)); if (actual.Root != fence.RootIdentity.Text || UpdateTrust.Hash(actual.Bytes()) != UpdateTrust.Hash(expected.Bytes())) throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
-                file.RenameTo(fence, "bap-operation-done-" + actual.Operation); file.Flush();
-            } } catch (ApplySafetyException error) when (error.NativeError == 2) { }
+                file.RemoveUpdateRecord();
+            } RemoveArchived(fence); return; } catch (ApplySafetyException error) when (error.NativeError == 2) { RemoveArchived(fence); return; }
+            catch (ApplySafetyException error) when (error.NativeError == 32 && attempt < 20) { Thread.Sleep(10); }
         }
         // An interrupted operation whose owner process is gone becomes a durable OFF latch.
         internal static UpdateFault LatchInterrupted(WindowsFileFence fence, UpdateFault interrupted) {
@@ -124,9 +126,52 @@ namespace BetterAstralParty.Updating
                     if (name == SaveFailurePath) { if (Encoding.ASCII.GetString(UpdateTicket.Read(file, 128)) != UpdateTrust.Hash(fault.Bytes()) + "\n") throw new ApplySafetyException(ApplyFailure.RecoveryRequired); }
                     else { var record = UpdateFault.Parse(UpdateTicket.Read(file, UpdateTicket.MaxBytes)); if (record.Root != fence.RootIdentity.Text || !Same(record.Context, fault.Context)) throw new ApplySafetyException(ApplyFailure.RecoveryRequired); }
                 } catch (ApplySafetyException error) when (error.NativeError == 2) { }
-                // Validate all evidence first. Failure latch is archived last; no delete or overwrite.
-                for (var i = 0; i < files.Count; i++) { files[i].RenameTo(fence, "bap-fault-ack-" + Guid.NewGuid().ToString("N")); files[i].Flush(); }
+                // Validate all evidence first; the failure latch goes last. Nothing later reads acknowledged records.
+                for (var i = 0; i < files.Count; i++) files[i].RemoveUpdateRecord();
             } finally { foreach (var file in files) file.Dispose(); }
+            RemoveArchived(fence);
+        }
+        // Versions before 1.6.0 renamed finished records to bap-operation-done-*/bap-fault-ack-* in the game root.
+        // Remove only names in that form whose content is this root's v5 record (or an acknowledged preferences
+        // marker), by held handle. Best effort: a record that cannot be verified or removed stays and blocks nothing.
+        private static readonly Regex ArchivedName = new Regex(@"\Abap-(?:operation-done|fault-ack)-[0-9a-f]{32}\z", RegexOptions.CultureInvariant);
+        internal static List<string> Archived(string gameRoot) {
+            var result = new List<string>();
+            try { foreach (var file in Directory.GetFiles(WindowsPath.ForIo(WindowsPath.Absolute(gameRoot)), "bap-*")) {
+                var leaf = WindowsPath.Leaf(WindowsPath.FromIo(file)); if (ArchivedName.IsMatch(leaf)) result.Add(leaf);
+            } } catch (Exception error) when (error is IOException || error is UnauthorizedAccessException || error is ApplySafetyException) { }
+            return result;
+        }
+        internal static int RemoveArchived(WindowsFileFence fence) { return ArchivedRecords(fence, true); }
+        // Read-only count of the records RemoveArchived would remove, so previews promise only what removal does.
+        internal static int RemovableArchived(string gameRoot) {
+            try { using (var fence = new WindowsFileFence(gameRoot)) return ArchivedRecords(fence, false); }
+            catch (Exception error) when (error is ApplySafetyException || error is IOException || error is UnauthorizedAccessException) { return 0; }
+        }
+        private static int ArchivedRecords(WindowsFileFence fence, bool remove) {
+            var count = 0;
+            foreach (var name in Archived(fence.Root)) try { using (var file = fence.OpenFile(name, remove)) {
+                var bytes = UpdateTicket.Read(file, UpdateTicket.MaxBytes);
+                if (!Regex.IsMatch(Encoding.ASCII.GetString(bytes), @"\A[0-9A-F]{64}\n\z") && UpdateFault.Parse(bytes).Root != fence.RootIdentity.Text) continue;
+                if (remove) file.RemoveUpdateRecord(); count++;
+            } } catch (Exception error) when (error is ApplySafetyException || error is UpdateValidationException || error is ArgumentException || error is IOException || error is UnauthorizedAccessException) { }
+            return count;
+        }
+        // A committed apply whose guard could not be removed leaves only that guard; the installed plugin then carries its target.
+        internal static bool Committed(WindowsFileFence fence, UpdateFault guard) {
+            if (guard.Phase != FaultPhase.Apply) return false;
+            try { using (var plugin = fence.OpenFile(UpdateTrust.PluginPath))
+                return InstalledPluginMetadata.Read(UpdateTicket.Read(plugin, UpdateTrust.MaxFileBytes)).Version == UpdateVersion.Parse(guard.Context.ReleaseTag).Tag; }
+            catch (ApplySafetyException) { return false; }
+        }
+        internal static int RemoveArchived(string gameRoot, Action<string> output) {
+            var found = Archived(gameRoot).Count; if (found == 0) return 0;
+            var removed = 0;
+            try { using (var fence = new WindowsFileFence(gameRoot)) removed = RemoveArchived(fence); }
+            catch (Exception error) when (error is ApplySafetyException || error is IOException || error is UnauthorizedAccessException) { }
+            if (removed != 0) output("끝난 업데이트 기록 " + removed + "개를 정리했습니다. / Removed " + removed + " finished update records.");
+            if (removed != found) output("확인하지 못한 업데이트 기록 " + (found - removed) + "개를 남겨 둡니다. / Kept " + (found - removed) + " unverified update records.");
+            return removed;
         }
     }
 }

@@ -11,6 +11,8 @@ internal static class CardUi
     private static readonly List<IntPtr> Stale = new();
     private static PreRollCombat? _input;
 
+    private static bool CardAdviceOn => Plugin.Enabled.Value && Plugin.CardAdvice.Value;
+
     internal static void Update(RuntimeObject fight, RuntimeObject ui, PreRollCombat input, RuntimeObject attackPoint)
     {
         if (!CardAdvisor.Valid(input)) { Clear(); return; }
@@ -21,7 +23,7 @@ internal static class CardUi
             // Spectators have no local ready button. Use public actor stats only,
             // before accessing cardItemList or the local hand/hover path.
             Clear(keepDice: true);
-            if (Plugin.KoMinimum.Value) CardDiceUi.Show(ui, attackPoint, input, null, false, false);
+            if (Plugin.KoMinimum.Value && Plugin.KoSpectator.Value) CardDiceUi.Show(ui, attackPoint, input, null, false, false);
             else CardDiceUi.Clear();
             return;
         }
@@ -34,7 +36,7 @@ internal static class CardUi
             else CardDiceUi.Clear();
             return;
         }
-        if (!Plugin.Enabled.Value) Clear(keepDice: true);
+        if (!CardAdviceOn) Clear(keepDice: true);
         if (_input != input) { Results.Clear(); _input = input; }
 
         var cards = fight.Field("cardItemList");
@@ -58,10 +60,10 @@ internal static class CardUi
                 config.Get<int>("CardType"), values, config.Get("BuffIds")!.Get<int>("Count"),
                 config.Get("CardIds")!.Get<int>("Count"), cost);
             if (bonus is { } parsed && parsed.Attack != (role == 0)) bonus = null;
-            candidates.Add((card, face, bonus, card.Field("_EnableUse")!.Value<bool>()));
+            candidates.Add((card, face, bonus, card.Field("_EnableUse")!.Value<bool>() && !ShushuShieldUi.BlocksCard(card.Pointer)));
         }
 
-        var hit = Plugin.KoMinimum.Value
+        var hit = Plugin.KoMinimum.Value && Plugin.KoCardPreview.Value
             ? GameUi.PointerPath().FirstOrDefault(item => item.TypeName == "UIHandCard_Button_Card") : null;
         var hovered = default((RuntimeObject Card, RuntimeObject Face, CardBonus? Bonus, bool Usable));
         foreach (var candidate in candidates)
@@ -72,7 +74,7 @@ internal static class CardUi
             CardDiceUi.Show(ui, attackPoint, input, preview ? hovered.Bonus : null, preview, preview && hovered.Bonus == null);
         }
         else CardDiceUi.Clear();
-        if (!Plugin.Enabled.Value) { candidates.Clear(); return; }
+        if (!CardAdviceOn) { candidates.Clear(); return; }
         var live = Live;
         live.Clear();
         foreach (var item in candidates)

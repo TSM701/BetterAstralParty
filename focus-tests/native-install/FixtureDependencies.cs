@@ -41,6 +41,10 @@ namespace BetterAstralParty.Updating
         internal static List<string> Finished(string game) { FixtureControl.Events.Add("legacy-work-plan"); return new List<string>(); }
         internal static int Remove(string game, Action<string> output) { FixtureControl.Events.Add("legacy-work-clean"); return 0; }
     }
+    internal static class UpdateFaults {
+        internal static int RemovableArchived(string game) { FixtureControl.Events.Add("archived-plan"); return 0; }
+        internal static int RemoveArchived(string game, Action<string> output) { FixtureControl.Events.Add("archived-clean"); return 0; }
+    }
     internal static class OrdinaryInstallRecovery { internal const string LegacyLauncher = "BetterAstralParty-Launcher.exe", LegacyHelper = "BetterAstralParty-UpdateHelper.exe", LegacyHelperReceipt = "BetterAstralParty.helper.receipt"; }
     // 1.3.x receipt substitute: baseline 1.3.0 is the only legacy shape the takeover accepts.
     internal sealed class LegacyReceipt
@@ -159,6 +163,8 @@ namespace BetterAstralParty.Installation
         }
     }
     internal sealed class SteamSessionState { internal bool Restart; }
+    internal sealed class SteamProfileUnavailableException : InvalidOperationException
+    { internal readonly string Reason; internal readonly string? Guidance; internal SteamProfileUnavailableException(string reason, string? guidance = null) : base(reason) { Reason = reason; Guidance = guidance; } }
     internal static class NativeSteamMaintenance {
         internal static System.Action<System.Exception>? WaitingDiagnostic = null;
         internal static void WaitGameClosed(string root,Func<string,string?> consent,Action<string> output) { FixtureControl.Events.Add("game-stop"); }

@@ -55,7 +55,10 @@ internal sealed class UpdateHandoff(string root, UpdateTrust trust) : IUpdateHan
             DiagnosticHub.Stage(DiagnosticFeature.Coordinator, DiagnosticPhase.Apply, DiagnosticOutcome.Begin, operation, item.Context.ReleaseTag);
             if (UpdateTransaction.Apply(fence, item.Descriptor, item.KeyId, item.Signature, item.Zip, trust, item.Context, diagnosticOperation: operation, inProcess: true) != TransactionResult.Committed)
                 throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
-            UpdateFaults.Complete(fence, guard);
+            // The update is installed; a guard file still busy after retries must not turn that into a failure.
+            try { UpdateFaults.Complete(fence, guard); }
+            catch (Exception error) { DiagnosticHub.Failure(DiagnosticFeature.Coordinator, DiagnosticPhase.Apply, error is ApplySafetyException { NativeError: 32 } ? DiagnosticCode.FilesBusy : DiagnosticCode.StorageUnavailable, error, operation: operation, targetVersion: item.Context.ReleaseTag,
+                nativeCode: error is ApplySafetyException safety ? safety.NativeError : 0, applyCode: error is ApplySafetyException apply ? (int)apply.Failure : 0); }
             DiagnosticHub.Stage(DiagnosticFeature.Coordinator, DiagnosticPhase.Apply, DiagnosticOutcome.Completed, operation, item.Context.ReleaseTag, DiagnosticCode.CommitCompleted);
             DiagnosticHub.FlushSoon();
             return Task.FromResult<object>(new Job(AutomaticUpdateStatus.Committed, guard.Operation, item.Context.ReleaseTag));

@@ -9,6 +9,11 @@ namespace BetterAstralParty.Development;
 
 internal static class PackagingWhole
 {
+    internal static bool CrlfOnly(byte[] bytes)
+    {
+        for (var i = 0; i < bytes.Length; i++) if (bytes[i] == (byte)'\n' && (i == 0 || bytes[i - 1] != (byte)'\r')) return false;
+        return bytes.Length == 0 || bytes[^1] == (byte)'\n';
+    }
     internal static readonly string[] Required = ["Install.cmd", "Uninstall.cmd", "Force-Uninstall.cmd", "Open-Logs.cmd", "Create-Diagnostics.cmd", "README.md", "LICENSE", "artifacts/BetterAstralParty.dll", "artifacts/BetterAstralParty-Setup.exe", "artifacts/BetterAstralParty.compatibility.json", "tools/approved-install-bundles.json", "tools/BetterAstralParty-Mod.cmd", "tools/AstralParty-Vanilla.cmd", ".deps/bepinex/BepInEx/core/Mono.Cecil.dll", ".deps/bepinex/doorstop_config.ini", ".deps/bepinex/winhttp.dll"];
     internal static string OwnedSource(string path) => path switch {
         UpdateTrust.PluginPath => "artifacts/BetterAstralParty.dll",
@@ -35,6 +40,8 @@ internal static class PackagingWhole
         if (inventory.Length != captured.Count || !inventory.Select(path => path[(input.Length + 7)..]).ToHashSet(StringComparer.Ordinal).SetEquals(captured.Keys)) throw new InvalidDataException("Unlisted input files rejected.");
         foreach (var path in Required) if (!captured.ContainsKey(path)) throw new InvalidDataException("Required native package input missing: " + path);
         foreach (var path in GaPackageContract.OwnedPaths().Select(OwnedSource)) if (!captured.ContainsKey(path)) throw new InvalidDataException("Required update-owned input missing: " + path);
+        // cmd.exe misreads LF-only batch files once chcp changes the code page (issue #15): every shipped .cmd is CRLF-only.
+        foreach (var (path, item) in captured) if (path.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) && !CrlfOnly(item.Bytes)) throw new InvalidDataException("Batch file must use CRLF line endings: " + path);
         if (captured[".deps/bepinex/BepInEx/core/Mono.Cecil.dll"].Hash != "769A59793D4B8885BBBFBC5AEE8F57A0D4E34D275C56C60C03994309B87F67E9") throw new InvalidDataException("Metadata reader pin changed.");
         var catalog = PackagingBoundary.Parse(captured["tools/approved-install-bundles.json"].Bytes);
         if (PackagingBoundary.Number(catalog, "schema") != 1 || catalog.GetProperty("bundles").GetArrayLength() != 0) throw new InvalidDataException("Input catalog must remain empty; exact external approval required.");

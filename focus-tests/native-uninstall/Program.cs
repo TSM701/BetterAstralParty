@@ -30,7 +30,7 @@ internal static class NativeUninstallFixture
     }
     private static void Reset()
     {
-        SetupHost.History = SetupHost.Stages = SetupHost.Failures = 0;
+        SetupHost.History = SetupHost.Stages = SetupHost.Failures = 0; SetupHost.UpdateChecks = SetupHost.UpdateRecoveries = SetupHost.GamesClosedAtRecovery = 0; SetupHost.PendingPlugin = null;
         NativeSteamMaintenance.Shortcut = false; NativeSteamMaintenance.StopGames = NativeSteamMaintenance.StopSteams = NativeSteamMaintenance.Removes = NativeSteamMaintenance.Rollbacks = NativeSteamMaintenance.Resumes = 0;
         NativeSteamMaintenance.AccountQueries = NativeSteamMaintenance.Plans = 0;
         NativeSteamMaintenance.RemoveFailure = NativeSteamMaintenance.AccountFailure = NativeSteamMaintenance.PlanFailure = null; NativeMaintenance.Pending = false; NativeMaintenance.CompletionFailure = NativeMaintenance.RestoreFailure = null;
@@ -70,6 +70,19 @@ internal static class NativeUninstallFixture
             plan = NativeUninstall.PlanFiles(bundle, receipt, _ => { }); Check(plan.Retained && plan.Targets.Count == LegacyReceipt.Owned.Length, "unverified helper retains receipt and helper bytes");
             bundle = Seed(scratch, "missing-owned"); receipt = NativeUninstall.ReadReceipt(bundle)!; File.Delete(Path.Combine(bundle.GameRoot, "BetterAstralParty-Mod.cmd"));
             plan = NativeUninstall.PlanFiles(bundle, receipt, _ => { }); Check(plan.MissingOwned.Count == 1 && plan.Hashes[plan.MissingOwned[0]] == null, "missing owned absence retained in transaction plan");
+            bundle = Seed(scratch, "missing-plugin"); File.Delete(Path.Combine(bundle.GameRoot, UpdateTrust.PluginPath.Replace('/', Path.DirectorySeparatorChar)));
+            var kept = Snapshot(bundle.GameRoot); Reject(() => Run(bundle), "missing plugin stops removal with Force-Uninstall guidance"); Unchanged(kept);
+            // An in-game update cut off between its file moves: the preview says recovery comes first, and removal
+            // recovers after closing the game and before the plugin check instead of sending the user to Force-Uninstall.
+            bundle = Seed(scratch, "pending-update-missing-plugin"); var plugin = Path.Combine(bundle.GameRoot, UpdateTrust.PluginPath);
+            SetupHost.PendingPlugin = File.ReadAllBytes(plugin); File.Delete(plugin); var notices = new List<string>();
+            Check(NativeUninstall.Run(bundle, Path.Combine(scratch, "inert-steam"), 1, "Keep", true, _ => "y", notices.Add) == 0 && SetupHost.UpdateRecoveries == 0
+                && notices.Any(line => line.Contains("recovered first")) && NativeMaintenance.Starts == 0, "pending-update preview reports recovery first instead of failing");
+            Check(Run(bundle) == 0 && SetupHost.UpdateRecoveries == 1 && SetupHost.GamesClosedAtRecovery == 1 && NativeMaintenance.Completes == 1
+                && bundle.ReadTarget(UpdateTrust.PluginPath) == null, "removal recovers the interrupted update after closing the game, then removes normally");
+            bundle = Seed(scratch, "pending-update-cancel"); SetupHost.PendingPlugin = File.ReadAllBytes(Path.Combine(bundle.GameRoot, UpdateTrust.PluginPath)); notices = new List<string>();
+            Check(NativeUninstall.Run(bundle, Path.Combine(scratch, "inert-steam"), 1, "Keep", false, _ => "", notices.Add) == 0 && SetupHost.UpdateRecoveries == 1 && NativeMaintenance.Starts == 0
+                && notices.Any(line => line.Contains("only the interrupted automatic update was recovered")) && !notices.Any(line => line.Contains("nothing changed")), "cancel after update recovery does not claim nothing changed");
             bundle = Seed(scratch, "missing-receipt"); File.Delete(Path.Combine(bundle.GameRoot, InstallReceipt.Path)); Reject(() => NativeUninstall.ReadReceipt(bundle), "baseline receipt missing keeps files");
             bundle = Seed(scratch, "invalid-receipt"); Write(bundle.GameRoot, InstallReceipt.Path, "{}"); Reject(() => NativeUninstall.ReadReceipt(bundle), "invalid baseline receipt rejected");
             bundle = Seed(scratch, "preview"); Write(bundle.GameRoot, "doorstop_config.ini", "enabled=false\r\nunrelated=x"); var before = Snapshot(bundle.GameRoot); var fileCount = before.Count;
@@ -134,6 +147,13 @@ internal static class NativeUninstallFixture
             {
                 bundle = Seed(scratch, "account-failure-" + failure.GetType().Name); before = Snapshot(bundle.GameRoot); NativeSteamMaintenance.AccountFailure = failure;
                 Reject(() => Run(bundle), "explicit account/profile read/parse error is not downgraded: " + failure.GetType().Name); Check(NativeMaintenance.Starts == 0 && NativeSteamMaintenance.StopGames == 0, "account failure precedes destructive stages"); Unchanged(before);
+            }
+            {
+                // A Mod entry with the user's launch options is theirs: removal keeps it, prints why and finishes as shortcut-skipped.
+                bundle = Seed(scratch, "shortcut-customized"); NativeSteamMaintenance.PlanFailure = new SteamProfileUnavailableException("SteamShortcutCustomized", "INERT CUSTOMIZED GUIDANCE");
+                var observations = new List<string>(); var output = new List<string>();
+                Check(NativeUninstall.Run(bundle, Path.Combine(scratch, "inert-steam"), 1, "Keep", false, _ => "y", output.Add, observations.Add) == 0 && NativeMaintenance.Completes == 1
+                    && output.Contains("INERT CUSTOMIZED GUIDANCE") && output.Last().Contains("Steam shortcut cleanup skipped") && observations.Single().Contains("reason=SteamShortcutCustomized"), "customized Mod entry kept with guidance and a truthful completion");
             }
             foreach (var failure in new Exception[] { new InvalidDataException("inert changed shortcut"), new IOException("inert locked shortcut") })
             {

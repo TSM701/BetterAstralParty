@@ -79,6 +79,10 @@ namespace BetterAstralParty.Installation
                 var deployment = WindowsPath.FromIo(AppDomain.CurrentDomain.BaseDirectory).TrimEnd('\\');
                 if (Path.GetFileName(deployment).Equals("artifacts", StringComparison.OrdinalIgnoreCase)) deployment = WindowsPath.Parent(deployment);
                 var game = ResolveRoot(options.GameRoot, deployment);
+                // A package extracted elsewhere: find the game through Steam like Install.cmd, when exactly one is found.
+                if (game.Length == 0 && options.GameRoot.Length == 0)
+                    try { var found = NativeSteamMaintenance.FindGameDirectories(NativeSteamMaintenance.ResolveSteamRoot(), deployment); if (found.Count == 1) game = found[0]; }
+                    catch (Exception error) when (error is IOException || error is UnauthorizedAccessException || error is InvalidDataException || error is InvalidOperationException || error is ArgumentException || error is System.Security.SecurityException) { }
                 if (game.Length == 0 && options.GameRoot.Length == 0 && !Console.IsInputRedirected) {
                     var selected = NativeMaintenanceEntry.Consent(language == "ko" ? "Steam의 설치 폴더 경로를 입력하세요. 비워 두면 설치·런처·Unity 로그만 수집합니다." : "Enter the INT installation folder from Steam. Leave blank for install/launcher/Unity logs only.");
                     if (!string.IsNullOrWhiteSpace(selected)) game = ResolveRoot(selected!, deployment);

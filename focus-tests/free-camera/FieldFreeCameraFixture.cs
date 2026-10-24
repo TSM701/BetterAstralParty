@@ -158,6 +158,7 @@ internal sealed class RuntimeObject {
             ("BattlePlayer","Field","CharacterInst")=>typeof(RuntimeObject),
             ("Character","Field","vCamera")=>typeof(RuntimeObject),
             ("Stage","Get","touchPosition")=>typeof(Vector2),
+            ("UIButton_MonsterItem","Field","name")=>typeof(RuntimeObject),
             ("Box","Value","value")=>Data["value"]!.GetType(),
             _=>throw new Exception("Unsupported native reader "+Kind+"."+member+"."+name)
         };
@@ -429,6 +430,17 @@ public static class Check {
         Assert(FieldFreeCamera.FocusTarget(new[]{"GRoot","UIButton_ThrowDice","UICom_AttrInfo"})==null && FieldFreeCamera.FocusTarget(System.Array.Empty<string>())==null);
         Assert(FieldFreeCamera.ClickGesture(new(100,100),new(102,100),2) && !FieldFreeCamera.ClickGesture(new(100,100),new(140,100),2) && !FieldFreeCamera.ClickGesture(new(1,1),new(1,1),-1));
     }
-    public static void Run() { FocusRelease();Ownership();ReturnAndCleanup();Pan();RenderedOrientation();Console.WriteLine("Free-camera production assertions: "+assertions); }
+    // A monster-item click ends the free view even while a foreign frame suspended the owned override, so the
+    // view does not come back over the native focus (2026-10-24: skill monster targets needed a third click).
+    static void SuspendedFocusClick() {
+        var s=new Scene();s.Enter();Assert(s.Update());
+        var foreign=new CinemachineBrain.BrainFrame{id=900,blend=new(){CamB=s.NativeCamera.Cast<ICinemachineCamera>()}};
+        s.Brain.mFrameStack.Add(foreign);Assert(!s.Update() && FieldFreeCamera.Holding);
+        GameUi.Path.Clear();GameUi.Path.Add(Obj("UIButton_MonsterItem",("name",null)));Array.Clear(Input.Up);
+        Input.Down[0]=true;Assert(!s.Update() && FieldFreeCamera.Holding);Input.Down[0]=false;
+        Input.Up[0]=true;Assert(!s.Update() && !FieldFreeCamera.Holding && FieldZoomUi.Clears==1);
+        Input.Up[0]=false;GameUi.Path.Clear();s.Brain.mFrameStack.Remove(foreign);
+    }
+    public static void Run() { FocusRelease();SuspendedFocusClick();Ownership();ReturnAndCleanup();Pan();RenderedOrientation();Console.WriteLine("Free-camera production assertions: "+assertions); }
 }
 }

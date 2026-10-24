@@ -247,8 +247,8 @@ internal static class DownloadFixture
             Check(pre.Status == UpdateDownloadStatus.Ready && pre.Update!.Payload.Package.Descriptor.Channel == "PreRelease", "public prerelease signed download retains its exact independent channel [" + pre.Status + "]");
             var preRequests = preHandler.Snapshot();
             var publicEndpoint = ReleaseFeedTransport.IdentityEndpoint(ReleaseFeedPolicy.PreRelease).AbsoluteUri;
-            Check(neverPrivate.Calls == 0 && preHandler.Count == 6 && preRequests.All(sent => sent.Authorization == null && !sent.Cookie && !sent.ProviderHeader)
-                && preRequests.Select(sent => sent.Url).SequenceEqual(new[] { publicEndpoint, publicEndpoint + "/releases/assets/457", publicEndpoint + "/releases/assets/458", publicEndpoint + "/releases/assets/456", publicEndpoint, publicEndpoint + "/releases/123" }), "public prerelease identity, descriptor, signature and ZIP are followed by fresh identity/classification without private credentials");
+            Check(neverPrivate.Calls == 0 && preHandler.Count == 5 && preRequests.All(sent => sent.Authorization == null && !sent.Cookie && !sent.ProviderHeader)
+                && preRequests.Select(sent => sent.Url).SequenceEqual(new[] { publicEndpoint, publicEndpoint + "/releases/assets/457", publicEndpoint + "/releases/assets/458", publicEndpoint + "/releases/assets/456", publicEndpoint + "/releases/123" }), "public prerelease identity, descriptor, signature and ZIP are followed by fresh identity/classification without private credentials");
         }
         await Expect(fixture, (r, _) => Task.FromResult(r.RequestUri!.AbsolutePath.EndsWith("/457", StringComparison.Ordinal) ? Body(preDescriptor) : Body(preEnvelope)), UpdateDownloadStatus.VerificationFailed, "same public repository cannot promote a signed PreRelease descriptor to Stable", Request);
         using var wrongPreHandler = fixture.Handler();
@@ -274,7 +274,7 @@ internal static class DownloadFixture
             using var client = new UpdateDownloads(fixture.Trust, privateSpy, handler, feed: feed); client.Start(request, Now); var result = await Complete(client);
             var accepted = channel == "PreRelease" || !prerelease; // Pre-release users also follow full releases.
             Check(result.Status == (accepted ? UpdateDownloadStatus.Ready : UpdateDownloadStatus.Cancelled), "same exact public signature follows live classification " + channel + " " + prerelease);
-            Check(privateSpy.Calls == 0 && handler.Count == 6 && handler.Snapshot().All(sent => sent.Authorization == null), "live public classification is bounded and anonymous");
+            Check(privateSpy.Calls == 0 && handler.Count == 5 && handler.Snapshot().All(sent => sent.Authorization == null), "live public classification is bounded and anonymous");
             if (accepted) {
                 using var raw = result.Update!.OpenDescriptor(); using var copy = new MemoryStream(); raw.CopyTo(copy);
                 Check(copy.ToArray().SequenceEqual(descriptor), "both public classifications preserve exact signed descriptor bytes");
@@ -295,7 +295,8 @@ internal static class DownloadFixture
                 return Task.FromResult(failure == "redirect" ? Redirect(new Uri("https://untrusted.invalid/metadata")) : Body(Encoding.UTF8.GetBytes("{}")));
             } };
             using var client = new UpdateDownloads(fixture.Trust, null, handler, feed: ReleaseFeedPolicy.Stable); client.Start(Request, Now);
-            Check((await Complete(client)).Status == UpdateDownloadStatus.Cancelled && client.Result.Update == null, "unavailable live public classification is transient cancellation " + failure);
+            // A network or redirect failure is retried like other download steps; only a malformed classification cancels quietly.
+            Check((await Complete(client)).Status == (failure == "malformed" ? UpdateDownloadStatus.Cancelled : UpdateDownloadStatus.Failed) && client.Result.Update == null, "unavailable live public classification: retryable failure or quiet cancellation " + failure);
         }
     }
     private static async Task Failures(Fixture fixture)
@@ -419,10 +420,90 @@ internal static class DownloadFixture
         var disposedResponse = new Response(HttpStatusCode.OK) { Content = new ByteArrayContent(fixture.Descriptor) }; disposeGate.SetResult(disposedResponse);
         await Until(() => disposedResponse.WasDisposed, "disposed late response cleanup");
     }
+    // AutomaticUpdates over a real verified download with inert handoff and safety stubs.
+    private sealed class Safety : IUpdateSafety
+    {
+        internal int Probes, Fails;
+        public Task<UpdateSafetySnapshot> Probe() { Interlocked.Increment(ref Probes); return Task.FromResult(new UpdateSafetySnapshot()); }
+        public Task<UpdateFault> Begin(UpdateContext context) => Task.FromResult(Fault(context, FaultPhase.Download));
+        public Task Complete(UpdateFault? operation) => Task.CompletedTask;
+        public Task<UpdateFault> Fail(UpdateContext context, FaultPhase phase, FaultReason reason, string? stage) { Interlocked.Increment(ref Fails); return Task.FromResult(Fault(context, phase)); }
+        public Task SavePreferences(bool download, bool apply) => Task.CompletedTask;
+        public Task SaveFailed(UpdateFault fault) => Task.CompletedTask;
+        public Task Acknowledge() => Task.CompletedTask;
+        private static UpdateFault Fault(UpdateContext context, FaultPhase phase) => new() { Root = "00000000:0000000000000000", Operation = Guid.NewGuid().ToString("N"), Context = context, Phase = phase, Reason = FaultReason.Interrupted };
+    }
+    private sealed class Handoff : IUpdateHandoff
+    {
+        internal int Prepares, Queues, BusyPrepares; internal readonly TaskCompletionSource<object> Apply = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Configured => true;
+        public Task<object> Prepare(DownloadedUpdate update, UpdateContext context, CancellationToken token)
+        {
+            Interlocked.Increment(ref Prepares);
+            if (BusyPrepares-- > 0) throw new AutomaticUpdateException(AutomaticUpdateStatus.FilesBusy);
+            return Task.FromResult(new object());
+        }
+        public Task<object> Queue(object prepared, CancellationToken token) { Interlocked.Increment(ref Queues); return Apply.Task; }
+        public void SignalCancel(object prepared) { }
+        public Task Cancel(object prepared) => Task.CompletedTask;
+        public Task<string?> Inspect() => Task.FromResult<string?>(null);
+    }
+    private sealed class Job(AutomaticUpdateStatus status) : IUpdateHelperJob { public AutomaticUpdateStatus? Poll() => status; public void Dispose() { } }
+    private static async Task Automatic(Fixture fixture)
+    {
+        var clock = Now;
+        async Task<AutomaticUpdates> Ready(AutomaticUpdates updates, Auth auth)
+        {
+            updates.Configure(auth); await Until(() => { updates.Tick(clock); return updates.Status == AutomaticUpdateStatus.Idle; }, "fixture inspection");
+            updates.Context(Request); return updates;
+        }
+        async Task Drive(AutomaticUpdates updates, Func<bool> done, string message) => await Until(() => { updates.Tick(clock); return done(); }, message);
+        async Task Settle(AutomaticUpdates updates) { for (var i = 0; i < 25; i++) { updates.Tick(clock); await Task.Delay(2); } }
+        // A busy prepare waits 30 s, then rechecks and downloads again, at most three times; a choice made during the wait holds.
+        foreach (var turnOff in new[] { false, true })
+        {
+            var handoff = new Handoff { BusyPrepares = int.MaxValue }; var safety = new Safety(); var auth = new Auth();
+            using var updates = await Ready(new AutomaticUpdates(new UpdateDownloads(fixture.Trust, auth, fixture.Handler()), handoff, safety), auth);
+            await Drive(updates, () => handoff.Prepares == 1 && updates.Status == AutomaticUpdateStatus.FilesBusy, "first busy prepare");
+            clock = clock.AddSeconds(29); await Settle(updates);
+            Check(updates.Status == AutomaticUpdateStatus.FilesBusy && safety.Probes == 1 && handoff.Prepares == 1, "a busy wait does not recheck before 30 s");
+            if (turnOff) updates.Preferences(false, false);
+            clock = clock.AddSeconds(2);
+            if (turnOff)
+            {
+                await Drive(updates, () => updates.Status == AutomaticUpdateStatus.Idle, "recheck after the wait"); await Settle(updates);
+                Check(handoff.Prepares == 1 && !updates.AutoDownload && !updates.ApplyAfterExit, "automatic updates turned off during a busy wait stay off");
+                continue;
+            }
+            for (var retry = 2; retry <= 4; retry++) { await Drive(updates, () => handoff.Prepares == retry && updates.Status == AutomaticUpdateStatus.FilesBusy, "busy retry " + retry); clock = clock.AddSeconds(31); }
+            await Settle(updates);
+            Check(handoff.Prepares == 4 && updates.Status == AutomaticUpdateStatus.FilesBusy && safety.Fails == 0, "three busy retries, then the wait stops");
+        }
+        // An apply in flight keeps its status and target through a new release or channel, and still commits.
+        {
+            var handoff = new Handoff(); var auth = new Auth();
+            using var updates = await Ready(new AutomaticUpdates(new UpdateDownloads(fixture.Trust, auth, fixture.Handler()), handoff, new Safety()), auth);
+            await Drive(updates, () => handoff.Queues == 1, "apply started");
+            updates.Context(new UpdateDownloadRequest(new UpdateContext(UpdateDownloads.Repository, "Stable", "1.4.0-dev", "1.4.1", 124, 459, UpdateTrust.PlatformId), 460, 461));
+            updates.SetChannel(ReleaseChannel.PreRelease); await Settle(updates);
+            Check(updates.Status == AutomaticUpdateStatus.Preparing && updates.Snapshot.TargetVersion == "1.4.0", "a new release or channel during an apply leaves its status and target");
+            handoff.Apply.SetResult(new Job(AutomaticUpdateStatus.Committed));
+            await Drive(updates, () => updates.Status == AutomaticUpdateStatus.Committed, "apply commits");
+            Check(updates.Snapshot.TargetVersion == "1.4.0", "the commit names the version that was applied");
+        }
+        // A server rate limit is a wait, not a fault.
+        {
+            var rate = new Handler { Reply = (_, _) => { var r = new HttpResponseMessage(HttpStatusCode.TooManyRequests); r.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromMinutes(30)); return Task.FromResult(r); } };
+            var safety = new Safety(); var auth = new Auth();
+            using var updates = await Ready(new AutomaticUpdates(new UpdateDownloads(fixture.Trust, auth, rate), new Handoff(), safety), auth);
+            await Drive(updates, () => updates.Status == AutomaticUpdateStatus.RetryWaiting, "rate-limited download waits");
+            Check(updates.Fault == null && safety.Fails == 0 && updates.AutoDownload, "a rate limit keeps automatic updates on without a fault");
+        }
+    }
     internal static async Task Run()
     {
         using var fixture = new Fixture();
-        await Configuration(fixture); await ValidAndRedirects(fixture); await PublicClassifications(fixture); await Failures(fixture); await Coordination(fixture);
+        await Configuration(fixture); await ValidAndRedirects(fixture); await PublicClassifications(fixture); await Failures(fixture); await Coordination(fixture); await Automatic(fixture);
         Console.WriteLine("PASS: update download " + _checks + " assertions; fake HTTPS handlers only; credential isolation/limits/immutable bytes/cancellation/context/cache; no network, file staging, install or process changes.");
     }
 }

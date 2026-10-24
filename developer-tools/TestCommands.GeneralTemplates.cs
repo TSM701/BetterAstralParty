@@ -332,7 +332,10 @@ public static class FightReadinessProbe {
         internal RuntimeObject Get(string name) { return Content; }
         internal RuntimeObject Field(string name) { return Controller; }
         internal T Get<T>(string name) { return (T)(name == "isDisposed" ? (object)Disposed : 5); }
+        internal static RuntimeObject StaticField(IntPtr klass, string name) { return null; }
     }
+    static readonly IntPtr _logicClass = IntPtr.Zero;
+    static class ReleaseWatch { internal static void Poll(RuntimeObject logic, int step) {} }
     static class CardUi { internal static void Clear() {} }
     static class RemainingHpUi {
         internal static void Clear() {}
@@ -478,7 +481,8 @@ __SCHEMA__
         foreach (var id in new[] { 10008, 10010, 99999 })
             Check(CardAdvisor.FromConfig(id, 1, 1, new[] { 5, 5, 10010 }, 0, 0, 2) == null, "later-card semantic mapping not generalized to unknown IDs");
         foreach (var multiplier in new[] { 0, 1, 50, 10010 })
-            Check(CardAdvisor.FromConfig(10010, 1, 1, new[] { 6, 6, multiplier }, 0, 0, 2) == null, "unverified final-ATK multiplier never downgraded to plain additive");
+            Check(CardAdvisor.FromConfig(10010, 1, 1, new[] { 6, 6, multiplier }, 0, 0, 2)
+                == (multiplier is > 0 and <= 100 ? new CardBonus(true, 6, 6, 2) { FinalPercent = multiplier } : (CardBonus?)null), "final-ATK percent kept, never downgraded to plain additive");
         Console.WriteLine($"Native card schema: existing Program assertions + {count} additive/bounds/ID/future-hand/multiplier checks passed.");
     }
 }

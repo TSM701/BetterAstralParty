@@ -12,8 +12,8 @@ internal static partial class TestCommands
         "catalog-compatibility", "native-compatibility",
         "native-steam", "native-install", "native-uninstall", "native-maintenance-common",
         "native-maintenance-diagnostics", "recovery-diagnostics",
-        "diagnostics-runtime", "staging", "channel-transition", "release-updates-and-readiness",
-        "match-focus", "card-scan-performance", "native-diagnostics-cli", "compatibility-snapshot"
+        "diagnostics-runtime", "staging", "channel-transition", "release-updates-and-readiness", "self-test-body",
+        "match-focus", "card-scan-performance", "native-diagnostics-cli", "compatibility-snapshot", "native-coverage", "combat-audit", "diagnostic-schema"
     }.Concat(new[] { "field-zoom", "field-free-camera", "field-camera-return", "field-indicator-opacity", "field-indicator-input", "field-counter", "field-buffs",
         "hand-layout", "hand-scan", "hand-outline", "hand-pointer-input", "hand-submit", "card-target-buttons" })
         .Concat(GeneralSupported).Concat(MaintenanceNames.Where(name => name != "maintenance-package-integration"))
@@ -61,6 +61,13 @@ internal static partial class TestCommands
                 }
                 case "settings-input": SettingsInput(context); break;
                 case "settings-scroll": SettingsScroll(context); break;
+                case "diagnostic-schema": DiagnosticSchema(context); break;
+                case "combat-audit": CombatAudit.SelfCheck(Check); break;
+                case "native-coverage":
+                    NativeCoverage.SelfCheck(Check);
+                    Contains(ReadSource(context, "src/RuntimeObject.cs"), new[] { "Native method missing: ", "Native field missing: ", "a field of that name exists, read it with Field",
+                        "a property of that name exists, read it with Get", "Note(\"method \" + ClassName(klass)", "Note(\"field \" + ClassName(klass)" }, "Native lookup failures name the class and record the ledger");
+                    break;
                 case "native-install": Framework(context, stage, "FixtureEntry", new[] {
                     "tools/NativeInstall.cs", "tools/NativeMaintenanceFiles.cs", "updater/WindowsPath.cs", "updater/UpdateVersion.cs",
                     "focus-tests/native-install/FixtureDependencies.cs", "focus-tests/native-install/FixtureEntry.cs"
@@ -171,6 +178,8 @@ internal static partial class TestCommands
             "staging" => ("updater-safety-tests/BetterAstralParty.StagingTests.csproj", new[] { scratch }),
             "channel-transition" => ("focus-tests/channel-transition/ChannelTransitionTests.csproj", new[] { stage }),
             "release-updates-and-readiness" => ("self-test/BetterAstralParty.SelfTest.csproj", new[] { "--release-updates-only" }),
+            // The whole self-test body (session, focus audio, hand layout, notification ABI, diagnostics rotation and more).
+            "self-test-body" => ("self-test/BetterAstralParty.SelfTest.csproj", Array.Empty<string>()),
             "match-focus" => ("focus-tests/BetterAstralParty.MatchFocusTests.csproj", new[] { context.NativeAssemblyPath }),
             _ => throw new InvalidOperationException("No C# recipe: " + name)
         };

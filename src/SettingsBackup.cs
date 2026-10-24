@@ -13,8 +13,9 @@ internal static class SettingsBackup
     internal static bool RestoreIfMissing(string config, string folder)
     {
         if (File.Exists(config)) return false;
-        var source = Path.Combine(folder, AutoName);
-        if (!File.Exists(source)) source = Path.Combine(folder, SavedName);
+        var auto = Path.Combine(folder, AutoName); var saved = Path.Combine(folder, SavedName);
+        var source = !File.Exists(auto) ? saved : !File.Exists(saved) ? auto
+            : File.GetLastWriteTimeUtc(saved) > File.GetLastWriteTimeUtc(auto) ? saved : auto;
         if (!File.Exists(source)) return false;
         Copy(source, config);
         return true;

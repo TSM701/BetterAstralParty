@@ -24,7 +24,7 @@ namespace BetterAstralParty.Updating {
         }
         private static string Relative(WindowsFileFence f,string absolute) {
             if(WindowsPath.Absolute(absolute)!=absolute || !absolute.StartsWith(f.Root+"\\",StringComparison.OrdinalIgnoreCase))throw Bad();
-            var relative=absolute.Substring(f.Root.Length+1).Replace('\\','/');if(f.Full(relative)!=absolute)throw Bad();return relative;
+            var relative=absolute.Substring(f.Root.Length+1).Replace('\\','/');if(!string.Equals(f.Full(relative),absolute,StringComparison.OrdinalIgnoreCase))throw Bad();return relative;
         }
         private static string BackupLeaf(string journalRoot,string backupDir) {
             var leaf=Path.GetFileName(backupDir);
@@ -87,7 +87,7 @@ namespace BetterAstralParty.Updating {
                     // Legacy launcher/helper are mutable removal targets; their exclusive target leases close their open/start race.
                     _processes=WindowsProcessGuard.Acquire(_game,new[]{"AstralParty_INT.exe"},allowMissing:true);_leases.Add(_processes);
                     var state=new InstallReceipt.Json(UpdateTicket.Read(_journal,1024*1024),1024*1024,300,WindowsPath.MaximumLength).Parse() as Dictionary<string,object?>;
-                    if(state==null || state.Count!=3 || Text(state,"GameRoot")!=_game.Root)throw Bad();
+                    if(state==null || state.Count!=3 || !string.Equals(Text(state,"GameRoot"),_game.Root,StringComparison.OrdinalIgnoreCase))throw Bad();
                     var backupDir=Text(state,"BackupDir");var leaf=BackupLeaf(journalRoot,backupDir);_backups.DirectoryIdentity(leaf);
                     object? value;if(!state.TryGetValue("Entries",out value))throw Bad();var rows=value as List<object?>;
                     if(rows==null || rows.Count<1 || rows.Count>300)throw Bad();
@@ -184,7 +184,7 @@ namespace BetterAstralParty.Updating {
                 if(game.Root.Equals(backups.Root,StringComparison.OrdinalIgnoreCase) || game.Root.StartsWith(backups.Root+"\\",StringComparison.OrdinalIgnoreCase) || backups.Root.StartsWith(game.Root+"\\",StringComparison.OrdinalIgnoreCase))throw Bad();
                 if(journal.Hash()!=expectedJournalHash)throw Bad();
                 var state=new InstallReceipt.Json(UpdateTicket.Read(journal,1024*1024),1024*1024,300,WindowsPath.MaximumLength).Parse() as Dictionary<string,object?>;
-                if(state==null || state.Count!=3 || Text(state,"GameRoot")!=game.Root)throw Bad();
+                if(state==null || state.Count!=3 || !string.Equals(Text(state,"GameRoot"),game.Root,StringComparison.OrdinalIgnoreCase))throw Bad();
                 var backupDir=Text(state,"BackupDir");var backupLeaf=BackupLeaf(journalRoot,backupDir);
                 if(!Regex.IsMatch(backupLeaf,@"\A[0-9a-f]{32}\z"))throw Bad();backups.DirectoryIdentity(backupLeaf);
                 object? rowsValue;if(!state.TryGetValue("Entries",out rowsValue))throw Bad();var rows=rowsValue as List<object?>;

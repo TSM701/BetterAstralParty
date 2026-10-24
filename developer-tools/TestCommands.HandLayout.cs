@@ -38,7 +38,7 @@ internal static partial class TestCommands
         Contains(source, new[] {
             "PlayerIsWatcher",
             "FightWindow",
-            "get_draggingObject",
+            "GameUi.LiveDrag()",
             "Input.GetMouseButton(0)",
             "\"IsDistribute\"",
             "\"IsTweening\"",

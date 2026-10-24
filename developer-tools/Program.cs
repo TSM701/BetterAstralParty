@@ -13,9 +13,13 @@ internal static class Program
                 Console.WriteLine("C# developer workflows only. Build does not install or publish. Signing requires a fresh reviewed policy; no certificate is generated automatically.");
                 Console.WriteLine("Build/test --native-assembly <path> selects an exact read-only native metadata snapshot; omitted uses the historical regression snapshot, invalid explicit inputs never fall back.");
                 Console.WriteLine("Build --checks <comma-separated names> runs targeted validation and records only those passes; sdk-path-safety is always included. Omit for the full suite.");
+                Console.WriteLine("native-coverage [--log <file>]... [--version <v>|any] [--since <build dir>] [--output <file>] compares the in-game native access ledger (diagnostic logging ON) with the source; read-only.");
+                Console.WriteLine("combat-audit [--log <file>]... [--output <file>] replays logged in-game hits (diagnostic logging ON) through the current damage model, grouped by shown buff; read-only.");
                 return 0;
             }
             if (command == "build") return BuildCommands.Run(context, values);
+            if (command == "native-coverage") return NativeCoverage.Run(context, values);
+            if (command == "combat-audit") return CombatAudit.Run(values);
             if (command == "build-setup") return BuildCommands.RunNative(context, "Setup", values);
             if (command == "test") return TestCommands.Run(context, values);
             if (command == "compatibility-snapshot") {

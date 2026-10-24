@@ -105,7 +105,7 @@ public static class PresentationCheck
             var styled = AdviceText.Quick(uncertain.DefendQuick);
             Check(styled.Contains("1~2") && !styled.Contains("최대") && !styled.Contains("최소") && !styled.Contains("내지는"),
                 "shared hover/spectator styling retains damage only ranges, no extra wording");
-            var tiny = AdviceText.Format("전투불능 " + CombatAdvisor.Probability(0.00001) + "%", 20);
+            var tiny = AdviceText.Quick("전투불능 " + CombatAdvisor.Probability(0.00001) + "%");
             Check(System.Xml.Linq.XElement.Parse("<root>" + tiny + "</root>").Value.Contains("<0.01%"),
                 "tiny odds escape safely in rich text");
         }

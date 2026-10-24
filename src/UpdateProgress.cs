@@ -54,7 +54,8 @@ internal sealed class UpdateProgress
             }
             else if (Step > 0 && status == AutomaticUpdateStatus.Committed) { Step = Steps; Percent = 100; Stopped = false; if (Total > 0) Read = Total; }
             else if (Step > 0 && status is AutomaticUpdateStatus.FaultDisabled or AutomaticUpdateStatus.FaultStorageFailed
-                or AutomaticUpdateStatus.RecoveryRequired or AutomaticUpdateStatus.CancelFailed or AutomaticUpdateStatus.Failed)
+                or AutomaticUpdateStatus.RecoveryRequired or AutomaticUpdateStatus.CancelFailed or AutomaticUpdateStatus.Failed
+                or AutomaticUpdateStatus.FilesBusy or AutomaticUpdateStatus.ManualUpgradeRequired or AutomaticUpdateStatus.AlreadyClaimed)
             {
                 if (!Stopped || code.Length != 0 && Code != code) { Code = code.Length != 0 ? code : "BAP-UPD-" + status.ToString().ToUpperInvariant(); Reason = reason; }
                 Stopped = true;
@@ -64,6 +65,12 @@ internal sealed class UpdateProgress
         }
         if (before != (Step, Percent, Read, Total, Version, Transition, Stopped, Code, Reason, Status)) Revision++;
     }
+
+    // Stops that record no fault still get their guidance from the status.
+    internal static string StatusReason(AutomaticUpdateStatus status) => status switch
+    {
+        AutomaticUpdateStatus.ManualUpgradeRequired => "manualupgrade", AutomaticUpdateStatus.FilesBusy => "storage", _ => ""
+    };
 
     // Stable code from the recorded failure phase and reason, e.g. BAP-UPD-DOWNLOAD-TIMEOUT.
     internal static string FaultCode(string phase, string reason) => "BAP-UPD-" + (phase switch

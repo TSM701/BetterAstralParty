@@ -115,6 +115,12 @@ public static class EncounterRecommendationCheck
             GameUi.RunEncounter(scene.Fight, scene.Ui, map);
             Check(scene.Attack.Recommendations + scene.Leave.Recommendations == 0, "native/public eligibility gate retained: " + gate);
         }
+        // A Shooting Star failure trips only its own breaker; the encounter recommendation still shows.
+        GameUi.Reset(); RuntimeObject.MissingAsset = false; ShootingStar.Failure = new InvalidOperationException("inert relic read failure");
+        var failing = Scene(attack); GameUi.RunEncounter(failing.Fight, failing.Ui, attack.MapType);
+        Check(failing.Attack.Recommendations == 1 && Compatibility.Blocked.SetEquals(new[] { "ShootingStar" }) && ShootingStarUi.Cleared == 1,
+            "a Shooting Star failure blocks only the star and keeps the encounter advice");
+        ShootingStar.Failure = null; Compatibility.Blocked.Clear();
         Console.WriteLine($"PASS: production UpdateEncounter/EnsureBadges/AdviceBadge native substitutes; {_checks} cumulative assertions. Real asset rendering unexecuted.");
     }
 
@@ -183,9 +189,25 @@ internal static class PublicCombatEffects {
 internal static class Plugin {
     internal sealed class Setting<T>(T value) { internal T Value = value; }
     internal static readonly Setting<float> UiScale = new(1);
-    internal static readonly Setting<bool> ShowDetails = new(true);
+    internal static readonly Setting<bool> ShowDetails = new(true), EncounterAdvice = new(true), ShootingStarShow = new(true);
     internal static readonly SilentLogger Logger = new();
     internal sealed class SilentLogger { internal void LogInfo(string value) { } internal void LogWarning(string value) { } }
+    internal static readonly SilentDiagnostics Diagnostics = new();
+    internal sealed class SilentDiagnostics { internal bool IsRecording => false; internal void State(string key, string value) { } }
+}
+// No Shooting Star relic in these fixtures: the release badge text stays empty as before.
+internal readonly record struct ReleaseGain(int DamageMin, int DamageMax, int Stacks) { internal string Damage => DamageMin.ToString(); }
+internal static class ShootingStar {
+    internal static Exception? Failure;
+    internal static ReleaseGain? Read(RuntimeObject? self, RuntimeObject? monster, HitModifiers? incoming) { if (Failure != null) throw Failure; return null; }
+    internal static string Evidence => "";
+}
+internal static class ReleaseWatch { internal static void Offer(RuntimeObject monster, string evidence) { } }
+internal static class ShootingStarUi { internal static int Cleared; internal static void Show(RuntimeObject button, ReleaseGain gain, float scale) { } internal static void Clear() { Cleared++; } }
+internal static class Compatibility {
+    internal static readonly HashSet<string> Blocked = new();
+    internal static bool Allowed(string feature) => !Blocked.Contains(feature);
+    internal static void Block(string feature, Exception error, params Action[] cleanup) { if (Blocked.Add(feature)) foreach (var action in cleanup) action(); }
 }
 internal static class NativeUi {
     internal sealed class Surface(RuntimeObject panel, float width, float height) { internal void Refresh() { } }

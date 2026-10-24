@@ -36,7 +36,7 @@ internal static class AutoThanksUi
             if (Application.isFocused)
             {
                 if (Input.touchCount > 0
-                    || RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "GObject"), "get_draggingObject") != null) return;
+                    || GameUi.LiveDrag() != null) return;
                 for (var i = 0; i < 3; i++)
                     if (Input.GetMouseButton(i) || Input.GetMouseButtonDown(i) || Input.GetMouseButtonUp(i)) return;
             }

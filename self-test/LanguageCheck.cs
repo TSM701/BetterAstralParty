@@ -10,6 +10,26 @@ internal static class LanguageCheck
         }
         ModText.Select("Auto", "Event");
         Check(ModText.Text(MenuLayout.Help("MuteUnfocused").Title + ": ON") == "Mute in Background: ON", "Mute label and separator in English");
+        var ys = MenuLayout.TickYs(new[] { 0f, 100f, 200f, 210f, 215f }, 215f, 400f);
+        Check(ys[0] == 6 && ys[^1] <= 394 && ys.Zip(ys.Skip(1)).All(pair => pair.Second - pair.First >= 16 - 0.001f), "Category dots stay apart and inside the track");
+        Check(MenuLayout.JumpTarget(0, 2000, 400) == 0 && MenuLayout.JumpTarget(MenuLayout.Sections.Length - 1, 500, 400) <= 100, "Category jump targets stay inside the scroll range");
+        Check(ModText.Text(MenuLayout.Help("CategoryJump").Title) == "Jump to Category", "Category jump help in English");
+        var dots = MenuLayout.TickYs(new[] { 0f, 10f, 20f, 300f, 890f, 900f, 905f }, 905f, 400f);
+        var sides = MenuLayout.BubbleSides(dots);
+        Check(new[] { false, true }.All(side =>
+            {
+                var ys = dots.Where((_, i) => sides[i] == side).ToArray();
+                return ys.Zip(ys.Skip(1)).All(pair => pair.Second - pair.First >= MenuLayout.BubbleHeight);
+            }) && !sides[0] && !sides[3] && sides[1] && sides.Count(left => left) >= 2, "Crowded category bubbles alternate sides and never overlap");
+        Check(!MenuLayout.BubbleSides(new[] { 6f, 60f, 120f, 394f }).Any(left => left), "Spread category bubbles all sit right of the track");
+        Check(MenuLayout.Parent("ShootingStarShow") == "Enabled" && MenuLayout.Parent("ShushuShield") == "ShushuMaster"
+            && MenuLayout.Parent("CounterSound") == "BattleStatus" && MenuLayout.Parent("ZoomSensitivity") == "FieldZoom", "Feature switches sit under their master switch");
+        Check(MenuLayout.SubParent("CounterAnimation") == "CounterIcons" && MenuLayout.SubParent("CounterSound") == "CounterIcons"
+            && MenuLayout.ToggleWidth("CounterSound") == MenuLayout.SubWidth && MenuLayout.ToggleHeightFor("CounterSound") == MenuLayout.SubHeight
+            && MenuLayout.Indent("CounterSound") == (480 - MenuLayout.SubWidth) / 2 && MenuLayout.ToggleWidth("CounterIcons") == MenuLayout.ChildWidth,
+            "Counter animation and sound are sub-switches of Counter Icons in its capsule");
+        Check(MenuLayout.Parent("PlayerTabHand") == "PlayerTab" && MenuLayout.Parent("PlayerTabRole") == "PlayerTab" && MenuLayout.Parent("PlayerTab") == null,
+            "Player list tab parts sit under their master switch");
         Check(ModText.Text(MenuLayout.Help("Enabled").Title + ": OFF") == "Action Advice: OFF", "Toggle separator in English");
         ModText.Select("한국어");
         Check(ModText.Text(MenuLayout.Help("MuteUnfocused").Title + ": ON") == "백그라운드 음소거: ON", "Mute label and separator in Korean");
@@ -44,13 +64,13 @@ internal static class LanguageCheck
         ModText.Select("Auto");
         Check(ModText.Korean, "Missing sample must not flip auto language");
         ModText.Select("English");
-        Check(ModText.Text("KO 최소 조건") == "Minimum KO conditions", "KO title");
-        Check(ModText.Text("생존 최소 조건") == "Minimum survival conditions", "Defender survival title");
+        Check(ModText.Text("KO 주사위 조건") == "KO Dice Target", "KO title matches its setting");
+        Check(ModText.Text("생존 주사위 조건") == "Survival Dice Target", "Defender survival title");
         Check(ModText.Text("≥") == "≥" && ModText.Text("≤") == "≤", "Language-neutral KO comparisons");
         Check(ModText.Text("KO 불가") == "KO impossible"
             && ModText.Text("확정 KO") == "Guaranteed KO", "Condition status in English");
         ModText.Select("한국어");
-        Check(ModText.Text("KO 최소 조건") == "KO 최소 조건"
+        Check(ModText.Text("KO 주사위 조건") == "KO 주사위 조건"
             && ModText.Text("KO 불가") == "KO 불가", "Condition status in Korean");
         ModText.Select("English");
         Check(ModText.Text("계산 정보 부족") == "Insufficient data", "Unknown data label");
@@ -63,7 +83,6 @@ internal static class LanguageCheck
             Check(!localized.Any(c => c is >= '가' and <= '힣'), "Untranslated help: " + action);
         }
         Check(AdviceText.Quick("예상 피해 1~6\n전투불능 20%").Contains("Damage"), "Quick advice localization");
-        Check(!AdviceText.Format("방어 추천\n평균 피해 1~6", 24).Contains("방어"), "Rich advice localization");
         Check(BattleStatusLayout.Counters(2, 3, false).Contains("Turns left"), "Effect counters localization");
         Check(MenuLayout.GeneralControl("Language") && !MenuLayout.GeneralControl("FieldBuffs"), "Tab membership");
         Check(MenuLayout.GeneralControl("MatchFocus") && !MenuLayout.GeneralControl("FieldZoom")
@@ -102,7 +121,7 @@ internal static class LanguageCheck
         ModText.Select("한국어"); // Existing calculation/presentation regression tests retain their baseline.
         var booleanActions = new[] { "Enabled", "Details", "KoMinimum", "CardPopups", "BattleStatus", "ShushuShield", "ShushuShieldRestrictions",
             "FieldBuffs", "FieldZoom", "MatchFocus", "Names", "Diagnostics", "MuteUnfocused", "AutoThanks", "CharacterRoles", "CharacterGuide",
-            "IndicatorFade", "IndicatorHide", "DiceLock", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications" };
+            "IndicatorFade", "IndicatorHide", "DiceLock", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "ShootingStarShow", "KoCardPreview", "KoSpectator", "StatusHand", "StatusEffects", "CounterIcons", "ShushuMaster", "PlayerTab", "PlayerTabHand", "PlayerTabRole" };
         var padding = new[] { "이 기능을 끕니다", "다른 설정", "별도", "independent", "other settings" };
         foreach (var action in booleanActions)
         {
@@ -126,13 +145,13 @@ internal static class LanguageCheck
             && sections.Select(section => section.Title).Distinct().Count() == sections.Length, "Both settings tabs have distinct category titles");
         var categoryActions = sections.SelectMany(section => section.Actions).ToArray();
         Check(sections.Single(section => section.Title == "손패·카드").Actions.SequenceEqual(new[] { "HandLayout", "FoldedHandOpacity", "CardPopups" })
-            && sections.Single(section => section.Title == "캐릭터").Actions.SequenceEqual(new[] { "Names", "CharacterRoles", "CharacterGuide" })
+            && sections.Single(section => section.Title == "캐릭터").Actions.SequenceEqual(new[] { "Names", "CharacterRoles", "CharacterGuide", "PlayerTab", "PlayerTabHand", "PlayerTabRole" })
             && !categoryActions.Contains("CardTargetButtons"), "Cards and characters are separate; target button priority is always applied");
         Check(MenuLayout.SectionBandX + MenuLayout.SectionBandWidth <= 490 && MenuLayout.SectionBandHeight < MenuLayout.SectionHeight, "Category band stays inside the switch column and header row");
         foreach (var action in categoryActions)
         {
             if (MenuLayout.Parent(action) is { } parent)
-                Check(categoryActions.Contains(parent) && MenuLayout.Parent(parent) == null && MenuLayout.ToggleWidth(action) + MenuLayout.Indent(action) + MenuLayout.ChildRightInset == 480, "Dependent option sits indented under a top-level parent: " + action);
+                Check(categoryActions.Contains(parent) && MenuLayout.Parent(parent) == null && Math.Abs(2 * MenuLayout.Indent(action) + MenuLayout.ToggleWidth(action) - 480) < 0.01f, "Dependent option sits indented under a top-level parent: " + action);
             if (MenuLayout.Subtitle(action) is not { } subtitle) continue;
             ModText.Select("English");
             var english = ModText.Text(subtitle);
@@ -209,6 +228,9 @@ internal static class LanguageCheck
             Check(!SettingsBackup.RestoreIfMissing(config, folder) && File.ReadAllText(config) == "current", "An existing settings file is never overwritten");
             File.Delete(config);
             Check(SettingsBackup.RestoreIfMissing(config, folder) && File.ReadAllText(config) == "auto", "The newest automatic copy wins over the saved one");
+            File.Delete(config); File.SetLastWriteTimeUtc(Path.Combine(folder, SettingsBackup.SavedName), DateTime.UtcNow.AddMinutes(5));
+            Check(SettingsBackup.RestoreIfMissing(config, folder) && File.ReadAllText(config) == "saved", "A newer manual copy wins over an older automatic one");
+            File.WriteAllText(config, "auto");
             SettingsBackup.Copy(config, Path.Combine(folder, SettingsBackup.SavedName));
             Check(File.ReadAllText(Path.Combine(folder, SettingsBackup.SavedName)) == "auto" && !File.Exists(Path.Combine(folder, SettingsBackup.SavedName) + ".tmp"), "Manual save replaces the saved copy without leftovers");
             SettingsBackup.MarkChanged(1000);

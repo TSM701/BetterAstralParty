@@ -5,6 +5,9 @@ namespace BetterAstralParty;
 internal static class CardDiceUi
 {
     private static RuntimeObject? _panel, _title, _state, _status;
+    // Effects the calculation does not count: native icons, a short label and the "?" hover help.
+    private static UnknownEffectsRow? _unknownRow;
+    private static UnknownEffectsHelp? _help;
     private static readonly List<(RuntimeObject Disc, RuntimeObject Number, RuntimeObject Comparison, RuntimeObject Empty)> Rows = new();
     private static (PreRollCombat Input, CardBonus? Card, bool Hover, bool Unsupported, int FixedDie, int Language, int Role, int? FinalDamage)? _key;
     private static float _shownAt, _hideAt = -1, _holdUntil;
@@ -14,7 +17,7 @@ internal static class CardDiceUi
     private const float Width = CardDiceLayout.Width, Height = CardDiceLayout.Height;
 
     internal static void Show(RuntimeObject ui, RuntimeObject attackPoint,
-        PreRollCombat input, CardBonus? card, bool hover, bool unsupported, int fixedDie = 0, int? finalDamage = null)
+        PreRollCombat input, CardBonus? card, bool hover, bool unsupported, int fixedDie = 0, int? finalDamage = null, int fixedDefense = 0)
     {
         if (!Plugin.KoMinimum.Value) { Clear(); return; }
         if (fixedDie == 0) _resolvedUi = _attacker = _defender = null; // New card phase/hover owns the display.
@@ -28,6 +31,8 @@ internal static class CardDiceUi
             _title = NativeUi.Label(_panel, "", 8, 6, Width - 16, 28, 17, dark: true);
             _state = NativeUi.Label(_panel, "", 8, 34, Width - 16, 24, 15, dark: true);
             _status = NativeUi.Label(_panel, "", 8, 198, Width - 16, 28, 16, dark: true);
+            _unknownRow = new UnknownEffectsRow(_panel, Width, CardDiceLayout.UnknownRowY, help: true);
+            _help = new UnknownEffectsHelp(_panel, Width / 2, CardDiceLayout.UnknownRowY + UnknownEffectsRow.Height + 10);
             for (var row = 0; row < 2; row++)
             {
                 NativeUi.Label(_panel, ModText.Text(row == 0 ? "공격자" : "방어자"),
@@ -58,11 +63,12 @@ internal static class CardDiceUi
             }
         }
         var role = ui.Field("playerState")!.Get<int>("selectedIndex");
-        var survival = role == 1;
+        // Local defenders and spectators of a defending player see survival; others see the KO view.
+        var survival = role == 1 || role == 2 && input.DefenderPlayer;
         var key = (input, card, hover, unsupported, fixedDie, ModText.Revision, role, finalDamage);
         if (_key != key)
         {
-            if (fixedDie > 0 && (_key == null || _key.Value.FixedDie != fixedDie))
+            if (fixedDie > 0 && (_key == null || _key.Value.FixedDie != fixedDie || fixedDefense > 0 && _key.Value.Input.Modifiers.DefenseDice != input.Modifiers.DefenseDice))
                 _holdUntil = Time.unscaledTime + CardDiceLayout.ResolvedHold;
             if (fixedDie == 0) _holdUntil = 0;
             _key = key;
@@ -79,10 +85,11 @@ internal static class CardDiceUi
             _title!.Set("text", ModText.Text(CardDiceLayout.Title(survival)));
             _state!.Set("text", ModText.Text(fixedDie > 0 ? "" : hover ? "카드 사용 후" : "현재 상태"));
             _status!.Set("text", ModText.Text(status));
+            _unknownRow!.Show(input.Modifiers.Unknown);
             for (var index = 0; index < Rows.Count; index++)
             {
                 var row = Rows[index];
-                var content = CardDiceLayout.Content(pair, thresholdDie, index, survival, unconditional, input.Modifiers.DefenseDice);
+                var content = CardDiceLayout.Content(pair, thresholdDie, index, survival, unconditional, input.Modifiers.DefenseDice, fixedDefense);
                 // Number font follows the live dice; symbols use normal UI typography/fallback.
                 NativeUi.CopyTextFormat(row.Number, attackPoint.Field("txt_Point")!);
                 var color = index == 0 ? Color.red : Color.cyan;
@@ -102,7 +109,7 @@ internal static class CardDiceUi
                 // Never hide the disc or its parent on an unavailable threshold.
             }
             if (Plugin.Diagnostics.IsRecording)
-                Plugin.Diagnostics.State("koMinimum.content", $"role={role}; revealed={fixedDie}; preview={hover}; rows={Rows.Count}; supported={pair != null}; reason={(unsupported ? "card-effect" : pair == null ? "public-input" : "none")}; status={status}; metadataOnly=True");
+                Plugin.Diagnostics.State("koMinimum.content", $"role={role}; revealed={fixedDie}; revealedDefense={fixedDefense}; preview={hover}; rows={Rows.Count}; supported={pair != null}; reason={(unsupported ? "card-effect" : pair == null ? "public-input" : "none")}; status={status}; metadataOnly=True");
 
         }
         var scaleUi = Math.Max(0.1f, Math.Min(Plugin.UiScale.Value, ui.Get<float>("height") / 1080f));
@@ -170,7 +177,13 @@ internal static class CardDiceUi
             DefenseMin = _defender.Field("minDEF")!.Value<int>(),
             DefenseMax = _defender.Field("maxDEF")!.Value<int>()
         };
-        Show(_resolvedUi, point, input, null, false, false, die);
+        // The defender's raw die settles the outcome the moment it is public, before the totals are shown (2026-10-24).
+        var defenseNumber = defense.Field("com_Point")!.Field("txt_Point")!;
+        int.TryParse(defenseNumber.Get("text")?.String(), out var defenseDie);
+        if (!CardKoMinimum.RevealedDefenseDie(defense.Field("showPoint")!.Get<int>("selectedIndex"), GameUi.Visible(defenseNumber), defenseDie)
+            || !input.Modifiers.DefenseDice.Contains(defenseDie)) defenseDie = 0;
+        if (defenseDie > 0) input = input with { Modifiers = input.Modifiers with { DefenseDice = DiceFaces.Range(defenseDie, defenseDie) } };
+        Show(_resolvedUi, point, input, null, false, false, die, fixedDefense: defenseDie);
     }
 
     internal static void Animate()
@@ -184,6 +197,8 @@ internal static class CardDiceUi
         _panel.Call("SetScale", _scale, _scale);
         _panel.Call("SetXY", _x, _y + (1 - alpha) * 8 * _scale);
         if (_hideAt >= 0 && alpha <= 0) _panel.Set("visible", false);
+        // Help follows the pointer only while the indicator is fully shown; fading out closes it.
+        if (_unknownRow != null && _help != null) { if (_hideAt < 0 && alpha >= 0.99f) _help.Tick(_unknownRow); else _help.Hide(); }
     }
     internal static void Hide()
     {
@@ -194,6 +209,6 @@ internal static class CardDiceUi
     {
         if (!keepObservation) _resolvedUi = _attacker = _defender = null;
         _hideAt = -1; _holdUntil = 0;
-        GameUi.Dispose(_panel); _panel = _title = _state = _status = null; _key = null; Rows.Clear();
+        GameUi.Dispose(_panel); _panel = _title = _state = _status = null; _unknownRow = null; _help = null; _key = null; Rows.Clear();
     }
 }

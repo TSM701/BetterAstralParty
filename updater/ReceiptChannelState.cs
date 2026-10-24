@@ -41,13 +41,11 @@ namespace BetterAstralParty.Updating
         {
             if (Root != root || descriptor.Protocol != UpdateTrust.Protocol) throw new ApplySafetyException(ApplyFailure.RecoveryRequired);
             var stable = descriptor.Channel == "Stable"; var beta = descriptor.Channel == "Beta"; var preRelease = descriptor.Channel == "PreRelease";
-            var old = VersionFor(descriptor.Channel);
             var id = RepositoryIdFor(descriptor.Channel);
-            var comparison = old == null ? 1 : UpdateVersion.Parse(descriptor.Version).CompareTo(UpdateVersion.Parse(old));
-            var exactReplay = intent != null && intent.TargetChannel == descriptor.Channel && intent.SourceChannel == ActiveChannel
-                && intent.DescriptorHash == descriptor.DescriptorSha256 && DescriptorFor(descriptor.Channel) == descriptor.DescriptorSha256 && comparison == 0;
-            var exactReinstall = reinstall && comparison == 0 && DescriptorFor(descriptor.Channel) == descriptor.DescriptorSha256;
-            if (id != 0 && id != descriptor.RepositoryId || comparison <= 0 && !exactReplay && !exactReinstall)
+            // InstallPolicy rule 1: the exact recorded package returns only as an approved replay or a whole reinstall.
+            var exactAllowed = reinstall || intent != null && intent.TargetChannel == descriptor.Channel && intent.SourceChannel == ActiveChannel
+                && intent.DescriptorHash == descriptor.DescriptorSha256;
+            if (id != 0 && id != descriptor.RepositoryId || !InstallPolicy.AboveRecord(this, descriptor.Channel, descriptor.Version, descriptor.DescriptorSha256, exactAllowed))
                 throw new UpdateValidationException(UpdateFailure.NotNewer);
             return new ReceiptChannelState(root, descriptor.Channel, operation,
                 stable ? descriptor.RepositoryId : StableRepositoryId, stable ? UpdateVersion.Parse(descriptor.Version).Tag : StableVersion, stable ? descriptor.DescriptorSha256 : StableDescriptor,
@@ -95,5 +93,58 @@ namespace BetterAstralParty.Updating
             UpdateVersion.Parse(f[1]); version = f[1]; hash = f[2];
         }
         private static ApplySafetyException Bad() { return new ApplySafetyException(ApplyFailure.InvalidState); }
+    }
+    // The one written policy for "may this signed package become the installed version". The channel-transition
+    // check (focus-tests/channel-transition/Sequences.cs) runs every short sequence of whole installs, in-game
+    // updates and approved transitions through the production code and compares it with this policy.
+    // 1. A channel's recorded version never goes back. The exact package recorded there may be applied again only
+    //    as a whole reinstall or an approved transition replay.
+    // 2. A whole install repairs the exact installed package, or advances. When it switches channel it must be newer
+    //    than the installed version and not below the highest version ever applied (equal only with that package).
+    // 3. An in-game update stays in the active channel and must be newer than installed. Leaving the channel needs an
+    //    approved transition, which may lower the installed version but never the target channel's record.
+    internal static class InstallPolicy
+    {
+        internal enum Refusal { None, SwitchNotNewer, BelowHighest, BelowChannelRecord }
+
+        internal static bool AboveRecord(ReceiptChannelState state, string channel, string version, string digest, bool exactAllowed)
+        {
+            var recorded = state.VersionFor(channel);
+            if (recorded == null) return true;
+            var comparison = UpdateVersion.Parse(version).CompareTo(UpdateVersion.Parse(recorded));
+            return comparison > 0 || comparison == 0 && exactAllowed && state.DescriptorFor(channel) == digest;
+        }
+
+        internal static Refusal Whole(ReceiptChannelState state, string installed, VerifiedUpdateDescriptor incoming, string? high, string? highDigest)
+        {
+            var next = UpdateVersion.Parse(incoming.Version);
+            var current = next.CompareTo(UpdateVersion.Parse(installed));
+            var repair = current == 0 && incoming.DescriptorSha256 == state.DescriptorFor(state.ActiveChannel);
+            if (!repair && state.ActiveChannel != incoming.Channel)
+            {
+                if (current <= 0) return Refusal.SwitchNotNewer;
+                if (high != null)
+                {
+                    var top = next.CompareTo(UpdateVersion.Parse(high));
+                    if (top < 0 || top == 0 && incoming.DescriptorSha256 != highDigest) return Refusal.BelowHighest;
+                }
+            }
+            return AboveRecord(state, incoming.Channel, incoming.Version, incoming.DescriptorSha256, true) ? Refusal.None : Refusal.BelowChannelRecord;
+        }
+
+        // Shown by Install.cmd; says what blocked the install and what the user can do.
+        internal static string Explain(Refusal refusal, ReceiptChannelState state, string installed, VerifiedUpdateDescriptor incoming, string? high)
+        {
+            const string Fresh = "Uninstall.cmd로 제거한 뒤 새로 설치할 수도 있습니다. / You can also remove it with Uninstall.cmd and install again.";
+            string Channel(string channel) => channel == "Stable" ? "릴리즈" : channel == "PreRelease" ? "프리 릴리즈" : "비공개 베타";
+            string English(string channel) => channel == "Stable" ? "Release" : channel == "PreRelease" ? "Pre-release" : "Private Beta";
+            return refusal switch
+            {
+                Refusal.SwitchNotNewer => $"다른 채널의 패키지는 지금 설치된 {installed}보다 새 버전이어야 합니다. / A package from another channel must be newer than the installed {installed}. " + Fresh,
+                Refusal.BelowHighest => $"이 PC에 적용된 가장 높은 버전은 {high}입니다. {high} 이상을 설치하세요. / The highest version applied on this PC is {high}; install {high} or newer. " + Fresh,
+                Refusal.BelowChannelRecord => $"{Channel(incoming.Channel)} 채널에는 이미 {state.VersionFor(incoming.Channel)}이(가) 적용되었습니다. 그보다 새 버전을 설치하세요. / The {English(incoming.Channel)} channel already has {state.VersionFor(incoming.Channel)}; install a newer version. " + Fresh,
+                _ => ""
+            };
+        }
     }
 }

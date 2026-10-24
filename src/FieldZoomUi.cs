@@ -32,6 +32,7 @@ internal static class FieldZoomUi
             if (!Compatibility.Allowed("FieldZoom")) { Clear(); return; }
             Update();
             FieldMonsterPlates.Tick(IndicatorScale);
+            FieldStatePlates.Tick(IndicatorScale);
             var distance = _original.magnitude;
             FieldIndicatorOpacity.Tick(_fieldVisible && _owned && _zoomOutLimit > distance
                 ? Math.Clamp((_applied.magnitude - distance) / (_zoomOutLimit - distance), 0, 1) : 0);
@@ -129,8 +130,10 @@ internal static class FieldZoomUi
             _original = _applied = _target = offset; _owned = false; _zoomOutLimit = 0;
         }
         var inputAllowed = FieldInputAllowed(root, pan: true);
+        // Same rule as the native drag (FreeCameraObject.HandleControlCamera): only a touchable UI target owns the press.
         var onUi = inputAllowed && Input.GetMouseButton(0)
-            && RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "Stage"), "get_isTouchOnUI")!.Value<bool>();
+            && RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "Stage"), "get_isTouchOnUI")!.Value<bool>()
+            && root.Get("touchTarget")?.Get<bool>("touchable") == true;
         var indicator = onUi && Input.GetMouseButtonDown(0)
             && !FieldCameraReturnUi.ConsumedInput
             && PointerOnFieldIndicator(logic);
@@ -216,8 +219,8 @@ internal static class FieldZoomUi
     private static bool FieldInputAllowed(RuntimeObject root, bool pan = false)
     {
         if (!Application.isFocused || ModUi.IsOpen || Input.touchCount != 0 || root.Get<bool>("modalWaiting")
-            || RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "GObject"), "get_draggingObject") != null
-            || GameUi.Find(root, "FightWindow", maxDepth: 1) != null
+            || GameUi.LiveDrag() != null
+            || GameUi.Find(root, "FightWindow", maxDepth: 1) is { } fight && !EncounterHidden(fight)
             || GameUi.Find(root, "SettingWindow", maxDepth: 1) != null
             || GameUi.Find(root, "SettingInBattleWindow", maxDepth: 1) != null
             || GameUi.Find(root, "SinglePlayerSettingInBattleWindow", maxDepth: 1) != null
@@ -235,6 +238,11 @@ internal static class FieldZoomUi
         }
         return true;
     }
+
+    // The encounter's own hide-UI state (native txt_HideTip shown) hands the field view back: the wheel zooms, and
+    // once the zoom holds the owned view the drag pans it, as the native drag does there before any zoom.
+    private static bool EncounterHidden(RuntimeObject fight) =>
+        GameUi.Visible(fight.Get("contentPane")?.Field("com_LaunchPK")?.Field("txt_HideTip"));
 
     private static bool PointerOnFieldIndicator(RuntimeObject? logic)
     {
@@ -330,7 +338,7 @@ internal static class FieldZoomUi
     {
         Exception? failure = null;
         void Attempt(Action action) { try { action(); } catch (Exception ex) { failure ??= ex; } }
-        Attempt(Restore); Attempt(FieldFreeCamera.Clear); Attempt(FieldCameraReturnUi.Clear); Attempt(FieldIndicatorOpacity.Clear); Attempt(FieldMonsterPlates.Clear);
+        Attempt(Restore); Attempt(FieldFreeCamera.Clear); Attempt(FieldCameraReturnUi.Clear); Attempt(FieldIndicatorOpacity.Clear); Attempt(FieldMonsterPlates.Clear); Attempt(FieldStatePlates.Clear);
         _fieldVisible = false; _zoomOutLimit = 0;
         _scene = null; Renderers.Clear(); Corners.Clear(); _nodes = IntPtr.Zero; _nodeCount = 0; _scanAt = 0;
         _pendingWheel = 0; _wheelBrain = _wheelCamera = _wheelFrame = IntPtr.Zero;

@@ -21,11 +21,14 @@ internal static class NativeUi
     private static readonly HashSet<string> Missing = new();
 
     // Source palette/renderer chosen for the destination, never a hard-coded font alias.
+    // One never-shown template per style, reused: creating and disposing a native button for every mod label made the
+    // settings window's first open slow. Recreated if the game disposes it; the template's format is only read.
+    private static readonly Dictionary<bool, RuntimeObject> TextTemplates = new();
     internal static void InheritText(RuntimeObject label, bool dark)
     {
-        var template = Create("Common", dark ? "Button_PreviewSkin" : "Button_Confirm_SmallRounded")!;
-        try { CopyTextFormat(label, template.Call("GetChild", "title")!); }
-        finally { GameUi.Dispose(template); }
+        if (!TextTemplates.TryGetValue(dark, out var template) || template.Get<bool>("isDisposed"))
+            TextTemplates[dark] = template = Create("Common", dark ? "Button_PreviewSkin" : "Button_Confirm_SmallRounded")!;
+        CopyTextFormat(label, template.Call("GetChild", "title")!);
         ModFont.Track(label, reset: true);
     }
 
@@ -159,6 +162,30 @@ internal static class NativeUi
         icon.Set("touchable", false);
         parent.Call("AddChild", icon);
         return icon;
+    }
+
+    internal static readonly Color DarkFill = new(0.17f, 0.17f, 0.16f, 1f);
+
+    // Mod-owned dark "?" disc; marks effects the combat model does not count.
+    internal static RuntimeObject QuestionMark(RuntimeObject parent, float size, int fontSize = 15)
+    {
+        var marker = Component(parent, size, size);
+        marker.Set("touchable", false);
+        _ = new Surface(marker, size, size, fixedOpacity: true, fill: DarkFill);
+        var mark = Label(marker, "?", 0, 0, size, size, fontSize);
+        mark.Set("align", 1); mark.Set("verticalAlign", 1);
+        return marker;
+    }
+
+    // Stage pointer and a rendered-rectangle test that neither hit-tests nor takes input from native UI.
+    internal static Vector2 Pointer() =>
+        RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "Stage"), "get_inst")!.Get<Vector2>("touchPosition");
+    internal static bool Contains(RuntimeObject? item, Vector2 point)
+    {
+        if (item == null || !item.Get<bool>("visible") || item.Get<bool>("isDisposed")) return false;
+        // Display coordinates start at the rendered top-left; GObject conversions subtract the pivot.
+        var local = item.Get("displayObject")!.Call("GlobalToLocal", point)!.Value<Vector2>();
+        return local.x >= 0 && local.y >= 0 && local.x < item.Get<float>("width") && local.y < item.Get<float>("height");
     }
 
     internal static RuntimeObject Label(RuntimeObject parent, string text, float x, float y, float width, float height, int size = 22, bool dark = false)

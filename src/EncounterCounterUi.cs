@@ -6,6 +6,8 @@ internal static class EncounterCounterUi
 {
     private static RuntimeObject? _fight, _anchor, _effect;
     private static IntPtr _logicClass, _defender;
+    // Hidden only by the settings window or lost focus: the same defender returns without reveal motion or sound.
+    private static IntPtr _quietDefender;
     private static float _scanAt;
 
     internal static void Tick()
@@ -13,7 +15,11 @@ internal static class EncounterCounterUi
         if (!Compatibility.Allowed(BattleStatusUi.CounterFeature)) return;
         try
         {
-            if (!Plugin.BattleStatus.Value || ModUi.IsOpen || !Application.isFocused) { Clear(); return; }
+            if (!Plugin.BattleStatus.Value || !Plugin.CounterIcons.Value || ModUi.IsOpen || !Application.isFocused)
+            {
+                _quietDefender = Plugin.BattleStatus.Value && Plugin.CounterIcons.Value && _effect != null ? _defender : IntPtr.Zero;
+                Clear(); return;
+            }
             if (GameUi.Root == null) return;
             if (_logicClass == IntPtr.Zero) _logicClass = RuntimeObject.FindClass("GameLogic", "GameLogicManager");
             if (_logicClass == IntPtr.Zero) return;
@@ -43,7 +49,8 @@ internal static class EncounterCounterUi
                 (anchor.Get<float>("height") - size) / 2);
             _effect.Set("visible", true);
             _anchor = anchor; _defender = defender.Pointer;
-            NativeUi.Play(_effect, "MaxPoint");
+            if (_defender != _quietDefender) NativeUi.Play(_effect, "MaxPoint");
+            _quietDefender = IntPtr.Zero;
         }
         catch (Exception ex)
         {

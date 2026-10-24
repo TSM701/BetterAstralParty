@@ -5,8 +5,26 @@ namespace BetterAstralParty.Development;
 
 internal static partial class TestCommands
 {
+    // A FairyGUI drag left behind after its object missed the touch end must stop gating input once the button is up.
+    private const string DragStateCheck = """
+internal static class DragStateCheck
+{
+    private static void Check(bool ok, string name) { if (!ok) throw new System.Exception(name); System.Console.WriteLine("PASS: " + name); }
+    internal static void Run()
+    {
+        System.IntPtr card = (System.IntPtr)7, other = (System.IntPtr)9;
+        Check(DragState.Live(card, true), "a drag under a held button is live");
+        Check(!DragState.Live(card, false), "a drag still set after release is stale");
+        Check(!DragState.Live(card, true), "a later press does not revive the stale drag");
+        Check(DragState.Live(other, true), "a new native drag replaces the stale one");
+        Check(!DragState.Live(System.IntPtr.Zero, true) && DragState.Live(card, true), "a cleared drag forgets the stale object");
+    }
+}
+""";
+
     private static void FieldFreeCamera(DevContext context, string stage, Dictionary<string, string> options, Action<string> pin)
     {
+        RunGeneralFixture(context, Path.Combine(stage, "drag-state"), GeneralWithoutNamespace(ReadSource(context, "src/DragState.cs")) + "\n" + DragStateCheck, "DragStateCheck.Run()", pin);
         using var native = Native(context);
         using var cine = AssemblyDefinition.ReadAssembly(Path.Combine(context.Root, ".research/extracted/Cinemachine.dll.dll"));
         var game = options.TryGetValue("game-root", out var suppliedGame) ? Path.GetFullPath(suppliedGame) : Path.Combine(Directory.GetParent(context.Root)!.FullName, "8vJXnINT");
@@ -86,11 +104,12 @@ internal static partial class TestCommands
             "frames\\?\\.Get<int>\\(\"Count\"\\)\\s*!=\\s*1",
             "blend\\?\\.Field\\(\"CamB\"\\)\\?\\.Pointer\\s*!=\\s*active\\.Pointer",
             "brain!\\.Get<bool>\\(\"IsBlending\"\\)\\s*\\|\\|\\s*!blend\\.Get<bool>\\(\"IsComplete\"\\)",
-            "GameUi\\.Find\\(root,\\s*\"FightWindow\",\\s*maxDepth:\\s*1\\)\\s*!=\\s*null",
+            "GameUi\\.Find\\(root,\\s*\"FightWindow\",\\s*maxDepth:\\s*1\\)\\s*is\\s*\\{\\s*\\}\\s*fight\\s*&&\\s*!EncounterHidden\\(fight\\)",
+            "root\\.Get\\(\"touchTarget\"\\)\\?\\.Get<bool>\\(\"touchable\"\\)\\s*==\\s*true",
             "FieldFreeCamera\\.Update\\(scene,\\s*brain!,\\s*free,\\s*player,\\s*blocked\\)",
             "var inputAllowed\\s*=\\s*FieldInputAllowed\\(root,\\s*pan:\\s*true\\)",
             "!Application\\.isFocused\\s*\\|\\|\\s*ModUi\\.IsOpen\\s*\\|\\|\\s*Input\\.touchCount\\s*!=\\s*0\\s*\\|\\|\\s*root\\.Get<bool>\\(\"modalWaiting\"\\)",
-            "RuntimeObject\\.StaticCall\\(RuntimeObject\\.FindClass\\(\"FairyGUI\",\\s*\"GObject\"\\),\\s*\"get_draggingObject\"\\)\\s*!=\\s*null",
+            "GameUi\\.LiveDrag\\(\\)\\s*!=\\s*null",
             "root\\.Get\\(\"focus\"\\)\\?\\.Get\\(\"asTextInput\"\\)\\?\\.Get<bool>\\(\"focused\"\\)\\s*==\\s*true",
             "pane\\.Get<bool>\\(\"touchEffect\"\\)\\s*&&\\s*\\(pan\\s*\\|\\|\\s*pane\\.Get<bool>\\(\"mouseWheelEnabled\"\\)\\)",
             "\"get_isTouchOnUI\"",

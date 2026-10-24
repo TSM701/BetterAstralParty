@@ -1,5 +1,90 @@
 # Combat rule audit
 
+## 2026-10-24 — two Shooting Star relics
+
+With both relics held, the server may resolve the release as one hit or as one hit per relic;
+no release with both has been observed. Without incoming modifiers both give the same sum.
+With them they differ (Weakness Mark +1: 1 + 2 + 1 = 4 as one hit, (1 + 1) + (2 + 1) = 5 as
+two), so the indicator shows the span of both, and combat-audit names both as rules until a
+logged release separates them.
+
+Resolved the same day: the user confirmed from play that the two relics hit one after the
+other, each its own hit. The indicator now shows that sum, and combat-audit keeps "one hit"
+only as the alternative rule.
+
+## 2026-10-23 — Shooting Star incoming modifiers, Powerful Attack, reverse inference
+
+Observed in game: gold Shooting Star against a boss (HP 83) holding 15 Starlight, with
+Weakness Mark 1140102 ("damage taken +1") on the boss, dealt 18; the indicator said 17.
+2 + 15 + 1 = 18 fits; "own Starlight counted" (2 + 16) also fits this one release but
+contradicts the 2026-10-22 observation. A players' guide (TapTap 星趴pve攻略 基础篇,
+2025-12) states fixed damage ignores defense and takes vulnerability/reduction. Release
+damage now takes the monster's incoming modifiers; a per-hit cap stays a range until seen.
+
+Powerful Attack (10010) Params [6, 6, 50]: "final ATK +50% for this battle". Card advice
+and the hover KO view now bound floor..ceiling of the boosted final ATK instead of
+withholding the card (the guide says rounded up; not observed).
+
+The client has no PvE rule code (rechecked in the 2026-10-15 runtime: damage names belong
+to presentation handlers, the separate single-player mini-game and the scripted tutorial).
+The server sends HeroHpChangeS2C (change, before/after HP, damage type, killer) and the
+client keeps the applied change in BattleProperty.ChangeHP. Releases and KO hits now log
+it, and combat-audit tests candidate release rules against the results.
+
+## 2026-10-23 — boss targeting lock 10331101
+
+The 深度改造 boss (hero 1033, skill 103311) shows buff 10331101, described as ignoring attacks,
+being unselectable and taking 0 damage. In play it cannot be attacked until a set monster is
+defeated three times, and the icon stays (progress 0) afterwards. combat-audit hit 19b0f3c7a197-145
+had it as defender: ATK 35, DEF 5, die 2 against 9 HP was lethal, while the model predicted 0.
+Any fight with it as defender happens only after the lock opens, so 10331101 no longer zeroes a
+hit. Property stacks of every public property are now logged so 10009 (改造) can be audited.
+
+## 2026-10-22 — Shooting Star stack order observed (1.5.3-dev.21)
+
+Observed in game: Starlight granted by a Shooting Star release is not part of that
+release's damage. The gold boss bonus is the Starlight held before letting go, so the
+ranges shown since 1.5.3-dev.7 (including both relics together) are now exact values.
+
+## 2026-10-21 — spectator perspective and Shooting Star (1.5.3-dev.7)
+
+Spectated fights skip the card step: the logged step ladder is 1 -> 2 -> 4 -> 5 -> 6,
+so spectators first saw the dice indicator at the revealed roll. Step 4 now shows
+the pre-roll view for spectators. Spectators of a player defender now see that
+player's survival view (KO view when the defender is a monster); titles became
+"KO 주사위 조건" and "생존 주사위 조건". No threshold arithmetic changed.
+
+Shooting Star (relics 50078/50079, #14): STRRelic describes release damage 1/2 and
+one Starlight stack; Relic Params are [-1, 1] and [-2, 1], and gold adds the current
+Starlight stack count against a boss. The client only plays the server's HP change
+(BuffShow_5007801/5007901); no client formula exists. Boss = Hero.MonsterType Boss (2)
+or PveBoss (10) from the protobuf enum. Unverified and shown as ranges: whether the
+gold boss bonus counts this release's own stack, and whether both relics fire
+together. The BWIKI page for 金色飞星 repeats the description without settling it.
+
+## 2026-10-21 — uncounted effects and combat audit (1.5.3-dev.6)
+
+Combat rules are resolved by the server; the client has no damage formula and
+BuffInfoConfigure carries no effect semantics (type, tag, rounds and display
+only). Exact agreement therefore rests on per-buff handlers plus observation.
+Until now, any shown buff without a handler silently counted as zero.
+
+`src/CombatBuffAudit.cs` now lists the 21 modeled buffs and 107 buffs audited
+as neutral from the original STRBuff descriptions of the 159 shown buffs in the
+2026-09-26 table snapshot: they change only public ATK/DEF/max HP (already in
+the native totals), movement, coins, cards, healing or damage outside the hit,
+combat avoidance or progress counts. The remaining shown buffs (for example
+5007002 大铜锣 "received damage -1", 2002001 "cannot dodge", 1251201 "dodge +1",
+1060101 lifesteal, HP links/floors and conditional ATK) and every buff added by
+later game updates are "not counted". PublicCombatEffects collects them from
+both combatants into `HitModifiers.Unknown` without changing any number; the UI
+marks them and diagnostics log `combatEffects.unknown.<role>`.
+
+`Developer.cmd combat-audit` replays logged hits through the current model and
+groups outcomes by buff. It replaces the old `combatEffects.unmodeled` list,
+which mixed neutral stat buffs with real gaps. No in-game verification of the
+new markers was performed in this entry.
+
 ## 2026-10-02 — 0.39.1 observed exchanges and failed-dodge capture
 
 The retained ed7103a231be session provides 91 final HP comparisons: 72 exact
@@ -361,7 +446,7 @@ no hidden parameters, unrevealed rolls or other players' hands are accessed.
 | 4000301 | Destiny 40003, Params[0] = -2 | Next-hit adjustment |
 | 4000401 | Destiny 40004, Params[0] = +2 | Next-hit adjustment |
 | 5006001 | Relic 50060, Params[0] = -2 | Existing stacks × incoming adjustment |
-| 10331101 | Original STRBuff 10331101 | Explicit received-damage immunity |
+| 10331101 | Original STRBuff 10331101 | Targeting lock, no effect inside a hit (observed 2026-10-22; was immunity) |
 
 Numeric values above document the inspected snapshot; runtime values come from
 the active native catalog with parameter-count, range and buff-association
@@ -912,3 +997,26 @@ effects, so that event alone cannot prove its mark count. Production-reader test
 with a native tuple substitute cover absent/multiple/duplicate/invalid marks and
 propagation to all advisor paths. Build and regression checks pass; a fresh solo
 run is still needed to verify actual marked hits and mixed-effect ordering.
+
+## 2026-10 table audit — 1.6.0-dev
+
+The 2026-10-15 game-data bundle (current INT tables) adds shown buffs that the
+2026-09-26 snapshot lacked. Original STRBuff text:
+
+- 10711102: +2 ATK per stack, one stack lost after being challenged.
+- 10711103: DEF -1, move -1.
+- 10721101 and 10741101: +1 ATK per stack.
+- 5008702: +2 ATK per stack. 8000101: +2 move on the next roll.
+  3081104: cost limit +3, move +2, one extra card play.
+
+All change only public ATK/DEF (already in the native totals), movement or
+cards, so they join CombatBuffAudit.Neutral. `Developer.cmd combat-audit` over
+the local runtime logs replayed 37 hits with 0 mismatches, including 8 hits
+with 10711102, 7 with 10711103 and 4 with 10721101.
+
+1071102 is new: skill 10711 (the PvP passive, Params [-3]) now grants its own
+buff instead of sharing 1071101. It is modeled like 1071101 from its skill's
+Params[0] with the buff association guard, but it is not the Shushu shield and
+does not trigger the Dodge override. 10009 (modification: damage equal to
+current HP when stacks reach 0) stays not counted; no logged hit shows it, and
+its trigger timing relative to a hit is unverified.

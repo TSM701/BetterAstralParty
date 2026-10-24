@@ -50,7 +50,7 @@ internal static class HandLayoutUi
     private static (Vector2 Size, float Unit, bool Korean)? _dropHintLayout;
     private static Vector2 _hotPosition, _hotSize;
     private static float _scanAt, _diagnosticAt;
-    private static IntPtr _tween, _tweenManager, _gobject, _logic, _pool, _cardClass;
+    private static IntPtr _tween, _tweenManager, _logic, _pool, _cardClass;
     private static HandGroup? _expanded;
     private static IntPtr _focused;
     private static bool _cardPress;
@@ -80,7 +80,6 @@ internal static class HandLayoutUi
         if (_tween == IntPtr.Zero) _tween = RuntimeObject.FindClass("FairyGUI", "GTween");
         if (_tweenManager == IntPtr.Zero) _tweenManager = RuntimeObject.FindClass("FairyGUI", "TweenManager");
         if (_cardClass == IntPtr.Zero) _cardClass = RuntimeObject.FindClass("UI", "UIHandCard_Button_Card");
-        if (_gobject == IntPtr.Zero) _gobject = RuntimeObject.FindClass("FairyGUI", "GObject");
         if (_pool == IntPtr.Zero) _pool = RuntimeObject.FindClass("GameLogic", "CardPool");
         if (Time.unscaledTime >= _scanAt)
         {
@@ -123,7 +122,7 @@ internal static class HandLayoutUi
         var unit = Math.Min(width / 1920f, height / 1080f);
         // Hover's destination stays current during a native drag, including a resize.
         if (!clickMode) UpdateDropZone(root, width, height, unit, false, 0);
-        var dragging = RuntimeObject.StaticCall(_gobject, "get_draggingObject");
+        var dragging = GameUi.LiveDrag();
         if (CardPointerBusy(dragging))
         {
             foreach (var entry in Entries.Values) entry.Rendered = false;

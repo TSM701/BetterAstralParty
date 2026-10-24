@@ -156,6 +156,21 @@ internal static partial class NativeCommonFixture
                 Check(UpdateTrust.Hash(Read(txn.BackupDir + "\\completed.json")) == txn.JournalHash, "completion preserves exact original journal bytes");
             }
         }
+        using (var holder = new Bundle("casefold"))
+        {
+            // Steam discovery and a typed -GameRoot can differ only in letter case; both name the same journal.
+            var bundle = holder.Value; var target = bundle.GameRoot + "\\BetterAstralParty-Mod.cmd"; Write(target, Encoding.ASCII.GetBytes("origin"));
+            using (NativeMaintenance.AcquireInstallLock(bundle))
+            using (var retyped = new Bundle("CASEFOLD"))
+            {
+                var txn = NativeMaintenance.StartTransaction(bundle, new[] { target }, 4096); Write(target, Encoding.ASCII.GetBytes("target"));
+                var other = retyped.Value; var same = other.GameRoot + "\\BetterAstralParty-Mod.cmd";
+                var read = NativeMaintenance.ReadTransaction(other, new[] { same }, txn.JournalHash);
+                using (var maintenance = new UpdateLaunchGate.Lease(other.GameRoot))
+                    NativeMaintenance.RestoreTransaction(other, read, new[] { same }, new Dictionary<string, string?> { [same] = UpdateTrust.Hash(Read(target)) });
+                Check(Encoding.ASCII.GetString(Read(target)) == "origin" && !NativeMaintenance.HasPending(bundle), "recovery accepts the same game root typed in other letter case");
+            }
+        }
         using (var holder = new Bundle("unsafe"))
         {
             var bundle = holder.Value; var target = bundle.GameRoot + "\\BetterAstralParty-Mod.cmd"; Write(target, Encoding.ASCII.GetBytes("origin"));

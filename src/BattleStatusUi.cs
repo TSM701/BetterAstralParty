@@ -8,8 +8,8 @@ internal static class BattleStatusUi
     internal const string CounterFeature = "CounterIndicators";
     private static readonly List<Row> Rows = new();
     private static IntPtr _logicClass, _battleClass, _helperClass, _commonClass, _parent, _stageClass;
-    private static RuntimeObject? _fight, _ui, _tooltip, _tooltipItem, _counter;
-    private static NativeUi.Surface? _tooltipBackground;
+    private static RuntimeObject? _fight, _ui, _tooltip, _tooltipItem, _counter, _unknownTag, _unknownText;
+    private static NativeUi.Surface? _tooltipBackground, _unknownTagBackground;
     private static float _scanAt, _hoverAt, _tipRefreshAt;
     private static float _rootWidth, _rootHeight, _uiWidth, _uiHeight;
     private static string _tipText = "";
@@ -19,6 +19,9 @@ internal static class BattleStatusUi
     private static RuntimeObject? _counterIcon, _counterParent, _counterHeader;
     private static IntPtr _counterDefender;
     private static bool _counterAvailable, _counterShown;
+    // A counter hidden only while the settings window is open or the game is unfocused returns without its reveal
+    // motion and sound; it is the same Counter, not a new one.
+    private static IntPtr _quietCounter;
     private static float _counterVisibleSince = -1;
     private static (float X, float Y, float Size, float Alpha)? _counterPosition;
 
@@ -28,6 +31,9 @@ internal static class BattleStatusUi
         private readonly RuntimeObject _handArea;
         private readonly NativeUi.Surface _background;
         internal readonly List<RuntimeObject> Icons = new();
+        // Mod-owned "?" discs over shown effects the combat model does not count; native icons stay untouched.
+        private readonly List<RuntimeObject> _markers = new();
+        private readonly bool[] _markerVisible = new bool[BattleStatusLayout.PageSize];
         internal RuntimeObject ActorUi;
         internal readonly bool Attacker;
         internal int PageIndex, Count;
@@ -55,6 +61,7 @@ internal static class BattleStatusUi
         private RuntimeObject? _hp, _hpDisplay, _hpHeart;
         private Vector3 _hpEdge;
         private float _width;
+        private bool _empty;
         private string _handText = "", _pageText = "";
         private readonly (bool Property, int Id, int Progress, int Rounds)?[] _effects = new (bool, int, int, int)?[BattleStatusLayout.PageSize];
         private readonly bool[] _iconVisible = new bool[BattleStatusLayout.PageSize];
@@ -90,6 +97,8 @@ internal static class BattleStatusUi
                     Panel.Call("AddChild", icon);
                     Icons.Add(icon);
                 }
+                // Added after every icon so each disc draws above its neighbours.
+                for (var i = 0; i < BattleStatusLayout.PageSize; i++) _markers.Add(UnknownMarker(Panel));
             }
             catch { GameUi.Dispose(Panel); throw; }
         }
@@ -122,11 +131,14 @@ internal static class BattleStatusUi
             var buffs = shown.Field("Item1")!;
             var properties = shown.Field("Item2")!;
             var propertyCount = properties.Get<int>("Count");
-            Count = propertyCount + buffs.Get<int>("Count");
+            var showHand = Plugin.StatusHand.Value;
+            Count = Plugin.StatusEffects.Value ? propertyCount + buffs.Get<int>("Count") : 0;
+            _empty = !showHand && Count == 0;
+            if (_handArea.Get<bool>("visible") != showHand) _handArea.Set("visible", showHand);
             PageIndex = BattleStatusLayout.ClampPage(PageIndex, Count);
             var paged = Count > BattleStatusLayout.PageSize;
             var visibleCount = Math.Min(BattleStatusLayout.PageSize, Count - PageIndex * BattleStatusLayout.PageSize);
-            var width = BattleStatusLayout.RowWidth(visibleCount, paged);
+            var width = BattleStatusLayout.RowWidth(visibleCount, paged, showHand);
             var resized = _width != width;
             if (resized)
             {
@@ -148,15 +160,20 @@ internal static class BattleStatusUi
                 var icon = Icons[i];
                 var visible = index < Count;
                 if (_iconVisible[i] != visible) { _iconVisible[i] = visible; icon.Set("visible", visible); }
-                if (!visible) { _effects[i] = null; continue; }
-                if (resized || _effects[i] == null) NativeUi.Position(icon, BattleStatusLayout.IconX(i, width, Attacker) + BattleStatusLayout.IconInset,
-                    (BattleStatusLayout.Height - BattleStatusLayout.IconSize) / 2,
-                    BattleStatusLayout.IconSize / Math.Max(icon.Get<float>("width"), icon.Get<float>("height")));
+                if (!visible) { _effects[i] = null; SetMarker(i, false); continue; }
+                if (resized || _effects[i] == null)
+                {
+                    var x = BattleStatusLayout.IconX(i, width, Attacker, showHand) + BattleStatusLayout.IconInset;
+                    NativeUi.Position(icon, x, (BattleStatusLayout.Height - BattleStatusLayout.IconSize) / 2,
+                        BattleStatusLayout.IconSize / Math.Max(icon.Get<float>("width"), icon.Get<float>("height")));
+                    _markers[i].Call("SetXY", x + BattleStatusLayout.IconSize - MarkerSize + 6, -6f);
+                }
                 var property = index < propertyCount;
                 var data = property ? properties.Call("get_Item", index)! : buffs.Call("get_Item", index - propertyCount)!;
                 var progress = property ? data.Field("property")!.Get<int>("Value") : data.Get<int>("Progress");
                 var rounds = property ? 0 : data.Get<int>("KeepRound");
                 var id = property ? data.Field("buffId")!.Value<int>() : data.Get<int>("BuffId");
+                SetMarker(i, !CombatBuffAudit.Counted(id));
                 var state = (property, id, progress, rounds);
                 if (_effects[i] == state) continue;
                 _effects[i] = state;
@@ -165,6 +182,13 @@ internal static class BattleStatusUi
                 NativeUi.OutlineTree(icon);
                 icon.SetField("data", BattleStatusLayout.Counters(progress, rounds, property));
             }
+        }
+
+        private void SetMarker(int index, bool visible)
+        {
+            if (_markerVisible[index] == visible) return;
+            _markerVisible[index] = visible;
+            _markers[index].Set("visible", visible);
         }
 
         private Vector2? HpAnchor()
@@ -178,7 +202,7 @@ internal static class BattleStatusUi
         internal void Position()
         {
             var anchor = HpAnchor();
-            if (anchor == null) { SetVisible(false); return; }
+            if (anchor == null || _empty) { SetVisible(false); return; }
             var scale = Math.Min(Plugin.UiScale.Value, _uiWidth / 1100f);
             var position = BattleStatusLayout.BelowHp(anchor.Value.x, anchor.Value.y, _width, scale,
                 _uiWidth, _uiHeight, Attacker);
@@ -205,7 +229,11 @@ internal static class BattleStatusUi
         if (!Compatibility.Allowed("BattleStatus")) return;
         try
         {
-            if (!Plugin.BattleStatus.Value || !Application.isFocused || ModUi.IsOpen) { Clear(); return; }
+            if (!Plugin.BattleStatus.Value || !Application.isFocused || ModUi.IsOpen)
+            {
+                _quietCounter = Plugin.BattleStatus.Value && _counterShown ? _counterDefender : IntPtr.Zero;
+                Clear(); return;
+            }
             if (GameUi.HomeAvailable) RuntimeObject.RequireClasses("BattleStatus", ("GameLogic", "GameLogicManager"), ("Core.Scene", "BattleSceneController"), ("UI", "UIHelper"), ("UI", "CommonUIManager"));
             if (GameUi.Root == null) { Clear(); return; }
             if (_logicClass == IntPtr.Zero || _battleClass == IntPtr.Zero)
@@ -224,7 +252,10 @@ internal static class BattleStatusUi
             var director = RuntimeObject.StaticField(_battleClass, "inst")?.Field("directorManager");
             // Spectators can see DEFENSE before their local FightWindow reaches a choice step.
             // Follow the world-space header every frame, independently of the slower buff scan.
-            UpdateCounter(director?.Get("victim")?.Field("_UI"));
+            if (Plugin.CounterIcons.Value) UpdateCounter(director?.Get("victim")?.Field("_UI"));
+            else ClearCounter();
+            // Both row parts off: no row, counter icons stay independent.
+            if (!Plugin.StatusHand.Value && !Plugin.StatusEffects.Value) { ClearRows(); return; }
             // Do not spend another polling interval waiting to construct/bind the first spectator rows.
             if (Rows.Count != 2 || Rows[0].NeedsData || Rows[1].NeedsData || Time.unscaledTime >= _scanAt)
             {
@@ -336,7 +367,8 @@ internal static class BattleStatusUi
         if (!_counterShown)
         {
             _counterIcon.Set("visible", true);
-            NativeUi.Play(_counterIcon, "MaxPoint");
+            if (_counterDefender != _quietCounter) NativeUi.Play(_counterIcon, "MaxPoint");
+            _quietCounter = IntPtr.Zero;
             _counterShown = true;
         }
     }
@@ -401,7 +433,8 @@ internal static class BattleStatusUi
             var title = Local(config, "NameId");
             var description = Local(config, "DescId");
             var counters = icon.Field("data")?.String() ?? "";
-            var content = title + "\n" + description + "\n" + counters + "\n" + _difficulty;
+            var counted = CombatBuffAudit.Counted(config.Get<int>("Id"));
+            var content = title + "\n" + description + "\n" + counters + "\n" + _difficulty + "\n" + counted + ModText.Revision;
             if (_tipText != content)
             {
                 _tipText = content;
@@ -413,8 +446,19 @@ internal static class BattleStatusUi
                 var bottom = Math.Max(80, desc.Get<float>("y") + desc.Get<float>("textHeight") + 12);
                 _counter!.Call("SetXY", 14f, bottom + 14);
                 _counter.Set("text", counters);
-                _tooltip!.Call("SetSize", 390f, bottom + 60);
-                _tooltipBackground!.Resize(390f, bottom + 60);
+                var tipHeight = bottom + (counted ? 60 : 98);
+                _unknownTag!.Set("visible", !counted);
+                if (!counted)
+                {
+                    _unknownText!.Set("text", ModText.Text("계산 미반영"));
+                    var tagWidth = 44 + _unknownText.Get<float>("textWidth");
+                    _unknownText.Call("SetSize", tagWidth - 34, 30f);
+                    _unknownTag.Call("SetSize", tagWidth, 32f);
+                    _unknownTagBackground!.Resize(tagWidth, 32f);
+                    _unknownTag.Call("SetXY", 14f, bottom + 52);
+                }
+                _tooltip!.Call("SetSize", 390f, tipHeight);
+                _tooltipBackground!.Resize(390f, tipHeight);
             }
         }
         _tooltipBackground!.Refresh();
@@ -429,6 +473,16 @@ internal static class BattleStatusUi
         _tooltip.Set("alpha", reveal);
         _tooltip.Set("visible", true);
     }
+
+    private const float MarkerSize = 22;
+
+    private static RuntimeObject UnknownMarker(RuntimeObject parent)
+    {
+        var marker = NativeUi.QuestionMark(parent, MarkerSize);
+        marker.Set("visible", false);
+        return marker;
+    }
+    internal static int Difficulty => _difficulty;
 
     private static bool ContainsPoint(RuntimeObject item, Vector2 point)
     {
@@ -465,6 +519,15 @@ internal static class BattleStatusUi
             label.Set("autoSize", 2); // Native wrapping, grow height instead of shrinking Korean text.
         }
         _counter = NativeUi.Label(_tooltip, "", 14, 170, 362, 30, 19);
+        // Dark capsule under the counters: this effect is not part of the combat calculations.
+        _unknownTag = NativeUi.Component(_tooltip, 160, 32);
+        _unknownTag.Set("touchable", false);
+        _unknownTagBackground = new NativeUi.Surface(_unknownTag, 160, 32, fixedOpacity: true, fill: NativeUi.DarkFill);
+        var mark = NativeUi.Label(_unknownTag, "?", 6, 1, 24, 30, 17);
+        mark.Set("align", 1); mark.Set("verticalAlign", 1);
+        _unknownText = NativeUi.Label(_unknownTag, "", 30, 1, 120, 30, 17);
+        _unknownText.Set("verticalAlign", 1);
+        _unknownTag.Set("visible", false);
     }
 
     internal static void Clear()
@@ -478,8 +541,8 @@ internal static class BattleStatusUi
         foreach (var row in Rows) GameUi.Dispose(row.Panel);
         Rows.Clear();
         GameUi.Dispose(_tooltip);
-        _tooltip = _tooltipItem = _counter = _ui = _fight = null;
-        _tooltipBackground = null;
+        _tooltip = _tooltipItem = _counter = _unknownTag = _unknownText = _ui = _fight = null;
+        _tooltipBackground = _unknownTagBackground = null;
         _parent = _hovered = IntPtr.Zero; _tipText = "";
         _camera = null;
     }

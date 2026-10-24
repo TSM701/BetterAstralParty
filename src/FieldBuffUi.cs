@@ -251,7 +251,10 @@ internal static class FieldBuffUi
 
     // Mirrors the native per-frame plate pass for the owned layer: owner projection, side offset and lerp,
     // pairwise vertical separation, marker line and step-phase input. Monster plates stay native.
-    private static readonly List<(float X, float Y, float Width, float Height)> Obstacles = new();
+    private static readonly List<(float X, float Y, float Width, float Height)> Obstacles = new(), Rects = new();
+    private static readonly List<float> Before = new();
+    // Visible monster plates the last layout pass read, for the performance log.
+    internal static int MonsterPlateCount => Obstacles.Count;
 
     private static void Layout()
     {
@@ -302,40 +305,51 @@ internal static class FieldBuffUi
         for (int c = 0, count = monsters?.Get<int>("numChildren") ?? 0; c < count; c++)
         {
             var other = monsters!.Call("GetChildAt", c)!;
-            if (other.TypeName == "UICom_AttrInfo" && other.Get<bool>("visible"))
-                Obstacles.Add((other.Get<float>("x"), other.Get<float>("y"), other.Get<float>("width"), other.Get<float>("height")));
+            if (other.TypeName == "UICom_AttrInfo" && other.Get<bool>("visible")) Obstacles.Add(Rect(other));
         }
         // Monster plates laid out by the zoom-follow layer this frame, in the same com_AttrInfos space.
         foreach (var other in FieldMonsterPlates.Plates)
-            if (!other.Get<bool>("isDisposed") && other.Get<bool>("visible"))
-                Obstacles.Add((other.Get<float>("x"), other.Get<float>("y"), other.Get<float>("width"), other.Get<float>("height")));
-        for (var i = 0; i < Placed.Count; i++)
+            if (!other.Get<bool>("isDisposed") && other.Get<bool>("visible")) Obstacles.Add(Rect(other));
+        Rects.Clear();
+        foreach (var (plate, _) in Placed) Rects.Add(Rect(plate.Ui));
+        Before.Clear();
+        foreach (var rect in Rects) Before.Add(rect.Y);
+        SeparateRects(Rects, Obstacles);
+        for (var i = 0; i < Rects.Count; i++)
+            if (Rects[i].Y != Before[i]) Placed[i].Plate.Ui.Set("y", Rects[i].Y);
+    }
+
+    internal static (float X, float Y, float Width, float Height) Rect(RuntimeObject ui) =>
+        (ui.Get<float>("x"), ui.Get<float>("y"), ui.Get<float>("width"), ui.Get<float>("height"));
+
+    // The native pair rule on rectangles read once: a fixed plate pushes only the moving one by the whole overlap.
+    // Reading every pair natively cost thousands of boxed calls a frame once dozens of monsters crowded the field.
+    internal static void SeparateRects(List<(float X, float Y, float Width, float Height)> rects, List<(float X, float Y, float Width, float Height)>? fixedPlates)
+    {
+        for (var i = 0; i < rects.Count; i++)
         {
-            var a = Placed[i].Plate.Ui;
-            for (var j = i + 1; j < Placed.Count; j++) Split(a, Placed[j].Plate.Ui);
-            foreach (var other in Obstacles) Split(a, other);
+            var a = rects[i];
+            for (var j = i + 1; j < rects.Count; j++)
+            {
+                var b = rects[j];
+                var overlapX = (a.Width + b.Width) * 0.5f - Math.Abs(a.X - b.X);
+                var overlapY = (a.Height + b.Height) * 0.5f - Math.Abs(a.Y - b.Y);
+                if (overlapX <= 0 || overlapY <= 0) continue;
+                var shift = overlapY * 0.5f;
+                var up = a.Y + 0.1f < b.Y;
+                a.Y = up ? a.Y - shift : a.Y + shift;
+                b.Y = up ? b.Y + shift : b.Y - shift;
+                rects[j] = b;
+            }
+            if (fixedPlates != null)
+                foreach (var other in fixedPlates)
+                {
+                    var overlapX = (a.Width + other.Width) * 0.5f - Math.Abs(a.X - other.X);
+                    var overlapY = (a.Height + other.Height) * 0.5f - Math.Abs(a.Y - other.Y);
+                    if (overlapX > 0 && overlapY > 0) a.Y = a.Y + 0.1f < other.Y ? a.Y - overlapY : a.Y + overlapY;
+                }
+            rects[i] = a;
         }
-    }
-
-    private static void Split(RuntimeObject a, RuntimeObject b)
-    {
-        float ay = a.Get<float>("y"), by = b.Get<float>("y");
-        var overlapX = (a.Get<float>("width") + b.Get<float>("width")) * 0.5f - Math.Abs(a.Get<float>("x") - b.Get<float>("x"));
-        var overlapY = (a.Get<float>("height") + b.Get<float>("height")) * 0.5f - Math.Abs(ay - by);
-        if (overlapX <= 0 || overlapY <= 0) return;
-        var shift = overlapY * 0.5f;
-        var up = ay + 0.1f < by;
-        a.Set("y", up ? ay - shift : ay + shift);
-        b.Set("y", up ? by + shift : by - shift);
-    }
-
-    private static void Split(RuntimeObject a, (float X, float Y, float Width, float Height) fixedPlate)
-    {
-        var ay = a.Get<float>("y");
-        var overlapX = (a.Get<float>("width") + fixedPlate.Width) * 0.5f - Math.Abs(a.Get<float>("x") - fixedPlate.X);
-        var overlapY = (a.Get<float>("height") + fixedPlate.Height) * 0.5f - Math.Abs(ay - fixedPlate.Y);
-        if (overlapX <= 0 || overlapY <= 0) return;
-        a.Set("y", ay + 0.1f < fixedPlate.Y ? ay - overlapY : ay + overlapY);
     }
 
     private static void RefreshCounters(RuntimeObject battleUi)
@@ -355,6 +369,7 @@ internal static class FieldBuffUi
             }
         }
         foreach (var ui in FieldMonsterPlates.Plates) RefreshCounter(ui);
+        foreach (var ui in FieldStatePlates.Players) RefreshCounter(ui);
         Stale.Clear();
         foreach (var key in Counters.Keys) if (!CounterSeen.Contains(key)) Stale.Add(key);
         foreach (var key in Stale) { GameUi.Dispose(Counters[key].Icon); Counters.Remove(key); }
@@ -401,7 +416,7 @@ internal static class FieldBuffUi
         Plugin.Diagnostics.State("field.gate", reason);
         if (Plates.Count > 0) Plugin.Diagnostics.Write($"field clear: {reason}; count={Plates.Count}");
         foreach (var plate in Plates.Values) GameUi.Dispose(plate.Ui);
-        Plates.Clear(); Seen.Clear(); Stale.Clear(); Placed.Clear();
+        Plates.Clear(); Seen.Clear(); Stale.Clear(); Placed.Clear(); Obstacles.Clear();
         GameUi.Dispose(_layer);
         _layer = _battleUi = null;
         EffectCount = 0;

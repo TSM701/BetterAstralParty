@@ -24,10 +24,10 @@ internal sealed class DiagnosticLog
     internal bool IsRecording => _writer != null;
     private double _sampleStart = -1, _uiTotal, _uiMax, _gameMax, _popupMax, _statusMax, _frameMax, _coreMax;
     private long _sampleBytes, _frames, _slowFrames;
-    private double _fieldTotal, _fieldMax;
+    private double _fieldTotal, _fieldMax, _frameTotal;
     private double _handTotal, _handMax;
     private long _handBytes;
-    private int _fieldPlates, _fieldEffects;
+    private int _fieldPlates, _fieldEffects, _monsterPlates;
     // ModUi tick segments, in call order; mark i ends segment i - 1.
     internal static readonly string[] TickFeatures = { "core", "battleMenu", "autoThanks", "characterGuide", "font", "language",
         "updateNotice", "fieldZoom", "fieldDice", "cardTargets", "cardPreview", "hand", "shushu", "battleStatus", "encounter",
@@ -87,6 +87,16 @@ internal sealed class DiagnosticLog
             if (File.Exists(older)) File.Copy(older, Path.Combine(_directory, Name(age)), true);
         }
         File.Copy(current, Path.Combine(_directory, "previous.log"), true);
+        // The overflow chunk belongs to previous.log alone; an older session's chunk must not pass as its start.
+        var overflow = Path.Combine(_directory, "current-overflow.log"); var previous = Path.Combine(_directory, "previous-overflow.log");
+        if (File.Exists(overflow)) { File.Copy(overflow, previous, true); File.Delete(overflow); }
+        else File.Delete(previous);
+    }
+    // A long session keeps its newest 1 MB plus the 1 MB before it; earlier sessions' logs are not pushed out.
+    private void Overflow()
+    {
+        var current = Path.Combine(_directory, "current.log");
+        if (File.Exists(current)) File.Copy(current, Path.Combine(_directory, "current-overflow.log"), true);
     }
 
     internal void Write(string message)
@@ -103,7 +113,7 @@ internal sealed class DiagnosticLog
                 if (_bytes + bytes > MaxBytes)
                 {
                     Close();
-                    Rotate();
+                    Overflow();
                     OpenCurrent();
                     var continuation = $"diagnostics CONTINUE | {_header}; session={_session}{Environment.NewLine}";
                     _writer!.Write(continuation);
@@ -157,7 +167,7 @@ internal sealed class DiagnosticLog
     // Called only with diagnostics ON; aggregate numbers, never emit per-frame lines.
     internal void Performance(double seconds, double uiMs, double gameMs, double popupMs,
         double statusMs, long managedBytes, double frameMs, double fieldMs = 0, int fieldPlates = 0, int fieldEffects = 0,
-        double handMs = 0, long handBytes = 0, double coreMs = 0)
+        double handMs = 0, long handBytes = 0, double coreMs = 0, int monsterPlates = 0)
     {
         lock (_gate)
         {
@@ -167,15 +177,17 @@ internal sealed class DiagnosticLog
             _frames++; _sampleBytes += managedBytes;
             _uiTotal += uiMs; _uiMax = Math.Max(_uiMax, uiMs);
             _gameMax = Math.Max(_gameMax, gameMs); _popupMax = Math.Max(_popupMax, popupMs); _coreMax = Math.Max(_coreMax, coreMs);
-            _statusMax = Math.Max(_statusMax, statusMs); _frameMax = Math.Max(_frameMax, frameMs);
+            _statusMax = Math.Max(_statusMax, statusMs); _frameMax = Math.Max(_frameMax, frameMs); _frameTotal += frameMs;
+            // Visible monster plates: whole-frame time against the mod's tick tells native lag from mod lag on crowded fields.
+            _monsterPlates = Math.Max(_monsterPlates, monsterPlates);
             // Field Tick only: native per-frame placement/rendering occurs outside ModUi.Tick.
             _fieldTotal += fieldMs; _fieldMax = Math.Max(_fieldMax, fieldMs);
             _fieldPlates = Math.Max(_fieldPlates, fieldPlates); _fieldEffects = Math.Max(_fieldEffects, fieldEffects);
             _handTotal += handMs; _handMax = Math.Max(_handMax, handMs); _handBytes += handBytes;
             if (frameMs >= 50) _slowFrames++;
             if (seconds - _sampleStart < 10) return;
-            Write(FormattableString.Invariant($"performance frames={_frames}; ui_avg_ms={_uiTotal / _frames:F3}; ui_max_ms={_uiMax:F3}; gameui_max_ms={_gameMax:F3}; gameui_core_max_ms={_coreMax:F3}; popup_max_ms={_popupMax:F3}; status_max_ms={_statusMax:F3}; managed_bytes_per_frame={_sampleBytes / _frames}; game_frame_max_ms={_frameMax:F2}; game_frames_ge50ms={_slowFrames}"));
-            Write(FormattableString.Invariant($"performance_field tick_avg_ms={_fieldTotal / _frames:F3}; tick_max_ms={_fieldMax:F3}; plates_max={_fieldPlates}; effects_max={_fieldEffects}; native_layout_excluded=True"));
+            Write(FormattableString.Invariant($"performance frames={_frames}; ui_avg_ms={_uiTotal / _frames:F3}; ui_max_ms={_uiMax:F3}; gameui_max_ms={_gameMax:F3}; gameui_core_max_ms={_coreMax:F3}; popup_max_ms={_popupMax:F3}; status_max_ms={_statusMax:F3}; managed_bytes_per_frame={_sampleBytes / _frames}; game_frame_max_ms={_frameMax:F2}; game_frames_ge50ms={_slowFrames}; game_frame_avg_ms={_frameTotal / _frames:F2}"));
+            Write(FormattableString.Invariant($"performance_field tick_avg_ms={_fieldTotal / _frames:F3}; tick_max_ms={_fieldMax:F3}; plates_max={_fieldPlates}; effects_max={_fieldEffects}; native_layout_excluded=True; monster_plates_max={_monsterPlates}"));
             Write(FormattableString.Invariant($"performance_hand tick_avg_ms={_handTotal / _frames:F3}; tick_max_ms={_handMax:F3}; managed_bytes_per_frame={_handBytes / _frames}; native_layout_excluded=True"));
             WriteSpikes();
             ResetPerformance();
@@ -224,9 +236,9 @@ internal sealed class DiagnosticLog
         _sampleStart = -1;
         _uiTotal = _uiMax = _gameMax = _popupMax = _statusMax = _frameMax = _coreMax = 0;
         _sampleBytes = _frames = _slowFrames = 0;
-        _fieldTotal = _fieldMax = 0;
+        _fieldTotal = _fieldMax = _frameTotal = 0;
         _handTotal = _handMax = 0; _handBytes = 0;
-        _fieldPlates = _fieldEffects = 0;
+        _fieldPlates = _fieldEffects = _monsterPlates = 0;
     }
 
     private void Fail()
@@ -306,7 +318,7 @@ internal sealed class DiagnosticLog
     }
 
     internal void CombatResult(int before, int predictedDamage, int observed, HitModifiers modifiers,
-        bool monsterDefeatPresentation = false)
+        bool monsterDefeatPresentation = false, int? changeHp = null)
     {
         lock (_gate)
         {
@@ -316,7 +328,7 @@ internal sealed class DiagnosticLog
             var mismatch = expectedDisplay != observed;
             CombatEvent($"damage.result before={before}; predictedDamage={predictedDamage}; expectedHP={expected}; "
                 + $"observedHP={observed}; expectedDisplayHP={expectedDisplay}; monsterDefeatPresentation={monsterDefeatPresentation}; "
-                + $"hpMismatch={mismatch}; overkillUnverifiable={observed == 0 || monsterDefeatPresentation && observed == 1}; modifiers={modifiers}");
+                + $"hpMismatch={mismatch}; overkillUnverifiable={observed == 0 || monsterDefeatPresentation && observed == 1}; modifiers={modifiers}; changeHP={changeHp?.ToString() ?? "unavailable"}");
             Flush();
             if (!mismatch || _combatArchived) return;
             try

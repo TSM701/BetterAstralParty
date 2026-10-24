@@ -8,6 +8,15 @@ internal static class SetupHost
     internal static void ValidateInstalledHistory(string game) { History++; }
     internal static void RecordInstallerStage(string phase, string outcome) { Stages++; }
     internal static void RecordInstallerFailure(string phase, Exception error) { Failures++; }
+    internal static int UpdateChecks, UpdateRecoveries, GamesClosedAtRecovery;
+    // An in-game update cut off between its file moves: recovery puts the plugin bytes it moved aside back.
+    internal static byte[]? PendingPlugin;
+    internal static bool HasPendingUpdate(string game) { UpdateChecks++; return PendingPlugin != null; }
+    internal static string RecoverPendingUpdate(string game)
+    {
+        UpdateRecoveries++; GamesClosedAtRecovery = BetterAstralParty.Installation.NativeSteamMaintenance.StopGames;
+        File.WriteAllBytes(Path.Combine(game, UpdateTrust.PluginPath), PendingPlugin!); PendingPlugin = null; return "RolledBack";
+    }
 }
 namespace BetterAstralParty.Installation
 {
@@ -41,8 +50,8 @@ namespace BetterAstralParty.Installation
     internal sealed class ShortcutRecovery { internal string Backup = "inert shortcut backup"; }
     internal sealed class SteamProfileUnavailableException : InvalidOperationException
     {
-        internal readonly string Reason;
-        internal SteamProfileUnavailableException(string reason) : base(reason) { Reason = reason; }
+        internal readonly string Reason; internal readonly string? Guidance;
+        internal SteamProfileUnavailableException(string reason, string? guidance = null) : base(reason) { Reason = reason; Guidance = guidance; }
     }
     internal static class NativeSteamMaintenance
     {

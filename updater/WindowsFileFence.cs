@@ -451,6 +451,14 @@ namespace BetterAstralParty.Updating
                     if(status!=0)throw new ApplySafetyException(ApplyFailure.FileBusy,(int)RtlNtStatusToDosError(status));_fence.Recheck();
                 } finally {Marshal.FreeHGlobal(buffer);}
             }
+            // Update fault/operation records directly in the game root, live or archived by earlier versions.
+            internal void RemoveUpdateRecord() {
+                if (!_mutable || !Regex.IsMatch(Path.Substring(_fence.Root.Length + 1), @"\A(?:BetterAstralParty\.update-v5\.(?:operation|failure|preferences-failed)|bap-(?:operation-done|fault-ack)-[0-9a-f]{32})\z")) throw new ApplySafetyException(ApplyFailure.UnsafePath);
+                Recheck(); var buffer=Marshal.AllocHGlobal(1);
+                try { Marshal.WriteByte(buffer,1);IoStatus io;var status=NtSetInformationFile(_handle,out io,buffer,1,13);
+                    if(status!=0)throw new ApplySafetyException(ApplyFailure.FileBusy,(int)RtlNtStatusToDosError(status));_fence.Recheck();
+                } finally {Marshal.FreeHGlobal(buffer);}
+            }
             internal void RemoveTemporaryPackage() {
                 if (!_mutable || !Regex.IsMatch(Path.Substring(_fence.Root.Length + 1).Replace('\\','/'), @"\ABetterAstralParty\.Update/bap-v5-stage-[0-9a-f]{32}/package\.zip\z")) throw new ApplySafetyException(ApplyFailure.UnsafePath);
                 Recheck();

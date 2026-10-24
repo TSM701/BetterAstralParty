@@ -44,7 +44,7 @@ namespace BetterAstralParty
     internal sealed class Setting<T>(T value) { internal T Value = value; }
     internal static class Plugin
     {
-        internal static readonly Setting<bool> Enabled = new(true), KoMinimum = new(true);
+        internal static readonly Setting<bool> Enabled = new(true), KoMinimum = new(true), CardAdvice = new(true), KoSpectator = new(true), KoCardPreview = new(true);
         internal static readonly Setting<float> UiScale = new(1);
         internal static Diagnostics? MinimalDiagnostics;
     }
@@ -72,6 +72,7 @@ namespace BetterAstralParty
         internal void Hide() { if (Check.Capture) Check.Effects.Add($"hide:{_face.Pointer}"); }
         internal void Dispose() { Panel.Disposed = true; if (Check.Capture) Check.Effects.Add($"dispose:{_face.Pointer}"); }
     }
+    internal static class ShushuShieldUi { internal static bool BlocksCard(IntPtr card) => false; }
     internal static class CardDiceUi
     {
         internal static void Show(RuntimeObject ui, RuntimeObject point, PreRollCombat input, CardBonus? card, bool preview, bool unsupported)

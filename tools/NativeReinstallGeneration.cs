@@ -88,7 +88,7 @@ namespace BetterAstralParty.Installation
             var bytes = Pin(backups, relative, 1024 * 1024, plan.BackupPins); plan.JournalHash = plan.BackupPins[relative];
             var state = Json(bytes); var backupDir = backups.Full(plan.BackupId);
             object? entries;
-            if (state.Count != 3 || Text(state, "GameRoot") != game.Root || Text(state, "BackupDir") != backupDir
+            if (state.Count != 3 || !string.Equals(Text(state, "GameRoot"), game.Root, StringComparison.OrdinalIgnoreCase) || Text(state, "BackupDir") != backupDir
                 || !state.TryGetValue("Entries", out entries) || !(entries is List<object?> rows) || rows.Count < 1 || rows.Count > 300)
                 throw Bad("RemovalJournalInvalid");
             backups.DirectoryIdentity(plan.BackupId);

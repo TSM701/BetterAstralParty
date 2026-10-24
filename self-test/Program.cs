@@ -117,13 +117,13 @@ try
     if (first.Split("home=visible").Length != 2 || !first.Contains("System.InvalidOperationException")
         || first.Contains("PRIVATE_ACCOUNT_OR_CHAT_TEXT") || first.Contains("performance frames="))
         throw new Exception("진단 중복 억제/예외 기록/개인정보 제외/성능 로그 간격 실패");
-    diagnostic.Performance(10, 3, 1, 0.3, 0.6, 384, 20, 0.4, 3, 3, 0.4, 64);
+    diagnostic.Performance(10, 3, 1, 0.3, 0.6, 384, 20, 0.4, 3, 3, 0.4, 64, monsterPlates: 47);
     diagnostic.SetEnabled(false, "");
     first = File.ReadAllText(current);
     if (!first.Contains("performance frames=3; ui_avg_ms=2.000; ui_max_ms=3.000")
-        || !first.Contains("managed_bytes_per_frame=256; game_frame_max_ms=60.00; game_frames_ge50ms=1"))
+        || !first.Contains("managed_bytes_per_frame=256; game_frame_max_ms=60.00; game_frames_ge50ms=1; game_frame_avg_ms=32.00"))
         throw new Exception("10초 성능 요약 평균·최대·할당 집계 실패");
-    if (!first.Contains("performance_field tick_avg_ms=0.200; tick_max_ms=0.400; plates_max=4; effects_max=12; native_layout_excluded=True"))
+    if (!first.Contains("performance_field tick_avg_ms=0.200; tick_max_ms=0.400; plates_max=4; effects_max=12; native_layout_excluded=True; monster_plates_max=47"))
         throw new Exception("필드 전용 시간·표시기·버프 수 집계 실패");
     if (!first.Contains("performance_hand tick_avg_ms=0.200; tick_max_ms=0.400; managed_bytes_per_frame=32; native_layout_excluded=True"))
         throw new Exception("Hand performance aggregation failed");
@@ -143,8 +143,16 @@ try
     diagnostic.SetEnabled(false, "");
     diagnostic.SetEnabled(true, "third session");
     diagnostic.SetEnabled(false, "");
-    if (Directory.GetFiles(directory).Length != 2 || !File.ReadAllText(current).Contains("third session"))
-        throw new Exception("진단 재활성화/보관 개수 제한 실패");
+    // Five newest sessions are kept (KeptLogs); the long second session also left its previous 1 MB as an overflow chunk.
+    var keptLogs = string.Join(",", Directory.GetFiles(directory).Select(Path.GetFileName).OrderBy(name => name, StringComparer.Ordinal));
+    if (keptLogs != "current.log,previous-2.log,previous-overflow.log,previous.log" || !File.ReadAllText(current).Contains("third session"))
+        throw new Exception("진단 재활성화/보관 개수 제한 실패: " + keptLogs);
+    // A session without overflow drops the older chunk, which must not pass as the start of previous.log; six sessions keep five.
+    string Kept() => string.Join(",", Directory.GetFiles(directory).Select(Path.GetFileName).OrderBy(name => name, StringComparer.Ordinal));
+    diagnostic.SetEnabled(true, "fourth session"); diagnostic.SetEnabled(false, "");
+    if (Kept() != "current.log,previous-2.log,previous-3.log,previous.log") throw new Exception("이전 세션 overflow 조각 정리 실패: " + Kept());
+    for (var session = 5; session <= 6; session++) { diagnostic.SetEnabled(true, "session " + session); diagnostic.SetEnabled(false, ""); }
+    if (Kept() != "current.log,previous-2.log,previous-3.log,previous-4.log,previous.log") throw new Exception("다섯 세션 보관 상한 실패: " + Kept());
     // A file in place of the directory simulates an unwritable destination without permission changes.
     var blocked = Path.Combine(diagnosticTemp, "blocked");
     File.WriteAllText(blocked, "keep");
@@ -224,7 +232,8 @@ Console.WriteLine("162개 입력에서 문자열 생략 경로의 피해·전투
 
 foreach (var action in new[] { "Enabled", "Details", "CardPopups", "BattleStatus", "FieldBuffs", "Names", "Diagnostics", "MuteUnfocused", "InputAttention" })
 {
-    if (MenuLayout.ToggleWidth(action) != 480 || MenuLayout.ToggleHeight != 60)
+    // Top switches are 480 wide; child switches in a parent's tray are ChildWidth (draft A, 2026-10-22).
+    if (MenuLayout.ToggleWidth(action) != (MenuLayout.Parent(action) == null ? 480 : MenuLayout.ChildWidth) || MenuLayout.ToggleHeight != 60)
         throw new Exception("토글 고정 크기 규칙 변경");
     var x = 440;
     if (x + MenuLayout.ToggleWidth(action) > MenuLayout.Width - 24)
@@ -233,7 +242,7 @@ foreach (var action in new[] { "Enabled", "Details", "CardPopups", "BattleStatus
 for (var row = 0; row < 7; row++)
     if (MenuLayout.ToggleY(row) + MenuLayout.ToggleHeight > MenuLayout.ToggleY(row + 1))
         throw new Exception("기능 토글 간격 침범");
-if (MenuLayout.Height != 620 || MenuLayout.SettingsY + MenuLayout.SettingsHeight >= MenuLayout.FooterY
+if (MenuLayout.Height != 760 || MenuLayout.NativeFrameHeight != 620 || MenuLayout.SettingsY + MenuLayout.SettingsHeight >= MenuLayout.FooterY
     || MenuLayout.FooterY + 80 > MenuLayout.Height - 20 || MenuLayout.ContentHeight(0) != MenuLayout.SettingsHeight)
     throw new Exception("Settings viewport/footer must fit the native frame");
 foreach (var content in new[] { 390f, 460f, 2000f })
@@ -257,11 +266,11 @@ if (!MenuLayout.InSettings(0, 0) || !MenuLayout.InSettings(200, 389)
     throw new Exception("Settings clipping must exclude offscreen controls, not fixed footer/tab controls");
 foreach (var renderedHeight in new[] { 60f, 85f, 100f, 120f })
 {
-    var next = MenuLayout.NextTabY(330, renderedHeight);
-    if (next - (330 + renderedHeight) < 16 || next + renderedHeight > MenuLayout.Height - 24)
+    var next = MenuLayout.NextTabY(MenuLayout.TabY, renderedHeight);
+    if (next - (MenuLayout.TabY + renderedHeight) < 16 || next + renderedHeight > MenuLayout.Height - 24)
         throw new Exception("Native tab button height must leave a gap and stay inside the sheet");
 }
-if (125 + 200 > 330 || 255 + MenuLayout.ToggleHeight > 320 || 320 + MenuLayout.ToggleHeight > 390 || 455 + 60 > 520)
+if (MenuLayout.HelpY + MenuLayout.HelpHeight > MenuLayout.TabY || 255 + MenuLayout.ToggleHeight > 320 || 320 + MenuLayout.ToggleHeight > 390 || 455 + 60 > 520)
     throw new Exception("왼쪽 표시 설정·진단 로그 겹침/설정창 경계 침범");
 foreach (var action in new[] { "Enabled", "Details", "CardPopups", "BattleStatus", "FieldBuffs", "Names", "Diagnostics", "MuteUnfocused", "InputAttention",
     "Scale", "Opacity", "IndicatorFadeStrength", "FoldedHandOpacity", "Close" })
@@ -551,7 +560,7 @@ foreach (var revealed in Enumerable.Range(0, 7))
     if (role != 1 && revealed == 0 && (pair != new KoPair(6, 1)
         || CardDiceLayout.Content(pair, thresholdDie, 0) != (6, "≥", "")
         || CardDiceLayout.Content(pair, thresholdDie, 1) != (1, "≤", "")
-        || CardDiceLayout.Title() != "KO 최소 조건"))
+        || CardDiceLayout.Title() != "KO 주사위 조건"))
         throw new Exception("Pre-roll minimum KO conditions");
     if (revealed > 0
         && CardDiceLayout.Content(pair, thresholdDie, 0, role == 1) != (revealed, "=", ""))
@@ -607,7 +616,7 @@ if (CardDiceLayout.Status(null, null, 9) != "계산 정보 부족"
     || CardDiceLayout.Status(new(3, 0), (8, 12), 9, true) != "계산 정보 부족"
     || CardDiceLayout.Status(new(3, 0), null, 9) != "계산 정보 부족"
     || CardDiceLayout.Status(new(3, 1), null, 9) != ""
-    || CardDiceLayout.Title() != "KO 최소 조건")
+    || CardDiceLayout.Title() != "KO 주사위 조건")
     throw new Exception("Condition-only status or impossible/uncertain distinction mismatch");
 var rangeInput = new PreRollCombat(9, 9, 1, 5, 2, 3);
 // Certainty must cover every possible die, including unresolved card gains and immunity.
@@ -649,7 +658,14 @@ foreach (var bonus in new CardBonus?[] { null, new(true, 1, 6, 1), new(false, 1,
         }
     }
 }
-if (CardDiceLayout.Title(true) != "생존 최소 조건"
+{
+    // ATK 3 + revealed die 4 against DEF 0: open until the defense die shows, settled once it is public (2 -> 5 damage = KO on 5 HP).
+    var open = new PreRollCombat(9, 5, 3, 3, 0, 0); var settled = open with { Modifiers = new HitModifiers { DefenseDice = DiceFaces.Range(2, 2) } };
+    if (CardDiceLayout.Status(CardKoMinimum.Calculate(open, null, 4, possible: true), CardKoMinimum.OutcomeRange(open, null, 4), 5) is "확정 KO" or "KO 불가"
+        || CardDiceLayout.Status(CardKoMinimum.Calculate(settled, null, 4, possible: true), CardKoMinimum.OutcomeRange(settled, null, 4), 5) != "확정 KO")
+        throw new Exception("A revealed defense die must settle the KO status");
+}
+if (CardDiceLayout.Title(true) != "생존 주사위 조건"
     || CardDiceLayout.Content(new(6, 1), 0, 0, true) != (6, "≤", "")
     || CardDiceLayout.Content(new(6, 1), 0, 1, true) != (0, "", "—")
     || CardDiceLayout.Content(new(4, 2), 4, 0, true) != (4, "=", "")
@@ -657,6 +673,9 @@ if (CardDiceLayout.Title(true) != "생존 최소 조건"
     || CardDiceLayout.Content(new(0, 0), 0, 1, true) != (0, "", "—")
     || CardDiceLayout.Content(new(4, 0), 4, 0, true) != (4, "=", "")
     || CardDiceLayout.Content(null, 0, 1, true) != (0, "", "?")
+    // A revealed defense die shows as "= N" next to the revealed attack die, whatever the settled status.
+    || CardDiceLayout.Content(new(4, 0), 4, 1, false, true, default, 3) != (3, "=", "")
+    || CardDiceLayout.Content(null, 4, 1, true, true, default, 6) != (6, "=", "")
     || CardKoMinimum.Survival(rangeInput with { MapType = 0 }, null) != null
     || CardKoMinimum.Survival(rangeInput, null, 7) != null
     || CardKoMinimum.Survival(rangeInput, new(false, 5, 1, 1)) != null)
@@ -739,6 +758,9 @@ if (CardKoMinimum.Calculate(pairInput, null) != new KoPair(6, 1)
 if (!CardKoMinimum.RevealedDie(1, true, 6) || CardKoMinimum.RevealedDie(1, false, 6)
     || CardKoMinimum.RevealedDie(2, true, 6) || CardKoMinimum.RevealedDie(1, true, 7))
     throw new Exception("Hidden roll/final total mistaken for a revealed die");
+if (!CardKoMinimum.RevealedDefenseDie(0, true, 3) || CardKoMinimum.RevealedDefenseDie(2, true, 3)
+    || CardKoMinimum.RevealedDefenseDie(0, false, 3) || CardKoMinimum.RevealedDefenseDie(0, true, 9))
+    throw new Exception("Defense raw die must be read at showPoint 0, never from its total");
 Console.WriteLine("KO pairs: exhaustive worst-case outcomes, revealed rolls, caps and visibility guards passed.");
 var shadow = CardAdvisor.FromConfig(10008, 1, 1, new[] { 3, 3, 1 }, 0, 0, 2)!.Value;
 if (!shadow.PreventCounter || shadow.Min != 3 || shadow.Max != 3)
@@ -749,11 +771,44 @@ if (CardAdvisor.FromConfig(10008, 1, 1, new[] { 7, 9, 1 }, 0, 0, 2) is not { Min
 if (CardAdvisor.FromConfig(10009, 1, 1, new[] { 5, 5, 10010 }, 0, 0, 2) != new CardBonus(true, 5, 5, 2)
     || CardAdvisor.FromConfig(10009, 1, 1, new[] { 7, 9, 10010 }, 0, 0, 2) != new CardBonus(true, 7, 9, 2)
     || CardAdvisor.FromConfig(10009, 2, 2, new[] { 5, 5, 10010 }, 0, 0, 2) != null
-    || CardAdvisor.FromConfig(10010, 1, 1, new[] { 6, 6, 50 }, 0, 0, 2) != null)
-    throw new Exception("Known later-hand side effect must not suppress this hit or hide a final-ATK multiplier");
-foreach (var id in new[] { 10009, 10010, 99999 })
+    || CardAdvisor.FromConfig(10010, 1, 1, new[] { 6, 6, 50 }, 0, 0, 2) != new CardBonus(true, 6, 6, 2) { FinalPercent = 50 }
+    || CardAdvisor.FromConfig(10010, 1, 1, new[] { 6, 6, 0 }, 0, 0, 2) != null
+    || CardAdvisor.FromConfig(10010, 1, 1, new[] { 6, 6, 101 }, 0, 0, 2) != null
+    || CardAdvisor.FromConfig(10010, 2, 2, new[] { 6, 6, 50 }, 0, 0, 2) != null)
+    throw new Exception("Known later-hand side effect must not suppress this hit, and the final-ATK percent must be kept");
+foreach (var id in new[] { 10009, 99999 })
     if (CardAdvisor.FromConfig(id, 1, 1, new[] { 3, 3, 1 }, 0, 0, 2) != null)
         throw new Exception("Extra parameter semantics must not be guessed");
+// Card 10010: final ATK (die included) +50 %, bounded by both roundings: 7 x 1.5 = 10.5 -> 10..11.
+if (CardAdvisor.Boost(7, 50) != (10L, 11L) || CardAdvisor.Boost(8, 50) != (12L, 12L) || CardAdvisor.Boost(7, 0) != (7L, 7L)
+    || CardKoMinimum.DamageRange(new PreRollCombat(9, 20, 1, 1, 0, 0), new CardBonus(true, 0, 0, 2) { FinalPercent = 50 }, 6, 1) != (9L, 10L)
+    || CardAdvisor.Dominates(new(true, 6, 6, 1), new CardBonus(true, 6, 6, 2) { FinalPercent = 50 }))
+    throw new Exception("Final-ATK boost bounds or dominance");
+{
+    // Card advice spans both roundings of every public scenario: 3 + 6 + die 6 = 15 -> 22.5, so only the ceiling (23)
+    // can knock out 22 HP, and the card's gains must equal an independent floor/ceiling enumeration.
+    var input = new PreRollCombat(9, 22, 3, 3, 0, 0); var boost = CardAdvisor.Calculate(input, new CardBonus(true, 6, 6, 2) { FinalPercent = 50 })!.Value;
+    double koMin = double.MaxValue, koMax = double.MinValue, damageMin = double.MaxValue, damageMax = double.MinValue, floorKoMax = double.MinValue;
+    foreach (var dodge in new[] { false, true })
+    foreach (var up in new[] { false, true })
+    {
+        var before = CardAdvisor.BeforeRoll(22, 3, 0, dodge); var after = CardAdvisor.BeforeRoll(22, 9, 0, dodge, default, 50, up);
+        var ko = after.KnockoutChance - before.KnockoutChance; var damage = after.ExpectedDamage - before.ExpectedDamage;
+        koMin = Math.Min(koMin, ko); koMax = Math.Max(koMax, ko); damageMin = Math.Min(damageMin, damage); damageMax = Math.Max(damageMax, damage);
+        if (!up) floorKoMax = Math.Max(floorKoMax, ko);
+    }
+    if (Math.Abs(boost.KoGainMin - koMin) > 1e-9 || Math.Abs(boost.KoGainMax - koMax) > 1e-9 || Math.Abs(boost.DamageGainMin - damageMin) > 1e-9
+        || Math.Abs(boost.DamageGainMax - damageMax) > 1e-9 || floorKoMax >= koMax)
+        throw new Exception("Final-ATK card advice must equal the floor/ceiling enumeration, with the ceiling's KO included");
+    // The boosted total is the damage, while the dodge roll still compares against the raw die.
+    var six = new HitModifiers { AttackDice = DiceFaces.Range(6, 6) };
+    foreach (var (up, total) in new[] { (false, 22), (true, 23) })
+    {
+        var direct = CombatAdvisor.Calculate(new CombatInput(22, total, 6, 0) { Modifiers = six }, false);
+        if (CardAdvisor.BeforeRoll(22, 9, 0, true, six, 50, up) != (direct.Recommendation == RecommendedAction.Dodge ? direct.Dodge : direct.Defend))
+            throw new Exception("Final-ATK boost must damage with the rounded total and judge the dodge by the raw die: " + total);
+    }
+}
 if (CardAdvisor.FromConfig(10008, 1, 1, new[] { 3, 3, 1 }, 1, 0, 2) != null
     || CardAdvisor.FromConfig(10008, 1, 1, new[] { 3, 3, 2 }, 0, 0, 2) != null
     || CardAdvisor.Dominates(new(true, 6, 6, 1), shadow))
@@ -822,29 +877,6 @@ if (CardAdvisor.Calculate(beforeRoll, attackCard.Value) != CardAdvisor.Calculate
     throw new Exception("동일 공개 입력의 결과가 비결정적");
 Console.WriteLine("카드 비교·과잉 투자·비공개 확률 미가정·PvE 제한 검증 통과");
 
-var styled = AdviceText.Format("★ 방어 추천*\n평균 피해 1~1.2\n방어 전투불능 0%", 24,
-    "ui://testAtk", "ui://testDef", "ui://testHp");
-if (!styled.Contains("src='ui://testDef'") || !styled.Contains("src='ui://testHp'")
-    || !styled.Contains("<font color='#17663C'>방어 추천</font>")
-    || !styled.Contains("<font color='#005B83'>1~1.2</font>")
-    || !styled.Contains("<font color='#005B83'>0%</font>"))
-    throw new Exception("추천/수치 색 강조 또는 게임 아이콘 연결 실패");
-var caution = AdviceText.Format("조건부 이득*\n회피 불가\n기본 규칙 · 특수 효과 미반영", 20);
-if (!caution.Contains("#795000") || !caution.Contains("#B5163B")
-    || !System.Net.WebUtility.HtmlDecode(caution).EndsWith("기본 규칙 · 특수 효과 미반영") || caution.Contains("<img"))
-    throw new Exception("주의 색상/기본 본문/아이콘 없는 대체 표시 실패");
-var unsafeText = AdviceText.Format("<img src='https://example.com'/> & 평균 피해 -1,2~3,4", 20,
-    hp: "https://example.com");
-if (unsafeText.Contains("<img") || !unsafeText.Contains("&lt;img") || !unsafeText.Contains("&amp;"))
-    throw new Exception("외부 이미지 또는 원문 마크업 주입 허용");
-foreach (var value in new[] { styled, caution, unsafeText,
-    AdviceText.Format(effect.Title + "\n" + effect.Details, 20, "ui://testAtk", "ui://testDef", "ui://testHp"),
-    AdviceText.Format(uncertain.DefendQuick, 20) })
-    System.Xml.Linq.XElement.Parse("<root>" + value + "</root>");
-if (!AdviceText.Format("평균 피해 1", 100, hp: "ui://testHp").Contains("width='48'"))
-    throw new Exception("아이콘 크기 상한 실패");
-Console.WriteLine("크림색 패널용 진한 강조색·아이콘 대체·안전한 서식 검증 통과");
-
 var quick = VisibleCombatAdvisor.Calculate(new(9, 8, 3, 3, 5, 4, 4, true))!.Value;
 if (quick.Recommendation != RecommendedAction.Defend || quick.DefendQuick != "예상 피해 1.5\n전투불능 0%"
     || quick.DodgeQuick != "예상 피해 6.7\n전투불능 83.33%")
@@ -852,7 +884,7 @@ if (quick.Recommendation != RecommendedAction.Defend || quick.DefendQuick != "�
 if (uncertain.Recommendation != RecommendedAction.Dodge || blockedDodge.Recommendation != RecommendedAction.Defend)
     throw new Exception("불확실/회피 불가 상태의 단일 추천 누락");
 var compact = AdviceText.Quick(quick.DefendQuick);
-if (compact.Contains("<b>") || styled.Contains("<b>"))
+if (compact.Contains("<b>"))
     throw new Exception("게임 POP 글꼴에 합성 굵기가 중복 적용됨");
 if (compact.Contains("<img") || compact.Contains("♥") || compact.Split('\n').Length != 2)
     throw new Exception("핵심 수치가 두 줄을 넘거나 반복 아이콘이 삽입됨");
@@ -878,12 +910,9 @@ foreach (var plain in new[] {
     var parsed = System.Xml.Linq.XElement.Parse("<root>" + markup + "</root>");
     if (parsed.Value != plain || parsed.Descendants("img").Any())
         throw new Exception("빠른 요약의 엔티티/원문 보존 또는 마크업 주입 방지 실패");
-    var formatted = System.Xml.Linq.XElement.Parse("<root>" + AdviceText.Format(plain, 20) + "</root>");
-    if (formatted.Descendants("img").Any())
-        throw new Exception("일반 서식에서 원문 마크업 주입 허용");
 }
 if (!AdviceText.Quick("방어 추천 · 방어자 기준").Contains("추천 · 방어자")
-    || !AdviceText.Format("기본 규칙 · 특수 효과 제외 😀", 20).Contains("· 특수 효과 제외 😀"))
+    || !AdviceText.Quick("기본 규칙 · 특수 효과 제외 😀").Contains("· 특수 효과 제외 😀"))
     throw new Exception("유니코드 문자를 불필요한 숫자 엔티티로 변환함");
 Console.WriteLine("가운데점·특수문자·숫자 엔티티 서식 회귀 검증 통과");
 

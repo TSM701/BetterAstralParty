@@ -115,15 +115,12 @@ namespace BetterAstralParty.Updating {
             foreach(var path in new[]{InstallReceipt.Path,UpdateTransaction.HighWaterPath,UpdateFaults.OperationPath,UpdateFaults.FailurePath,OrdinaryInstallRecovery.LegacyLauncher,OrdinaryInstallRecovery.LegacyHelper,OrdinaryInstallRecovery.LegacyHelperReceipt})
                 WindowsFileFence.ValidatePlannedPath(System.IO.Path.Combine(root,path));
             foreach(var kind in new[]{"txn","stage"})
-                foreach(var leaf in new[]{"plan","committed","commit-intent","rolled-back","settings.backup","descriptor.bin","signature.bin","key-id.bin","package.zip","transition.bin","old-05","new-05"})
+                foreach(var leaf in new[]{"plan","committed","commit-intent","rolled-back","settings.backup","descriptor.bin","signature.bin","key-id.bin","package.zip","transition.bin","channel.bin","old-05","new-05"})
                     WindowsFileFence.ValidatePlannedPath(System.IO.Path.Combine(root,UpdateWorkPath.At(kind,id).Replace('/','\\'),leaf));
             foreach(var path in new[]{"pending.json","pending.json.lock",id+"/pending.json",id+"/completed.json",id+"/restored.json",id+"/299.bin"})
                 WindowsFileFence.ValidatePlannedPath(System.IO.Path.Combine(journalRoot,path.Replace('/','\\')));
         }
-        // A signed whole package may switch channels only by advancing the installed version, or by repairing the installed
-        // version with the exact signed release recorded for the active channel (public proofs are channel-neutral, so a
-        // release received in game on Pre-release is the same descriptor as its complete ZIP). It may return to the global
-        // high-water version only with that exact signed package (e.g. reinstalling it after switching to a lower release).
+        // Structural identity checks, then the version decision of InstallPolicy.Whole.
         internal static void ValidateChannel(ReceiptChannelState? state,string root,string currentVersion,int currentProtocol,int currentSettings,VerifiedUpdateDescriptor incoming,string? high,string? highDescriptor=null) {
             if(state==null)throw Bad("ChannelStateMissing");
             if(state.Root!=root || state.ActiveVersion!=currentVersion || state.ActiveRepositoryId!=ReleaseFeedPolicy.For(state.ActiveChannel).RepositoryId)throw Bad("ChannelStateMismatch");
@@ -131,12 +128,8 @@ namespace BetterAstralParty.Updating {
             if(currentProtocol!=UpdateTrust.Protocol || currentSettings!=1 || incoming.Protocol!=UpdateTrust.Protocol || incoming.SettingsSchema!=1 || incoming.Files.Count!=InstallReceipt.Owned.Length
                 || incoming.Repository!=feed.Repository || incoming.RepositoryId!=feed.RepositoryId
                 || !(incoming.ReleaseId>0 && incoming.AssetId>0 || incoming.ReleaseId==0 && incoming.AssetId==0))throw Bad("ChannelProofMismatch");
-            if(state.ActiveChannel==incoming.Channel)return;
-            var next=UpdateVersion.Parse(incoming.Version);
-            var floor=high==null?1:next.CompareTo(UpdateVersion.Parse(high));
-            var installed=next.CompareTo(UpdateVersion.Parse(currentVersion));
-            if(installed<0 || installed==0 && incoming.DescriptorSha256!=state.DescriptorFor(state.ActiveChannel) || floor<0 || floor==0 && incoming.DescriptorSha256!=highDescriptor)
-                throw new UpdateValidationException(UpdateFailure.NotNewer);
+            var refusal=InstallPolicy.Whole(state,currentVersion,incoming,high,highDescriptor);
+            if(refusal!=InstallPolicy.Refusal.None)throw new UpdateValidationException(UpdateFailure.NotNewer,InstallPolicy.Explain(refusal,state,currentVersion,incoming,high));
         }
         // Receipt bytes for the package: preserve existing protocol-5 channel history, or start a new one.
         internal static string PrepareReceipt(string root,string package,string version,string loaderBefore) {
@@ -161,11 +154,8 @@ namespace BetterAstralParty.Updating {
         }
         // High-water after installing this package; null keeps a higher existing record unchanged.
         internal static byte[]? HighWater(string root,string package,string version) {
-            using(var input=new Inputs(root,package,version))using(var f=new WindowsFileFence(root)) {
-                var high=UpdateTransaction.ReadHighWater(f);
-                if(high!=null && UpdateVersion.Parse(input.Update.Version).CompareTo(UpdateVersion.Parse(high))<=0)return null;
-                return Encoding.ASCII.GetBytes("BetterAstralParty.HighWater/v1\nroot="+f.RootIdentity.Text+"\nversion="+UpdateVersion.Parse(input.Update.Version).Tag+"\ndescriptor="+input.Update.DescriptorSha256+"\n");
-            }
+            using(var input=new Inputs(root,package,version))using(var f=new WindowsFileFence(root))
+                return UpdateTransaction.NextWater(f.RootIdentity.Text,UpdateTransaction.ReadHighWater(f),input.Update);
         }
         internal static string InstalledVersionState(string root) {
             using(var f=new WindowsFileFence(root)) {

@@ -83,5 +83,5 @@ public static class VisibleCombatAdvisor
     }
 
     private static string Range(double min, double max) => Math.Abs(min - max) < 0.000001
-        ? $"{min:0.#}" : $"{min:0.#}~{max:0.#}";
+        ? FormattableString.Invariant($"{min:0.#}") : FormattableString.Invariant($"{min:0.#}~{max:0.#}");
 }

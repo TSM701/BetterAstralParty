@@ -17,9 +17,10 @@ internal static class BattleStatusLayout
     // Square buff art needs clearance from the capsule's curved ends, not just its rectangular bounds.
     internal const float EdgePadding = 20, IconSize = 44, IconInset = (IconStep - IconSize) / 2;
     internal const float Width = 2 * EdgePadding + CardWidth + PageSize * IconStep + 50;
-    internal static float RowWidth(int visibleCount, bool paged) => 2 * EdgePadding + CardWidth + visibleCount * IconStep + (paged ? 50 : 0);
-    internal static float IconX(int index, float width, bool attacker) =>
-        attacker ? width - EdgePadding - CardWidth - (index + 1) * IconStep : EdgePadding + CardWidth + index * IconStep;
+    // The hand-count cell is optional (Combat Status > Hand Count); effect icons follow it when shown.
+    internal static float RowWidth(int visibleCount, bool paged, bool hand = true) => 2 * EdgePadding + (hand ? CardWidth : 0) + visibleCount * IconStep + (paged ? 50 : 0);
+    internal static float IconX(int index, float width, bool attacker, bool hand = true) =>
+        attacker ? width - EdgePadding - (hand ? CardWidth : 0) - (index + 1) * IconStep : EdgePadding + (hand ? CardWidth : 0) + index * IconStep;
     // Centre lies just inside the header's top-right corner; most of the icon overlaps it.
     internal static (float X, float Y) CounterAnchor(float x, float y, float width, float size) =>
         (x + width - size * 0.65f, y - size * 0.35f);

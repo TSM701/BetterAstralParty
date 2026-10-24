@@ -32,6 +32,7 @@ internal static class PublicCombatEffectsCheck
 {
     internal static void Run()
     {
+        CheckReleaseAndTicks();
         RuntimeObject Property(int id, int count) => RuntimeObject.Node(
             ("buffId", RuntimeObject.Number(id)),
             ("property", RuntimeObject.Node(("Value", RuntimeObject.Number(count)))));
@@ -63,6 +64,26 @@ internal static class PublicCombatEffectsCheck
         CheckBuffs();
         CheckDice();
         Console.WriteLine("Public mark reader: tuple Item2, stacks, deduplication, bounds and all advisor paths passed (native substitute).");
+    }
+
+    private static void CheckReleaseAndTicks()
+    {
+        void Check(bool value, string message) { if (!value) throw new Exception("Release/ticks: " + message); }
+        Check(ShootingStar.Calculate(null, null, false, 3) == null, "no Shooting Star, no offer");
+        Check(ShootingStar.Calculate((1, 1), null, true, 5) == new ReleaseGain(1, 1, 1), "purple ignores bosses");
+        var gold = ShootingStar.Calculate(null, (2, 1), true, 5)!.Value;
+        Check(gold == new ReleaseGain(7, 7, 1) && gold.Damage == "7", "gold boss bonus counts the Starlight held before this release");
+        Check(ShootingStar.Calculate(null, (2, 1), false, 5) == new ReleaseGain(2, 2, 1), "gold on a normal monster is exact");
+        Check(ShootingStar.Calculate((1, 1), (2, 1), false, 0) == new ReleaseGain(3, 3, 2), "both relics on a normal monster");
+        Check(ShootingStar.Calculate((1, 1), (2, 1), true, 5) == new ReleaseGain(8, 8, 2), "both relics against a boss add only the held Starlight");
+        // Observed 2026-10-23: gold vs a boss with 15 Starlight and Weakness Mark (+1) dealt 18.
+        Check(ShootingStar.Calculate(null, (2, 1), true, 15, new HitModifiers(1)) == new ReleaseGain(18, 18, 1), "release damage takes incoming modifiers");
+        Check(ShootingStar.Calculate((1, 1), null, false, 0, new HitModifiers(-3)) == new ReleaseGain(0, 0, 1), "incoming reduction clamps at zero");
+        Check(ShootingStar.Calculate(null, (2, 1), true, 5, new HitModifiers(0, 1)) == new ReleaseGain(1, 7, 1), "an unobserved per-hit cap widens to a range");
+        Check(ShootingStar.Calculate(null, (2, 1), false, 0, new HitModifiers { OnHitBonus = 3 }) == new ReleaseGain(2, 2, 1), "a release is not a hit: no on-hit bonus");
+        Check(ShootingStar.Calculate((1, 1), (2, 1), false, 0, new HitModifiers(1)) == new ReleaseGain(5, 5, 2), "two relics hit once each: +1 on both is 5");
+        Check(ShootingStar.Calculate((1, 1), (2, 1), false, 0, new HitModifiers(-1)) == new ReleaseGain(1, 1, 2), "two relics with a reduction: each hit clamps at zero");
+        Check(ShootingStar.IsBoss(2) && ShootingStar.IsBoss(10) && !ShootingStar.IsBoss(11) && !ShootingStar.IsBoss(0), "boss monster types");
     }
 
     private static void CheckDice()
@@ -106,8 +127,19 @@ internal static class PublicCombatEffectsCheck
             Check(CardKoMinimum.Calculate(new(9,10,5,5,2,2) { Modifiers = ranged }, null, possible:true) != null, "known support keeps KO thresholds despite unknown weights");
             Check(PublicCombatEffects.Read(ordinary, "dice", Actor(Array.Empty<int>(), Buff(1250101)))!.Value.AttackDice == DiceFaces.Range(1,3), "source attack cap");
             var unknown = PublicCombatEffects.Read(ordinary, "dice", Actor(new[] {106311}, Buff(1250101)))!.Value;
-            Check(unknown.DiceUnsupported && unknown.Valid && !unknown.DiceValid, "unverified cap/passive precedence not silently combined");
+            Check(unknown.AttackUnsupported && unknown.Valid && unknown.DiceValid && !unknown.PreRollDiceKnown, "unverified cap/passive precedence not silently combined");
+            Check(VisibleCombatAdvisor.Calculate(new(9,10,3,3,3,0,0,true) { Modifiers = unknown }) != null, "a revealed attack die keeps defend/dodge advice despite an unsupported attacker rule");
+            Check(CardKoMinimum.Calculate(new(9,10,5,5,2,2) { Modifiers = unknown }, null, 3, possible:true) != null && CardKoMinimum.Calculate(new(9,10,5,5,2,2) { Modifiers = unknown }, null, possible:true) == null,
+                "an unsupported attacker rule hides only the pre-roll KO view");
             Check(PublicCombatEffects.Read(Actor(Array.Empty<int>(), Buff(1250201)), "dice", ordinary)!.Value.DiceUnsupported, "zero-roll conditional rule not treated as ordinary");
+            var uncounted = PublicCombatEffects.Read(Actor(Array.Empty<int>(), Buff(10007), Buff(5007002), Buff(9999901, 1, 2)), "dice",
+                Actor(Array.Empty<int>(), Buff(2002001)))!.Value;
+            Check(uncounted.Unknown == new UnknownEffects(2002001, 5007002, Count: 2) && uncounted.Bonus == 0,
+                "uncounted shown buffs on both combatants are listed, delayed ones skipped, none turned into damage");
+            Check(PublicCombatEffects.Read(Actor(Array.Empty<int>(), Buff(10007), Buff(1250101)), "dice", ordinary)!.Value.Unknown.Count == 0,
+                "audited neutral and modeled buffs are counted");
+            Check(PublicCombatEffects.Read(Actor(Array.Empty<int>(), Buff(10711102, 2), Buff(10711103), Buff(10721101, 3), Buff(10741101), Buff(5008702), Buff(8000101), Buff(3081104)), "dice", ordinary)!.Value.Unknown.Count == 0,
+                "2026-10 stat, movement and card buffs are audited neutral");
             Check(CombatAdvisor.FinalDamage(10,7,4,false,0,unknown) == 3, "observed final totals remain calculable without dice distribution");
             Check(CardAdvisor.Calculate(new(9,10,5,5,2,2) { Modifiers = unknown }, new(true,1,1,1)) == null, "unsupported card calculation withheld");
             Check(EncounterAdvisor.Calculate(new(9,10,5,2,10,5,2,false) { EnemyModifiers = unknown }) == null, "unsupported encounter cannot throw");
@@ -163,6 +195,7 @@ internal static class PublicCombatEffectsCheck
         {
             // Fixtures checked against current original INT configuration and STRBuff.
             Catalog("Skill", 10712, 1071101, -99);
+            Catalog("Skill", 10711, 1071102, -3);
             Catalog("Skill", 102611, 10261101, -2, 2, 20);
             Catalog("Skill", 105312, 10531201, 6, 1, -1);
             Catalog("Skill", 11011, 1101101, 2, 1);
@@ -257,6 +290,7 @@ internal static class PublicCombatEffectsCheck
             Check(CardKoMinimum.Survival(erosionInput, null, 6) == new KoPair(6, 4), "erosion reaches survival thresholds");
             Check(Read(Buff(1071101)) == new HitModifiers(-99) { ShushuShield = true }, "PvE Ren shield identity and reduction");
             Check(Read(Buff(1071101, 0, 1)) == new HitModifiers(), "delayed shield is inactive");
+            Check(Read(Buff(1071102)) == new HitModifiers(-3), "skill 10711 shield uses its own catalog value without the Shushu Dodge override");
             Check(Read(Buff(1071101), Buff(4000401)) == new HitModifiers(-97) { ShushuShield = true }, "shield identity survives combined adjustments");
             foreach (var stacks in new[] { 0, 1, 3, 6 })
             {
@@ -267,7 +301,7 @@ internal static class PublicCombatEffectsCheck
             Check(Read(Buff(1101101)) == new HitModifiers(1), "incoming, not healing amount");
             Check(Read(Buff(4000301), Buff(4000401)) == new HitModifiers(), "fortune modifiers cancel");
             Check(Read(Buff(2000801), Buff(10531201, 3), Buff(10591101)) == new HitModifiers(-2, 1), "mixed snapshot");
-            Check(Read(Buff(10331101), Buff(4000401)) == new HitModifiers(2, Immune: true), "explicit immunity");
+            Check(Read(Buff(10331101), Buff(4000401)) == new HitModifiers(2), "boss targeting lock does not zero a hit once the boss is attackable");
             Check(Read(Buff(10531201, 3, 1), Buff(10331101, 0, 1)) == new HitModifiers(), "delayed inactive effects");
             Check(Read(Buff(10531201, 3), Buff(10531201, 3)) == new HitModifiers(-3), "deduplicate IDs");
             Check(Read(Buff(10531201, -1)) == null, "invalid stacks");

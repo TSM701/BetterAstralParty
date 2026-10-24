@@ -22,7 +22,9 @@ namespace BetterAstralParty.Installation
     internal sealed class SteamProfileUnavailableException : InvalidOperationException
     {
         internal readonly string Reason;
-        internal SteamProfileUnavailableException(string reason) : base("Steam shortcut discovery unavailable: " + reason) { Reason = reason; }
+        // What the user should know or do when the shortcut is left alone for a known reason.
+        internal readonly string? Guidance;
+        internal SteamProfileUnavailableException(string reason, string? guidance = null) : base("Steam shortcut discovery unavailable: " + reason) { Reason = reason; Guidance = guidance; }
     }
     internal sealed class SteamSessionState { internal string? Root; internal bool Restart; }
     internal sealed class SteamArtworkRecovery
@@ -285,6 +287,30 @@ namespace BetterAstralParty.Installation
             if (keys.Count > 1) throw new InvalidOperationException("Duplicate mod shortcuts; refusing to choose one.");
             return keys;
         }
+        // A user who added launch options to the Mod entry keeps it; it is not registered a second time.
+        private static bool Customized(OrderedDictionary root, string gameRoot)
+        {
+            var current = "\"" + Join(PathOf(gameRoot), ModEntry) + "\"";
+            foreach (DictionaryEntry field in (OrderedDictionary)root["shortcuts"]!) if (field.Value is OrderedDictionary item
+                && string.Equals(item["AppName"] as string, ShortcutName, StringComparison.OrdinalIgnoreCase) && string.Equals(item["exe"] as string, current, StringComparison.OrdinalIgnoreCase)
+                && item["LaunchOptions"] is string options && options.Length != 0) return true;
+            return false;
+        }
+        // A crash between backing up and replacing shortcuts.vdf leaves the BAP backup next to the unrenamed temp file; never
+        // write a fresh file over it. A backup alone is the copy a finished swap keeps and proves no interruption.
+        private static bool InterruptedSwap(string path)
+        {
+            var folder = Io(WindowsPath.Parent(path));
+            return !File.Exists(Io(path)) && Directory.Exists(folder) && Directory.EnumerateFiles(folder, "shortcuts.vdf.BetterAstralParty-*.bak").Any()
+                && Directory.EnumerateFiles(folder, "shortcuts.vdf.*.tmp").Any();
+        }
+        private const string InterruptedSwapGuidance = "이전 작업이 Steam 바로가기 파일을 바꾸다 멈춰 백업만 남아 있습니다. 바로가기는 건드리지 않습니다. 같은 폴더의 shortcuts.vdf.BetterAstralParty-*.bak을 shortcuts.vdf로 되돌려 주세요. / A previous shortcut update was interrupted and only its backup remains; shortcuts are left unchanged. Restore shortcuts.vdf from shortcuts.vdf.BetterAstralParty-*.bak in the same folder.";
+        private const string CustomizedGuidance = "실행 옵션을 넣은 Astral Party - Mod 항목은 사용자 설정이라 남겨 둡니다. 필요 없으면 Steam에서 직접 제거하세요. / The Astral Party - Mod entry with your launch options stays; remove it in Steam if you no longer need it.";
+        private static bool Skip(Action<Exception>? unavailable, string reason, string guidance)
+        {
+            if (unavailable != null) try { unavailable(new SteamProfileUnavailableException(reason, guidance)); } catch { }
+            return false;
+        }
         private static string ShortcutPath(string steamRoot, uint account)
         {
             var root = PathOf(steamRoot); if (!HasProfile(root, account)) throw new InvalidOperationException("Steam account configuration directory missing.");
@@ -304,7 +330,13 @@ namespace BetterAstralParty.Installation
         internal static bool PlanRemove(string steamRoot, uint account, string gameRoot, Action<Exception>? unavailable = null) { return PlanShortcut(steamRoot, account, gameRoot, true, unavailable); }
         private static bool PlanShortcut(string steamRoot, uint account, string gameRoot, bool remove, Action<Exception>? unavailable)
         {
-            try { bool legacy; var keys = OwnedShortcutKeys(LoadShortcuts(ShortcutPath(steamRoot, account)), gameRoot, out legacy); return remove ? keys.Count == 1 : keys.Count == 0 || legacy; }
+            try {
+                var path = ShortcutPath(steamRoot, account); if (InterruptedSwap(path)) return Skip(unavailable, "SteamShortcutSwapInterrupted", InterruptedSwapGuidance);
+                var root = LoadShortcuts(path); bool legacy; var keys = OwnedShortcutKeys(root, gameRoot, out legacy);
+                // Installation accepts the user's customized Mod entry as theirs, so removal leaves it and says so.
+                if (keys.Count == 0 && Customized(root, gameRoot)) { if (remove) Skip(unavailable, "SteamShortcutCustomized", CustomizedGuidance); return false; }
+                return remove ? keys.Count == 1 : keys.Count == 0 || legacy;
+            }
             catch (Exception error) when (unavailable != null && (error is ApplySafetyException || error is IOException || error is InvalidDataException
                 || error is UnauthorizedAccessException || error is System.Security.SecurityException || error is InvalidOperationException || error is ArgumentException))
             {
@@ -317,11 +349,15 @@ namespace BetterAstralParty.Installation
         private static ShortcutRecovery? Mutate(string steamRoot, uint account, string gameRoot, bool remove, Action<string>? output)
         {
             var steam = PathOf(steamRoot); var game = PathOf(gameRoot); var path = ShortcutPath(steam, account);
+            if (InterruptedSwap(path)) {
+                output?.Invoke(InterruptedSwapGuidance);
+                return null;
+            }
             using var configFence = new WindowsFileFence(WindowsPath.Parent(path));
             byte[]? original;
             using (var file = Optional(configFence, "shortcuts.vdf")) original = file == null ? null : UpdateTicket.Read(file, 16 * 1048576);
             var root = original == null ? EmptyShortcuts() : ReadShortcuts(original); var items = (OrderedDictionary)root["shortcuts"]!; bool legacy; var owned = OwnedShortcutKeys(root, game, out legacy);
-            if (remove && owned.Count == 0 || !remove && owned.Count == 1 && !legacy) return null;
+            if (remove && owned.Count == 0 || !remove && owned.Count == 1 && !legacy || !remove && owned.Count == 0 && Customized(root, game)) return null;
             AssertStopped(steam, "ShortcutPreflight");
             uint appId;
             if (remove) { var item = (OrderedDictionary)items[owned[0]]!; if (!(item["appid"] is uint id)) throw new InvalidDataException("Owned shortcut app ID is invalid."); appId = id; items.Remove(owned[0]); }

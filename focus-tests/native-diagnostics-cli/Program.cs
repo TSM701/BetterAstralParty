@@ -33,6 +33,11 @@ internal static class Program
 
 namespace BetterAstralParty.Installation
 {
+    internal static class NativeSteamMaintenance
+    {
+        internal static string ResolveSteamRoot() => "";
+        internal static List<string> FindGameDirectories(string steamRoot, string packageRoot) => new List<string>();
+    }
     internal static class NativeMaintenanceEntry
     {
         internal static void ConsoleReady() => throw new InvalidOperationException("Runtime collection is outside this parser fixture.");

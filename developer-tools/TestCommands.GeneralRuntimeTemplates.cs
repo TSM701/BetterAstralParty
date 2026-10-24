@@ -108,7 +108,11 @@ namespace UnityEngine {
     public class Transform : Object {
         public Transform(){ }
         public Transform(IntPtr p){Pointer=p;}
-        public void SetParent(Transform p,bool world){RuntimeObject.DataAt(Pointer)["parent"]=new RuntimeObject(p.Pointer);}
+        public Transform? parent; public Vector3 localPosition;
+        public void SetParent(Transform p,bool world){parent=p;RuntimeObject.DataAt(Pointer)["parent"]=new RuntimeObject(p.Pointer);}
+        public bool IsChildOf(Transform t)=>false;
+        public Vector3 TransformVector(Vector3 v)=>v;
+        public Vector3 InverseTransformVector(Vector3 v)=>v;
     }
     public class GameObject : Object {
         public Transform transform = new();
@@ -116,7 +120,7 @@ namespace UnityEngine {
         public GameObject(string name){RuntimeObject.DataAt(Pointer)["transform"]=new RuntimeObject(transform.Pointer);}
         public void SetActive(bool state){activeSelf=state;}
     }
-    public struct Vector3 { public static Vector3 zero => new(); }
+    public struct Vector3 { public float x; public static Vector3 zero => new(); public static Vector3 operator -(Vector3 a,Vector3 b)=>new(){x=a.x-b.x}; }
     public struct Quaternion { public static Quaternion identity => new(); }
     public static class Time { public static float unscaledTime; }
     public static class Application { public static bool isFocused=true; }
@@ -187,7 +191,7 @@ static class Probe {
 }
 static class Plugin {
     public static FloatSetting UiScale=new(); public sealed class FloatSetting{public float Value=1;}
-    public static BoolSetting ShushuShield=new(), ShushuShieldRestrictions=new(), BattleStatus=new();public sealed class BoolSetting{public bool Value=true;}
+    public static BoolSetting ShushuShield=new(), ShushuShieldRestrictions=new(), BattleStatus=new(), ShushuMaster=new();public sealed class BoolSetting{public bool Value=true;}
 }
 static class ModUi { public static bool IsOpen=>false; }
 static class VisibleCombatAdvisor { public static bool IsPve(int map)=>map==9; }
@@ -436,6 +440,9 @@ public static class SpectatorKoProbe {
         internal static class Enabled { internal static bool Value=true; }
         internal static class KoMinimum { internal static bool Value=true; }
         internal static class FinalDamage { internal static bool Value=true; }
+        internal static class KoSpectator { internal static bool Value=true; }
+        internal static class KoCardPreview { internal static bool Value=true; }
+        internal static class CardAdvice { internal static bool Value=true; }
     }
     static class CardDiceUi {
         internal static void Show(int ui, int point, int input, object card, bool hover, bool unsupported) {
@@ -477,6 +484,9 @@ public static class CombatSettingEntryProbe {
         internal static class Enabled { internal static bool Value=true; }
         internal static class KoMinimum { internal static bool Value=true; }
         internal static class FinalDamage { internal static bool Value=true; }
+        internal static class KoSpectator { internal static bool Value=true; }
+        internal static class KoCardPreview { internal static bool Value=true; }
+        internal static class CardAdvice { internal static bool Value=true; }
         internal static class Diagnostics { internal static void EndCombat() { ended++; } }
     }
     static class CardUi { internal static void Clear() { cardCleared++; } }
@@ -534,13 +544,16 @@ static class Plugin {
     internal static class Enabled { internal static bool Value=true; }
     internal static class KoMinimum { internal static bool Value=true; }
     internal static class FinalDamage { internal static bool Value=true; }
+    internal static class KoSpectator { internal static bool Value=true; }
+    internal static class KoCardPreview { internal static bool Value=true; }
+    internal static class CardAdvice { internal static bool Value=true; }
     internal static class Logger { internal static void LogWarning(string value)=>throw new Exception(value); }
     internal static class Diagnostics {
         internal static bool IsRecording=true;
         internal static int Events,Results;
         internal static (int Hp,int Damage,int Observed) LastResult;
         internal static void CombatEvent(string value) { Events++; }
-        internal static void CombatResult(int hp,int damage,int observed,HitModifiers modifiers,bool monsterDefeat) { Results++;LastResult=(hp,damage,observed); }
+        internal static void CombatResult(int hp,int damage,int observed,HitModifiers modifiers,bool monsterDefeat,int? changeHp=null) { Results++;LastResult=(hp,damage,observed); }
         internal static void Error(string name,Exception error)=>throw new Exception(name,error);
     }
 }
@@ -550,6 +563,11 @@ static class PublicCombatEffects {
 static class AdviceText {
     internal static bool Ready=true;
     internal static bool FinalDamageReady(bool saw,bool finished,bool attackPulse,bool defensePulse,bool escaped)=>Ready;
+}
+sealed class UnknownEffectsRow {
+    internal static int Shown;
+    internal UnknownEffectsRow(RuntimeObject parent,float width,float y,bool help) {}
+    internal void Show(UnknownEffects unknown) { Shown++; }
 }
 static class CardDiceUi {
     internal static int Calls,Damage;
@@ -576,7 +594,7 @@ __POLL__
             Plugin.Diagnostics.Events=Plugin.Diagnostics.Results=0; Plugin.Diagnostics.LastResult=default;
             CardDiceUi.Calls=CardDiceUi.Damage=GameUi.Disposed=0; AdviceText.Ready=true;
             GameUi.Root=new();GameUi.HomeAvailable=false;
-            Fight.Data["defenderData"]=Defender;Fight.Data["attackerData"]=Attacker;
+            Fight.Data["defenderData"]=Defender;Fight.Data["attackerData"]=Attacker;Defender.Data["Property"]=null;
             Attacker.Data["characterType"]=RuntimeObject.Box(1);
             Parent.Data["txt_Failure"]=new RuntimeObject();((RuntimeObject)Parent.Data["txt_Failure"]!).Data["visible"]=false;
             Parent.Data["step"]=new RuntimeObject();((RuntimeObject)Parent.Data["step"]!).Data["selectedIndex"]=5;

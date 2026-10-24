@@ -107,7 +107,7 @@ internal static class FieldCameraReturnUi
             // Input locks cancel a click, not the exit surface of an already owned free view.
             if (!Application.isFocused || ModUi.IsOpen || Input.touchCount > 0
                 || root.Get<bool>("hasModalWindow") || root.Get<bool>("modalWaiting") || root.Get<bool>("hasAnyPopup")
-                || RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "GObject"), "get_draggingObject") != null)
+                || GameUi.LiveDrag() != null)
             { CancelInput("inactive-or-input-blocked"); return; }
             var path = GameUi.PointerPath(refresh: true);
             // Keep ordinary PvE HUD windows; higher shop/target/modal windows still own their hits.

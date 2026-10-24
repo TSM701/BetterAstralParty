@@ -100,7 +100,7 @@ namespace BetterAstralParty.Diagnostics
         private static readonly Regex Names = Pattern(@"\A(?:(?:Launch|Bootstrap)-[0-9a-f]{32}|BetterAstralParty-InstallError-[0-9]{8}-[0-9]{6}-[0-9a-f]{8})\.log\z");
         private static readonly Regex CatalogNames = Pattern(@"(?i)^catalog.*\.(json|hash)$");
         private static readonly Regex Secret = Pattern(@"(?i)(?:\b(?:authorization|proxy-authorization|bearer|basic|cookie|set-cookie|password|passwd|pwd|credential|(?:client[ _-]?)?secret|signature|private[ _-]?key|access[ _-]?key|api[ _-]?key|(?:access|refresh|id|auth)[ _-]?token|token|session[ _-]?id|steam[ _-]?id|user[ _-]?id|account(?:[ _-]?(?:id|name))?|username|nickname|display[ _-]?name|player[ _-]?name|email|chat|ip[ _-]?address)\b|토큰|비밀번호|암호|닉네임|계정|사용자명|인증[ _-]?헤더|비밀[ _-]?키|서명[ _-]?키|gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|-----BEGIN.*(?:PRIVATE|OPENSSH|PGP).*(?:KEY|BLOCK))");
-        private static readonly Regex Private = Pattern(@"(?i)(?:[a-z]:[\\/]|\\\\|(?:https?|wss?|ftp)://|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b(?:[0-9a-f]{1,4}:){4,}[0-9a-f:]+\b|\b[0-9a-f:]*::[0-9a-f:]+\b|\b[0-9]{17}\b|\[U:[0-9]:[0-9]{1,10}\]|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|(?:^|[\s\""'=])/(?:home|Users|tmp|var|mnt|media|opt|data)/|\b[A-Za-z0-9_+/=-]{32,}\b)");
+        private static readonly Regex Private = Pattern(@"(?i)(?:[a-z]:[\\/]|\\\\|(?:https?|wss?|ftp)://|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b(?:[0-9a-f]{1,4}:){4,}[0-9a-f:]+\b|\b[0-9a-f:]*::[0-9a-f:]+\b|(?<![0-9])[0-9]{17}(?![0-9])|\[U:[0-9]:[0-9]{1,10}\]|(?<![A-Za-z0-9])U:[0-9]:[0-9]{1,10}(?![0-9])|(?<![A-Za-z0-9])STEAM_[0-5]:[01]:[0-9]{1,10}(?![0-9])|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|(?:^|[\s\""'=])/(?:home|Users|tmp|var|mnt|media|opt|data)/|\b[A-Za-z0-9_+/=-]{32,}\b)");
         private static readonly Regex Boundary = Pattern(@"\A(?:\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}|\[(?:Info|Warning|Error|Debug|Fatal|Message)[ :\]])");
         private static readonly Regex Ansi = Pattern(@"\x1b\[[0-?]*[ -/]*[@-~]");
         private static Regex Pattern(string value) { return new Regex(value, RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(200)); }
@@ -111,15 +111,29 @@ namespace BetterAstralParty.Diagnostics
         {
             var names = new List<string>();
             try { names.Add(Environment.UserName); } catch { }
-            try
-            {
-                string steam = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam", "config", "loginusers.vdf");
-                var info = new FileInfo(steam);
-                if (info.Exists && info.Length <= 256 * 1024)
-                    foreach (Match match in SteamUserName.Matches(File.ReadAllText(steam))) names.Add(match.Groups[1].Value);
-            }
-            catch { }
+            var folders = new List<string>();
+            try { var registered = SteamFolder(); if (!String.IsNullOrEmpty(registered)) folders.Add(registered); } catch { }
+            try { folders.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam")); } catch { }
+            foreach (string folder in folders)
+                try
+                {
+                    var info = new FileInfo(Path.Combine(folder, "config", "loginusers.vdf"));
+                    if (!info.Exists || info.Length > 256 * 1024) continue;
+                    foreach (Match match in SteamUserName.Matches(File.ReadAllText(info.FullName))) names.Add(match.Groups[1].Value.Replace("\\\"", "\"").Replace("\\\\", "\\"));
+                    break;
+                }
+                catch { }
             return names;
+        }
+        // Read-only: Steam records its install folder here; a library elsewhere does not move loginusers.vdf.
+        // Kept in its own method so a runtime without the registry API fails inside the caller's try.
+        private static string SteamFolder()
+        {
+#if NET6_0_OR_GREATER
+            if (!OperatingSystem.IsWindows()) return null;
+#endif
+            using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam"))
+                return key?.GetValue("SteamPath") as string;
         }
         private static Regex IdentityPattern(IList<string> names)
         {
@@ -127,8 +141,9 @@ namespace BetterAstralParty.Diagnostics
             if (names != null)
                 foreach (string name in names)
                 {
-                    string trimmed = (name ?? "").Trim();
-                    if (trimmed.Length >= 3 && trimmed.Length <= 64 && !parts.Contains(Regex.Escape(trimmed))) parts.Add(Regex.Escape(trimmed));
+                    string trimmed = (name ?? "").Normalize(NormalizationForm.FormKC).Trim();
+                    bool ascii = true; foreach (char c in trimmed) if (c > 127) { ascii = false; break; }
+                    if (trimmed.Length >= (ascii ? 3 : 2) && trimmed.Length <= 64 && !parts.Contains(Regex.Escape(trimmed))) parts.Add(Regex.Escape(trimmed));
                 }
             if (parts.Count == 0) return null;
             parts.Sort((a, b) => b.Length.CompareTo(a.Length));
@@ -858,8 +873,8 @@ namespace BetterAstralParty.Diagnostics
             using (var root = TryRoot(Path.Combine(runtimeRoot, "Logs"), rows, "runtime-logs"))
             {
                 if (root == null) return;
-                string[] names = { "current.log", "previous.log", "previous-2.log", "previous-3.log", "previous-4.log", "combat-mismatch.log", "combat-mismatch-previous.log" };
-                string[] ids = { "runtime/diagnostics-current", "runtime/diagnostics-previous", "runtime/diagnostics-previous-2", "runtime/diagnostics-previous-3", "runtime/diagnostics-previous-4", "runtime/combat-mismatch", "runtime/combat-mismatch-previous" };
+                string[] names = { "current.log", "current-overflow.log", "previous.log", "previous-overflow.log", "previous-2.log", "previous-3.log", "previous-4.log", "combat-mismatch.log", "combat-mismatch-previous.log" };
+                string[] ids = { "runtime/diagnostics-current", "runtime/diagnostics-current-overflow", "runtime/diagnostics-previous", "runtime/diagnostics-previous-overflow", "runtime/diagnostics-previous-2", "runtime/diagnostics-previous-3", "runtime/diagnostics-previous-4", "runtime/combat-mismatch", "runtime/combat-mismatch-previous" };
                 for (int i = 0; i < names.Length; ++i) Read(root, names[i], ids[i], now, rows, payloads, ref raw, ref totalOutput);
             }
         }
@@ -1343,8 +1358,8 @@ namespace BetterAstralParty.Diagnostics
                 foreach (var phase in new[] { "begin", "complete" })
                     foreach (var action in Actions)
                         if (line == "settingsAction " + phase + "=" + action) { projected = "settingsAction; phase=" + phase + "; action=" + action; fixedAction = true; }
-                if (line.StartsWith("performance ", StringComparison.Ordinal)) projected = Fields("performance", line.Substring(12), "frames,ui_avg_ms,ui_max_ms,gameui_max_ms,popup_max_ms,status_max_ms,managed_bytes_per_frame,game_frame_max_ms,game_frames_ge50ms", "");
-                if (line.StartsWith("performance_field ", StringComparison.Ordinal)) projected = Fields("performance_field", line.Substring(18), "tick_avg_ms,tick_max_ms,plates_max,effects_max", "native_layout_excluded");
+                if (line.StartsWith("performance ", StringComparison.Ordinal)) projected = Fields("performance", line.Substring(12), "frames,ui_avg_ms,ui_max_ms,gameui_max_ms,popup_max_ms,status_max_ms,managed_bytes_per_frame,game_frame_max_ms,game_frames_ge50ms,game_frame_avg_ms", "");
+                if (line.StartsWith("performance_field ", StringComparison.Ordinal)) projected = Fields("performance_field", line.Substring(18), "tick_avg_ms,tick_max_ms,plates_max,effects_max,monster_plates_max", "native_layout_excluded");
                 if (line.StartsWith("performance_hand ", StringComparison.Ordinal)) projected = Fields("performance_hand", line.Substring(17), "tick_avg_ms,tick_max_ms,managed_bytes_per_frame", "native_layout_excluded");
                 if (line.StartsWith("combat.inputs=", StringComparison.Ordinal)) projected = Fields("public-inputs", line.Substring(14), "hp,attackMin,attackMax,defenseMin,defenseMax", "");
                 if (line.StartsWith("combatVisible=", StringComparison.Ordinal)) projected = Fields("public-visible", line.Substring(14), "step,defender_hp,attacker_hp,attack_point,defense_point", "");
@@ -1526,7 +1541,7 @@ namespace BetterAstralParty.Diagnostics
         private static readonly Regex ErrorBoundary = Pattern(@"\A(?:BetterAstralParty |BAP-[A-Z-]+|(?:Code|Time|Run|Version|Stage|PowerShell|Package|Game|ErrorType|ErrorId|HResult|Message|Location|Stack|Exception|Allowed|Issues|Warnings|SteamDiagnostic|SteamProcess|SteamObservationProcess|SteamObservationCoverage|DiagnosticCoverage|LaunchRoot|LaunchFile|LaunchFailure):|\s*(?:at (?:System|Microsoft|BetterAstralParty)\.|System\.[A-Za-z.]+Exception\b|--- End of))");
         private static readonly Regex ErrorPath = Pattern(@"(?i)(?:[a-z]:[\\/]|\\\\|%USERPROFILE%[\\/]|/(?:home|Users|tmp|var|mnt|media|opt|data)/)(?:[^\r\n""'<>|]*?\.(?:dll|exe|ps1|cs|cmd|json|hash|log|vdf)(?=[:\s""'<>|,;)]|$)|[^\r\n""'<>|]*)");
         private static readonly Regex ErrorSecret = Pattern(@"(?i)(?:\b(?:authorization|proxy-authorization|cookie|set-cookie|password|passwd|pwd|credential|(?:client[ _-]?)?secret|signature|private[ _-]?key|access[ _-]?key|api[ _-]?key|(?:access|refresh|id|auth)[ _-]?token|token|session[ _-]?id|steam[ _-]?id|user[ _-]?id|account(?:[ _-]?(?:id|name))?|username|nickname|display[ _-]?name|player[ _-]?name|email|chat|ip[ _-]?address|토큰|비밀번호|암호|닉네임|계정|사용자명)\b\s*[""']?\s*[:=]|\b(?:bearer|basic)\s+\S+|gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|-----BEGIN.*(?:PRIVATE|OPENSSH|PGP).*(?:KEY|BLOCK))");
-        private static readonly Regex ErrorPrivate = Pattern(@"(?i)(?:(?:https?|wss?|ftp)://[^\s""'<>]*|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b(?:[0-9a-f]{1,4}:){4,}[0-9a-f:]+\b|\b[0-9a-f:]*::[0-9a-f:]+\b|\b[0-9]{17}\b|\[U:[0-9]:[0-9]{1,10}\]|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|\b[A-Za-z0-9_+/=-]{64,}\b|(?<=Run: )[0-9a-f]{32}\b)");
+        private static readonly Regex ErrorPrivate = Pattern(@"(?i)(?:(?:https?|wss?|ftp)://[^\s""'<>]*|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b(?:[0-9a-f]{1,4}:){4,}[0-9a-f:]+\b|\b[0-9a-f:]*::[0-9a-f:]+\b|(?<![0-9])[0-9]{17}(?![0-9])|\[U:[0-9]:[0-9]{1,10}\]|(?<![A-Za-z0-9])U:[0-9]:[0-9]{1,10}(?![0-9])|(?<![A-Za-z0-9])STEAM_[0-5]:[01]:[0-9]{1,10}(?![0-9])|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|\b[A-Za-z0-9_+/=-]{64,}\b|(?<=Run: )[0-9a-f]{32}\b)");
         private static string ErrorPathAlias(Match match)
         {
             // Preserve code filenames, not directories or arbitrary personal filenames.
@@ -1560,7 +1575,7 @@ namespace BetterAstralParty.Diagnostics
                     if (!keyBlock && Regex.IsMatch(line, @"\A(?:SteamDiagnostic|SteamProcess|SteamObservationProcess|SteamObservationCoverage|DiagnosticCoverage|LaunchRoot|LaunchFile|LaunchFailure):", RegexOptions.CultureInvariant))
                     {
                         if (!SteamHeader.IsMatch(line) && !SteamProcess.IsMatch(line) && !SteamObservationProcess.IsMatch(line) && !SteamObservationCoverage.IsMatch(line) && !DiagnosticCoverage.IsMatch(line) && !LaunchRoot.IsMatch(line) && !LaunchFile.IsMatch(line) && !LaunchFailure.IsMatch(line)) { ErrorRejected(row, "invalid-failure-context"); continuation = true; continue; }
-                        row.Projected++; if (!AppendRecord(result, line, row, max, ref count)) break;
+                        if (!AppendRecord(result, line, row, max, ref count)) break;
                         continue;
                     }
                     if (!keyBlock && line.StartsWith("Run:", StringComparison.Ordinal))

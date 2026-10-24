@@ -41,14 +41,18 @@ namespace BetterAstralParty.Installation
             if (record && report.Error != null) Failure("BootstrapGate", report.Error);
             foreach (var warning in report.Warnings) output(warning);
         }
-        private static bool PlanShortcut(NativeMaintenanceBundle bundle, bool updateOnly, string? steamRoot, uint account, Action<string> output, Action<string>? observation = null)
+        private static bool PlanShortcut(NativeMaintenanceBundle bundle, bool updateOnly, string? steamRoot, uint account, Action<string> output, out bool skipped, Action<string>? observation = null)
         {
-            return !updateOnly && steamRoot != null && account != 0 && NativeSteamMaintenance.PlanRegister(steamRoot, account, bundle.GameRoot, error => {
-                var detail = "NativeInstallShortcut: action=Skipped; reason=SteamShortcutPlanUnavailable; exception=" + error.GetType().Name
+            var unavailable = false;
+            var plan = !updateOnly && steamRoot != null && account != 0 && NativeSteamMaintenance.PlanRegister(steamRoot, account, bundle.GameRoot, error => {
+                unavailable = true; var known = error as SteamProfileUnavailableException;
+                var detail = "NativeInstallShortcut: action=Skipped; reason=" + (known?.Reason ?? "SteamShortcutPlanUnavailable") + "; exception=" + error.GetType().Name
                     + "; hresult=0x" + error.HResult.ToString("X8", System.Globalization.CultureInfo.InvariantCulture);
-                output("Steam 라이브러리 항목 정보를 읽지 못해 기존 정보를 보존하고 파일만 설치합니다. Steam 라이브러리에 Astral Party - Mod가 추가되지 않습니다. / Steam shortcut planning unavailable; preserve profile data and install files only. " + detail);
+                output(known?.Guidance != null ? known.Guidance + " Steam 라이브러리에 Astral Party - Mod가 추가되지 않습니다. / Astral Party - Mod is not added to the Steam library. " + detail
+                    : "Steam 라이브러리 항목 정보를 읽지 못해 기존 정보를 보존하고 파일만 설치합니다. Steam 라이브러리에 Astral Party - Mod가 추가되지 않습니다. / Steam shortcut planning unavailable; preserve profile data and install files only. " + detail);
                 try { observation?.Invoke(detail); } catch { }
             });
+            skipped = unavailable; return plan;
         }
         internal static void Run(NativeMaintenanceBundle bundle, bool updateOnly, string? steamRoot, uint account, Func<string, string?> consent, Action<string> output, bool restartSteam = false, bool checkOnly = false, Action<string>? observation = null)
         {
@@ -111,7 +115,7 @@ namespace BetterAstralParty.Installation
                 stage = "Maintenance path planning / write permission preflight";
                 foreach (var target in targets) NativeMaintenance.AssertTarget(bundle.GameRoot, target);
                 NativeMaintenance.TestWritable(targets);
-                var needsShortcut = PlanShortcut(bundle, updateOnly, steamRoot, account, output, observation);
+                var needsShortcut = PlanShortcut(bundle, updateOnly, steamRoot, account, output, out var shortcutSkipped, observation);
                 if (needsShortcut) NativeMaintenance.TestWritable(new[] { Full(steamRoot!, "userdata/" + account + "/config/shortcuts.vdf") });
                 if (bundle.TargetHash(UpdateTrust.PluginPath) != null) output("기존 설치: 사용자 설정을 유지하고 변경 대상 파일을 백업합니다. / Existing installation: settings preserved; target files backed up.");
                 Stage(phase, "Completed"); stage = "Steam shortcut planning / Steam closed"; phase = "WaitForExit"; Stage(phase);
@@ -145,8 +149,11 @@ namespace BetterAstralParty.Installation
                     if (needsShortcut) { NativeSteamMaintenance.Register(steamRoot!, account, bundle.GameRoot, output); registered = true; }
                     NativeMaintenance.CompleteTransaction(bundle, transaction, targets); transaction = null; Stage(phase, "Completed");
                     LegacyWork.Remove(bundle.GameRoot, output);
+                    UpdateFaults.RemoveArchived(bundle.GameRoot, output);
                 }
-                output(needsShortcut ? "적용 완료! Steam 라이브러리의 \"Astral Party - Mod\"로 실행하세요. / Installed; start \"Astral Party - Mod\" from Steam." : "기존 설치본 업데이트 완료. / Updated existing installation.");
+                output(needsShortcut ? "적용 완료! Steam 라이브러리의 \"Astral Party - Mod\"로 실행하세요. / Installed; start \"Astral Party - Mod\" from Steam."
+                    : shortcutSkipped ? "파일 설치 완료. Steam 라이브러리 항목은 바꾸지 않았습니다. 위 안내를 확인하세요. / Installed files; the Steam shortcut was left unchanged, see the notice above."
+                    : "기존 설치본 업데이트 완료. / Updated existing installation.");
             } catch (Exception error) {
                 if (transaction != null && !registered) {
                     try { Stage("Rollback"); NativeMaintenance.RestoreTransaction(bundle, transaction, targets, rollback); transaction = null; Stage("Rollback", "Completed"); }
@@ -178,9 +185,11 @@ namespace BetterAstralParty.Installation
             var existingLoader = ExistingSharedLoader(bundle, output);
             if (updateOnly && (bundle.ReadTarget(InstallReceipt.Path, 16384) == null || bundle.TargetHash(UpdateTrust.PluginPath) == null)) throw new InvalidOperationException("UpdateOnly requires an existing installation.");
             if (!existingLoader) SharedLoaderPlan(bundle, new Dictionary<string, string?>(StringComparer.Ordinal));
-            var shortcut = PlanShortcut(bundle, updateOnly, steamRoot, account, output);
+            var shortcut = PlanShortcut(bundle, updateOnly, steamRoot, account, output, out _);
             var legacyWork = LegacyWork.Finished(bundle.GameRoot).Count;
             if (legacyWork != 0) output("CheckOnly: 끝난 1.3.x 업데이트 작업 기록 " + legacyWork + "개를 설치 후 정리합니다. / " + legacyWork + " finished 1.3.x update work records will be removed after installation.");
+            var archived = UpdateFaults.RemovableArchived(bundle.GameRoot);
+            if (archived != 0) output("CheckOnly: 끝난 업데이트 기록 " + archived + "개를 설치 후 정리합니다. / " + archived + " finished update records will be removed after installation.");
             output("CheckOnly: installation validation complete; shortcutWrite=" + shortcut + ". / 설치 사전 검사가 완료되었습니다.");
         }
         // 1.3.x takeover is allowed only from a finished, unmodified protocol-4 installation.

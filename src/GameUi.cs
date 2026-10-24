@@ -5,8 +5,6 @@ namespace BetterAstralParty;
 
 internal static class GameUi
 {
-    private static string? _attackIcon, _defenseIcon, _hpIcon;
-    private static bool _iconsResolved;
     private static IntPtr _rootClass, _textClass, _logicClass, _battleClass;
     private static RuntimeObject? _root, _home, _menu, _pressed, _fight;
     private static AdviceBadge? _defBadge, _dodgeBadge;
@@ -114,6 +112,11 @@ internal static class GameUi
                     RemainingHpUi.Animate();
                 }
                 catch (Exception ex) { Compatibility.Block("Enabled", ex, ClearAdvice); }
+                if (Compatibility.Allowed("ShootingStar"))
+                {
+                    try { ShootingStarUi.Tick(); }
+                    catch (Exception ex) { Compatibility.Block("ShootingStar", ex, ShootingStarUi.Clear); }
+                }
             }
         }
         catch (Exception ex)
@@ -129,6 +132,14 @@ internal static class GameUi
                 Plugin.Logger.LogWarning($"[게임 UI 연결] {ex}");
             }
         }
+    }
+
+    // The native drag in progress, or null when there is none or FairyGUI left a stale one behind (see DragState).
+    internal static RuntimeObject? LiveDrag()
+    {
+        var drag = RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "GObject"), "get_draggingObject");
+        var held = Input.GetMouseButton(0) || Input.GetMouseButton(1) || Input.GetMouseButton(2) || Input.touchCount != 0;
+        return DragState.Live(drag?.Pointer ?? IntPtr.Zero, held) ? drag : null;
     }
 
     internal static bool Visible(RuntimeObject? obj)
@@ -380,7 +391,7 @@ internal static class GameUi
         var fault = Plugin.Automatic.Fault;
         var download = Plugin.Automatic.DownloadProgress;
         UpdateProgress.Shared.Observe(Plugin.Automatic.Status, snapshot.TargetVersion, snapshot.IsTransition, download.Read, download.Total,
-            fault == null ? "" : UpdateProgress.FaultCode(fault.Phase.ToString(), fault.Reason.ToString()), fault?.Reason.ToString().ToLowerInvariant() ?? "");
+            fault == null ? "" : UpdateProgress.FaultCode(fault.Phase.ToString(), fault.Reason.ToString()), fault?.Reason.ToString().ToLowerInvariant() ?? UpdateProgress.StatusReason(Plugin.Automatic.Status));
         if (!Compatibility.Allowed("HomeMenu") || _menu == null || _menu.Get<bool>("isDisposed")) return;
         var progress = UpdateProgress.Shared;
         var shown = (_menu.Pointer, progress.Revision, ModText.Revision);
@@ -480,7 +491,7 @@ internal static class GameUi
         // frame. Do not destroy/reload its portrait and controls a second time.
         try { if (_menuLanguageRevision != ModText.Revision) ClearHomeMenu(); }
         catch (Exception ex) { FailHomeMenu(ex); }
-        try { ClearAdvice(); }
+        try { ClearAdviceDisplay(); }
         catch (Exception ex) { Compatibility.Block("Enabled", ex, ClearAdvice); }
         try { CardPreviewUi.Reset(); }
         catch (Exception ex) { Compatibility.Block("CardPopups", ex, CardPreviewUi.Reset); }
@@ -584,13 +595,16 @@ internal static class GameUi
         }
     }
 
+    private static bool _fightEnded;
+
     private static void UpdateFight()
     {
         HideAdvice(keepDice: true);
         if (!Plugin.Enabled.Value && !Plugin.KoMinimum.Value && !Plugin.FinalDamage.Value) { Plugin.Diagnostics.EndCombat(); CardUi.Clear(); RemainingHpUi.Clear(); return; }
         if (HomeAvailable) RuntimeObject.RequireClasses("Enabled", ("GameLogic", "GameLogicManager"), ("Core.Scene", "BattleSceneController"));
         var fight = Visible(_fight) ? _fight : Find(_root!, "FightWindow");
-        if (fight == null) { Plugin.Diagnostics.EndCombat(); Plugin.Diagnostics.State("fightStep", "hidden"); _lastAdvice = ""; CardUi.Clear(); RemainingHpUi.ResetCapture(); return; }
+        if (fight == null) ReleaseWatch.Poll(RuntimeObject.StaticField(_logicClass, "_inst"), -1);
+        if (fight == null) { _fightEnded = false; Plugin.Diagnostics.EndCombat(); Plugin.Diagnostics.State("fightStep", "hidden"); _lastAdvice = ""; CardUi.Clear(); RemainingHpUi.ResetCapture(); return; }
         _fight = fight;
         var ui = fight.Get("contentPane");
         // A window can be on stage before its asynchronously loaded content is attached.
@@ -609,10 +623,17 @@ internal static class GameUi
             return;
         }
         var step = stepController.Get<int>("selectedIndex");
+        ReleaseWatch.Poll(RuntimeObject.StaticField(_logicClass, "_inst"), step);
         Plugin.Diagnostics.State("fightReady", "ready");
         Plugin.Diagnostics.State("fightStep", step.ToString(CultureInfo.InvariantCulture));
-        if (step != 3) CardUi.Clear(keepDice: step is 4 or 5 or 6);
-        if (step is not (1 or 3 or 5 or 6)) { CardDiceUi.Hide(); RemainingHpUi.ResetCapture(); return; }
+        // Spectated fights skip the card step (3) and go 2 -> 4: their step 2 is "both sides are playing cards" (as long
+        // as the players take), so spectators get the dice target from step 2. A local fighter's step 2 is the short intro.
+        // A finished fight also passes through step 2 (6 -> 2) before closing; that step 2 is not a card phase.
+        if (step == 6) _fightEnded = true; else if (step != 2) _fightEnded = false;
+        var spectating = ui.Field("playerState")!.Get<int>("selectedIndex") == 2;
+        var spectatorCards = spectating && (step == 4 || step == 2 && !_fightEnded);
+        if (step != 3) CardUi.Clear(keepDice: step is 4 or 5 or 6 || spectatorCards);
+        if (step is not (1 or 3 or 5 or 6) && !spectatorCards) { CardDiceUi.Hide(); RemainingHpUi.ResetCapture(); return; }
         var logic = RuntimeObject.StaticField(_logicClass, "_inst");
         var room = logic?.Get("room")?.Get("curRoomInfo");
         var mapType = room?.Field("info")?.Get<int>("MapType") ?? 0;
@@ -646,6 +667,10 @@ internal static class GameUi
         var atk = director?.Get("attacker")?.Field("_UI");
         var def = director?.Get("victim")?.Field("_UI");
         if (!Visible(atk) || !Visible(def)) return;
+        // Until ActiveBattlePlatform binds this fight, the director's actors still show the previous fight's HP and stats
+        // (2026-10-24: a spectated fight flashed "KO 불가" from them for 0.2 s).
+        if (director!.Field("_attackerData")?.Pointer != fight.Get("attackerData")?.Pointer
+            || director.Field("_defenderData")?.Pointer != fight.Get("defenderData")?.Pointer) return;
         var attackerUi = atk!.Field("com_Attack")!;
         var defenderUi = def!.Field("com_Defend")!;
         if (!int.TryParse(defenderUi.Field("txt_Life")!.Get("text")!.String(), NumberStyles.Integer,
@@ -667,7 +692,8 @@ internal static class GameUi
         if (step == 6) { CardDiceUi.Hide(); return; } // Observe visible results only; never use future outcome fields.
         var incomingBonus = PublicCombatEffects.Read(fight.Get("defenderData"), "defender", fight.Get("attackerData"));
         if (incomingBonus == null) { CardDiceUi.Clear(); return; }
-        if (step == 3)
+        var defenderPlayer = fight.Get("defenderData")?.Get<int>("characterType") == 1;
+        if (step is 3 or 4 || spectatorCards)
         {
             var counter = fight.Get("defenderData")?.Get("Property")?.Field("Counter");
             int.TryParse(attackerUi.Field("txt_Life")!.Get("text")!.String(), NumberStyles.Integer,
@@ -675,15 +701,16 @@ internal static class GameUi
             CardUi.Update(fight, ui, new(mapType, hp, atk.Field("minATK")!.Value<int>(), atk.Field("maxATK")!.Value<int>(),
                 def.Field("minDEF")!.Value<int>(), def.Field("maxDEF")!.Value<int>())
                 { Modifiers = incomingBonus.Value,
-                    CounterAvailable = counter?.Get<bool>("Value"), AttackerHp = attackerHp },
+                    CounterAvailable = counter?.Get<bool>("Value"), AttackerHp = attackerHp, DefenderPlayer = defenderPlayer },
                 attackerUi.Field("com_Point")!);
             return;
         }
-        if (step == 5 && ui.Field("playerState")!.Get<int>("selectedIndex") is 0 or 1 or 2 && Plugin.KoMinimum.Value)
+        if (step == 5 && ui.Field("playerState")!.Get<int>("selectedIndex") is var role && (role is 0 or 1 || role == 2 && Plugin.KoSpectator.Value)
+            && Plugin.KoMinimum.Value)
             CardDiceUi.BindResolved(ui, atk, def!, new(mapType, hp, atk.Field("minATK")!.Value<int>(),
                 atk.Field("maxATK")!.Value<int>(), def!.Field("minDEF")!.Value<int>(), def.Field("maxDEF")!.Value<int>())
-                { Modifiers = incomingBonus.Value });
-        if (!Plugin.Enabled.Value) return;
+                { Modifiers = incomingBonus.Value, DefenderPlayer = defenderPlayer });
+        if (!Plugin.Enabled.Value || !Plugin.DefenseAdvice.Value) return;
         var point = attackerUi.Field("com_Point")!.Field("txt_Point")!;
         if (!Visible(point) || !int.TryParse(point.Get("text")!.String(), NumberStyles.Integer,
                 CultureInfo.InvariantCulture, out var die)) return;
@@ -759,6 +786,10 @@ internal static class GameUi
             || !leave!.Get<bool>("touchable") || attack.Get<bool>("grayed") || leave.Get<bool>("grayed")) return;
         var enemy = fight.Get("defenderData");
         if (enemy?.Get<int>("characterType") != 2 || !Visible(launch.Field("txt_HP"))) return;
+        var enemyBonus = Plugin.ShootingStarShow.Value || Plugin.EncounterAdvice.Value
+            ? PublicCombatEffects.Read(enemy, "encounter.enemy", fight.Get("attackerData")) : null;
+        var release = OfferRelease(fight, launch, leave, enemy, enemyBonus);
+        if (!Plugin.EncounterAdvice.Value) return;
         var player = fight.Get("attackerData")?.Get("Property");
         var enemyProperty = enemy.Get("Property");
         if (player == null || enemyProperty == null) return;
@@ -770,7 +801,6 @@ internal static class GameUi
         var counter = enemyProperty.Field("Counter");
         if (counter == null) return;
         var selfBonus = PublicCombatEffects.Read(fight.Get("attackerData"), "encounter.self", enemy);
-        var enemyBonus = PublicCombatEffects.Read(enemy, "encounter.enemy", fight.Get("attackerData"));
         if (selfBonus == null || enemyBonus == null) return;
         var input = new EncounterInput(mapType, player.Field("HP")!.Get<int>("Value"),
             player.Field("ATK")!.Get<int>("Value"), player.Field("DEF")!.Get<int>("Value"),
@@ -786,9 +816,30 @@ internal static class GameUi
         var scale = Math.Min(Plugin.UiScale.Value,
             Math.Max(180f, Math.Abs(attack.Get<float>("x") - leave.Get<float>("x")) - 12f) / 280f);
         _defBadge!.Show(advice.Quick, advice.Attack == true, scale, -86f * scale, visualOnly: true, guide: false);
-        _dodgeBadge!.Show(string.Empty, advice.Attack == false, scale, -86f * scale,
+        _dodgeBadge!.Show(release is { } offered ? $"몬스터 피해 {offered.Damage}\n스타라이트 +{offered.Stacks}" : string.Empty,
+            advice.Attack == false, scale, -86f * scale,
             visualOnly: true, guide: false);
         _adviceShowing = true;
+    }
+
+    // #14 Shooting Star: what releasing this monster yields, shown on the Release button. Its own breaker clears only
+    // the star, so a failure here never turns off the encounter advice.
+    private static ReleaseGain? OfferRelease(RuntimeObject fight, RuntimeObject launch, RuntimeObject leave, RuntimeObject enemy, HitModifiers? enemyBonus)
+    {
+        if (!Plugin.ShootingStarShow.Value || !Compatibility.Allowed("ShootingStar")) return null;
+        try
+        {
+            if (ShootingStar.Read(fight.Get("attackerData"), enemy, enemyBonus) is not { } gain) return null;
+            ShootingStarUi.Show(leave, gain, Plugin.UiScale.Value);
+            if (Plugin.Diagnostics.IsRecording)
+            {
+                Plugin.Diagnostics.State("shootingStar.offer", $"monsterHP={launch.Field("txt_HP")!.Get("text")!.String()}; "
+                    + $"monsterType={enemy.Field("player")?.Get("Hero")?.Get<int>("MonsterType")}; damage={gain.Damage}; stacks=+{gain.Stacks}; {ShootingStar.Evidence}");
+                ReleaseWatch.Offer(enemy, ShootingStar.Evidence);
+            }
+            return gain;
+        }
+        catch (Exception ex) { Compatibility.Block("ShootingStar", ex, ShootingStarUi.Clear); return null; }
     }
 
     private static void UpdateHover()
@@ -822,29 +873,6 @@ internal static class GameUi
         NativeUi.OutlineText(label);
     }
 
-    internal static void SetAdvice(RuntimeObject label, string text)
-    {
-        if (!_iconsResolved)
-        {
-            _iconsResolved = true;
-            try
-            {
-                var package = RuntimeObject.FindClass("FairyGUI", "UIPackage");
-                _attackIcon = RuntimeObject.StaticCall(package, "GetItemURL", "Common", "Com_Icon_Atk")?.String();
-                _defenseIcon = RuntimeObject.StaticCall(package, "GetItemURL", "Common", "Com_Icon_Def")?.String();
-                _hpIcon = RuntimeObject.StaticCall(package, "GetItemURL", "Common", "Com_Icon_Hp")?.String();
-                Plugin.Logger.LogInfo($"[추천 아이콘] 공격={_attackIcon != null}, 방어={_defenseIcon != null}, 체력={_hpIcon != null}");
-            }
-            catch (Exception ex)
-            {
-                // Icon availability must never disable advice after a game asset update.
-                Plugin.Logger.LogWarning($"[추천 아이콘] 기본 기호로 대체: {ex.Message}");
-            }
-        }
-        var size = label.Get("textFormat")!.Field("size")!.Value<int>();
-        label.Set("text", AdviceText.Format(text, size, _attackIcon, _defenseIcon, _hpIcon));
-    }
-
     private static void HideAdvice(bool keepDice = false)
     {
         CardUi.Hide(keepDice);
@@ -856,7 +884,13 @@ internal static class GameUi
 
     private static void ClearAdvice()
     {
-        HideAdvice(); CardUi.Clear(); RemainingHpUi.Clear();
+        ClearAdviceDisplay(); RemainingHpUi.Clear();
+    }
+
+    // A language switch only redraws text: the current hit's final damage stays and is relabelled in place.
+    private static void ClearAdviceDisplay()
+    {
+        HideAdvice(); CardUi.Clear(); RemainingHpUi.RefreshLanguage(); ShootingStarUi.Clear();
         _defBadge?.Dispose(); _defBadge = null;
         _dodgeBadge?.Dispose(); _dodgeBadge = null;
         _observerSummary?.Dispose(); _observerSummary = null;

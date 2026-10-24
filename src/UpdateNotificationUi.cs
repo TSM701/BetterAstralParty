@@ -32,6 +32,9 @@ internal static class UpdateNotificationUi
     // One continuous progress bar with its percentage above the buttons, shared with the home progress capsule.
     private static RuntimeObject? _barTrack, _barFill, _barText;
     private const float BarX = 110, BarY = 426, BarWidth = 560, BarHeight = 18;
+    // The text uses the bar's space when no progress is shown; the buttons start at 484.
+    private const float ViewHeight = 300, WideViewHeight = 360;
+    private static float _viewHeight;
     private static int _progressRevision = -1;
     private static Switching? _switching;
     internal static bool ConsumedInput => _consumedFrame == Time.frameCount;
@@ -165,7 +168,7 @@ internal static class UpdateNotificationUi
         _target = target; _parent = root.Pointer;
         _contextGeneration = State.ContextGeneration;
         _openedFrame = Time.frameCount; _openedAt = Time.unscaledTime;
-        _panel = NativeUi.Component(root, MenuLayout.Width, MenuLayout.Height);
+        _panel = NativeUi.Component(root, MenuLayout.Width, MenuLayout.NativeFrameHeight);
         _panel.Set("visible", false);
         _panel.Set("sortingOrder", 29900); // Below the existing mod settings.
         _panel.Set("opaque", true); // Only our frame bounds, no global dim/input layer.
@@ -277,7 +280,11 @@ internal static class UpdateNotificationUi
             : ModText.UpdateNotificationDetails(_target!.Release, Plugin.Version,
                 Plugin.Automatic.Status, Plugin.Updates.Result.Status, Plugin.Automatic.Snapshot.Matches(_target.Release)));
         ModFont.Track(_body);
-        _content!.Call("SetSize", _body.Get<float>("width"), Math.Max(300f, _body.Get<float>("textHeight")));
+        // Without a progress bar the text reaches down to the buttons instead of leaving its row empty.
+        var height = progress.Visible ? ViewHeight : WideViewHeight;
+        if (_viewHeight != height)
+        { _viewHeight = height; _view!.Call("SetSize", 840f, height); _scrollTrack!.Call("SetSize", 12f, height); _scrollMarker = null; }
+        _content!.Call("SetSize", _body.Get<float>("width"), Math.Max(height, _body.Get<float>("textHeight")));
         _view!.Call("EnsureBoundsCorrect");
         var retry = _switching != null && progress.Stopped && !committed;
         foreach (var key in Controls.Keys.ToList())
@@ -318,11 +325,11 @@ internal static class UpdateNotificationUi
         var width = root.Get<float>("width"); var height = root.Get<float>("height");
         if (!float.IsFinite(width) || !float.IsFinite(height) || width <= 0 || height <= 0)
             throw new InvalidOperationException("Update notice root size unavailable");
-        var scale = MenuLayout.FitScale(width, height);
+        var scale = MenuLayout.FitScale(width, height, MenuLayout.NativeFrameHeight);
         _panel!.Call("SetScale", scale, scale);
         var reveal = AdviceText.Reveal(Time.unscaledTime - _openedAt, 0.22f);
         _panel.Call("SetXY", (width - MenuLayout.Width * scale) / 2,
-            (height - MenuLayout.Height * scale) / 2 + (1 - reveal) * 24);
+            (height - MenuLayout.NativeFrameHeight * scale) / 2 + (1 - reveal) * 24);
         _panel.Set("alpha", reveal);
     }
 
@@ -411,7 +418,7 @@ internal static class UpdateNotificationUi
         State.Close(); InputState.Reset();
         var panel = _panel;
         _frame = _view = _content = _body = _scrollTrack = _scrollThumb = _barTrack = _barFill = _barText = null; _target = null; _progressRevision = -1;
-        _scrollMarker = null;
+        _scrollMarker = null; _viewHeight = 0;
         _parent = _hovered = IntPtr.Zero; Controls.Clear();
         if (panel == null) return;
         Exception? failure = null;

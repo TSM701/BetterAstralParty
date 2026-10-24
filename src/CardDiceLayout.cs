@@ -3,10 +3,11 @@ namespace BetterAstralParty;
 internal static class CardDiceLayout
 {
     internal const float ResolvedHold = 2f;
-    internal const float ColumnWidth = 132, Diameter = 100, Width = ColumnWidth * 2, Height = 228;
+    // The last row (UnknownRowY) names shown effects the calculation does not count.
+    internal const float ColumnWidth = 132, Diameter = 100, Width = ColumnWidth * 2, Height = 258, UnknownRowY = 228;
     internal static float Row(int index) => index * ColumnWidth + (ColumnWidth - Diameter) / 2;
 
-    internal static string Title(bool survival = false) => survival ? "생존 최소 조건" : "KO 최소 조건";
+    internal static string Title(bool survival = false) => survival ? "생존 주사위 조건" : "KO 주사위 조건";
 
     internal static string Status(KoPair? pair, (long Min, long Max)? damage, int hp, bool survival = false)
     {
@@ -22,9 +23,10 @@ internal static class CardDiceLayout
         return "계산 정보 부족"; // Supported mixed outcomes must use the possible-threshold search.
     }
 
-    internal static (int Die, string Symbol, string Empty) Content(KoPair? pair, int fixedDie, int row, bool survival = false, bool unconditional = false, DiceFaces defenseDice = default)
+    internal static (int Die, string Symbol, string Empty) Content(KoPair? pair, int fixedDie, int row, bool survival = false, bool unconditional = false, DiceFaces defenseDice = default, int fixedDefense = 0)
     {
         if (row == 0 && fixedDie is >= 1 and <= 6) return (fixedDie, "=", "");
+        if (row == 1 && fixedDefense is >= 1 and <= 6) return (fixedDefense, "=", "");
         if (unconditional) return (0, "", "—");
         if (pair == null) return (0, "", "?");
         if (pair.Value.DefenseDie == 0) return (0, "", "—");

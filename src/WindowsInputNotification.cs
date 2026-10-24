@@ -42,6 +42,9 @@ internal static class WindowsInputNotification
     internal static void Hide()
     {
         if (!_added) return;
+        // Windows 11 keeps a shown toast on screen after NIM_DELETE; an empty NIF_INFO takes it down first (observed 2026-10-23).
+        _data.Flags = 0x20 | 0x10; _data.Info = ""; _data.Title = ""; // GUID | INFO
+        Shell_NotifyIcon(1, ref _data);
         // Retain ownership on failure so a later tick can retry removal.
         if (Shell_NotifyIcon(2, ref _data)) _added = false;
     }

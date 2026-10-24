@@ -148,6 +148,23 @@ internal static partial class FixtureEntry
         var path = Path.Combine(steam, "userdata", "11", "config", "shortcuts.vdf");
         var originalRoot = NativeSteamMaintenance.EmptyShortcuts(); var entries = (OrderedDictionary)originalRoot["shortcuts"]!; entries.Add("5", Item("unrelated", "Other shortcut"));
         var original = NativeSteamMaintenance.WriteShortcuts(originalRoot); File.WriteAllBytes(path, original);
+        {
+            var custom = NativeSteamMaintenance.EmptyShortcuts();
+            ((OrderedDictionary)custom["shortcuts"]!).Add("3", Item("\"" + Path.Combine(game, "BetterAstralParty-Mod.cmd") + "\"", args: "custom"));
+            var customBytes = NativeSteamMaintenance.WriteShortcuts(custom); File.WriteAllBytes(path, customBytes);
+            Check(!NativeSteamMaintenance.PlanRegister(steam, 11, game) && NativeSteamMaintenance.Register(steam, 11, game) == null && File.ReadAllBytes(path).SequenceEqual(customBytes),
+                "a Mod shortcut with user launch options is kept and never registered twice");
+            var kept = new List<Exception>();
+            Check(!NativeSteamMaintenance.PlanRegister(steam, 11, game, kept.Add) && kept.Count == 0 && !NativeSteamMaintenance.PlanRemove(steam, 11, game, kept.Add)
+                && kept.Count == 1 && kept[0] is SteamProfileUnavailableException { Reason: "SteamShortcutCustomized", Guidance: not null }, "removal keeps a customized Mod entry and reports why");
+            File.WriteAllBytes(path, original); var backup = path + ".BetterAstralParty-" + new string('a', 32) + ".bak"; File.Move(path, backup);
+            Check(NativeSteamMaintenance.PlanRegister(steam, 11, game), "a backup a finished swap kept is not an interruption");
+            var temp = path + "." + new string('b', 32) + ".tmp"; File.WriteAllBytes(temp, original); var skipped = new List<Exception>();
+            Check(!NativeSteamMaintenance.PlanRegister(steam, 11, game, skipped.Add) && !NativeSteamMaintenance.PlanRemove(steam, 11, game, skipped.Add) && NativeSteamMaintenance.Register(steam, 11, game) == null && !File.Exists(path)
+                && skipped.Count == 2 && skipped.All(error => error is SteamProfileUnavailableException { Reason: "SteamShortcutSwapInterrupted", Guidance: not null }),
+                "an interrupted shortcut swap is never overwritten with a fresh file and is reported with restore guidance");
+            File.Delete(temp); File.Move(backup, path);
+        }
         foreach (var malformed in new[] { false, true }) {
             if (malformed) File.WriteAllBytes(path, new byte[] { 3, 0, 8 });
             var preserved = File.ReadAllBytes(path); var beforeFiles = Directory.GetFiles(steam, "*", SearchOption.AllDirectories).Length;

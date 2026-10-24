@@ -61,7 +61,7 @@ internal static class CharacterGuideUi
     private static void BlockGuide(Exception error) { _guideEnabled = false; Compatibility.Block("CharacterGuide", error, ClearGuide); }
     private static void BlockRoles(Exception error) { _rolesEnabled = false; Compatibility.Block("CharacterRoles", error, ClearRoles); }
 
-    private static RuntimeObject? Config(int id)
+    internal static RuntimeObject? Config(int id)
     {
         if (_config == IntPtr.Zero) _config = RuntimeObject.FindClass("", "StaticConfigure");
         if (_config == IntPtr.Zero) return null;

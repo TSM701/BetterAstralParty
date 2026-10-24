@@ -137,6 +137,7 @@ namespace AutoThanksTest
 
     internal static class GameUi
     {
+        internal static RuntimeObject LiveDrag() => World.Dragging;
         internal static RuntimeObject Root;
         internal static bool HomeAvailable;
         internal static RuntimeObject Find(RuntimeObject root, string name, int maxDepth)

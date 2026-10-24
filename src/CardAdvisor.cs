@@ -5,6 +5,8 @@ namespace BetterAstralParty;
 public readonly record struct CardBonus(bool Attack, int Min, int Max, int Cost)
 {
     public bool PreventCounter { get; init; }
+    // Card 10010: this fight's final ATK (after the die) +N %. The server's rounding is not observed, so callers bound floor..ceiling.
+    public int FinalPercent { get; init; }
 }
 public readonly record struct PreRollCombat(int MapType, int Hp, int AttackMin, int AttackMax,
     int DefenseMin, int DefenseMax)
@@ -12,6 +14,8 @@ public readonly record struct PreRollCombat(int MapType, int Hp, int AttackMin, 
     public HitModifiers Modifiers { get; init; }
     public bool? CounterAvailable { get; init; }
     public int AttackerHp { get; init; }
+    // A player defender: spectators then see that player's own survival view.
+    public bool DefenderPlayer { get; init; }
 }
 public readonly record struct CardImpact(string Title, string Details, double DamageGainMin,
     double DamageGainMax, double KoGainMin, double KoGainMax)
@@ -31,14 +35,15 @@ public static class CardAdvisor
         // Native TutorialLogic.CalFightCardValue: first two values are additive min/max.
         // EffectType does NOT describe extra parameters. Card 10008's native catalogue
         // defines the third parameter as counter prevention; 10009 grants a later card.
-        // 10010 changes final ATK, so its extra effect cannot be discarded.
+        // 10010's third parameter is the final-ATK percent of its description ("final ATK +50% for this battle").
         // Keep this verified semantic mapping; values themselves always come from live data.
         var counter = parameters.Length == 3 && id == 10008 && effectType == 1 && parameters[2] is 0 or 1;
         var grantsCard = parameters.Length == 3 && id == 10009 && effectType == 1 && parameters[2] == 10010;
-        if (parameters.Length == 3 && !counter && !grantsCard) return null;
+        var finalBoost = parameters.Length == 3 && id == 10010 && effectType == 1 && parameters[2] is > 0 and <= 100;
+        if (parameters.Length == 3 && !counter && !grantsCard && !finalBoost) return null;
         var min = parameters[0]; var max = parameters[1];
         return min >= 0 && max >= min && max <= 100
-            ? new CardBonus(effectType == 1, min, max, cost) { PreventCounter = counter && parameters[2] == 1 } : null;
+            ? new CardBonus(effectType == 1, min, max, cost) { PreventCounter = counter && parameters[2] == 1, FinalPercent = finalBoost ? parameters[2] : 0 } : null;
     }
 
     // Only fully matched Korean/English additive cards. Unknown effects fail closed.
@@ -75,7 +80,11 @@ public static class CardAdvisor
 
     public static bool Dominates(CardBonus cheaper, CardBonus candidate) =>
         cheaper.Attack == candidate.Attack && cheaper.Cost < candidate.Cost && cheaper.Min >= candidate.Max
-        && (!candidate.PreventCounter || cheaper.PreventCounter);
+        && (!candidate.PreventCounter || cheaper.PreventCounter) && cheaper.FinalPercent >= candidate.FinalPercent;
+
+    // Final ATK after a +percent boost, rounded down and up (the server's rounding is not observed yet).
+    internal static (long Floor, long Ceiling) Boost(long attack, int percent) =>
+        percent <= 0 || attack <= 0 ? (attack, attack) : (attack * (100 + percent) / 100, (attack * (100 + percent) + 99) / 100);
 
     public static CardImpact? Calculate(PreRollCombat input, CardBonus card)
     {
@@ -89,13 +98,13 @@ public static class CardAdvisor
         double damageMin = double.PositiveInfinity, damageMax = double.NegativeInfinity;
         double koMin = double.PositiveInfinity, koMax = double.NegativeInfinity;
         double afterKoMin = 1, afterKoMax = 0;
-        var cache = new Dictionary<(int Attack, int Defense, bool Dodge), ChoiceStats>();
-        ChoiceStats Stats(int attack, int defense, bool dodge)
+        var cache = new Dictionary<(int Attack, int Defense, bool Dodge, int Percent, bool RoundUp), ChoiceStats>();
+        ChoiceStats Stats(int attack, int defense, bool dodge, int percent = 0, bool roundUp = false)
         {
-            var key = (attack, defense, dodge);
+            var key = (attack, defense, dodge, percent, roundUp);
             if (!cache.TryGetValue(key, out var stats))
             {
-                stats = BeforeRoll(input.Hp, attack, defense, dodge, input.Modifiers);
+                stats = BeforeRoll(input.Hp, attack, defense, dodge, input.Modifiers, percent, roundUp);
                 cache[key] = stats;
             }
             return stats;
@@ -108,8 +117,10 @@ public static class CardAdvisor
             var dodge = scenario != 0;
             var before = Stats(attack, defense, dodge);
             for (var bonus = card.Min; bonus <= card.Max; bonus++)
+            // Both roundings of a final-ATK boost bound the result.
+            for (var rounding = 0; rounding < (card.FinalPercent > 0 ? 2 : 1); rounding++)
             {
-                var after = Stats(attack + (card.Attack ? bonus : 0), defense + (card.Attack ? 0 : bonus), dodge);
+                var after = Stats(attack + (card.Attack ? bonus : 0), defense + (card.Attack ? 0 : bonus), dodge, card.FinalPercent, rounding == 1);
                 var sign = card.Attack ? 1 : -1;
                 var damage = sign * (after.ExpectedDamage - before.ExpectedDamage);
                 var ko = sign * (after.KnockoutChance - before.KnockoutChance);
@@ -137,14 +148,16 @@ public static class CardAdvisor
     }
 
     // Pure enumeration: no random generator or game state is accessed.
-    internal static ChoiceStats BeforeRoll(int hp, int attack, int defense, bool dodgeAvailable, HitModifiers modifiers = default)
+    internal static ChoiceStats BeforeRoll(int hp, int attack, int defense, bool dodgeAvailable, HitModifiers modifiers = default,
+        int finalPercent = 0, bool roundUp = false)
     {
         if (!modifiers.PreRollDiceKnown) throw new ArgumentOutOfRangeException(nameof(modifiers), "Unknown pre-roll distribution");
         double damage = 0, ko = 0, noDamage = 0;
         for (var die = 1; die <= 6; die++)
         {
             if (!modifiers.AttackDice.Contains(die)) continue;
-            var choices = CombatAdvisor.Calculate(new(hp, attack + die, die, defense)
+            var boosted = Boost(attack + die, finalPercent);
+            var choices = CombatAdvisor.Calculate(new(hp, (int)(roundUp ? boosted.Ceiling : boosted.Floor), die, defense)
                 { Modifiers = modifiers }, false);
             var useDodge = dodgeAvailable && choices.Recommendation == RecommendedAction.Dodge;
             var choice = useDodge ? choices.Dodge : choices.Defend;

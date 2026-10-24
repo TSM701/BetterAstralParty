@@ -300,6 +300,7 @@ namespace FieldCameraReturnTest
     }
     internal static class GameUi
     {
+        internal static RuntimeObject? LiveDrag() => Check.Dragging;
         internal static RuntimeObject? Root;
         internal static readonly List<RuntimeObject> FreshHit = new(), StaleHit = new();
         internal static bool TreeHit;

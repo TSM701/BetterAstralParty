@@ -7,14 +7,14 @@ if not exist "%~dp0AstralParty_INT.exe" (
     pause
     exit /b 1
 )
-tasklist /FI "IMAGENAME eq AstralParty_INT.exe" /NH | find /I "AstralParty_INT.exe" >nul
+"%SystemRoot%\System32\tasklist.exe" /FI "IMAGENAME eq AstralParty_INT.exe" /NH | "%SystemRoot%\System32\find.exe" /I "AstralParty_INT.exe" >nul
 if not errorlevel 1 (
     echo Astral Party is already running. Close it, then start "Astral Party - Mod" again.
     pause
     exit /b 1
 )
 rem The shared loader is OFF in its own settings: pass the loader switch as launch arguments instead.
-findstr /R /I /C:"^ *enabled *= *true" "%~dp0doorstop_config.ini" >nul 2>&1
+"%SystemRoot%\System32\findstr.exe" /R /I /C:"^ *enabled *= *true" "%~dp0doorstop_config.ini" >nul 2>&1
 if errorlevel 1 goto arguments
 set "REQUEST=%LOCALAPPDATA%\BetterAstralParty\Runtime"
 if not exist "%REQUEST%" mkdir "%REQUEST%" 2>nul

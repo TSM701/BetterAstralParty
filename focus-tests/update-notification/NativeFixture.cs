@@ -270,13 +270,13 @@ namespace BetterAstralParty
     }
     internal static class MenuLayout
     {
-        internal const float Width = 1060, Height = 620;
+        internal const float Width = 1060, Height = 760, NativeFrameHeight = 620;
         internal static (float Height,float Y) ScrollMarker(float viewHeight,float contentHeight,float position) {
             if(contentHeight<=viewHeight)return(viewHeight,0);
             var height=Math.Clamp(viewHeight*viewHeight/contentHeight,24,viewHeight);
             return(height,Math.Clamp(position/(contentHeight-viewHeight),0,1)*(viewHeight-height));
         }
-        internal static float FitScale(float width,float height) => MathF.Min(width / Width,height / Height);
+        internal static float FitScale(float width,float height,float windowHeight = Height) => MathF.Min(width / Width,height / windowHeight);
     }
     internal static class AdviceText { internal static float Reveal(float elapsed,float duration=.22f) => Math.Clamp(elapsed / duration,0,1); }
     internal static class ModUi { internal static int Opens; internal static void OpenUpdateSettings() => Opens++;

@@ -7,6 +7,9 @@ namespace BetterAstralParty;
 internal static class RemainingHpUi
 {
     private static RuntimeObject? _point, _parent;
+    // Shown only when this hit involves effects the calculation does not count.
+    private static UnknownEffectsRow? _unknownRow;
+    private static RuntimeObject? _title;
     private static IntPtr _pointContext;
     private static RuntimeObject? _fight, _attack, _defense;
     private static float _shownAt;
@@ -40,7 +43,13 @@ internal static class RemainingHpUi
                 // Use the visible defeat caption only after results; never read future fight data.
                 var monsterDefeat = GameUi.Visible(parent.Field("txt_Failure"))
                     && fight.Get("attackerData")?.Get("characterType")?.Value<int>() == 2;
-                Plugin.Diagnostics.CombatResult(_hp, _prediction, hp, _modifiers, monsterDefeat);
+                // The native applied HP change: on a KO it may keep the overkill the HP label cannot show. It is read
+                // for diagnostics only, so a failed read never hides the damage view.
+                int? changeHp = null;
+                if (Plugin.Diagnostics.IsRecording)
+                    try { changeHp = defender.Get("Property")?.Field("ChangeHP")?.Get<int>("Value"); }
+                    catch (Exception ex) { Plugin.Diagnostics.Error("RemainingHpUi.ChangeHP", ex); }
+                Plugin.Diagnostics.CombatResult(_hp, _prediction, hp, _modifiers, monsterDefeat, changeHp);
             }
             var a = attack.Field("com_Point")!;
             var d = defense.Field("com_Point")!;
@@ -75,6 +84,9 @@ internal static class RemainingHpUi
             // Dice_Show writes both final labels and starts PointChange, then waits
             // 800ms before HideFightValue. The paired pulses are the early signal;
             // showPoint=2 alone is not (it is also set before arithmetic begins).
+            // A total outside the supported rules (negative, or a dodge above 6) skips this hit instead of
+            // tripping the breaker that would hide the final-damage view for the rest of the session.
+            if (atk < 0 || def < 0 || dodge && def > 6) return;
             var escaped = dodge && def is >= 1 and <= 6 && (def > _die || def == 6 && _die == 6);
             if (!AdviceText.FinalDamageReady(_sawValues, _valuesFinished,
                 a.Call("GetTransition", "PointChange")!.Get<bool>("playing"),
@@ -115,6 +127,7 @@ internal static class RemainingHpUi
                 format.SetField("outlineColor", color);
                 text.Set("textFormat", format);
             }
+            _unknownRow?.Show(_modifiers.Unknown);
             _shownAt = Time.unscaledTime;
             _layout = null; _alpha = -1;
             _point.Set("visible", true);
@@ -149,7 +162,7 @@ internal static class RemainingHpUi
             && _point.Get("parent")?.Pointer == parent.Pointer
             && _pointContext == _parent?.Pointer) return;
         GameUi.Dispose(_point);
-        _point = null;
+        _point = null; _unknownRow = null;
         _pointContext = _parent?.Pointer ?? IntPtr.Zero;
         _point = NativeUi.Create("Fight", "Fight_Com_Point")!;
         _point.Set("touchable", false);
@@ -167,7 +180,8 @@ internal static class RemainingHpUi
         _point.Field("FightDiceBG")!.Set("visible", true);
         _point.Field("txt_Point")!.Set("visible", true);
         parent.Call("AddChild", _point);
-        NativeUi.Label(_point, ModText.Text("피해량"), 0, _point.Get<float>("height"), _point.Get<float>("width"), 28, 22, dark: true);
+        _title = NativeUi.Label(_point, ModText.Text("피해량"), 0, _point.Get<float>("height"), _point.Get<float>("width"), 28, 22, dark: true);
+        _unknownRow = new UnknownEffectsRow(_point, _point.Get<float>("width"), _point.Get<float>("height") + 30, help: false);
     }
 
     private static void RefreshArtwork(RuntimeObject source)
@@ -252,9 +266,17 @@ internal static class RemainingHpUi
         _step = _hp = _die = 0; _modifiers = default; _prediction = -1;
     }
 
+    // A language switch relabels the drawn number in place, so the current hit's final damage stays on screen.
+    internal static void RefreshLanguage()
+    {
+        if (_point == null || _point.Get<bool>("isDisposed")) return;
+        try { _title?.Set("text", ModText.Text("피해량")); _unknownRow?.Show(_modifiers.Unknown); }
+        catch (Exception ex) { Plugin.Diagnostics.Error("RemainingHpUi.Language", ex); ClearDisplay(); }
+    }
+
     internal static void ClearDisplay()
     {
-        GameUi.Dispose(_point); _point = null;
+        GameUi.Dispose(_point); _point = null; _unknownRow = null; _title = null;
         _pointContext = IntPtr.Zero;
         _layout = null; _alpha = -1;
         _showing = _animated = false;

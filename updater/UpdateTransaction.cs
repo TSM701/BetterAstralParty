@@ -233,11 +233,18 @@ namespace BetterAstralParty.Updating
             }
         }
         private static byte[] WaterBytes(WindowsFileFence fence, VerifiedUpdateDescriptor descriptor, WindowsFileFence.FileLease? original)
+        { return NextWater(fence.RootIdentity.Text, Water(original, fence), descriptor) ?? Read(original!, 2048); }
+        // The one high-water rule for in-game updates and whole installs: the record after applying this descriptor,
+        // or null while it already holds this version or a higher one.
+        internal static byte[]? NextWater(string root, string? previous, VerifiedUpdateDescriptor descriptor)
         {
-            var previous = Water(original, fence);
-            if (previous != null && UpdateVersion.Parse(descriptor.Version).CompareTo(UpdateVersion.Parse(previous)) <= 0) return Read(original!, 2048);
-            return Encoding.ASCII.GetBytes("BetterAstralParty.HighWater/v1\nroot=" + fence.RootIdentity.Text + "\nversion=" + descriptor.Version + "\ndescriptor=" + descriptor.DescriptorSha256 + "\n");
+            var version = UpdateVersion.Parse(descriptor.Version);
+            if (previous != null && version.CompareTo(UpdateVersion.Parse(previous)) <= 0) return null;
+            return Encoding.ASCII.GetBytes("BetterAstralParty.HighWater/v1\nroot=" + root + "\nversion=" + version.Tag + "\ndescriptor=" + descriptor.DescriptorSha256 + "\n");
         }
+        // An in-game update stays in the active channel unless an approved transition leaves it.
+        internal static bool WrongTarget(ReceiptChannelState? channels, UpdateContext selection)
+        { return channels != null && channels.ActiveChannel != selection.Channel && selection.Transition == null; }
         private static UpdateContext Context(UpdateContext selection, string installed, string? highest, string? channelDescriptor = null)
         { return new UpdateContext(selection.Repository, selection.Channel, installed, selection.ReleaseTag, selection.ReleaseId, selection.AssetId, selection.Platform, highest, selection.RepositoryId, selection.Transition, channelDescriptor == "-" ? null : channelDescriptor); }
         private static ReceiptChannelState Channels(WindowsFileFence fence, InstallReceipt receipt, string original, WindowsFileFence.FileLease? water, UpdateTrust trust,Leases leases)
@@ -330,8 +337,9 @@ namespace BetterAstralParty.Updating
         private static void AssertNoPending(WindowsFileFence fence)
         {
             // Enumerate only immediate, fixed-prefix work names; every open still uses the pinned fence.
+            // Finished transactions are kept as history; only bound the work, never refuse because history grew.
             var directories = new List<string>(UpdateWorkPath.Directories(fence, "txn")).ToArray();
-            if (directories.Length > 128) throw Bad();
+            if (directories.Length > 4096) throw Bad();
             foreach (var directory in directories) using (var leases = new Leases()) {
                 var work = directory;
                 if (!UpdateWorkPath.Is(work, "txn")) throw Bad(); fence.AssertPrivateDirectory(work);
@@ -377,7 +385,7 @@ namespace BetterAstralParty.Updating
                 var plugin = plan.Items.Find(item => item.Path == UpdateTrust.PluginPath)!;
                 var installedMetadata = InstalledPluginMetadata.Read(Read(plugin.Target ?? throw Bad(), UpdateTrust.MaxFileBytes)); plan.Original = installedMetadata.Version;
                 var channels = selection.RepositoryId > 0 ? Channels(fence, receipt, plan.Original, plan.Items[InstallReceipt.Owned.Length + 1].Target, trust,leases) : null;
-                if(channels!=null && channels.ActiveChannel!=selection.Channel && selection.Transition==null) {
+                if(WrongTarget(channels,selection)) {
                     var error=new UpdateValidationException(UpdateFailure.WrongTarget);
                     DiagnosticHub.Failure(DiagnosticFeature.Helper,DiagnosticPhase.DescriptorVerification,DiagnosticCode.Prerequisite,error,validationCode:(int)error.Failure,operation:diagnosticOperation,targetVersion:selection.ReleaseTag);throw error;
                 }
@@ -408,6 +416,8 @@ namespace BetterAstralParty.Updating
                 plan.Stage = staged.Directory; plan.StageId = staged.DirectoryIdentity.Text; plan.Descriptor = staged.DescriptorSha256;
                 // Recovery after a crash rebuilds an interrupted channel switch from its own stage.
                 if (selection.Transition != null) UpdateTicket.Write(fence, staged.Directory + "/transition.bin", selection.Transition.Bytes());
+                // A public release is channel-neutral; recovery rebuilds the channel this apply recorded in the receipt.
+                if (verified.PublicRelease) UpdateTicket.Write(fence, staged.Directory + "/channel.bin", Encoding.ASCII.GetBytes(selection.Channel));
                 boundary = Guarded(fence, plan, boundary,diagnosticOperation,selection.ReleaseTag);
                 using (var locked = UpdateStaging.VerifyLocked(fence, staged, trust, context)) {
                     using (var stream = locked.Payload.OpenRead()) using (var archive = new ZipArchive(stream, ZipArchiveMode.Read, false)) {

@@ -15,6 +15,7 @@ namespace BetterAstralParty.Updating
     {
         internal readonly UpdateFailure Failure;
         internal UpdateValidationException(UpdateFailure failure) : base("Update validation: " + failure) { Failure = failure; }
+        internal UpdateValidationException(UpdateFailure failure, string detail) : base("Update validation: " + failure + ". " + detail) { Failure = failure; }
     }
     internal sealed class UpdateContext
     {

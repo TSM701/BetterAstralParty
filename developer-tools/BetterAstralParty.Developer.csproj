@@ -17,6 +17,8 @@
     <Compile Include="../tools/SignRelease.cs" />
     <Compile Include="../updater/*.cs" Exclude="../updater/UpdateHelperProgram.cs" />
     <Compile Include="../src/Observability/*.cs" />
+    <Compile Include="../src/CombatAdvisor.cs" />
+    <Compile Include="../src/CombatBuffAudit.cs" />
     <Compile Include="../diagnostics/MinimalDiagnosticProjection.cs" />
     <Reference Include="Mono.Cecil">
       <HintPath>../.deps/bepinex/BepInEx/core/Mono.Cecil.dll</HintPath>

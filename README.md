@@ -31,7 +31,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 | 전투 | 필드 | 편의 |
 | --- | --- | --- |
 | 공개 정보 기반 전투 추천과 카드 평가 | 플레이어·몬스터 필드 인디케이터 | 인게임 모드 설정과 한국어·영어 UI |
-| KO·생존 최소 조건 표시 | 공개 버프·반격 표시 | 창 비활성화 시 음소거, 입력 대기 알림 |
+| KO·생존 주사위 조건 표시 | 공개 버프·반격 표시 | 창 비활성화 시 음소거, 입력 대기 알림 |
 | 전투 확률과 최종 피해 표시 | 필드 휠 확대·축소와 자유 시점 | PvE 매칭 성사 시 창 포커스 |
 | 슈슈 쉴드 표시와 방어 제한 | 손패 기능별 정렬 | 감사합니다 추천 자동 전송 |
 | 카드·칩 핑 상세 팝업 | 캐릭터 역할·준비 설명 | 게임 안에서 적용되는 자동 업데이트 |
@@ -48,7 +48,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 ### 설치와 실행
 
 > [!IMPORTANT]
-> 1.3.x 사용자는 게임을 종료하고 1.4.0 패키지의 `Install.cmd`를 실행하세요. 기존 설치를 이어받아 이전 실행기·업데이트 도우미 파일을 정리하고 Astral Party - Mod 항목을 새 실행 방식으로 바꾸며, 설정은 유지합니다. 1.3.x는 1.4.0으로 자동 업데이트되지 않고 게임 안에 `수동 다운로드 필요`로 표시됩니다.
+> 1.3.x 사용자는 게임을 종료하고 1.4.0 패키지의 `Install.cmd`를 실행하세요. 기존 설치를 이어받아 이전 실행기·업데이트 도우미 파일을 정리하고 Astral Party - Mod 항목을 새 실행 방식으로 바꾸며, 설정은 유지합니다. 1.3.x는 1.4.0으로 자동 업데이트되지 않고 게임 안에 `수동 다운로드 필요`로 표시됩니다. 1.3.x 설치를 바로 이어받는 기능은 2026년 12월 15일 이후 첫 공개 버전부터 지원하지 않으며, 그 뒤에는 1.3.x 패키지의 `Uninstall.cmd`로 먼저 제거한 다음 설치해야 합니다.
 
 > [!WARNING]
 > 1.2.x 이하 사용자는 사용하던 패키지의 `Uninstall.cmd`로 먼저 제거한 뒤 새로 설치하세요. 제거에 실패하면 새 패키지의 `Force-Uninstall.cmd`를 시도하고, 그래도 해결되지 않으면 보관할 데이터를 백업한 뒤 게임을 클린 설치하고 다시 시도해주세요.
@@ -74,19 +74,19 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 
 ### 설정
 
-로비의 모드 설정 버튼이나 F8, 또는 전투 중 ESC 메뉴의 모드 설정 버튼으로 열고 모드 기능·일반 설정 탭에서 조절하세요. 변경 사항은 자동 저장되며, 업데이트해도 기존 저장값은 유지합니다. 아래는 처음 설치했을 때의 기본값입니다.
+로비의 모드 설정 버튼이나 F8, 또는 전투 중 ESC 메뉴의 모드 설정 버튼으로 열고 모드 기능·일반 설정 탭에서 조절하세요. 변경 사항은 자동 저장되며, 업데이트해도 기존 저장값은 유지합니다. 목록 오른쪽 스크롤바에 마우스를 올리면 모든 카테고리 이름이 스크롤바 옆에 뜨고, 점이나 이름을 누르면 그 카테고리로 이동합니다. 맨 위 스위치는 그 기능 전체를 켜고 끄고, 아래 트레이의 스위치로 세부 표시를 따로 켜고 끕니다. 아래는 처음 설치했을 때의 기본값입니다.
 
 <details>
 <summary>모드 기능 탭</summary>
 
 전투 추천
-- 행동 추천: 기본 ON. 공개 정보를 바탕으로 공격·놓아주기, 방어·회피, 카드 사용을 추천합니다. 선택을 자동 입력하지 않으며, 모드 전체를 끄는 스위치가 아닙니다.
+- 행동 추천: 기본 ON. 공개 정보를 바탕으로 공격·놓아주기, 방어·회피, 카드 사용을 추천합니다. 선택을 자동 입력하지 않으며, 모드 전체를 끄는 스위치가 아닙니다. 슈팅 스타 칩이 있으면 놓아주기 버튼에 놓아줄 때 몬스터에게 주는 피해와 얻는 스타라이트를 표시합니다.
 - 추천 상세 수치: 기본 ON. 행동 추천에 마우스를 올리면 피해와 전투불능 확률을 표시합니다. OFF는 수치만 숨기고 추천 아이콘은 유지합니다.
-- KO 주사위 조건: 기본 ON. 공격·다른 사람 전투에서는 KO 조건, 내가 방어자이면 생존 조건을 가장 유리한 결과 기준으로 표시합니다. 카드 호버 조건도 포함합니다.
-- 최종 피해: 기본 ON. 공개된 최종 수치로 계산한 피해를 표시합니다.
+- KO 주사위 조건: 기본 ON. 공격하거나 다른 사람 전투에서 몬스터가 방어할 때는 KO 주사위 조건, 내가 방어하거나 다른 사람 전투에서 플레이어가 방어할 때는 생존 주사위 조건을 가장 유리한 결과 기준으로 표시합니다. 카드 호버 조건도 포함합니다. 계산에 반영되지 않은 효과가 전투에 있으면 아래에 그 효과 아이콘과 "미반영 효과"를 표시하고, 물음표에 마우스를 올리면 설명이 뜹니다.
+- 최종 피해: 기본 ON. 공개된 최종 수치로 계산한 피해를 표시합니다. 계산에 반영되지 않은 효과가 있으면 피해량 아래에 그 효과 아이콘과 "미반영 효과"를 함께 표시합니다.
 
 전투 표시
-- 전투 상태: 기본 ON. 전투 HP 아래 공개 손패 장수·효과와 플레이어·몬스터의 반격 상태를 표시합니다.
+- 전투 상태: 기본 ON. 전투 HP 아래 공개 손패 장수·효과와 플레이어·몬스터의 반격 상태를 표시합니다. 계산에 반영되지 않은 효과 아이콘에는 물음표 표시가 붙고, 설명에 "계산 미반영"이 표시됩니다.
 - 슈슈 쉴드 효과: 기본 ON. 전투 캐릭터의 활성 쉴드 효과를 표시합니다.
 - 슈슈 쉴드 방어 잠금: 기본 ON. 쉴드가 있는 내가 방어자일 때 방어 버튼·방어 카드를 잠급니다. 회피 가능 여부는 바꾸지 않고 회피를 자동 입력하지 않습니다.
 - 반격 아이콘 애니메이션·소리: 각각 기본 ON. 애니메이션 OFF는 정적인 반격 아이콘을 표시합니다.
@@ -109,6 +109,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 캐릭터
 - 이름 표기: 본명·이명 중 선택하며 기본은 본명입니다.
 - 역할 표시·준비 화면 스킬 설명: 각각 기본 ON. 준비 초상화 호버에 공개 스킬·재사용 대기시간·잠재력을 표시합니다.
+- 플레이어 목록 탭: 기본 ON. 필드 왼쪽 플레이어 목록의 코인·별 바 아래 탭에 공개 손패 장수와 역할을 표시합니다. 손패 장수와 역할은 각각 끌 수 있습니다.
 
 편의 기능
 - 감사합니다 자동 전송: 기본 ON. 게임 기본 감사합니다 추천이 전송 가능할 때 추천 한 건당 한 번 전송합니다. PvP·관전·재생에서는 전송하지 않습니다.
@@ -191,6 +192,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 ### 문제 해결과 제보
 
 - Steam 항목이 안 보이면 Steam을 재시작하고 라이브러리 필터와 로그인 계정을 확인하세요. 항목 복구에는 `Install.cmd`를 사용하세요.
+- `Install.cmd`가 버전 때문에 설치를 거부하면, 화면에 막은 버전과 할 일이 함께 나옵니다. 그 버전 이상을 받거나 `Uninstall.cmd`로 제거한 뒤 새로 설치하세요. 설정은 보관된 사본으로 다시 불러올 수 있습니다.
 - 설치·실행 오류는 `Open-Logs.cmd`로 로그를 확인하세요. 계산 문제는 모드 설정에서 진단 로그를 켠 뒤 재현하세요.
 - 진단 ZIP은 패키지의 `Create-Diagnostics.cmd` 또는 F8 → 일반 설정 → 진단 ZIP 만들기로 만들며, 바탕 화면의 `BetterAstralParty-Diagnostics` 폴더에 저장됩니다.
 
@@ -232,7 +234,7 @@ BetterAstralParty 자체 코드는 [MIT 라이선스](LICENSE)로 제공합니�
 | Combat | Field | Convenience |
 | --- | --- | --- |
 | Combat recommendations and card evaluation from public information | Player/monster field indicators | In-game settings with Korean/English UI |
-| Minimum KO/survival conditions | Public buff and counter markers | Mute when unfocused, input alerts |
+| KO/survival dice targets | Public buff and counter markers | Mute when unfocused, input alerts |
 | Combat probabilities and final damage | Field wheel zoom and free view | Focus the game when a PvE match is found |
 | Shushu shield display and defense restriction | Hand grouping by function | Automatic Thanks for native recommendations |
 | Card/chip ping detail popups | Character roles and preparation details | Automatic updates applied in game |
@@ -249,7 +251,7 @@ BetterAstralParty 자체 코드는 [MIT 라이선스](LICENSE)로 제공합니�
 ### Install and play
 
 > [!IMPORTANT]
-> If you use 1.3.x, close the game and run `Install.cmd` from the 1.4.0 package. It takes over the existing installation, removes the old launcher and update helper files, converts the Astral Party - Mod entry to the new launch method and keeps your settings. 1.3.x does not update to 1.4.0 automatically; the game reports that a manual download is required.
+> If you use 1.3.x, close the game and run `Install.cmd` from the 1.4.0 package. It takes over the existing installation, removes the old launcher and update helper files, converts the Astral Party - Mod entry to the new launch method and keeps your settings. 1.3.x does not update to 1.4.0 automatically; the game reports that a manual download is required. Direct takeover of a 1.3.x installation ends with the first public version after December 15, 2026; after that, remove 1.3.x with its own `Uninstall.cmd` first, then install.
 
 > [!WARNING]
 > If you use 1.2.x or earlier, uninstall with your previous package's `Uninstall.cmd` first, then install fresh. If removal fails, try `Force-Uninstall.cmd` from the new package. If that still does not help, back up any data you want to keep, perform a clean installation of the game and try again.
@@ -275,19 +277,19 @@ BetterAstralParty 자체 코드는 [MIT 라이선스](LICENSE)로 제공합니�
 
 ### Settings
 
-Open Mod Settings in the lobby using its button or F8, or from the Mod Settings button in the in-battle Esc menu, then select Mod Features or General. Changes are saved automatically, and updates keep your saved values. Defaults below apply to a first installation.
+Open Mod Settings in the lobby using its button or F8, or from the Mod Settings button in the in-battle Esc menu, then select Mod Features or General. Changes are saved automatically, and updates keep your saved values. Hover the scroll bar to the right of the list to see every category name beside it; click a dot or name to jump there. A top switch turns its whole feature on or off, and the switches in its tray control the individual parts. Defaults below apply to a first installation.
 
 <details>
 <summary>Mod Features tab</summary>
 
 Battle Advice
-- Action Advice: ON by default. Recommends Attack/Let Go, Defend/Dodge and cards from public information without selecting actions. It is not a master switch for the whole mod.
+- Action Advice: ON by default. Recommends Attack/Let Go, Defend/Dodge and cards from public information without selecting actions. It is not a master switch for the whole mod. With a Shooting Star relic, the Let Go button shows the damage dealt to the monster and the Starlight gained when you let it go.
 - Advice Details: ON by default. Hover over action advice to see damage and KO probabilities. OFF hides the numbers but keeps recommendation icons.
-- KO Dice Target: ON by default. Shows KO conditions when attacking or watching another player's combat and survival conditions when you defend, using best-case outcomes. Includes card-hover conditions.
-- Final Damage: ON by default. Shows damage calculated from final public numbers.
+- KO Dice Target: ON by default. Shows the KO dice target when you attack or a monster defends in another player's combat, and the survival dice target when you defend or a player defends in another player's combat, using best-case outcomes. Includes card-hover conditions. When the combat has effects the calculation does not count, their icons appear below with "Effects not counted"; hover the question mark for an explanation.
+- Final Damage: ON by default. Shows damage calculated from final public numbers. When effects the calculation does not count are involved, their icons appear under the damage with "Effects not counted".
 
 Battle Display
-- Combat Status: ON by default. Shows public hand counts/effects and player/monster counter status below combat HP.
+- Combat Status: ON by default. Shows public hand counts/effects and player/monster counter status below combat HP. Effect icons the calculation does not count carry a question mark, and their description shows "Not in calculations".
 - Shushu Shield Effect: ON by default. Shows active shield effects on combat characters.
 - Shushu Shield Defend Lock: ON by default. Locks Defend and defense cards for the shielded local defender. Does not change Dodge availability or choose it automatically.
 - Counter Icon Animation / Sound: both ON by default. Animation OFF keeps a static counter icon.
@@ -310,6 +312,7 @@ Hand and Cards
 Characters
 - Name Style: Name or Title; the default is Name.
 - Role Labels / Skill Info in Preparation: both ON by default. Preparation portrait hover shows public skills, cooldowns and potentials.
+- Player List Tab: ON by default. A tab under each coin/star bar of the field player list shows the public hand count and the role. Hand Count and Role can each be turned off.
 
 Convenience
 - Auto Thanks: ON by default. Sends each available native Thanks recommendation once. Never sends in PvP, spectating or replays.
@@ -392,6 +395,7 @@ Run `Uninstall.cmd` from the latest complete package and review the removal list
 ### Troubleshooting and reports
 
 - Missing Steam entry: restart Steam and check library filters and the signed-in account. Use `Install.cmd` to repair the entry.
+- If `Install.cmd` refuses a version, it shows the version that blocks it and what to do: install that version or newer, or remove the mod with `Uninstall.cmd` and install again. Settings can be restored from the kept copy.
 - Installation or launch errors: open logs with `Open-Logs.cmd`. For calculation issues, turn on Diagnostic Log in mod settings and reproduce the issue.
 - Create a diagnostics ZIP with the package's `Create-Diagnostics.cmd` or F8 → General → Create Diagnostics ZIP. It is saved to the `BetterAstralParty-Diagnostics` folder on the Desktop.
 

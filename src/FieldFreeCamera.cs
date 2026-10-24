@@ -80,17 +80,9 @@ internal static class FieldFreeCamera
         { Clear(); return false; }
         var stack = _brain!.mFrameStack;
         var count = stack?.Count ?? 0;
-        if (count < 1 || count > 64) { Suspend(); return false; }
-        var native = stack![0].blend?.CamB;
-        var nativePointer = native?.Pointer ?? IntPtr.Zero;
-        // Field character/card cameras may change while the owned view stays fixed.
-        var supported = nativePointer != IntPtr.Zero
-            && new RuntimeObject(nativePointer).TypeName == "CinemachineVirtualCamera"
-            && new CinemachineVirtualCamera(nativePointer);
-        // The top owned override masks IsBlending; inspect the native base frame instead.
-        if (blocked || !supported || count != (_override >= 0 ? 2 : 1)
-            || _override >= 0 && (stack[1].id != _override || stack[1].blend?.CamB?.Pointer != _camera!.Pointer))
-        { Suspend(); return false; }
+        // A focus click ends the free view even while the owned override is suspended (a native camera switch or
+        // blend underneath, another frame on top); otherwise the free view came back over the native focus once the
+        // override was acquired again (2026-10-24: skill monster targets needed a third click).
         if (Input.GetMouseButtonDown(0))
         {
             _focusPress = Input.mousePosition;
@@ -104,16 +96,26 @@ internal static class FieldFreeCamera
         {
             var target = _focusTarget; _focusTarget = null;
             var threshold = RuntimeObject.StaticField(RuntimeObject.FindClass("FairyGUI", "UIConfig"), "clickDragSensitivity")!.Value<int>();
-            if (!_returnPending && _override >= 0 && ClickGesture(_focusPress, Input.mousePosition, threshold))
+            if (!_returnPending && ClickGesture(_focusPress, Input.mousePosition, threshold))
             {
                 // Same as the exit button, but leave the camera to the native click handler instead of returning home.
-                // Native camera switches are ignored while the base frame still blends; record it for diagnosis.
-                Plugin.Diagnostics.Write("fieldFreeCamera released for native focus; target=" + target
-                    + "; nativeBlending=" + (stack[0].blend is { IsComplete: false } ? "true" : "false"));
+                Plugin.Diagnostics.Write("fieldFreeCamera released for native focus; target=" + target + "; suspended=" + (_override < 0 ? "true" : "false")
+                    + "; nativeBlending=" + (count is >= 1 and <= 64 && stack![0].blend is { IsComplete: false } ? "true" : "false"));
                 FieldZoomUi.Clear();
                 return false;
             }
         }
+        if (count < 1 || count > 64) { Suspend(); return false; }
+        var native = stack![0].blend?.CamB;
+        var nativePointer = native?.Pointer ?? IntPtr.Zero;
+        // Field character/card cameras may change while the owned view stays fixed.
+        var supported = nativePointer != IntPtr.Zero
+            && new RuntimeObject(nativePointer).TypeName == "CinemachineVirtualCamera"
+            && new CinemachineVirtualCamera(nativePointer);
+        // The top owned override masks IsBlending; inspect the native base frame instead.
+        if (blocked || !supported || count != (_override >= 0 ? 2 : 1)
+            || _override >= 0 && (stack[1].id != _override || stack[1].blend?.CamB?.Pointer != _camera!.Pointer))
+        { Suspend(); return false; }
         if (_returnPending)
         {
             Suspend();

@@ -13,6 +13,17 @@ public readonly record struct DiceFaces(byte Mask = 0)
         ? new((byte)(((1 << (max + 1)) - 1) & ~((1 << min) - 1))) : new(128);
 }
 
+// Up to four uncounted buff IDs (ascending) plus the total, as a value so cache keys stay comparable.
+public readonly record struct UnknownEffects(int First = 0, int Second = 0, int Third = 0, int Fourth = 0, int Count = 0)
+{
+    internal int[] Shown => Count switch
+    {
+        0 => new int[0], 1 => new[] { First }, 2 => new[] { First, Second }, 3 => new[] { First, Second, Third },
+        _ => new[] { First, Second, Third, Fourth }
+    };
+    public override string ToString() => Count == 0 ? "none" : string.Join(",", Shown) + (Count > 4 ? $" (+{Count - 4})" : "");
+}
+
 // A value snapshot shared by every advisor and cache key. Native ATK/DEF buffs
 // are already resolved in the displayed stats, never added here a second time.
 public readonly record struct HitModifiers(int Bonus = 0, int Cap = 0, bool Immune = false)
@@ -25,12 +36,16 @@ public readonly record struct HitModifiers(int Bonus = 0, int Cap = 0, bool Immu
     public DiceFaces DefenseDice { get; init; }
     public DiceFaces DodgeDice { get; init; }
     public bool DiceUnsupported { get; init; }
+    // An unsupported attacker dice rule only hides pre-roll views; once the attack die is public, defend/dodge still work.
+    public bool AttackUnsupported { get; init; }
     public bool AttackDistributionUnknown { get; init; }
     public bool DefenseDistributionUnknown { get; init; }
+    // Shown buffs on either combatant that the model does not count; presentation and diagnostics only.
+    public UnknownEffects Unknown { get; init; }
     public bool Valid => Bonus is >= -10000 and <= 100 && Cap is >= 0 and <= 10000
         && MinimumHp is >= 0 and <= 10000 && OnHitBonus is >= 0 and <= 100;
     public bool DiceValid => !DiceUnsupported && AttackDice.Valid && DefenseDice.Valid && DodgeDice.Valid;
-    public bool PreRollDiceKnown => DiceValid && !AttackDistributionUnknown && !DefenseDistributionUnknown;
+    public bool PreRollDiceKnown => DiceValid && !AttackUnsupported && !AttackDistributionUnknown && !DefenseDistributionUnknown;
 }
 
 public readonly record struct CombatInput(

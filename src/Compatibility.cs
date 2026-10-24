@@ -8,8 +8,12 @@ internal static class Compatibility
     internal static string? Reason(string feature)
     {
         if (Blocked.TryGetValue(feature, out var reason)) return ModText.Text(reason);
-        if (feature is "Details" or "KoMinimum") return Reason("Enabled");
-        if (feature is "CounterSound" or "CounterAnimation") return Reason("CounterIndicators");
+        // A part switch is unavailable whenever the breaker of the feature that draws it has tripped.
+        if (feature is "Details" or "KoMinimum" or "EncounterAdvice" or "DefenseAdvice" or "CardAdvice" or "KoCardPreview" or "KoSpectator") return Reason("Enabled");
+        if (feature is "ShootingStarShow") return Reason("ShootingStar") ?? Reason("Enabled");
+        if (feature is "CounterSound" or "CounterAnimation" or "CounterIcons") return Reason("CounterIndicators");
+        if (feature is "StatusHand" or "StatusEffects") return Reason("BattleStatus");
+        if (feature is "PlayerTabHand" or "PlayerTabRole") return Reason("PlayerTab");
         if (feature is not ("MuteUnfocused" or "MatchFocus" or "Diagnostics" or "Notices")
             && Blocked.TryGetValue("CoreUi", out reason)) return reason;
         return null;

@@ -75,6 +75,10 @@ internal static class ChannelTransitionTests
             if(UpdateVersion.Parse(version).CompareTo(UpdateVersion.Parse("1.4.2"))>0){
                 InstallProof.ValidateChannel(state,Root,"1.4.2",5,1,descriptor,"1.4.2");Check(true,"manual whole-package cross-channel upgrade preserves its strict newer-only policy");
             }else Refuse(()=>InstallProof.ValidateChannel(state,Root,"1.4.2",5,1,descriptor,"1.4.2"),"manual whole-package channel selection cannot bypass the existing installed/global floor");
+            if(UpdateVersion.Parse(version).CompareTo(UpdateVersion.Parse("1.4.2"))<=0){
+                var message="";try{InstallProof.ValidateChannel(state,Root,"1.4.2",5,1,descriptor,"1.4.2");}catch(UpdateValidationException error){message=error.Message;}
+                Check(message.Contains("1.4.2",StringComparison.Ordinal)&&message.Contains("Uninstall.cmd",StringComparison.Ordinal)&&message.Contains(" / ",StringComparison.Ordinal),"whole-install refusal names the blocking version and the fresh-install way out in Korean and English");
+            }
             if(UpdateVersion.Parse(version).CompareTo(UpdateVersion.Parse("1.4.2"))>0){
                 InstallProof.ValidateChannel(state,Root,"1.4.2",5,1,descriptor,version,descriptor.DescriptorSha256);Check(true,"exact high-water package reinstalls above a lower installed release");
                 Refuse(()=>InstallProof.ValidateChannel(state,Root,"1.4.2",5,1,descriptor,version,new string('F',64)),"equal high-water requires the exact recorded descriptor");
@@ -269,6 +273,9 @@ internal static class ChannelTransitionTests
         using var key=RSA.Create(3072);var trust=new UpdateTrust(new[]{new TrustedUpdateKey("ephemeral-transition-fixture",key.ExportParameters(false))});
         typeof(UpdateTrust).GetField("_production",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(trust,true);
         Policy(key,trust);PublicPackage(key,trust);await AutomaticBaseline(key,trust);await Coordinator(trust);await Discovery(trust);
+        var (sequences,mismatches)=InstallSequences.Run(key,trust);
+        File.WriteAllLines(Path.Combine(args[0],"sequence-mismatches.txt"),mismatches);
+        Check(mismatches.Count==0,$"install/update/transition sequences follow the written policy ({mismatches.Count} of {sequences} differ; see sequence-mismatches.txt)");
         var report=new{checks=_checks,scope="Actual policy/coordinator sources, stricter production floor with an ephemeral fixture key only. No operational key, live network, native UI, game, Steam, helper process, staging or installation.",pass=true};
         File.WriteAllText(Path.Combine(args[0],"results.json"),JsonSerializer.Serialize(report,new JsonSerializerOptions{WriteIndented=true}));
         Console.WriteLine("PASS "+_checks+" channel-policy/coordinator checks.");

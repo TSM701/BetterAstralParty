@@ -128,12 +128,14 @@ internal static partial class TestCommands
             "var enabled = ToggleEnabled(action)", "// Detailed input trace reads no extra native controls, captions or bounds.", "Plugin.Diagnostics.Error(\"SettingsInputTrace\", ex)",
             "\"FieldBuffs\" => Plugin.FieldBuffs.Value", "\"FieldZoom\" => Plugin.FieldZoom.Value", "\"MatchFocus\" => Plugin.MatchFocus.Value",
             "MenuLayout.StateHelp(action, ToggleEnabled(action), mode)", "case \"MatchFocus\": Plugin.MatchFocus.Value = !Plugin.MatchFocus.Value; break;",
-            "case \"FieldZoom\": Plugin.FieldZoom.Value = !Plugin.FieldZoom.Value; if (!Plugin.FieldZoom.Value) FieldZoomUi.Clear(); break;" }, "Settings input");
+            "case \"FieldZoom\": Plugin.FieldZoom.Value = !Plugin.FieldZoom.Value; break;" }, "Settings input");
+        Contains(source, new[] { "!hit!.Get<bool>(\"grayed\") && !Locked(Controls[current].Action)) Apply(", "slider.Set(\"touchable\", active);",
+            "button.Pointer == _hovered && !Locked(Controls[button.Pointer].Action)", "button.Set(\"alpha\", Locked(action) ? 0.5f : 1f);" },
+            "Options under an OFF parent or tuned switch dim, ignore clicks and slider drags, and keep their values");
         var trace = Regex.Match(source, @"(?s)private static void TraceInput\(.*?(?=    private static bool ToggleEnabled)");
         Check(trace.Success && trace.Value.Contains("Plugin.Diagnostics.Write(", StringComparison.Ordinal) && !Regex.IsMatch(trace.Value, @"(?:\.Call\(|\.Get<|\.Get\(|\.Field\()"), "Sampled trace reads no extra native objects");
-        foreach (var size in new[] { 60d, 84d, 340d, 480d }) foreach (var pivot in new[] { 0d, .5, 1d }) Check(-size * pivot + size * pivot == 0, "Anchored visual origin");
         var features = new[] { "Enabled", "Details", "KoMinimum", "CardPopups", "BattleStatus", "ShushuShield", "FieldBuffs", "Names", "HandLayout", "FieldZoom",
-            "ShushuShieldRestrictions", "AutoThanks", "CharacterRoles", "CharacterGuide", "IndicatorFade", "IndicatorHide", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "DiceLock" };
+            "ShushuShieldRestrictions", "AutoThanks", "CharacterRoles", "CharacterGuide", "IndicatorFade", "IndicatorHide", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "DiceLock", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "ShootingStarShow", "KoCardPreview", "KoSpectator", "StatusHand", "StatusEffects", "CounterIcons", "ShushuMaster", "PlayerTab", "PlayerTabHand", "PlayerTabRole" };
         for (var row = 0; row < features.Length; row++) Check(source.Contains($"AddToggle(\"{features[row]}\", 440, MenuLayout.ToggleY({row}));", StringComparison.Ordinal), "Feature right column: " + features[row]);
         var general = new[] { "UpdateChannel", "Update", "UpdateDownload", "AutoUpdate", "UpdateAuth", "UpdateSignOut", "DiagnosticsOpen", "DiagnosticsCollect",
             "SuppressNotices", "UpdateNotifications", "SettingsAutoKeep", "SettingsSave", "SettingsLoad", "SettingsFolder", "SettingsReset" };
@@ -146,11 +148,21 @@ internal static partial class TestCommands
             "var saved = Time.unscaledTime - _changedAt < 1.6f ? ModText.Text(\"✓ 저장됨\") : $\"BetterAstralParty {Plugin.Version}\";",
             "if (_savedText != saved) { _savedText = saved; Labels[\"Saved\"].Set(\"text\", saved); }" }, "Settings geometry and footer");
         foreach (var label in new[] { "Saved", "HelpTitle" }) Check(Regex.Matches(source, "Labels\\[\"" + label + "\"\\]\\.Set\\(\"(?:singleLine|autoSize)\"").Count == 2, label + " fitting initialized once");
-        Contains(ReadSource(context, "src/MenuLayout.cs"), new[] { "ToggleY(int row) => 125 + 65 * row;", "ToggleHeight = 60;", "Math.Min((width - 48f) / Width, (height - 48f) / Height)" }, "Menu screen fit");
+        Contains(ReadSource(context, "src/MenuLayout.cs"), new[] { "ToggleY(int row) => 125 + 65 * row;", "ToggleHeight = 60;", "Math.Min((width - 48f) / Width, (height - 48f) / windowHeight)" }, "Menu screen fit");
         foreach (var (setterName, parameter) in new[] { ("set_autoSize", "FairyGUI.AutoSizeType"), ("set_singleLine", "System.Boolean") }) {
             var method = native.MainModule.GetType("FairyGUI.GTextField").Methods.Single(row => row.Name == setterName);
             Check(method.IsPublic && !method.IsStatic && method.Parameters.Count == 1 && method.Parameters[0].ParameterType.FullName == parameter && method.ReturnType.FullName == "System.Void", "Footer setter ABI " + setterName);
         }
+        // Every literal Shape drawing call in the plugin must match a native overload by name and argument count.
+        var shape = native.MainModule.GetType("FairyGUI.Shape");
+        foreach (var file in Directory.GetFiles(Path.Combine(context.Root, "src"), "*.cs"))
+            foreach (Match call in Regex.Matches(File.ReadAllText(file), @"Get\(""shape""\)!?\.Call\(""(?<name>\w+)""(?<args>[^;]*)\);"))
+            {
+                int depth = 0, commas = 0;
+                foreach (var c in call.Groups["args"].Value) { if (c == '(') depth++; else if (c == ')') depth--; else if (c == ',' && depth == 0) commas++; }
+                var name = call.Groups["name"].Value;
+                Check(shape.Methods.Any(method => method.Name == name && method.Parameters.Count == commas), $"Native Shape.{name}/{commas} exists ({Path.GetFileName(file)})");
+            }
         var shrink = native.MainModule.GetType("FairyGUI.AutoSizeType").Fields.Single(row => row.Name == "Shrink"); Check(shrink.HasConstant && (int)shrink.Constant == 3, "Native Shrink enum");
         var plugin = ReadSource(context, "src/Plugin.cs"); foreach (var setting in new[] { "MatchFocus", "FieldZoom" }) Check(Regex.IsMatch(plugin, setting + @"\s*=\s*Config\.Bind\([^,]+,[^,]+,\s*true\s*,"), "Fresh default ON: " + setting);
         SettingsPreferenceInventory(context, source, plugin);
@@ -213,7 +225,10 @@ internal static partial class TestCommands
         foreach (var (channel, label, english) in new[] { ("Stable", "릴리즈", "Release"), ("PreRelease", "프리 릴리즈", "Pre-release"), ("Beta", "비공개 베타", "Private Beta") }) {
             Check(text.Contains("\"" + channel + "\" => Text(\"" + label + "\")", StringComparison.Ordinal) && translations["\"" + label + "\""].SingleOrDefault() == "\"" + english + "\"", "Channel display is localized without changing its stored identity: " + channel);
         }
-        Contains(ReadSource(context, "src/Compatibility.cs"), new[] { "if (feature is \"CounterSound\" or \"CounterAnimation\") return Reason(\"CounterIndicators\");" }, "Counter preference errors follow the isolated counter breaker rather than public battle rows");
+        Contains(ReadSource(context, "src/Compatibility.cs"), new[] { "if (feature is \"CounterSound\" or \"CounterAnimation\" or \"CounterIcons\") return Reason(\"CounterIndicators\");" }, "Counter preference errors follow the isolated counter breaker rather than public battle rows");
+        Contains(ReadSource(context, "src/Compatibility.cs"), new[] { "\"EncounterAdvice\" or \"DefenseAdvice\" or \"CardAdvice\" or \"KoCardPreview\" or \"KoSpectator\") return Reason(\"Enabled\");",
+            "if (feature is \"ShootingStarShow\") return Reason(\"ShootingStar\") ?? Reason(\"Enabled\");", "if (feature is \"StatusHand\" or \"StatusEffects\") return Reason(\"BattleStatus\");",
+            "if (feature is \"PlayerTabHand\" or \"PlayerTabRole\") return Reason(\"PlayerTab\");" }, "Part switches show unavailable while the breaker of the feature that draws them has tripped");
     }
 
     private static void SettingsScroll(DevContext context)
@@ -250,9 +265,9 @@ internal static partial class TestCommands
             Check(position > previous, "Settings creation breadcrumb before native phase: " + phase); previous = position;
         }
         var open = MethodFragment(source, "private static void TogglePanelCore");
-        Check(open.IndexOf("TraceSettingsOpen(DiagnosticPhase.SettingsNoticeClose)", StringComparison.Ordinal) < open.IndexOf("UpdateNotificationUi.CloseForSettings();", StringComparison.Ordinal)
+        Check(open.IndexOf("TraceSettingsOpen(DiagnosticPhase.SettingsNoticeClose)", StringComparison.Ordinal) >= 0 && open.IndexOf("TraceSettingsOpen(DiagnosticPhase.SettingsNoticeClose)", StringComparison.Ordinal) < open.IndexOf("UpdateNotificationUi.CloseForSettings();", StringComparison.Ordinal)
             && open.IndexOf("TraceSettingsOpen(DiagnosticPhase.SettingsOpenState)", StringComparison.Ordinal) > open.IndexOf("UpdateNotificationUi.CloseForSettings();", StringComparison.Ordinal), "Settings breadcrumbs also enclose native update-notice disposal before Create");
-        Check(open.IndexOf("DiagnosticOutcome.Begin", StringComparison.Ordinal) < open.IndexOf("Create();", StringComparison.Ordinal)
+        Check(open.IndexOf("DiagnosticOutcome.Begin", StringComparison.Ordinal) >= 0 && open.IndexOf("DiagnosticOutcome.Begin", StringComparison.Ordinal) < open.IndexOf("Create();", StringComparison.Ordinal)
             && open.IndexOf("DiagnosticOutcome.Completed", StringComparison.Ordinal) > open.IndexOf("Layout();", StringComparison.Ordinal), "Always-on open boundaries enclose settings creation and layout");
         var trace = MethodFragment(source, "private static void TraceSettingsOpen");
         Contains(trace, new[] { "DiagnosticHub.Stage(DiagnosticFeature.Settings, stage, DiagnosticOutcome.Observed)", "DiagnosticHub.FlushSoon()", "Plugin.Logger.LogInfo", "catch { }" }, "Native-hang breadcrumbs use the always-on typed writer and survive logger failure");
@@ -263,7 +278,7 @@ internal static partial class TestCommands
             "header.Set(\"touchable\", false)", "title.Set(\"touchable\", false)", "title.Set(\"singleLine\", true)", "title.Set(\"autoSize\", 3)",
             "RuntimeObject.FindClass(\"FairyGUI\", \"GGraph\")", "band.Set(\"touchable\", false)", "SectionHeaders.Add((header, title, band, section.General));", "MenuLayout.SectionBandWidth" }, "Category headings and bands are localized noninteractive scrolling content");
         Check(!headers.Contains("Controls[", StringComparison.Ordinal) && !headers.Contains("Button(", StringComparison.Ordinal), "Category headings never become actionable controls");
-        Check(headers.IndexOf("band.Call(\"SetSize\"", StringComparison.Ordinal) < headers.IndexOf("NativeUi.Label(header", StringComparison.Ordinal), "Category band is drawn beneath its title");
+        Check(headers.IndexOf("band.Call(\"SetSize\"", StringComparison.Ordinal) >= 0 && headers.IndexOf("band.Call(\"SetSize\"", StringComparison.Ordinal) < headers.IndexOf("NativeUi.Label(header", StringComparison.Ordinal), "Category band is drawn beneath its title");
         Contains(MethodFragment(ReadSource(context, "src/NativeUi.cs"), "internal static RuntimeObject Label"),
             new[] { "label.Call(\"SetSize\", width, height)", "return label" }, "Fresh labels have bounds before category measurement");
         Check(!source.Contains("UpdateSectionLines", StringComparison.Ordinal), "Category bands need no text-width measurement");
@@ -271,5 +286,25 @@ internal static partial class TestCommands
         Check(help.Contains("MenuLayout.StateHelp(action, ToggleEnabled(action), mode)", StringComparison.Ordinal)
             && help.Contains("action is \"UpdateGet\" or \"UpdateApply\" or \"UpdateCancel\"", StringComparison.Ordinal)
             && !Regex.IsMatch(help, "action is[^\\r\\n]*(?:\\\"AutoDownload\\\"|\\\"AfterExit\\\")"), "Download preferences show their own current-state help, not transient updater status");
+    }
+    // The writer emits enum names and two readers accept only their own copies of those names; a missed copy would
+    // drop records or switch always-on diagnostics off on the next launch.
+    private static void DiagnosticSchema(DevContext context)
+    {
+        var enums = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        foreach (var file in new[] { "src/Observability/SafeDiagnosticEvent.cs", "src/Observability/SafeDiagnosticSite.cs" })
+            foreach (Match match in Regex.Matches(ReadSource(context, file), @"internal enum (\w+) \{([^}]*)\}"))
+                enums[match.Groups[1].Value] = match.Groups[2].Value.Split(',').Select(name => name.Trim()).Where(name => name.Length != 0).ToArray();
+        var keys = new Dictionary<string, string>(StringComparer.Ordinal) {
+            ["kind"] = "DiagnosticKind", ["feature"] = "DiagnosticFeature", ["phase"] = "DiagnosticPhase", ["outcome"] = "DiagnosticOutcome",
+            ["code"] = "DiagnosticCode", ["ui_action"] = "DiagnosticUiAction", ["error_type"] = "DiagnosticErrorType", ["error_site"] = "DiagnosticSite",
+            ["update_state"] = "DiagnosticUpdateState", ["settings.language"] = "DiagnosticLanguage", ["settings.channel"] = "DiagnosticChannel", ["settings.hand_mode"] = "DiagnosticHandMode" };
+        foreach (var file in new[] { "src/Observability/OwnedDiagnosticRecord.cs", "diagnostics/MinimalDiagnosticProjection.cs" })
+        {
+            var lists = Regex.Matches(ReadSource(context, file), @"\{ ""([\w.]+)"", ""([^""]+)""\.Split").ToDictionary(match => match.Groups[1].Value, match => match.Groups[2].Value.Split(','), StringComparer.Ordinal);
+            Check(lists.Count == keys.Count, "Diagnostic reader maps every enum field: " + file);
+            foreach (var (key, name) in keys)
+                Check(lists.TryGetValue(key, out var accepted) && enums.TryGetValue(name, out var written) && accepted.SequenceEqual(written), "Diagnostic reader accepts exactly the written " + name + " names: " + file);
+        }
     }
 }

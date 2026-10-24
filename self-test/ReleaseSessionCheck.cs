@@ -165,7 +165,7 @@ internal static class ReleaseSessionCheck
             using var automatic = new AutomaticUpdates(new UpdateDownloads(fixtureTrust, null, assetHandler, feed: ReleaseFeedPolicy.Beta), new Handoff());
             using var session = new PrivateReleaseSession(metadata, automatic, () => true, () => elapsed, auth => metadata.Configure(metadataClient, auth));
             session.Connect(new Input(), false); await Until(session.Poll, () => session.Status != ReleaseSessionStatus.AwaitingInput);
-            automatic.Context(new UpdateDownloadRequest(new UpdateContext(ReleaseFeedPolicy.BetaRepository,"Beta","1.3.0-dev","1.3.0-rc.1",901,902,UpdateTrust.PlatformId),903,904));
+            automatic.Context(new UpdateDownloadRequest(new UpdateContext(ReleaseFeedPolicy.BetaRepository,"Beta","1.4.0","1.5.0-beta.1",901,902,UpdateTrust.PlatformId),903,904));
             await Until(() => automatic.Tick(now), () => automatic.AuthenticationLost);
             session.Poll(); Check(assetHandler.Calls == 1 && !automatic.CanDownload && metadata.Result.Status == ReleaseUpdateStatus.NotConfigured,
                 $"download auth/access failure retires metadata/download/handoff together: calls={assetHandler.Calls}; canDownload={automatic.CanDownload}; metadata={metadata.Result.Status}; session={session.Status}");

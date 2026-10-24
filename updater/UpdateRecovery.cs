@@ -60,13 +60,21 @@ namespace BetterAstralParty.Updating
                 || !long.TryParse(fields[6].Substring(9), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out asset)
                 || !long.TryParse(fields[12].Substring(14), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out repository)) throw Bad();
             var channel = fields[3].Substring(8);
-            if (fields[11] == "purpose=" + ReleaseFeedPolicy.PublicPurpose && UpdateVersion.Parse(fields[2].Substring(8)).IsPrerelease) channel = "PreRelease";
-            var proposal = new UpdateContext(fields[1].Substring(11), channel, "0.0.0", fields[2].Substring(8), release, asset, UpdateTrust.PlatformId, repositoryId: repository);
-            var verified = trust.VerifyProposal(descriptor, Encoding.ASCII.GetString(key), signature, proposal);
-            if (verified.DescriptorSha256 != entry.Descriptor) throw Bad();
+            var publicRelease = fields[11] == "purpose=" + ReleaseFeedPolicy.PublicPurpose;
+            if (publicRelease && UpdateVersion.Parse(fields[2].Substring(8)).IsPrerelease) channel = "PreRelease";
             ChannelTransitionIntent? transition = null;
             try { using (var file = fence.OpenFile(entry.Stage + "/transition.bin")) transition = ChannelTransitionIntent.Parse(UpdateTicket.Read(file, 2048)); }
             catch (ApplySafetyException error) when (error.NativeError == 2) { }
+            // A full public release can be applied on the Pre-release channel: use the channel the apply recorded
+            // (an approved switch names its own target); stages from older versions keep the declared channel.
+            if (publicRelease && channel == "Stable") {
+                if (transition != null) channel = transition.TargetChannel;
+                else try { using (var file = fence.OpenFile(entry.Stage + "/channel.bin")) { var recorded = Encoding.ASCII.GetString(UpdateTicket.Read(file, 32)); if (recorded == "PreRelease") channel = recorded; } }
+                catch (ApplySafetyException error) when (error.NativeError == 2) { }
+            }
+            var proposal = new UpdateContext(fields[1].Substring(11), channel, "0.0.0", fields[2].Substring(8), release, asset, UpdateTrust.PlatformId, repositoryId: repository);
+            var verified = trust.VerifyProposal(descriptor, Encoding.ASCII.GetString(key), signature, proposal);
+            if (verified.DescriptorSha256 != entry.Descriptor) throw Bad();
             return transition == null ? proposal : new UpdateContext(proposal.Repository, proposal.Channel, transition.CurrentVersion, proposal.ReleaseTag, release, asset, UpdateTrust.PlatformId, repositoryId: repository, transition: transition);
         }
     }

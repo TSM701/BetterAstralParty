@@ -243,7 +243,7 @@ internal sealed class UpdateDownloads : IDisposable
             var envelope = Envelope(await Asset(request.SignatureAssetId, MaxEnvelopeBytes, null, authentication, feed, identity, now, operation).ConfigureAwait(false));
             var verified = _trust.VerifyProposal(descriptor, envelope.KeyId, envelope.Signature, request.Context, operation.Token);
             Account(authentication, feed, identity, operation);
-            await CurrentPublicRelease(request, verified, feed, identity, now, operation).ConfigureAwait(false);
+            await CurrentPublicRelease(request, verified, feed, identity, now, operation, proof).ConfigureAwait(false);
             return new ChannelTransitionProposal(verified, feed.Identity, identity);
         }, cancellation);
     }
@@ -384,11 +384,13 @@ internal sealed class UpdateDownloads : IDisposable
         throw new DownloadFailure(UpdateDownloadStatus.Failed);
     }
     private async Task CurrentPublicRelease(UpdateDownloadRequest request, VerifiedUpdateDescriptor descriptor, ReleaseFeed? feed,
-        string identity, DateTimeOffset now, Operation operation)
+        string identity, DateTimeOffset now, Operation operation, byte[]? repository)
     {
         if (feed == null || feed.RequiresAuthentication) return;
         try {
-            var proof = await Asset(0, PublicReleaseEligibility.MaxRepositoryBytes, null, null, feed, identity, now, operation, true).ConfigureAwait(false);
+            // The repository identity read at the start of this download is reused: one API call less per attempt.
+            var proof = repository is { Length: > 0 } known && known.Length <= PublicReleaseEligibility.MaxRepositoryBytes ? known
+                : await Asset(0, PublicReleaseEligibility.MaxRepositoryBytes, null, null, feed, identity, now, operation, true).ConfigureAwait(false);
             PublicReleaseEligibility.Repository(proof, request.Context);
             var metadata = await Asset(0, PublicReleaseEligibility.MaxReleaseBytes, null, null, feed, identity, now, operation, true,
                 PublicReleaseEligibility.ReleaseEndpoint(request.Context)).ConfigureAwait(false);
@@ -400,7 +402,10 @@ internal sealed class UpdateDownloads : IDisposable
                 error is InvalidDataException or UpdateValidationException ? DiagnosticCode.MetadataInvalid
                     : error is DownloadFailure rejected ? rejected.Status == UpdateDownloadStatus.Cancelled ? DiagnosticCode.WrongTarget : DiagnosticHub.CodeForStatus(rejected.Status.ToString()) : DiagnosticCode.Transport,
                 error, targetVersion: request.Context.ReleaseTag);
-            // Classification can change or become temporarily unavailable without an update fault.
+            // Network trouble is retried like any other download step; only a changed classification cancels quietly.
+            if (error is DownloadFailure failure && failure.Status != UpdateDownloadStatus.Cancelled) throw;
+            if (error is TimeoutException || error is OperationCanceledException && !operation.Token.IsCancellationRequested) throw new DownloadFailure(UpdateDownloadStatus.TimedOut);
+            if (error is HttpRequestException or IOException) throw new DownloadFailure(UpdateDownloadStatus.Failed);
             throw new DownloadFailure(UpdateDownloadStatus.Cancelled);
         }
     }
@@ -438,9 +443,11 @@ internal sealed class UpdateDownloads : IDisposable
             Account(authentication, feed, identity, operation);
             if (!_trust.Configured) { DiagnosticHub.Gate(DiagnosticFeature.Download, DiagnosticCode.NotConfigured); return new(UpdateDownloadStatus.NotConfigured); }
             Enter(DiagnosticPhase.ReleaseMetadata);
+            byte[]? repository = null;
             if (feed != null) {
                 var proof = await Asset(0, ReleaseFeedTransport.MaxRepositoryBytes, null, authentication, feed, identity, now, operation, identityProof: true).ConfigureAwait(false);
                 try { ReleaseFeedTransport.VerifyIdentity(proof, feed); } catch { throw new DownloadFailure(UpdateDownloadStatus.VerificationFailed); }
+                repository = proof;
             }
             Enter(DiagnosticPhase.DescriptorAsset);
             var descriptor = await Asset(request.DescriptorAssetId, UpdateTrust.MaxDescriptorBytes, null, authentication, feed, identity, now, operation).ConfigureAwait(false);
@@ -457,7 +464,7 @@ internal sealed class UpdateDownloads : IDisposable
             var payload = UpdatePackage.VerifyPayload(zip, verified, operation.Token);
             Account(authentication, feed, identity, operation);
             Enter(DiagnosticPhase.ReleaseMetadata);
-            await CurrentPublicRelease(request, verified, feed, identity, now, operation).ConfigureAwait(false);
+            await CurrentPublicRelease(request, verified, feed, identity, now, operation, repository).ConfigureAwait(false);
             DiagnosticHub.Stage(DiagnosticFeature.Download, diagnosticPhase, DiagnosticOutcome.Completed, diagnosticOperation, request.Context.ReleaseTag);
             return new(UpdateDownloadStatus.Ready, new DownloadedUpdate(DownloadStamp, descriptor, envelope.KeyId, envelope.Signature, payload));
         }

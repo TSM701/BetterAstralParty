@@ -71,6 +71,12 @@ internal static class FixtureEntry
             Check(optional.Expected.All(row=>optional.TargetHash(row.Key)==row.Value)&&Encoding.UTF8.GetString(optional.ReadTarget("doorstop_config.ini")!).Contains("enabled=true"),"unreadable optional shortcut planning retains complete fresh-loader installation");
             Check(!FixtureControl.Events.Contains("steam-stop")&&!FixtureControl.Events.Contains("shortcut-register")&&observations.Count==1&&observations[0].Contains("reason=SteamShortcutPlanUnavailable; exception="+shortcutFailure.GetType().Name+"; hresult=0x")&&!observations[0].Contains("FAKE_PRIVATE"),"optional shortcut install emits bounded cause and never changes Steam");
         }
+        {
+            var swapCut=Case();FixtureControl.PlanFailure=new SteamProfileUnavailableException("SteamShortcutSwapInterrupted","INERT RESTORE GUIDANCE");FixtureControl.NeedsShortcut=true;var notices=new List<string>();
+            NativeInstall.Run(swapCut,false,Path.Combine(root,"Steam"),11,prompt=>"y",notices.Add);
+            Check(notices.Any(line=>line.StartsWith("INERT RESTORE GUIDANCE",StringComparison.Ordinal)&&line.Contains("reason=SteamShortcutSwapInterrupted"))&&notices.Last().Contains("Steam shortcut was left unchanged")
+                &&!FixtureControl.Events.Contains("shortcut-register"),"an interrupted shortcut swap prints its restore guidance and a skipped-shortcut completion");
+        }
         var upgrade=Case(true);var loader=upgrade.ReadTarget("doorstop_config.ini")!;var config=upgrade.ReadTarget("BepInEx/config/BepInEx.cfg")!;Run(upgrade,true);
         Check(!FixtureControl.Events.Any(value=>value.StartsWith("steam",StringComparison.Ordinal)||value.StartsWith("shortcut",StringComparison.Ordinal)),"UpdateOnly never queries/stops/registers/restarts Steam");
         Check(upgrade.ReadTarget("doorstop_config.ini")!.SequenceEqual(loader)&&upgrade.ReadTarget("BepInEx/config/BepInEx.cfg")!.SequenceEqual(config),"existing shared loader/config bytes preserved");

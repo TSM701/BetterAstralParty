@@ -40,6 +40,16 @@ internal static partial class TestCommands
         Contains(font, new[] { "GetOSInstalledFontNames", "FontCoverage.NeedsFallback(text, Has)", "FontCoverage.NeedsFallback(text, source.HasCharacter)", "var selected = entry.Native;", "current != entry.Applied", "entry.Asset == asset", "\"parsedText\"", "NativeUi.CopyFormat(entry.NativeFormat, format)", "entry.NativeFormat.Field(field)" }, "Whole-label native font fallback");
         Contains(ui, new[] { "format.Call(\"CopyFrom\"", "dark ? \"Button_PreviewSkin\" : \"Button_Confirm_SmallRounded\"", "CopyFormat(format, source.Get(\"textFormat\")!)" }, "Contextual native style copy");
         Check(ReadSource(context, "src/GameUi.cs").Contains("NativeUi.InheritText(label, dark)", StringComparison.Ordinal), "Game labels inherit contextual style");
+        // RefreshHyperlinkDesc's label argument is a rich text field; a plain GTextField fails the bridge's type check.
+        var hyperlink = native.MainModule.GetType("UI.CommonUIManager").Methods.Single(method => method.Name == "RefreshHyperlinkDesc" && method.Parameters.Count == 3);
+        Check(hyperlink.Parameters[1].ParameterType.FullName == "FairyGUI.GRichTextField"
+            && ReadSource(context, "src/UnknownEffectsUi.cs").Contains("_detail = GameUi.NewLabel(_panel, \"\", 14, rich: true, dark: true);", StringComparison.Ordinal),
+            "Unknown-effects help passes a rich text field to the native description renderer");
+        Check(ReadSource(context, "src/UnknownEffectsUi.cs").Contains("var overHelp = _panel.Get<bool>(\"visible\") && NativeUi.Contains(_panel, point);", StringComparison.Ordinal),
+            "Unknown-effects help opens only from the row, never from its hidden rectangle");
+        // The encounter scan offers the star every 0.2 s; a per-frame expiry removed it right after creation.
+        Check(ReadSource(context, "src/ShootingStarUi.cs").Contains("if (Time.unscaledTime - _offeredAt > 0.35f", StringComparison.Ordinal),
+            "Shooting Star indicator outlives the 0.2 s encounter scan");
         var guide = ReadSource(context, "src/CharacterGuideUi.cs"); var damage = ReadSource(context, "src/RemainingHpUi.cs");
         Contains(guide, new[] { "labelHeight, 19, dark: true", ": (width - textWidth) / 2f;", "badge.Text.Call(\"SetXY\", textLeft + 4, 0f)" }, "Native role text style and centering");
         Contains(damage, new[] { "28, 22, dark: true", "NativeUi.CopyTextFormat(_point!.Field(name)!, source.Field(name)!)" }, "Native dice style");
@@ -179,7 +189,10 @@ internal static partial class TestCommands
         var source = ReadSource(context, "src/InputAttention.cs");
         Contains(source, new[] { "Application.isFocused", "InputAttention.Value", "timerDict", "PlayerIsWatcher", "IsReplay", "GetWindowThreadProcessId", "Environment.ProcessId", "UnityWndClass", "GetForegroundWindow()", "if (_flashing) return;", "0x00000002 | 0x0000000C", "Flash(_window, 0)", "Time.unscaledTime + 0.2f", "if (_mode != mode) { Stop();", "WindowsInputNotification.Show", "WindowsInputNotification.Hide()", "if (mode == \"Windows\")" }, "Input notification gating and cleanup");
         Check(!Regex.IsMatch(source, "SetForegroundWindow|ShowWindow\\(|Request\\w+C2S|Call\\(\"(Cancel|Pause|ActionDownTime)\"|GetPlayerID|GetNick|GetCharacterHeadUrl"), "Input alerts neither steal focus nor automate gameplay or read private identity");
-        Contains(ReadSource(context, "src/WindowsInputNotification.cs"), new[] { "Shell_NotifyIcon(0,", "Shell_NotifyIcon(1,", "Shell_NotifyIcon(2,", "0x20 | 0x10 | 0x40", "0x1 | 0x10 | 0x80", "ProcessExit", "if (!_added) return;" }, "Bounded Windows notification lifecycle");
+        var notification = ReadSource(context, "src/WindowsInputNotification.cs");
+        Contains(notification, new[] { "Shell_NotifyIcon(0,", "Shell_NotifyIcon(1,", "Shell_NotifyIcon(2,", "0x20 | 0x10 | 0x40", "0x1 | 0x10 | 0x80", "ProcessExit", "if (!_added) return;" }, "Bounded Windows notification lifecycle");
+        var clear = notification.IndexOf("_data.Flags = 0x20 | 0x10; _data.Info = \"\";", StringComparison.Ordinal);
+        Check(clear >= 0 && clear < notification.IndexOf("Shell_NotifyIcon(2,", StringComparison.Ordinal), "Hide empties the shown balloon before removing the icon, so refocus takes the toast down");
     }
 
     private static void PvpSafety(DevContext context, string stage, Action<string> pin)

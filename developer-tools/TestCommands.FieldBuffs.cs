@@ -47,6 +47,14 @@ internal static partial class TestCommands
         Check(slider.Fields.Single(field => field.Name == "_barMaxWidth") is { IsStatic: false } barWidth && barWidth.FieldType.FullName == "System.Single", "Native slider bar width field");
         Check(slider.Fields.Single(field => field.Name == "_gripObject") is { IsStatic: false } gripField && gripField.FieldType.FullName == "FairyGUI.GObject", "Native slider grip field");
         Pattern(Il("FairyGUI.GSlider", "__barTouchBegin", 1), @"::_gripObject[\s\S]*::GlobalToLocal[\s\S]*::_barMaxWidth", "Native bar press measures from the grip over the bar width");
+        // A new slider must hold the saved value before anything reads it back, or the setting is overwritten with the minimum.
+        var sliderSource = ReadSource(context, "src/ModUi.cs");
+        var reset = sliderSource.IndexOf("slider.Set(\"value\", -1d);", StringComparison.Ordinal);
+        var load = sliderSource.IndexOf("slider.Set(\"value\", (double)(SliderValue(action) - min));", reset + 1, StringComparison.Ordinal);
+        var poll = sliderSource.IndexOf("var value = min + (int)Math.Round(Math.Clamp(slider.Get<double>(\"value\")", StringComparison.Ordinal);
+        Check(reset >= 0 && load > reset && load < sliderSource.IndexOf("Sliders[action] = slider;", reset, StringComparison.Ordinal) && poll > load
+            && sliderSource.IndexOf("return; // Read user input back only from the next frame", load, StringComparison.Ordinal) is var skip && skip > load && skip < poll,
+            "New settings sliders load the saved value before any read-back");
         Contains(ReadSource(context, "src/ModUi.cs"), new[] { "slider.SetField(\"changeOnClick\", true);", "slider.Set(\"max\", (double)(max - min));", "slider.Get<double>(\"value\")" }, "Settings sliders use native member kinds");
         Pattern(list, "::set_numItems", "Native full-data list");
         Pattern(list, @"::buffs[\s\S]*::get_Count\(\)[\s\S]*::propertyBuffs[\s\S]*::get_Count\(\)\nIL_[0-9a-f]+: add[\s\S]*::buffCount[\s\S]*::buffCount[\s\S]*::set_numItems", "Native list retains every public buff and property");

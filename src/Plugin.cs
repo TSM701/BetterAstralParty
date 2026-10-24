@@ -11,7 +11,7 @@ public sealed class Plugin : BasePlugin
 {
     public const string Guid = "kr.betterastralparty.mod";
     public const string Name = "BetterAstralParty";
-    public const string Version = "1.5.2-dev.5";
+    public const string Version = "1.6.0-dev.17";
     public const int InstallBundleProtocol = 1;
     public const string UpdateProtocol = "5";
     public const string SettingsSchema = "1";
@@ -28,10 +28,24 @@ public sealed class Plugin : BasePlugin
     internal static ConfigEntry<bool> ShushuShieldRestrictions { get; private set; } = null!;
     internal static ConfigEntry<bool> AutoThanks { get; private set; } = null!;
     internal static ConfigEntry<bool> CharacterGuide { get; private set; } = null!;
+    internal static ConfigEntry<bool> PlayerTab { get; private set; } = null!;
+    internal static ConfigEntry<bool> PlayerTabHand { get; private set; } = null!;
+    internal static ConfigEntry<bool> PlayerTabRole { get; private set; } = null!;
     internal static ConfigEntry<bool> CharacterRoles { get; private set; } = null!;
     internal static ConfigEntry<bool> IndicatorFade { get; private set; } = null!;
     internal static ConfigEntry<bool> IndicatorHide { get; private set; } = null!;
     internal static ConfigEntry<bool> DiceLock { get; private set; } = null!;
+    internal static ConfigEntry<bool> UnknownHelpSeen { get; private set; } = null!;
+    internal static ConfigEntry<bool> EncounterAdvice { get; private set; } = null!;
+    internal static ConfigEntry<bool> DefenseAdvice { get; private set; } = null!;
+    internal static ConfigEntry<bool> CardAdvice { get; private set; } = null!;
+    internal static ConfigEntry<bool> ShootingStarShow { get; private set; } = null!;
+    internal static ConfigEntry<bool> KoCardPreview { get; private set; } = null!;
+    internal static ConfigEntry<bool> KoSpectator { get; private set; } = null!;
+    internal static ConfigEntry<bool> StatusHand { get; private set; } = null!;
+    internal static ConfigEntry<bool> StatusEffects { get; private set; } = null!;
+    internal static ConfigEntry<bool> CounterIcons { get; private set; } = null!;
+    internal static ConfigEntry<bool> ShushuMaster { get; private set; } = null!;
     internal static ConfigEntry<bool> CounterSound { get; private set; } = null!;
     internal static ConfigEntry<bool> CounterAnimation { get; private set; } = null!;
     internal static ConfigEntry<bool> SuppressNotices { get; private set; } = null!;
@@ -183,12 +197,26 @@ public sealed class Plugin : BasePlugin
         ShushuShieldRestrictions = Config.Bind("화면", "슈슈 쉴드 방어 제한", ShushuShield.Value, "[설정 창: 슈슈 쉴드 방어 잠금 / Settings: Shushu Shield Defend Lock] 쉴드가 있는 내가 방어자이면 방어 버튼·방어 카드를 잠급니다. / Locks Defend and defense cards when you are the shielded defender.");
         AutoThanks = Config.Bind("편의", "자동 감사합니다", true, "[설정 창: 감사합니다 자동 전송 / Settings: Auto Thanks] 게임 기본 감사합니다 추천을 추천마다 한 번 전송합니다. / Confirm each native Thanks recommendation at most once.");
         CharacterGuide = Config.Bind("화면", "캐릭터 준비 설명", true, "[설정 창: 준비 화면 스킬 설명 / Settings: Skill Info in Preparation] 준비 화면의 초상화 호버에 공개 스킬·잠재력 설명을 표시합니다. / Public character skill and potential descriptions on preparation portraits.");
+        PlayerTab = Config.Bind("화면", "플레이어 목록 탭", true, "[설정 창: 플레이어 목록 탭 / Settings: Player List Tab] 필드 플레이어 목록 바 아래 탭에 손패 장수와 역할을 표시합니다. / Shows hand counts and roles in a tab under the field player list bars.");
+        PlayerTabHand = Config.Bind("화면", "플레이어 목록 탭 손패 장수", true, "[설정 창: 플레이어 목록 탭 > 손패 장수 / Settings: Player List Tab > Hand Count] 플레이어마다 공개 손패 장수를 표시합니다. / Shows each player's public hand count.");
+        PlayerTabRole = Config.Bind("화면", "플레이어 목록 탭 역할", true, "[설정 창: 플레이어 목록 탭 > 역할 / Settings: Player List Tab > Role] 게임 내부 분류로 캐릭터 역할을 표시합니다. / Shows the character's internal role classification.");
         CharacterRoles = Config.Bind("화면", "캐릭터 역할 표시", true, "[설정 창: 역할 표시 / Settings: Role Labels] 게임 내부 분류로 캐릭터 역할을 표시합니다. / Shows characters' internal role classifications.");
         IndicatorFade = Config.Bind("화면", "줌 아웃 인디케이터 반투명", true, "[설정 창: 줌 아웃 시 반투명 / Settings: Fade When Zoomed Out] 필드 줌 아웃 시 플레이어·몬스터 인디케이터를 반투명하게 합니다. / Fade field player/monster indicators when zoomed out.");
         IndicatorHide = Config.Bind("화면", "원거리 인디케이터 숨김", true, "[설정 창: 멀면 숨기기 / Settings: Hide When Far] 멀리 줌 아웃하면 필드 인디케이터를 숨기고 확대하면 다시 표시합니다. / Hides far-zoom field indicators and restores them when zooming in.");
         DiceLock = Config.Bind("화면", "주사위 화면 고정", true, "[설정 창: 주사위 화면 고정 / Settings: Pin Dice to Screen] 줌·자유 시점에서도 굴린 주사위를 기본 시점과 같은 화면 위치·크기로 보여줍니다. OFF는 게임 기본처럼 필드 위에 둡니다. / Keeps thrown dice at the default view's screen position and size while zoomed or in free view; OFF leaves them on the field as in the base game.");
-        CounterSound = Config.Bind("화면", "반격 표시 소리", true, "[설정 창: 반격 아이콘 소리 / Settings: Counter Icon Sound] 인카운트·전투 반격 아이콘에 알림음을 재생합니다. / Plays sounds for encounter and combat counter icons.");
-        CounterAnimation = Config.Bind("화면", "반격 표시 애니메이션", true, "[설정 창: 반격 아이콘 애니메이션 / Settings: Counter Icon Animation] 반격 아이콘을 애니메이션으로 표시합니다. OFF는 정적인 아이콘입니다. / Animates counter icons; OFF shows static icons.");
+        EncounterAdvice = Config.Bind("전투 추천", "인카운트 추천", true, "[설정 창: 인카운트 추천 / Settings: Encounter Advice] 조우 화면에서 공격·놓아주기를 추천합니다. / Recommends Attack or Let Go on the encounter screen.");
+        DefenseAdvice = Config.Bind("전투 추천", "방어·회피 추천", true, "[설정 창: 방어·회피 추천 / Settings: Defend/Dodge Advice] 방어와 회피 중 유리한 쪽을 추천합니다. / Recommends Defend or Dodge, whichever is better.");
+        CardAdvice = Config.Bind("전투 추천", "카드 추천", true, "[설정 창: 카드 추천 / Settings: Card Advice] 쓸 만한 카드 위에 효과를 표시합니다. / Marks useful cards with their effect.");
+        ShootingStarShow = Config.Bind("전투 추천", "슈팅 스타 표시", true, "[설정 창: 슈팅 스타 표시 / Settings: Shooting Star] 놓아줄 때 몬스터에게 주는 피해와 얻는 스타라이트를 보여줍니다. / Shows the damage dealt to the monster and the Starlight gained when you let it go.");
+        KoCardPreview = Config.Bind("화면", "KO 카드 호버 조건", true, "[설정 창: 카드 호버 조건 / Settings: Card Hover Target] 카드에 마우스를 올리면 카드 사용 후 조건으로 보여줍니다. / Hovering a card shows the target after using it.");
+        KoSpectator = Config.Bind("화면", "KO 관전 전투 표시", true, "[설정 창: 관전 전투 표시 / Settings: Spectated Fights] 다른 사람 전투에서도 조건을 보여줍니다. / Also shows the target in fights you watch.");
+        StatusHand = Config.Bind("화면", "전투 상태 손패 장수", true, "[설정 창: 손패 장수 / Settings: Hand Count] 양쪽의 공개 손패 장수를 보여줍니다. / Shows the public hand counts of both sides.");
+        StatusEffects = Config.Bind("화면", "전투 상태 공개 효과", true, "[설정 창: 공개 효과 아이콘 / Settings: Effect Icons] 양쪽의 공개 효과를 아이콘으로 보여줍니다. 아이콘에 마우스를 올리면 설명이 나옵니다. / Shows the public effects of both sides as icons. Hover an icon for its description.");
+        CounterIcons = Config.Bind("화면", "반격 아이콘", true, "[설정 창: 반격 아이콘 / Settings: Counter Icons] 인카운트·전투에서 반격 가능 여부를 아이콘으로 보여줍니다. / Shows whether a counterattack is possible in encounters and combat.");
+        ShushuMaster = Config.Bind("화면", "슈슈 쉴드 전체", true, "[설정 창: 슈슈 쉴드 / Settings: Shushu Shield] 슈슈 쉴드 효과와 방어 잠금을 사용합니다. / Uses the Shushu Shield effect and Defend Lock.");
+        UnknownHelpSeen = Config.Bind("화면", "미반영 효과 도움말 확인함", false, "[내부 / Internal] 미반영 효과 도움말을 한 번 저절로 보여 줬는지 기록합니다. 모든 설정 초기화 때 처음 상태로 돌아갑니다. / Records that the uncounted-effects help has opened once by itself; Reset All Settings clears it.");
+        CounterSound = Config.Bind("화면", "반격 표시 소리", true, "[설정 창: 반격 아이콘 > 소리 / Settings: Counter Icons > Sound] 인카운트·전투 반격 아이콘에 알림음을 재생합니다. / Plays sounds for encounter and combat counter icons.");
+        CounterAnimation = Config.Bind("화면", "반격 표시 애니메이션", true, "[설정 창: 반격 아이콘 > 애니메이션 / Settings: Counter Icons > Animation] 반격 아이콘을 애니메이션으로 표시합니다. OFF는 정적인 아이콘입니다. / Animates counter icons; OFF shows static icons.");
         SuppressNotices = Config.Bind("편의", "시작 공지 자동 열기 방지", true, "[설정 창: 시작 공지 끄기 / Settings: Skip Startup Notice] 로그인 공지가 자동으로 열리지 않게 합니다. / Prevents login notices from opening automatically.");
         PingFocus = Config.Bind("편의", "창 전환 후 핑 모드 해제", true, "[설정 창: Alt+Tab 핑 모드 해제 / Settings: Clear Ping Mode on Alt+Tab] Alt+Tab 후 남은 핑 선택 모드를 전송 없이 해제합니다. / Cancel lingering ping mode after task switching without sending a ping.");
         UpdateNotifications = Config.Bind("업데이트", "업데이트 알림 팝업", true, "새 버전 알림과 변경 내역을 표시합니다. / Shows new-version alerts and release notes.");
@@ -295,7 +323,7 @@ public sealed class Plugin : BasePlugin
         Config.SettingChanged += (_, _) => UpdateDiagnostics();
         Config.SettingChanged += (_, _) => SettingsBackup.MarkChanged(Environment.TickCount64);
         UpdateDiagnostics();
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => Diagnostics.SetEnabled(false, "");
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => { RuntimeObject.FlushLedger(); Diagnostics.SetEnabled(false, ""); };
         AppDomain.CurrentDomain.ProcessExit += (_, _) => { UpdateSession?.ProcessExiting(); Updates.Dispose(); };
         // The verified engine driver keeps updates alive without touching incompatible game UI.
         LoadStage(DiagnosticPhase.PatchRegistration);
@@ -392,7 +420,7 @@ public sealed class Plugin : BasePlugin
          Diagnostics.State("settings",
         FormattableString.Invariant($"advice={Enabled.Value}; details={ShowDetails.Value}; koMinimum={KoMinimum.Value}; names={UseRealNames.Value}; cardPopups={CardPopups.Value}; battleStatus={BattleStatus.Value}; shushuShield={ShushuShield.Value}; fieldBuffs={FieldBuffs.Value}; fieldZoom={FieldZoom.Value}; matchFocus={MatchFocus.Value}; muteUnfocused={MuteUnfocused.Value}; inputAttention={InputAttention.Value}; scale={UiScale.Value:F2}; opacity={Opacity.Value:F2}"));
         Diagnostics.State("settings.features",
-            FormattableString.Invariant($"autoThanks={AutoThanks.Value}; characterGuide={CharacterGuide.Value}; characterRoles={CharacterRoles.Value}; indicatorFade={IndicatorFade.Value}; indicatorHide={IndicatorHide.Value}; diceLock={DiceLock.Value}; counterSound={CounterSound.Value}; counterAnimation={CounterAnimation.Value}; suppressNotices={SuppressNotices.Value}; pingFocus={PingFocus.Value}; updateNotifications={UpdateNotifications.Value}; automaticChecks={AutomaticChecks.Value}; shushuShieldRestrictions={ShushuShieldRestrictions.Value}; finalDamage={FinalDamage.Value}"));
+            FormattableString.Invariant($"autoThanks={AutoThanks.Value}; characterGuide={CharacterGuide.Value}; characterRoles={CharacterRoles.Value}; indicatorFade={IndicatorFade.Value}; indicatorHide={IndicatorHide.Value}; diceLock={DiceLock.Value}; counterSound={CounterSound.Value}; counterAnimation={CounterAnimation.Value}; suppressNotices={SuppressNotices.Value}; pingFocus={PingFocus.Value}; updateNotifications={UpdateNotifications.Value}; automaticChecks={AutomaticChecks.Value}; shushuShieldRestrictions={ShushuShieldRestrictions.Value}; finalDamage={FinalDamage.Value}; encounterAdvice={EncounterAdvice.Value}; defenseAdvice={DefenseAdvice.Value}; cardAdvice={CardAdvice.Value}; shootingStar={ShootingStarShow.Value}; koCardPreview={KoCardPreview.Value}; koSpectator={KoSpectator.Value}; statusHand={StatusHand.Value}; statusEffects={StatusEffects.Value}; counterIcons={CounterIcons.Value}; shushuMaster={ShushuMaster.Value}; playerTab={PlayerTab.Value}; playerTabHand={PlayerTabHand.Value}; playerTabRole={PlayerTabRole.Value}"));
     }
 
     private static ReleaseUpdateResult? _diagnosticRelease;

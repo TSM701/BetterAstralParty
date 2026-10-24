@@ -16,13 +16,7 @@ namespace BetterAstralParty.Updating
         // Anchored regex for one contained work directory of the given kind.
         internal static string Pattern(string kind) => @"\ABetterAstralParty\.Update/" + Prefix + kind + @"-[0-9a-f]{32}\z";
         internal static bool Is(string relative, string kind) => Kind(kind) && Regex.IsMatch(relative, Pattern(kind));
-        internal static bool IsStage(string relative) => Is(relative, "stage");
         internal static bool IsContained(string relative, string kind) => Is(relative, kind);
-        internal static string Operation(string relative, string kind)
-        {
-            if (!Is(relative, kind)) throw new ApplySafetyException(ApplyFailure.UnsafePath);
-            return relative.Substring(relative.Length - 32);
-        }
         internal static string At(string kind, string operation)
         {
             if (!Kind(kind) || !Regex.IsMatch(operation, @"\A[0-9a-f]{32}\z")) throw new ApplySafetyException(ApplyFailure.UnsafePath);

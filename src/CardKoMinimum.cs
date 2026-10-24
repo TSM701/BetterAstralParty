@@ -8,7 +8,7 @@ internal static class CardKoMinimum
     // null = unsupported data. fixedDie is a visibly revealed attack roll, never a total.
     internal static KoPair? Calculate(PreRollCombat input, CardBonus? card, int fixedDie = 0, bool possible = false)
     {
-        if (fixedDie is < 0 or > 6 || !CardAdvisor.Valid(input) || !input.Modifiers.DiceValid) return null;
+        if (fixedDie is < 0 or > 6 || !CardAdvisor.Valid(input) || !input.Modifiers.DiceValid || fixedDie == 0 && input.Modifiers.AttackUnsupported) return null;
         for (var attackDie = fixedDie == 0 ? 1 : fixedDie; attackDie <= (fixedDie == 0 ? 6 : fixedDie); attackDie++)
         {
             if (fixedDie == 0 && !input.Modifiers.AttackDice.Contains(attackDie)) continue;
@@ -30,7 +30,7 @@ internal static class CardKoMinimum
     // Survival must hold even at the largest public damage; equality with HP is KO.
     internal static KoPair? Survival(PreRollCombat input, CardBonus? card, int fixedDie = 0, bool possible = false)
     {
-        if (fixedDie is < 0 or > 6 || !CardAdvisor.Valid(input) || !input.Modifiers.DiceValid) return null;
+        if (fixedDie is < 0 or > 6 || !CardAdvisor.Valid(input) || !input.Modifiers.DiceValid || fixedDie == 0 && input.Modifiers.AttackUnsupported) return null;
         for (var defenseDie = 1; defenseDie <= 6; defenseDie++)
         {
             if (!input.Modifiers.DefenseDice.Contains(defenseDie)) continue;
@@ -55,20 +55,25 @@ internal static class CardKoMinimum
         var bonus = card ?? new CardBonus(true, 0, 0, 0);
         if (!CardAdvisor.Valid(input) || !input.Modifiers.DiceValid || bonus.Min < 0 || bonus.Max < bonus.Min || bonus.Max > 100
             || attackDie is < 1 or > 6 || defenseDie is < 1 or > 6) return null;
+        // A final-ATK boost (card 10010) applies after the die; its unobserved rounding widens the bounds.
+        var low = CardAdvisor.Boost(input.AttackMin + (bonus.Attack ? bonus.Min : 0) + attackDie, bonus.FinalPercent).Floor;
+        var high = CardAdvisor.Boost(input.AttackMax + (bonus.Attack ? bonus.Max : 0) + attackDie, bonus.FinalPercent).Ceiling;
         return (
-            CombatAdvisor.HitDamage(Math.Max(1, input.AttackMin + (bonus.Attack ? bonus.Min : 0)
-                + attackDie - input.DefenseMax - (bonus.Attack ? 0 : bonus.Max) - defenseDie), input.Modifiers, input.Hp),
-            CombatAdvisor.HitDamage(Math.Max(1, input.AttackMax + (bonus.Attack ? bonus.Max : 0)
-                + attackDie - input.DefenseMin - (bonus.Attack ? 0 : bonus.Min) - defenseDie), input.Modifiers, input.Hp));
+            CombatAdvisor.HitDamage(Math.Max(1, low - input.DefenseMax - (bonus.Attack ? 0 : bonus.Max) - defenseDie), input.Modifiers, input.Hp),
+            CombatAdvisor.HitDamage(Math.Max(1, high - input.DefenseMin - (bonus.Attack ? 0 : bonus.Min) - defenseDie), input.Modifiers, input.Hp));
     }
 
     internal static bool RevealedDie(int state, bool visible, int value) =>
         state == 1 && visible && value is >= 1 and <= 6;
 
+    // The defender's raw die shows at showPoint 0 (BattleChoiceS2C -> RefreshPoint_Defender(0, val, dodge)); its total uses 2.
+    internal static bool RevealedDefenseDie(int state, bool visible, int value) =>
+        state == 0 && visible && value is >= 1 and <= 6;
+
     // Extremes across every still-possible die and public stat/card range.
     internal static (long Min, long Max)? OutcomeRange(PreRollCombat input, CardBonus? card, int fixedDie = 0)
     {
-        if (fixedDie is < 0 or > 6 || !CardAdvisor.Valid(input) || !input.Modifiers.DiceValid) return null;
+        if (fixedDie is < 0 or > 6 || !CardAdvisor.Valid(input) || !input.Modifiers.DiceValid || fixedDie == 0 && input.Modifiers.AttackUnsupported) return null;
         var low = DamageRange(input, card, fixedDie == 0 ? input.Modifiers.AttackDice.Min : fixedDie, input.Modifiers.DefenseDice.Max);
         var high = DamageRange(input, card, fixedDie == 0 ? input.Modifiers.AttackDice.Max : fixedDie, input.Modifiers.DefenseDice.Min);
         return low is { } min && high is { } max ? (min.Min, max.Max) : null;

@@ -157,7 +157,7 @@ namespace BetterAstralParty.Installation
                     { shortcutSkipped = "SteamProfileReadUnavailable"; shortcutDiscoveryError = unavailable; }
                 } else account = NativeSteamMaintenance.ResolveAccount(steamRoot, account);
                 var removeShortcut = shortcutSkipped == null && NativeSteamMaintenance.PlanRemove(steamRoot!, account, game, error => {
-                    shortcutSkipped = "SteamShortcutPlanUnavailable"; shortcutDiscoveryError = error;
+                    shortcutSkipped = (error as SteamProfileUnavailableException)?.Reason ?? "SteamShortcutPlanUnavailable"; shortcutDiscoveryError = error;
                 });
                 if (NativeMaintenance.HasPending(bundle))
                 {
@@ -165,9 +165,21 @@ namespace BetterAstralParty.Installation
                     installLock = NativeMaintenance.AcquireInstallLock(bundle);
                     if (!NativeMaintenance.RecoverPending(bundle, consent, output)) return 0;
                 }
-                var receipt = ReadReceipt(bundle);
                 if (!whatIf) NativeSteamMaintenance.WaitGameClosed(game, consent, output);
-                if (whatIf) { using (var fence = new WindowsFileFence(game)) UpdateLaunchGate.Check(fence); }
+                // 7. Same interrupted-update recovery as Install, before the receipt and plugin checks: an update cut off
+                // between its file moves leaves the plugin missing until this recovery puts it back.
+                var pendingUpdate = SetupHost.HasPendingUpdate(game); var cancelled = "취소했습니다. 아무것도 변경하지 않았습니다. / Cancelled; nothing changed.";
+                if (pendingUpdate && whatIf) output("WhatIf: 중단된 자동 업데이트를 먼저 복구합니다. / An interrupted automatic update will be recovered first.");
+                else if (pendingUpdate) {
+                    output("자동 업데이트 복구 결과 / Update recovery result: " + SetupHost.RecoverPendingUpdate(game));
+                    cancelled = "취소했습니다. 중단된 자동 업데이트 복구 외에는 바꾸지 않았습니다. / Cancelled; only the interrupted automatic update was recovered.";
+                }
+                var receipt = ReadReceipt(bundle);
+                // 10. Removing with the plugin already gone leaves history the next install cannot bind; stop before any change.
+                // A preview cannot know what the pending recovery restores, so only the real run decides.
+                if (receipt != null && !receipt.Legacy && bundle.TargetHash(UpdateTrust.PluginPath) == null && !(whatIf && pendingUpdate))
+                    throw new InvalidOperationException("설치된 플러그인이 없어 파일을 보존합니다. Force-Uninstall.cmd로 정리한 뒤 다시 설치하세요. / Installed plugin missing; files are kept. Run Force-Uninstall.cmd, then install again.");
+                if (whatIf) { if (!pendingUpdate) using (var fence = new WindowsFileFence(game)) UpdateLaunchGate.Check(fence); }
                 else maintenance = new UpdateLaunchGate.Lease(game);
                 bundle.AssertRoot();
                 if (receipt != null && !receipt.Legacy) SetupHost.ValidateInstalledHistory(game);
@@ -177,7 +189,7 @@ namespace BetterAstralParty.Installation
                 var loaderPath = Full(game, "doorstop_config.ini"); string? loaderUpdated = null, loaderSkipped = null;
                 if (!restoreLoader.Equals("Keep", StringComparison.OrdinalIgnoreCase) && plan.Targets.Count != 0)
                     try { loaderUpdated = LoaderChange(bundle, receipt, restoreLoader, whatIf, consent, output, reason => loaderSkipped = reason); }
-                    catch (OperationCanceledException cancelled) { output(cancelled.Message); return 0; }
+                    catch (OperationCanceledException) { output(cancelled); return 0; }
                 var backups = plan.Targets.Concat(plan.MissingOwned).ToList();
                 if (loaderUpdated != null) { backups.Add(loaderPath); plan.Hashes[loaderPath] = bundle.TargetHash("doorstop_config.ini"); }
                 backupTargets = backups.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -185,13 +197,16 @@ namespace BetterAstralParty.Installation
                 output("제거 대상 / Files to remove (" + game + "):"); foreach (var path in plan.Targets) output("  " + path);
                 if (loaderUpdated != null) output("공용 로더 enabled 설정을 명시한 선택으로 복원합니다. / Restore shared loader enabled setting; other settings preserved.");
                 if (removeShortcut) output("Remove the matching Astral Party - Mod shortcut only; keep all other Steam entries.");
-                if (shortcutSkipped != null) output("Steam 정보를 확정할 수 없어 Steam 라이브러리 항목은 남겨 둡니다. 확인된 모드 파일만 백업 후 제거합니다. / Steam discovery unavailable or ambiguous; keep shortcuts and back up/remove only verified mod files. Reason: " + shortcutSkipped);
+                if (shortcutSkipped != null) output((shortcutDiscoveryError as SteamProfileUnavailableException)?.Guidance
+                    ?? "Steam 정보를 확정할 수 없어 Steam 라이브러리 항목은 남겨 둡니다. 확인된 모드 파일만 백업 후 제거합니다. / Steam discovery unavailable or ambiguous; keep shortcuts and back up/remove only verified mod files. Reason: " + shortcutSkipped);
                 output("전용 설정·로그도 백업 후 제거합니다. 공용 로더·다른 모드는 유지합니다. / Includes mod settings/logs; shared loader and other mods stay.");
                 var legacyWork = LegacyWork.Finished(game).Count;
                 if (legacyWork != 0) output("끝난 1.3.x 업데이트 작업 기록 " + legacyWork + "개도 정리합니다. / Also removes " + legacyWork + " finished 1.3.x update work records.");
+                var archived = UpdateFaults.RemovableArchived(game);
+                if (archived != 0) output("끝난 업데이트 기록 " + archived + "개도 정리합니다. / Also removes " + archived + " finished update records.");
                 if (whatIf) { output("WhatIf: BetterAstralParty 파일 백업 및 제거 / Back up and remove listed BetterAstralParty files"); return 0; }
                 if (consent("BetterAstralParty 파일을 백업 후 제거할까요? / Back up and remove listed BetterAstralParty files? [y/N]") != "y")
-                { output("취소했습니다. 아무것도 변경하지 않았습니다. / Cancelled; nothing changed."); return 0; }
+                { output(cancelled); return 0; }
                 if (shortcutSkipped != null) try { observation?.Invoke("NativeUninstallShortcut: action=Skipped; reason=" + shortcutSkipped
                     + (shortcutDiscoveryError == null ? "" : "; exception=" + shortcutDiscoveryError.GetType().Name + "; hresult=0x" + shortcutDiscoveryError.HResult.ToString("X8", System.Globalization.CultureInfo.InvariantCulture))); } catch { }
                 if (loaderSkipped != null) try { observation?.Invoke("NativeUninstallLoader: action=Skipped; reason=" + loaderSkipped); } catch { }
@@ -227,6 +242,7 @@ namespace BetterAstralParty.Installation
                 removal?.Dispose(); removal = null;
                 if (transaction != null) { NativeMaintenance.CompleteTransaction(bundle, transaction, backupTargets); transaction = null; }
                 LegacyWork.Remove(game, output);
+                UpdateFaults.RemoveArchived(game, output);
                 maintenance?.Dispose(); maintenance = null;
                 SetupHost.RecordInstallerStage("Uninstall", "Completed");
                 foreach (var relative in new[] { "BepInEx/plugins/BetterAstralParty", "BepInEx/BetterAstralParty-Diagnostics" })
@@ -239,7 +255,7 @@ namespace BetterAstralParty.Installation
                 output(plan.Retained || receipt == null
                     ? "확인된 파일 제거를 마쳤습니다. 미확인·변경 파일과 기록은 남아 있습니다. / Verified files removed; unknown or modified files and evidence remain."
                     : shortcutSkipped != null
-                        ? "모드 파일 제거 완료. Steam 라이브러리 항목은 확인하지 못해 남겨 두었습니다. Astral Party - Mod가 남아 있으면 Steam에서 직접 제거하세요. 공용 로더·다른 모드는 유지합니다. / Removed verified mod files; Steam shortcut cleanup skipped. Shared loader and other mods preserved."
+                        ? "모드 파일 제거 완료. Steam 라이브러리 항목은 남겨 두었습니다. Astral Party - Mod가 남아 있으면 Steam에서 직접 제거하세요. 공용 로더·다른 모드는 유지합니다. / Removed verified mod files; Steam shortcut cleanup skipped. Shared loader and other mods preserved."
                         : "제거 완료. 모드 파일과 Steam 라이브러리의 Astral Party - Mod를 정리했습니다. 공용 로더 설정과 다른 모드는 유지합니다. / Removed mod files and shortcut; shared loader settings and other mods preserved.");
                 return 0;
             }

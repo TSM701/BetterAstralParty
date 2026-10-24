@@ -109,6 +109,7 @@ __PRODUCTION__
     }
     internal static class FieldZoomUi { internal static float IndicatorScale => 1f; }
     internal static class FieldMonsterPlates { internal static readonly List<RuntimeObject> Adopted=new(); internal static IReadOnlyList<RuntimeObject> Plates=>Adopted; }
+    internal static class FieldStatePlates { internal static readonly List<RuntimeObject> Adopted=new(); internal static IReadOnlyList<RuntimeObject> Players=>Adopted; }
     internal sealed class FloatSetting { internal float Value = 1f; }
     internal static class VisibleCombatAdvisor
     { internal static bool IsPve(int map) => map == 2; }
@@ -223,6 +224,17 @@ __PRODUCTION__
             Assert(FieldBuffUi.ActivePlateCount == 0, "setting OFF still disposes zoom-hidden clones");
             plate = Reset(); FieldIndicatorOpacity.Hidden = true; ModUi.IsOpen = true; Frame(plate, 100, 100);
             Assert(FieldBuffUi.ActivePlateCount == 0, "settings still clear zoom-hidden clones");
+            // Pair separation runs on rectangles read once: two overlapping plates split the overlap, a fixed plate pushes
+            // the moving one by all of it, and a later pair sees the earlier move (the native sequential order).
+            var rects = new List<(float X, float Y, float Width, float Height)> { (0, 0, 10, 10), (0, 6, 10, 10), (50, 0, 10, 10) };
+            FieldBuffUi.SeparateRects(rects, null);
+            Assert(rects[0].Y == -2 && rects[1].Y == 8 && rects[2].Y == 0, "overlapping plates split the vertical overlap; distant plates stay");
+            rects = new() { (0, 0, 10, 10) };
+            FieldBuffUi.SeparateRects(rects, new() { (0, 4, 10, 10) });
+            Assert(rects[0].Y == -6, "a fixed monster plate pushes the hero plate by the whole overlap");
+            rects = new() { (0, 0, 10, 10), (0, 5, 10, 10), (0, 10, 10, 10) };
+            FieldBuffUi.SeparateRects(rects, null);
+            Assert(rects[0].Y == -2.5f && rects[1].Y == 3.75f && rects[2].Y == 13.75f, "later pairs see earlier moves, as the native pass does");
             Console.WriteLine("PASS: " + _checks + " production field-indicator input assertions; actual native rendering remains untested.");
         }
     }

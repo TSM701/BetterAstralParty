@@ -17,7 +17,7 @@ internal static class PublicCombatEffects
         var mind = false;
         var applied = new HashSet<int>();
         var evidence = Plugin.Diagnostics.IsRecording ? new List<string>(count) : null;
-        var unmodeled = Plugin.Diagnostics.IsRecording ? new List<int>() : null;
+        var unknown = new SortedSet<int>();
         // Marks are public property effects (Item2), not ordinary buffs (Item1).
         // Read the same filtered list as BattleStatusUi; never inspect hidden effects.
         var properties = shown!.Field("Item2");
@@ -28,7 +28,9 @@ internal static class PublicCombatEffects
         {
             var property = properties.Call("get_Item", i)!;
             var id = property.Field("buffId")!.Value<int>();
-            if (id != 10006) continue;
+            if (!CombatBuffAudit.Counted(id)) unknown.Add(id);
+            // Every property's public stacks go to the evidence so combat-audit can tell when one (e.g. 10009) fires.
+            if (id != 10006) { evidence?.Add($"property:{id}:{property.Field("property")!.Get<int>("Value")}"); continue; }
             var stacks = property.Field("property")!.Get<int>("Value");
             if (stacks is < 0 or > 100) return null;
             if (!applied.Add(id)) continue;
@@ -43,6 +45,7 @@ internal static class PublicCombatEffects
             var delay = buff.Get<int>("DelayRound");
             evidence?.Add($"{id}:{buff.Get<int>("Progress")}:{buff.Get<int>("KeepRound")}:delay={delay}");
             if (delay > 0) continue;
+            if (!CombatBuffAudit.Counted(id)) unknown.Add(id);
             // Progress is the public icon count. Only known per-stack rules multiply it.
             var stacks = buff.Get<int>("Progress");
             if (stacks is < 0 or > 10000) return null;
@@ -52,6 +55,8 @@ internal static class PublicCombatEffects
             {
                 2000801 => Parameter("Card", 20008, 3, 4, id),
                 1071101 => Parameter("Skill", 10712, 0, 1, id),
+                // Skill 10711's -3 shield got its own buff in the 2026-10 tables; not the Shushu shield (no Dodge override).
+                1071102 => Parameter("Skill", 10711, 0, 1, id),
                 1140101 => Parameter("Skill", 11401, 0, 4, id),
                 1140102 => Parameter("Skill", 11402, 0, 3, id),
                 1261101 => Parameter("Skill", 12611, 0, 2, id) * stacks,
@@ -79,20 +84,20 @@ internal static class PublicCombatEffects
             evidence?.Add($"resolved:{id}:add={value.Value}");
             // Original public buff description: at most one damage per hit.
             if (id == 10591101) damageCap = 1;
-            // STRBuff 10331101 explicitly reduces received damage to zero. Do not
-            // infer immunity from NotSelect, a shield magnitude or a character ID.
-            if (id == 10331101) immune = true;
-            if (id is not (2000801 or 1071101 or 1140101 or 1140102 or 1261101
-                or 10551101 or 10141101 or 10261101 or 10531201 or 1101101
-                or 4000301 or 4000401 or 5006001 or 1291202 or 10671302 or 10331101 or 10591101))
-                unmodeled?.Add(id);
+            // STRBuff 10331101 (boss skill 103311) reads "ignores attacks, cannot be selected, takes 0 damage", but it is
+            // a targeting lock: the boss cannot be attacked until its condition is met, and the icon stays (progress 0)
+            // after that. A fight with it as defender means the lock is open; observed 2026-10-22, a 30-damage hit KO'd
+            // the 9-HP boss with the icon shown. So it changes nothing in a hit. Never infer immunity from NotSelect,
+            // a shield magnitude or a character ID.
         }
+        // The attacker's own shown effects (dodge locks, extra attacks, conditional ATK) can change this hit too.
+        if (!AddUnknown(source, unknown)) return null;
         if (evidence != null)
         {
             Plugin.Diagnostics.State("combatEffects." + role, string.Join(",", evidence));
             Plugin.Diagnostics.State("combatEffects.resolver." + role,
                 $"additive-before-cap; adjustment={adjustment}; cap={damageCap}; immune={immune}; single-hit");
-            Plugin.Diagnostics.State("combatEffects.unmodeled." + role, string.Join(",", unmodeled!));
+            Plugin.Diagnostics.State("combatEffects.unknown." + role, string.Join(",", unknown));
         }
         // RoomPlayer selects the native passive list (including monster passives).
         // Skill 100312 preserves target heroes' HP; it is not defender immunity.
@@ -127,7 +132,7 @@ internal static class PublicCombatEffects
                     $"passives={string.Join(",", ids!)}; targetType={player?.Get("characterType")?.Value<int>()}; minimumHP={minimumHp}; onHitBonus={onHitBonus}");
         }
         var result = new HitModifiers(adjustment, damageCap, immune)
-            { ShushuShield = applied.Contains(1071101), MinimumHp = minimumHp, OnHitBonus = onHitBonus };
+            { ShushuShield = applied.Contains(1071101), MinimumHp = minimumHp, OnHitBonus = onHitBonus, Unknown = Unknown(unknown) };
         result = ApplyDice(result, player!, source, applied, mind, role);
         return result.Valid ? result : null;
     }
@@ -147,7 +152,7 @@ internal static class PublicCombatEffects
             {
                 var buffs = container.Call("GetShowBuffs", actor, false)?.Field("Item1");
                 var count = buffs?.Get<int>("Count") ?? -1;
-                if (count is < 0 or > 256) return result with { DiceUnsupported = true };
+                if (count is < 0 or > 256) return result with { AttackUnsupported = true };
                 for (var i = 0; i < count; i++)
                 {
                     var buff = buffs!.Call("get_Item", i)!;
@@ -156,17 +161,18 @@ internal static class PublicCombatEffects
                     unsupported |= buff.Get<int>("BuffId") == 1250201;
                 }
             }
-            if (unsupported) result = result with { DiceUnsupported = true }; // Zero-roll/conditional precedence not audited.
+            // Zero-roll/conditional precedence not audited; on the attacker it only affects pre-roll views.
+            if (unsupported) result = side == 0 ? result with { DiceUnsupported = true } : result with { AttackUnsupported = true };
             var faces = default(DiceFaces);
             if (capped)
             {
                 var maximum = Parameter("Skill", 12501, 0, 1, 1250101);
-                if (maximum is null) return result with { DiceUnsupported = true };
+                if (maximum is null) return side == 0 ? result with { DiceUnsupported = true } : result with { AttackUnsupported = true };
                 faces = DiceFaces.Range(1, maximum.Value);
             }
             var passives = actor.Field("player")?.Call("GetBattlePassiveSkillId");
             var passiveCount = passives?.Get<int>("Count") ?? 0;
-            if (passiveCount is < 0 or > 256) return result with { DiceUnsupported = true };
+            if (passiveCount is < 0 or > 256) return side == 0 ? result with { DiceUnsupported = true } : result with { AttackUnsupported = true };
             for (var i = 0; i < passiveCount; i++)
             {
                 var id = passives!.Call("get_Item", i)!.Value<int>();
@@ -181,9 +187,9 @@ internal static class PublicCombatEffects
                 {
                     // Original STRSkill106311: 3..6; without public Mind, Skill.Params[0] is the fixed face.
                     // No server roll or private buff parameters are read. Overlapping cap precedence is unknown.
-                    if (capped) return result with { DiceUnsupported = true };
+                    if (capped) return result with { AttackUnsupported = true };
                     var maximum = Parameter("Skill", id, 0, 4, 10631101);
-                    if (maximum is null) return result with { DiceUnsupported = true };
+                    if (maximum is null) return result with { AttackUnsupported = true };
                     faces = DiceFaces.Range(mind ? 3 : maximum.Value, maximum.Value);
                 }
             }
@@ -194,8 +200,36 @@ internal static class PublicCombatEffects
         }
         if (!result.DiceValid) result = result with { DiceUnsupported = true };
         if (Plugin.Diagnostics.IsRecording)
-            Plugin.Diagnostics.State("combatDice." + role, $"attack={result.AttackDice}; defense={result.DefenseDice}; dodge={result.DodgeDice}; unsupported={result.DiceUnsupported}; attackWeightUnknown={result.AttackDistributionUnknown}; defenseWeightUnknown={result.DefenseDistributionUnknown}");
+            Plugin.Diagnostics.State("combatDice." + role, $"attack={result.AttackDice}; defense={result.DefenseDice}; dodge={result.DodgeDice}; unsupported={result.DiceUnsupported}; attackUnsupported={result.AttackUnsupported}; attackWeightUnknown={result.AttackDistributionUnknown}; defenseWeightUnknown={result.DefenseDistributionUnknown}");
         return result;
+    }
+
+    // Same public lists as the target's (Item1 buffs, Item2 property effects); delayed buffs are not active yet.
+    private static bool AddUnknown(RuntimeObject? actor, SortedSet<int> unknown)
+    {
+        var shown = actor?.Get("buffContainer")?.Call("GetShowBuffs", actor, false);
+        if (shown == null) return true;
+        for (var list = 0; list < 2; list++)
+        {
+            var items = shown.Field(list == 0 ? "Item1" : "Item2");
+            var count = items?.Get<int>("Count") ?? -1;
+            if (count is < 0 or > 256) return false;
+            for (var i = 0; i < count; i++)
+            {
+                var item = items!.Call("get_Item", i)!;
+                if (list == 0 && item.Get<int>("DelayRound") > 0) continue;
+                var id = list == 0 ? item.Get<int>("BuffId") : item.Field("buffId")!.Value<int>();
+                if (!CombatBuffAudit.Counted(id)) unknown.Add(id);
+            }
+        }
+        return true;
+    }
+
+    internal static UnknownEffects Unknown(SortedSet<int> ids)
+    {
+        var shown = ids.Take(4).ToArray();
+        int At(int index) => index < shown.Length ? shown[index] : 0;
+        return new(At(0), At(1), At(2), At(3), ids.Count);
     }
 
     private static int? ErosionBonus(RuntimeObject? source, int stacks)
@@ -210,7 +244,7 @@ internal static class PublicCombatEffects
         return id == 129 ? stacks : 0;
     }
 
-    private static int? Parameter(string kind, int id, int index, int expectedCount, int buffId, int expectedBuffCount = 1)
+    internal static int? Parameter(string kind, int id, int index, int expectedCount, int buffId, int expectedBuffCount = 1)
     {
         // Active catalog numbers, with a schema/buff association guard. No text parsing,
         // hidden Buff.Params, game-state writes, or persistent copies of catalog values.

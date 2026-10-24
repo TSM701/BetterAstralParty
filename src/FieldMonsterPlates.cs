@@ -14,6 +14,9 @@ internal static class FieldMonsterPlates
     private const float PlateLift = 200f, MarkerLift = 120f;
     private static readonly List<RuntimeObject> Adopted = new();
     private static readonly List<(RuntimeObject Ui, Vector2 Owner)> Placed = new();
+    // Native pair rule of UpdateAttrInfoPosition (overlapping plates split the vertical overlap) on rectangles read once.
+    private static readonly List<(float X, float Y, float Width, float Height)> Rects = new();
+    private static readonly List<float> Before = new();
     private static RuntimeObject? _parent, _layer, _sentinel, _battleUi;
     private static IntPtr _plateClass, _sceneClass;
     private static float _scanAt;
@@ -95,8 +98,11 @@ internal static class FieldMonsterPlates
             ui.Call("UpdateOffset", target);
             Placed.Add((ui, local));
         }
-        for (var i = 0; i < Placed.Count; i++)
-            for (var j = i + 1; j < Placed.Count; j++) Split(Placed[i].Ui, Placed[j].Ui);
+        Rects.Clear(); Before.Clear();
+        foreach (var (ui, _) in Placed) { var rect = FieldBuffUi.Rect(ui); Rects.Add(rect); Before.Add(rect.Y); }
+        FieldBuffUi.SeparateRects(Rects, null);
+        for (var i = 0; i < Rects.Count; i++)
+            if (Rects[i].Y != Before[i]) Placed[i].Ui.Set("y", Rects[i].Y);
         foreach (var (ui, owner) in Placed)
         {
             var point = _layer!.Call("TransformPoint", owner, ui)!.Value<Vector2>() - Vector2.up * (MarkerLift * scale);
@@ -104,19 +110,6 @@ internal static class FieldMonsterPlates
             var buffs = ui.Field("graph_ShowBuff")!;
             if (buffs.Get<bool>("visible") == stepping) buffs.Set("visible", !stepping);
         }
-    }
-
-    // Native pair rule of UpdateAttrInfoPosition: overlapping plates split the vertical overlap.
-    internal static void Split(RuntimeObject a, RuntimeObject b)
-    {
-        float ay = a.Get<float>("y"), by = b.Get<float>("y");
-        var overlapX = (a.Get<float>("width") + b.Get<float>("width")) * 0.5f - Math.Abs(a.Get<float>("x") - b.Get<float>("x"));
-        var overlapY = (a.Get<float>("height") + b.Get<float>("height")) * 0.5f - Math.Abs(ay - by);
-        if (overlapX <= 0 || overlapY <= 0) return;
-        var shift = overlapY * 0.5f;
-        var up = ay + 0.1f < by;
-        a.Set("y", up ? ay - shift : ay + shift);
-        b.Set("y", up ? by + shift : by - shift);
     }
 
     internal static void Clear()

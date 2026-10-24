@@ -26,7 +26,7 @@ internal static class UpdateStartup
                 if (operation != null) UpdateFaults.LatchInterrupted(fence, operation); else UpdateFaults.Fail(fence, context, FaultPhase.Recovery, FaultReason.Interrupted, pending.Stage);
                 Plugin.Logger.LogWarning("중단된 업데이트를 " + (result == TransactionResult.Committed ? "마무리" : "되돌림") + "했습니다. / Interrupted update " + (result == TransactionResult.Committed ? "completed." : "rolled back."));
             }
-            else if (operation != null) UpdateFaults.LatchInterrupted(fence, operation);
+            else if (operation != null && !UpdateFaults.Committed(fence, operation)) UpdateFaults.LatchInterrupted(fence, operation);
             if (operation != null) UpdateFaults.Complete(fence, operation);
             UpdateLaunchGate.Check(fence);
             // Downloaded ZIPs of finished updates are no longer needed; plans, backups and descriptors stay.

@@ -94,7 +94,9 @@ namespace BetterAstralParty.Installation
                 UpdateTransaction.HighWaterPath, OrdinaryInstallRecovery.LegacyLauncher, OrdinaryInstallRecovery.LegacyHelper, OrdinaryInstallRecovery.LegacyHelperReceipt, "BepInEx/config/kr.betterastralparty.mod.cfg",
                 "BepInEx/BetterAstralParty-Diagnostics/current.log", "BepInEx/BetterAstralParty-Diagnostics/previous.log",
                 "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch.log", "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log",
-                "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log" });
+                "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log",
+                // 1.3.x takeover high-water and the channel-adoption marker removal.
+                "BetterAstralParty.update-v4.version", "BetterAstralParty.channel-adopt" });
             // Previously journaled loader documents remain recoverable; new plans never consume them.
             names.AddRange(bundle.Hashes.Keys.Where(n => n.StartsWith(".deps/bepinex/", StringComparison.Ordinal)).Select(n => n.Substring(14)));
             return names.Distinct(StringComparer.OrdinalIgnoreCase).Select(n => WindowsPath.Absolute(bundle.GameRoot + "\\" + n.Replace('/', '\\'))).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToArray();
@@ -163,7 +165,7 @@ namespace BetterAstralParty.Installation
             using (var backup = new WindowsFileFence(txn.JournalRoot)) using (var journal = backup.OpenFile("pending.json")) {
                 txn.JournalHash = journal.Hash(); if (expectedHash != null && txn.JournalHash != expectedHash) throw new InvalidDataException("Recovery journal changed after confirmation.");
                 var state = MaintenanceJson.Read(UpdateTicket.Read(journal, 1024 * 1024));
-                if (state.Count != 3 || MaintenanceJson.Text(state, "GameRoot") != bundle.GameRoot) throw new InvalidDataException("Invalid recovery journal root.");
+                if (state.Count != 3 || !string.Equals(MaintenanceJson.Text(state, "GameRoot"), bundle.GameRoot, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Invalid recovery journal root.");
                 txn.BackupDir = MaintenanceJson.Text(state, "BackupDir");
                 var id = WindowsPath.Leaf(txn.BackupDir);
                 if (!Regex.IsMatch(id, @"\A[0-9a-f]{32}\z") || txn.BackupDir != txn.JournalRoot + "\\" + id) throw new InvalidDataException("Invalid recovery backup scope.");

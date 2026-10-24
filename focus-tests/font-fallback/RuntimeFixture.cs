@@ -82,6 +82,8 @@ internal static class FontFallbackState
         var flags = BindingFlags.Static | BindingFlags.NonPublic;
         ((IDictionary)typeof(ModFont).GetField("Labels", flags)!.GetValue(null)!).Clear();
         typeof(ModFont).GetField("_nextCheck", flags)!.SetValue(null, 0f);
+        ((IList)typeof(ModFont).GetField("Order", flags)!.GetValue(null)!).Clear();
+        typeof(ModFont).GetField("_cursor", flags)!.SetValue(null, 0);
         typeof(ModFont).GetField("_hasGothic", flags)!.SetValue(null, null);
         typeof(ModFont).GetField("_warned", flags)!.SetValue(null, false);
         Fonts.Clear(); Characters.Clear(); NativeHas = native; OsHas = os ?? (_ => true); OsAvailable = available;
@@ -135,5 +137,19 @@ internal static class FontFallbackCheck
         Check(FontFallbackState.Characters.Contains('·') && FontFallbackState.Selected(label) == "Native", "ready TMP asset resumes normal coverage checking");
         label.Values["isDisposed"] = true; UnityEngine.Time.unscaledTime += 1; ModFont.Tick();
         Check(((IDictionary)typeof(ModFont).GetField("Labels", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!).Count == 0, "disposed labels release tracked state");
+
+        // A pass cut by the frame budget resumes where it stopped instead of restarting or waiting for the next interval.
+        var flags = BindingFlags.Static | BindingFlags.NonPublic;
+        FontFallbackState.Reset(_ => true); var first = FontFallbackState.Label(title); var second = FontFallbackState.Label(title);
+        ModFont.Track(first); ModFont.Track(second);
+        var order = (List<IntPtr>)typeof(ModFont).GetField("Order", flags)!.GetValue(null)!;
+        order.Clear(); order.Add(first.Pointer); order.Add(second.Pointer);
+        typeof(ModFont).GetField("_cursor", flags)!.SetValue(null, 1);
+        typeof(ModFont).GetField("_nextCheck", flags)!.SetValue(null, float.MaxValue);
+        first.Values["isDisposed"] = true; second.Values["isDisposed"] = true; ModFont.Tick();
+        var labels = (IDictionary)typeof(ModFont).GetField("Labels", flags)!.GetValue(null)!;
+        Check(labels.Count == 1 && labels.Contains(first.Pointer), "an interrupted pass resumes at its cursor");
+        typeof(ModFont).GetField("_nextCheck", flags)!.SetValue(null, 0f); ModFont.Tick();
+        Check(labels.Count == 0, "the next pass starts over once the interval elapses");
     }
 }

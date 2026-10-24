@@ -15,6 +15,8 @@ internal static class ModFont
         internal Entry(RuntimeObject label, string font) { Label = label; Native = Applied = font; }
     }
     private static readonly Dictionary<IntPtr, Entry> Labels = new();
+    private static readonly List<IntPtr> Order = new();
+    private static int _cursor;
     private static float _nextCheck;
     private static bool? _hasGothic;
     private static bool _warned;
@@ -29,16 +31,26 @@ internal static class ModFont
 
     internal static void Tick()
     {
-        if (Time.unscaledTime < _nextCheck) return;
-        _nextCheck = Time.unscaledTime + 0.1f;
-        foreach (var pair in Labels.ToArray())
+        if (_cursor >= Order.Count)
         {
+            if (Time.unscaledTime < _nextCheck) return;
+            _nextCheck = Time.unscaledTime + 0.1f;
+            Order.Clear(); Order.AddRange(Labels.Keys); _cursor = 0;
+        }
+        // A pass over every tracked label in one frame stalled it for 20-36 ms (2026-10-24 performance log);
+        // resume the pass across frames under a 1 ms budget.
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        while (_cursor < Order.Count)
+        {
+            var key = Order[_cursor++];
+            if (!Labels.TryGetValue(key, out var entry)) continue;
             try
             {
-                if (pair.Value.Label.Get<bool>("isDisposed")) { Labels.Remove(pair.Key); continue; }
-                if (GameUi.Visible(pair.Value.Label)) Check(pair.Value);
+                if (entry.Label.Get<bool>("isDisposed")) { Labels.Remove(key); continue; }
+                if (GameUi.Visible(entry.Label)) Check(entry);
             }
-            catch { Labels.Remove(pair.Key); } // Scene disposal must not disable the UI driver.
+            catch { Labels.Remove(key); } // Scene disposal must not disable the UI driver.
+            if ((System.Diagnostics.Stopwatch.GetTimestamp() - started) / (double)System.Diagnostics.Stopwatch.Frequency >= 0.001) break;
         }
     }
 

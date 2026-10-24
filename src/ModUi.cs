@@ -19,9 +19,116 @@ internal static class ModUi
     // Native GSliders by setting, their gray "unavailable" switches, and the backing cards of top-level slider rows.
     private static readonly Dictionary<string, RuntimeObject> Sliders = new(), SliderBlocked = new();
     private static readonly List<(RuntimeObject[] Parts, string Action)> SliderBacks = new();
+    // Mod pills drawn behind child switches (ring, pill), following each switch's visibility, alpha, OFF gray and hover.
+    private static readonly List<(RuntimeObject Button, RuntimeObject Background, RuntimeObject[] Parts)> ChildPills = new();
+    private static readonly Dictionary<IntPtr, (bool Visible, float Alpha, Color Fill)> ChildPillStates = new();
+    private static readonly Color ChildOn = new(1f, 0.855f, 0.361f), ChildOff = new(0.827f, 0.816f, 0.776f), ChildRing = new(0.604f, 0.604f, 0.604f);
     private static IntPtr _barDragSlider;
     private static readonly List<(RuntimeObject[] Parts, string Parent)> Trays = new();
     private static (float Height, float Y, bool Visible)? _scrollMarker;
+    // Category dots on the scroll track; hovering the track shows every category's bubble beside it, and the bubbles stay
+    // while the pointer is anywhere across their span. A still press on a dot or bubble jumps there; a press that moves
+    // on the track drags the thumb as usual.
+    private static readonly List<(int Section, RuntimeObject Dot)> Ticks = new();
+    private static readonly List<(int Section, float Y)> TickPositions = new();
+    private static readonly List<CategoryBubble> Bubbles = new();
+    private static (float View, float Content, bool General, bool Visible)? _tickLayout;
+    private static int _tickCurrent = -1, _tickHot = -1, _pressTick = -1;
+    private static float _pressY, _flashAt = -1, _bubblesHideAt = -1, _bubblesShownAt;
+    private static bool _scrollPending, _pressMoved, _pressOnTrack, _bubblesShown;
+    private static RuntimeObject? _flashBand, _trackHit;
+    private static readonly Color TickDark = new(0.17f, 0.17f, 0.16f, 1f), TickCurrent = new(0.88f, 0.29f, 0.29f, 1f),
+        TickRing = new(1f, 0.985f, 0.95f, 1f), BandFill = new(0.45f, 0.33f, 0.18f, 0.16f), BandFlash = new(1f, 0.76f, 0.05f, 0.75f),
+        BubblePlain = new(1f, 0.985f, 0.95f, 1f), BubbleCurrent = new(1f, 0.906f, 0.627f, 1f), BubbleHot = new(1f, 0.76f, 0.05f, 1f);
+
+    // A cream bubble whose tail reads as part of it: the body is a rounded rect with a flat side, the tail square sits
+    // behind it centred on that side, and a borderless patch in the body colour opens the body's outline where they meet.
+    // Right bubbles point left at the track; left bubbles (crowded runs alternate) point right. Fill applies to all parts.
+    private sealed class CategoryBubble
+    {
+        private const float TailX = 8, Tail = 10, Radius = 7, Line = 3, Opening = 6, Slide = 10;
+        internal readonly int Section;
+        internal readonly RuntimeObject Root;
+        private readonly RuntimeObject _tail, _body, _patch, _text;
+        private Color _fill = new(-1, 0, 0, 0);
+        private float _alpha, _slide, _y;
+        private bool _left;
+        private (float Alpha, float Slide, bool Shown)? _drawn;
+        internal float Width { get; private set; }
+        internal float X { get; private set; }
+
+        internal CategoryBubble(RuntimeObject parent, int section)
+        {
+            Section = section;
+            Root = NativeUi.Component(parent, 120, MenuLayout.BubbleHeight);
+            // Opaque while shown: a bubble over the list takes the press, so neither a switch nor the list's own drag gets it.
+            Root.Set("opaque", true); Root.Set("touchable", false); Root.Set("visible", false);
+            _tail = Graph(Root, Tail, Tail, Line, -1);
+            _tail.Call("SetPivot", 0.5f, 0.5f, true);
+            _tail.Set("rotation", 45f);
+            _body = Graph(Root, 100, MenuLayout.BubbleHeight, Line, Radius);
+            _patch = Graph(Root, Line + 1, Opening, 0f, -1);
+            // A wide single line measures the whole title; a narrow label would wrap and report only its first glyph.
+            _text = NativeUi.Label(Root, "", 0, 0, 320, MenuLayout.BubbleHeight, 16, dark: true);
+            _text.Set("singleLine", true); _text.Set("verticalAlign", 1);
+        }
+
+        private static RuntimeObject Graph(RuntimeObject parent, float width, float height, float line, float radius)
+        {
+            var graph = RuntimeObject.New(RuntimeObject.FindClass("FairyGUI", "GGraph"));
+            graph.Set("touchable", false);
+            graph.Call("SetSize", width, height);
+            if (radius < 0) graph.Get("shape")!.Call("DrawRect", line, Color.black, BubblePlain);
+            else graph.Get("shape")!.Call("DrawRoundRect", line, Color.black, BubblePlain, radius, radius, radius, radius);
+            parent.Call("AddChild", graph);
+            return graph;
+        }
+
+        // Sets the title and side, then places the bubble's flat side 4 from the track (x is the track edge it faces).
+        internal void Place(string text, float edge, float centreY, bool left)
+        {
+            _text.Set("text", text);
+            Width = TailX + 24 + _text.Get<float>("textWidth");
+            var body = Width - TailX;
+            var joint = left ? body : TailX;
+            _body.Call("SetSize", body, MenuLayout.BubbleHeight);
+            _body.Call("SetXY", left ? 0f : TailX, 0f);
+            _tail.Call("SetXY", joint, MenuLayout.BubbleHeight / 2);
+            _patch.Call("SetXY", left ? joint - Line : joint - 1, (MenuLayout.BubbleHeight - Opening) / 2);
+            _text.Call("SetXY", left ? 12f : TailX + 12, 0f);
+            _text.Call("SetSize", body - 24, MenuLayout.BubbleHeight);
+            Root.Call("SetSize", Width, MenuLayout.BubbleHeight);
+            X = left ? edge - 4 - Width : edge + 4;
+            _y = centreY - MenuLayout.BubbleHeight / 2;
+            _left = left;
+            _drawn = null;
+        }
+
+        internal void Hide() { _alpha = _slide = 0; _drawn = null; Root.Set("visible", false); Root.Set("touchable", false); }
+
+        // Fades in while sliding out from the track after its row's stagger delay; fades out in place.
+        internal void Animate(bool shown, float delay, float dt)
+        {
+            if (!shown) { _alpha = Math.Max(0, _alpha - dt / 0.14f); if (_alpha <= 0) _slide = 0; }
+            else if (delay <= 0) { _alpha = Math.Min(1, _alpha + dt / 0.14f); _slide = Math.Min(1, _slide + dt / 0.18f); }
+            if (_drawn == (_alpha, _slide, shown)) return;
+            _drawn = (_alpha, _slide, shown);
+            Root.Set("visible", _alpha > 0);
+            Root.Set("touchable", shown && _alpha > 0);
+            if (_alpha <= 0) return;
+            Root.Set("alpha", _alpha);
+            var rest = (1 - _slide) * (1 - _slide) * (1 - _slide);
+            Root.Call("SetXY", X + (_left ? Slide : -Slide) * rest, _y);
+        }
+
+        internal void SetFill(Color fill)
+        {
+            if (_fill == fill) return;
+            _fill = fill;
+            foreach (var graph in new[] { _tail, _body, _patch }) graph.Set("color", fill);
+        }
+    }
+
     private static float _scrollPosition;
     private static string? _helpAction;
     private static string? _helpOption;
@@ -43,7 +150,7 @@ internal static class ModUi
     private static readonly Action[] PvpCleanup = {
         UpdateNotificationUi.Clear,
         GameUi.Stop, CardPreviewUi.Reset, BattleStatusUi.Clear, EncounterCounterUi.Clear, ShushuShieldUi.Clear,
-        CharacterGuideUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, FieldZoomUi.Clear, () => FieldBuffUi.Clear("pvp-safety"),
+        CharacterGuideUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, FieldZoomUi.Clear, () => FieldBuffUi.Clear("pvp-safety"), PlayerTabUi.Clear,
         CharacterNameUi.RestoreAll, InputAttention.Stop, PingFocusGuard.Reset, AutoThanksUi.Clear, BattleMenuUi.Clear, FieldDiceUi.Clear,
         () => Plugin.Diagnostics.EndCombat(),
         () => { ClosePanel(true); GameUi.Dispose(_modal); _modal = null; }
@@ -66,7 +173,10 @@ internal static class ModUi
     {
         if (_lastFrame == Time.frameCount) return;
         _lastFrame = Time.frameCount;
+        // Runs before every gate below, so a tripped settings breaker cannot leave saving switched off.
+        if (_sliderSave != null && !Input.GetMouseButton(0)) FlushSliderSave();
         if (Time.realtimeSinceStartup >= StartupGuard.HealthySeconds) StartupGuard.Healthy();
+        RuntimeObject.FlushLedger(due: true);
         try
         {
             Plugin.Updates.InstalledChannel(Plugin.Automatic.Snapshot.InstalledChannel);
@@ -172,7 +282,7 @@ internal static class ModUi
             BattleStatusUi.Tick(); Mark(14);
             EncounterCounterUi.Tick(); Mark(15);
             if (measure) fieldStart = System.Diagnostics.Stopwatch.GetTimestamp();
-            FieldBuffUi.Tick(); Mark(16);
+            FieldBuffUi.Tick(); PlayerTabUi.Tick(); Mark(16);
             if (measure) fieldEnd = System.Diagnostics.Stopwatch.GetTimestamp();
             if (measure) statusEnd = System.Diagnostics.Stopwatch.GetTimestamp();
             try { TickSettings(); }
@@ -203,7 +313,8 @@ internal static class ModUi
                     Math.Max(0, popupEnd - gameEnd) * milliseconds, Math.Max(0, statusEnd - popupEnd) * milliseconds,
                     GC.GetAllocatedBytesForCurrentThread() - allocated, Time.unscaledDeltaTime * 1000d,
                     fieldEnd > 0 ? (fieldEnd - fieldStart) * milliseconds : 0,
-                    FieldBuffUi.ActivePlateCount, FieldBuffUi.EffectCount, handMs, handBytes, (coreEnd - started) * milliseconds);
+                    FieldBuffUi.ActivePlateCount, FieldBuffUi.EffectCount, handMs, handBytes, (coreEnd - started) * milliseconds,
+                    FieldBuffUi.MonsterPlateCount);
             }
         }
     }
@@ -221,7 +332,7 @@ internal static class ModUi
         UpdateNotificationUi.Clear,
         GameUi.Stop, CardPreviewUi.Reset, BattleStatusUi.Clear, EncounterCounterUi.Clear, ShushuShieldUi.Clear,
         CharacterGuideUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, FieldZoomUi.Clear,
-        () => FieldBuffUi.Clear("compatibility"), CharacterNameUi.RestoreAll, BattleMenuUi.Clear, FieldDiceUi.Clear,
+        () => FieldBuffUi.Clear("compatibility"), PlayerTabUi.Clear, CharacterNameUi.RestoreAll, BattleMenuUi.Clear, FieldDiceUi.Clear,
         () => { ClosePanel(true); GameUi.Dispose(_modal); _modal = null; });
 
     private static void FailSettings(Exception error) => Compatibility.Block("SettingsUi", error,
@@ -283,7 +394,10 @@ internal static class ModUi
             try { TickSlider(action); }
             catch (Exception ex) { Compatibility.Block(action, ex, () => DisposeSlider(action)); }
         }
+        if (_slidersAdded) { _slidersAdded = false; Refresh(); }
         if (_closingAt < 0 && IsOpen && !UpdateNotificationUi.ConsumedInput) HandleInput();
+        if ((_scrollDragging || _scrollPending) && !Input.GetMouseButton(0)) EndScrollPress(false);
+        PaintChildPills();
         UpdateScrollMarker();
         AnimateHelp();
         var saved = Time.unscaledTime - _changedAt < 1.6f ? ModText.Text("✓ 저장됨") : $"BetterAstralParty {Plugin.Version}";
@@ -297,6 +411,27 @@ internal static class ModUi
         "FoldedHandOpacity" => Plugin.FoldedHandOpacity.Value, "Scale" => Plugin.UiScale.Value,
         "ZoomSensitivity" => Plugin.ZoomSensitivity.Value, "IndicatorHideDistance" => Plugin.IndicatorHideDistance.Value, _ => Plugin.Opacity.Value
     });
+
+    // A slider drag would rewrite the whole settings file at every 1 % step; the file is saved once when the drag ends.
+    private static bool? _sliderSave;
+    private static void DeferSliderSave()
+    {
+        if (_sliderSave != null) return;
+        var config = Plugin.UiScale.ConfigFile;
+        _sliderSave = config.SaveOnConfigSet;
+        config.SaveOnConfigSet = false;
+    }
+
+    private static void FlushSliderSave()
+    {
+        var config = Plugin.UiScale.ConfigFile;
+        config.SaveOnConfigSet = _sliderSave ?? true;
+        _sliderSave = null;
+        try { config.Save(); }
+        catch (Exception ex) { Plugin.Diagnostics.Error("SettingsSliderSave", ex); }
+        // The drag's own changes may have settled before this save reached the file; back up the saved value too.
+        SettingsBackup.MarkChanged(Environment.TickCount64);
+    }
 
     private static void SetSliderValue(string action, int percent)
     {
@@ -313,6 +448,11 @@ internal static class ModUi
         }
     }
 
+    private static IntPtr _sliderPackage;
+    private static bool _slidersAdded;
+    private static IntPtr SettingPackage() =>
+        RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "UIPackage"), "GetByName", "Setting")?.Pointer ?? IntPtr.Zero;
+
     private static void DisposeSlider(string action)
     {
         if (!Sliders.Remove(action, out var slider)) return;
@@ -326,23 +466,34 @@ internal static class ModUi
         var (min, max) = MenuLayout.SliderRange(action);
         if (!Sliders.TryGetValue(action, out var slider) || slider.Get<bool>("isDisposed"))
         {
+            var started = System.Diagnostics.Stopwatch.GetTimestamp();
             if (!NativeUi.PackageReady("Setting")) return;
             slider = NativeUi.Create("Setting", "Setting_Com_Slider")!;
-            slider.Call("SetScale", MenuLayout.SliderScale(action), MenuLayout.SliderScale(action));
+            slider.Call("SetScale", MenuLayout.SliderScale, MenuLayout.SliderScale);
+            slider.Call("SetSize", MenuLayout.SliderBarWidth(action) / MenuLayout.SliderScale, slider.Get<float>("height"));
             slider.Set("max", (double)(max - min));
             slider.SetField("changeOnClick", true); // Public field on GSlider, not a property.
             _settingsContent!.Call("AddChild", slider);
             slider.Call("SetXY", MenuLayout.SliderBarX(action), MenuLayout.SettingY(action) + MenuLayout.SliderOffsetY(action));
             // GSlider redraws only when value changes; a stored value equal to the prefab's would keep the prefab bar.
+            // Then load the saved setting at once: the poll below reads the slider back into the setting, so a slider
+            // still at -1 would save the minimum (1.5.3-dev.15 to dev.17 reset every slider that way).
             slider.Set("value", -1d);
+            slider.Set("value", (double)(SliderValue(action) - min));
             Sliders[action] = slider;
             Controls[slider.Pointer] = (slider, action);
-            Refresh();
+            _sliderPackage = SettingPackage();
+            _slidersAdded = true;
+            _sliderMs += (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000d / System.Diagnostics.Stopwatch.Frequency;
+            if (++_sliderCount == MenuLayout.Sliders.Length)
+                Plugin.Diagnostics.State("settingsSliders.ms", FormattableString.Invariant($"total={_sliderMs:F1}; count={_sliderCount}"));
+            return; // Read user input back only from the next frame, after Refresh has applied visibility and state.
         }
         if (!slider.Get<bool>("visible")) { if (_barDragSlider == slider.Pointer) _barDragSlider = IntPtr.Zero; return; }
         FollowSliderBar(slider);
         var value = min + (int)Math.Round(Math.Clamp(slider.Get<double>("value"), 0, max - min)); // 1% steps
         if (value == SliderValue(action)) return;
+        DeferSliderSave();
         SetSliderValue(action, value);
         Labels[action + "Value"].Set("text", MenuLayout.Percent(value));
         _changedAt = Time.unscaledTime;
@@ -377,9 +528,9 @@ internal static class ModUi
         var scale = width / button.Get<float>("width");
         button.Call("SetScale", scale, scale);
         NativeUi.Position(button, x, y, scale);
-        NativeUi.StyleTitle(button, title);
+        Title(button, title);
         // Scale the glyph size with the control, not down to an unreadable tiny +/-.
-        if (width <= 80) NativeUi.StyleTitle(button, title, (int)MathF.Round(52 * 80 / width));
+        if (width <= 80) Title(button, title, (int)MathF.Round(52 * 80 / width));
         button.SetField("changeStateOnClick", false);
         _sheet!.Call("AddChild", button);
         Controls[button.Pointer] = (button, action);
@@ -389,7 +540,7 @@ internal static class ModUi
     private static void Create()
     {
         if (_modal != null && !_modal.Get<bool>("isDisposed")) return;
-        Controls.Clear(); Labels.Clear(); ToggleBackgrounds.Clear(); SectionHeaders.Clear(); Trays.Clear();
+        Controls.Clear(); Labels.Clear(); ToggleBackgrounds.Clear(); SectionHeaders.Clear(); Trays.Clear(); ChildPills.Clear(); ChildPillStates.Clear(); Titles.Clear();
         _savedText = ""; _layout = null;
         TraceSettingsOpen(DiagnosticPhase.SettingsModal);
         _modal = NativeUi.Component(GameUi.Root!, 1920, 1080);
@@ -404,6 +555,7 @@ internal static class ModUi
             ?? throw new InvalidOperationException("원본 설정 프레임 준비 대기");
         _sheet.Call("AddChild", frame);
         frame.Set("touchable", false);
+        GrowFrame(frame, MenuLayout.Height);
         var heading = frame.Call("GetChild", "title")!;
         heading.Set("text", ModText.Text("모드 설정"));
         GameUi.StyleText(heading, 42);
@@ -411,10 +563,10 @@ internal static class ModUi
             frame.Call("GetChild", name)?.Set("visible", false);
 
         TraceSettingsOpen(DiagnosticPhase.SettingsHelp);
-        var helpArea = NativeUi.Component(_sheet, 360, 200);
-        helpArea.Call("SetXY", 45f, 125f);
+        var helpArea = NativeUi.Component(_sheet, 360, MenuLayout.HelpHeight);
+        helpArea.Call("SetXY", 45f, MenuLayout.HelpY);
         helpArea.Set("touchable", false);
-        _ = new NativeUi.Surface(helpArea, 360, 200, fixedOpacity: true);
+        _ = new NativeUi.Surface(helpArea, 360, MenuLayout.HelpHeight, fixedOpacity: true);
         Labels["HelpTitle"] = NativeUi.Label(helpArea, "", 18, 14, 324, 40, 27);
         Labels["HelpTitle"].Set("singleLine", true);
         Labels["HelpTitle"].Set("autoSize", 3);
@@ -433,11 +585,11 @@ internal static class ModUi
         Labels["HelpTag"].Set("autoSize", 3);
         GameUi.StyleText(Labels["HelpTag"], 17, align: 0);
         Labels["HelpTag"].Set("verticalAlign", 1);
-        _helpViewport = NativeUi.Component(helpArea, 324, 104);
+        _helpViewport = NativeUi.Component(helpArea, 324, MenuLayout.HelpHeight - 96);
         _helpViewport.Call("SetXY", 18f, 80f);
         _helpViewport.Set("touchable", false);
         _helpViewport.Call("SetupOverflow", 1); // Native Hidden: clip only the scrolling body.
-        Labels["HelpBody"] = NativeUi.Label(_helpViewport, "", 0, 0, 324, 104, 22);
+        Labels["HelpBody"] = NativeUi.Label(_helpViewport, "", 0, 0, 324, MenuLayout.HelpHeight - 96, 22);
         Labels["HelpBody"].Set("singleLine", false);
         Labels["HelpBody"].Set("UBBEnabled", false); // Verified native property; mod-owned GTextField, never rich text.
         Labels["HelpBody"].Set("autoSize", 2); // Fixed width, wrapped auto-height.
@@ -445,8 +597,8 @@ internal static class ModUi
         _helpAction = null;
         SetHelp("");
         TraceSettingsOpen(DiagnosticPhase.SettingsTabs);
-        var features = Button("Features", "Button_ReturnRounded", ModText.Text("모드 기능"), 55, 330, 340);
-        var generalY = MenuLayout.NextTabY(330, features.Get<float>("height") * features.Get<float>("scaleY"));
+        var features = Button("Features", "Button_ReturnRounded", ModText.Text("모드 기능"), 55, MenuLayout.TabY, 340);
+        var generalY = MenuLayout.NextTabY(MenuLayout.TabY, features.Get<float>("height") * features.Get<float>("scaleY"));
         Button("General", "Button_ReturnRounded", ModText.Text("일반 설정"), 55, generalY, 340);
         // Reuse a private native scroll-list clone: wheel, clipping and hit testing
         // stay with FairyGUI. One content component preserves our existing two-tab layout.
@@ -479,15 +631,34 @@ internal static class ModUi
         _settingsScroll.Set("scrollStep", 48f);
         _settingsContent = NativeUi.Component(_settingsView, 500, MenuLayout.SettingsHeight);
         // Position-only indicator; native wheel/pan input remains on the settings list.
-        _scrollTrack = new NativeUi.Surface(_sheet, 12, MenuLayout.SettingsHeight,
+        _scrollTrack = new NativeUi.Surface(_sheet, MenuLayout.TrackWidth, MenuLayout.SettingsHeight,
             fixedOpacity: true, fill: new Color(0.75f, 0.75f, 0.75f)).Graph;
-        _scrollThumb = new NativeUi.Surface(_sheet, 12, 24,
+        _scrollThumb = new NativeUi.Surface(_sheet, MenuLayout.TrackWidth, 24,
             fixedOpacity: true, fill: new Color(1f, 0.8f, 0f)).Graph;
-        _scrollTrack.Call("SetXY", MenuLayout.SettingsX + 505, MenuLayout.SettingsY);
+        _scrollTrack.Call("SetXY", MenuLayout.SettingsX + MenuLayout.TrackX, MenuLayout.SettingsY);
         // The marker overlaps the list's right edge: it takes the press, so the list never starts its own drag.
         _scrollTrack.Set("touchable", true);
         _scrollThumb.Set("touchable", true);
         _scrollMarker = null;
+        Ticks.Clear(); TickPositions.Clear(); Bubbles.Clear(); _tickLayout = null; _tickCurrent = _tickHot = -1; _flashBand = null; _bubblesShown = false;
+        for (var i = 0; i < MenuLayout.Sections.Length; i++)
+        {
+            // Dark dot with a cream ring: readable on the gray track and on the yellow thumb alike.
+            var dot = RuntimeObject.New(RuntimeObject.FindClass("FairyGUI", "GGraph"));
+            dot.Set("touchable", false); dot.Set("visible", false);
+            dot.Call("SetSize", 12f, 12f);
+            dot.Call("SetPivot", 0.5f, 0.5f, true);
+            // A fully rounded rect: this game's Shape has no 3-argument DrawEllipse.
+            dot.Get("shape")!.Call("DrawRoundRect", 2f, TickRing, Color.white, 6f, 6f, 6f, 6f);
+            dot.Set("color", TickDark);
+            _sheet!.Call("AddChild", dot);
+            Ticks.Add((i, dot));
+        }
+        for (var i = 0; i < MenuLayout.Sections.Length; i++) Bubbles.Add(new CategoryBubble(_sheet!, i));
+        // Transparent press band over the track and its margins, so the native list never starts its own drag there.
+        _trackHit = NativeUi.Component(_sheet!, MenuLayout.TrackWidth + 2 * MenuLayout.TrackPad, MenuLayout.SettingsHeight);
+        _trackHit.Set("opaque", true); _trackHit.Set("touchable", true);
+        _trackHit.Call("SetXY", MenuLayout.SettingsX + MenuLayout.TrackX - MenuLayout.TrackPad, MenuLayout.SettingsY);
         TraceSettingsOpen(DiagnosticPhase.SettingsSteppers);
         Sliders.Clear(); SliderBlocked.Clear(); SliderBacks.Clear(); _barDragSlider = IntPtr.Zero;
         foreach (var action in MenuLayout.Sliders)
@@ -543,9 +714,51 @@ internal static class ModUi
         AddToggle("PingFocus", 440, MenuLayout.ToggleY(18));
         AddToggle("FinalDamage", 440, MenuLayout.ToggleY(19));
         AddToggle("DiceLock", 440, MenuLayout.ToggleY(20));
+        AddToggle("EncounterAdvice", 440, MenuLayout.ToggleY(21));
+        AddToggle("DefenseAdvice", 440, MenuLayout.ToggleY(22));
+        AddToggle("CardAdvice", 440, MenuLayout.ToggleY(23));
+        AddToggle("ShootingStarShow", 440, MenuLayout.ToggleY(24));
+        AddToggle("KoCardPreview", 440, MenuLayout.ToggleY(25));
+        AddToggle("KoSpectator", 440, MenuLayout.ToggleY(26));
+        AddToggle("StatusHand", 440, MenuLayout.ToggleY(27));
+        AddToggle("StatusEffects", 440, MenuLayout.ToggleY(28));
+        AddToggle("CounterIcons", 440, MenuLayout.ToggleY(29));
+        AddToggle("ShushuMaster", 440, MenuLayout.ToggleY(30));
+        AddToggle("PlayerTab", 440, MenuLayout.ToggleY(31));
+        AddToggle("PlayerTabHand", 440, MenuLayout.ToggleY(32));
+        AddToggle("PlayerTabRole", 440, MenuLayout.ToggleY(33));
         TraceSettingsOpen(DiagnosticPhase.SettingsReparent);
         foreach (var (button, action) in Controls.Values)
             if (!MenuLayout.FixedControl(action)) MoveIntoSettings(button, MenuLayout.SettingY(action) + MenuLayout.ChildOffsetY(action));
+        // Child switch pills: a gray ring and a black-outlined pill in the switch's place, behind it.
+        // Made before slider backs and trays, which go further back, so a capsule never covers its switch's pill.
+        foreach (var (button, action) in Controls.Values)
+        {
+            if (MenuLayout.Parent(action) == null || MenuLayout.IsSlider(action) || MenuLayout.FixedControl(action)) continue;
+            float x = 10 + MenuLayout.Indent(action), y = MenuLayout.SettingY(action) + MenuLayout.ChildOffsetY(action);
+            float w = MenuLayout.ToggleWidth(action), h = MenuLayout.ToggleHeightFor(action), r = h / 2;
+            var parts = new[]
+            {
+                Shape(_settingsContent!, x - 3, y - 3, w + 6, h + 6, ChildRing, r + 3, r + 3, r + 3, r + 3),
+                Shape(_settingsContent!, x, y, w, h, ChildOn, r, r, r, r, 3.5f, Color.black)
+            };
+            foreach (var part in parts.Reverse()) _settingsContent!.Call("SetChildIndex", part, 0);
+            ChildPills.Add((button, ToggleBackgrounds[action], parts));
+        }
+        foreach (var section in MenuLayout.Sections)
+            for (var i = 0; i < section.Actions.Length; i++)
+            {
+                var action = section.Actions[i];
+                if (MenuLayout.IsSlider(action) || MenuLayout.SubParent(action) is not { } sub
+                    || i > 0 && MenuLayout.SubParent(section.Actions[i - 1]) == sub) continue;
+                var last = action;
+                for (var j = i + 1; j < section.Actions.Length && MenuLayout.SubParent(section.Actions[j]) == sub; j++) last = section.Actions[j];
+                var subTop = MenuLayout.SettingY(sub);
+                var capsule = Shape(_settingsContent!, 56, subTop - 2, 388, MenuLayout.SettingY(last) - subTop + 46,
+                    new Color(1f, 0.973f, 0.894f), 18f, 18f, 18f, 18f, 2f, new Color(0.886f, 0.827f, 0.682f));
+                _settingsContent!.Call("SetChildIndex", capsule, 0);
+                Trays.Add((new[] { capsule }, MenuLayout.Parent(sub)!)); // Shown and dimmed with the tray it sits in.
+            }
         foreach (var action in MenuLayout.Sliders)
         {
             MoveIntoSettings(Labels[action], MenuLayout.SettingY(action) + MenuLayout.SliderLabelOffsetY(action));
@@ -562,8 +775,8 @@ internal static class ModUi
                 var subTop = MenuLayout.SettingY(sub);
                 parts = new[]
                 {
-                    Shape(_settingsContent!, pill.X, top - 4, pill.Width, 44, new Color(1f, 0.969f, 0.839f), 22f, 22f, 22f, 22f, 2f, pillLine),
-                    Shape(_settingsContent!, 18, subTop - 5, 464, top - subTop + 51, new Color(1f, 0.973f, 0.894f), 18f, 18f, 18f, 18f, 2f, new Color(0.886f, 0.827f, 0.682f))
+                    Shape(_settingsContent!, pill.X, top - 2, pill.Width, 40, new Color(1f, 0.969f, 0.839f), 20f, 20f, 20f, 20f, 2f, pillLine),
+                    Shape(_settingsContent!, 56, subTop - 2, 388, top - subTop + 46, new Color(1f, 0.973f, 0.894f), 18f, 18f, 18f, 18f, 2f, new Color(0.886f, 0.827f, 0.682f))
                 };
             }
             else
@@ -571,7 +784,7 @@ internal static class ModUi
                 var child = MenuLayout.Parent(action) != null;
                 parts = new[]
                 {
-                    child ? Shape(_settingsContent!, pill.X, top + MenuLayout.ChildOffsetY(action), pill.Width, MenuLayout.ToggleHeightFor(action), new Color(1f, 0.941f, 0.702f), 27f, 27f, 27f, 27f, 3f, pillLine)
+                    child ? Shape(_settingsContent!, pill.X, top + MenuLayout.ChildOffsetY(action), pill.Width, MenuLayout.ToggleHeightFor(action), new Color(1f, 0.941f, 0.702f), 23f, 23f, 23f, 23f, 2.5f, pillLine)
                         : Shape(_settingsContent!, pill.X, top, pill.Width, MenuLayout.ToggleHeight, new Color(1f, 0.941f, 0.702f), 30f, 30f, 30f, 30f, 3f, pillLine)
                 };
             }
@@ -620,6 +833,38 @@ internal static class ModUi
         return graph;
     }
 
+    private static void PaintChildPills()
+    {
+        foreach (var (button, background, parts) in ChildPills)
+        {
+            var fill = background.Get<bool>("grayed") ? ChildOff : ChildOn;
+            if (button.Pointer == _hovered && !Locked(Controls[button.Pointer].Action)) fill = Color.Lerp(fill, Color.white, 0.3f);
+            var state = (button.Get<bool>("visible"), button.Get<float>("alpha"), fill);
+            if (ChildPillStates.TryGetValue(button.Pointer, out var last) && last == state) continue;
+            ChildPillStates[button.Pointer] = state;
+            foreach (var part in parts) { part.Set("visible", state.Item1); part.Set("alpha", state.Item2); }
+            parts[1].Set("color", fill);
+        }
+    }
+
+    // Grows the native popup frame: SetSize lets its relations stretch the background; a full-height child the
+    // relations left at the old bottom is stretched by hand.
+    private static void GrowFrame(RuntimeObject frame, float height)
+    {
+        var native = frame.Get<float>("height");
+        if (native >= height) return;
+        var tall = new List<RuntimeObject>();
+        for (var i = 0; i < frame.Get<int>("numChildren"); i++)
+        {
+            var item = frame.Call("GetChildAt", i)!;
+            if (item.Get<float>("height") > native / 2 && item.Get<float>("y") + item.Get<float>("height") >= native - 2) tall.Add(item);
+        }
+        frame.Call("SetSize", frame.Get<float>("width"), height);
+        foreach (var item in tall)
+            if (item.Get<float>("y") + item.Get<float>("height") < height - 2)
+                item.Call("SetSize", item.Get<float>("width"), item.Get<float>("height") + height - native);
+    }
+
     private static void MoveIntoSettings(RuntimeObject item, float y)
     {
         var x = item.Get<float>("x") - MenuLayout.SettingsX;
@@ -664,20 +909,141 @@ internal static class ModUi
         var content = _settingsScroll.Get<float>("contentHeight");
         var (height, y) = MenuLayout.ScrollMarker(view, content, _settingsScroll.Get<float>("scrollingPosY"));
         var visible = content > view;
+        UpdateTicks(view, content, visible, _settingsScroll.Get<float>("scrollingPosY"));
         if (_scrollMarker == (height, y, visible)) return;
         _scrollMarker = (height, y, visible);
         UpdateDropdownArrows();
         _scrollTrack!.Set("visible", visible);
         _scrollThumb!.Set("visible", visible);
-        _scrollThumb.Call("SetSize", 12f, height);
-        _scrollThumb.Call("SetXY", MenuLayout.SettingsX + 505, MenuLayout.SettingsY + y);
+        _scrollThumb.Call("SetSize", MenuLayout.TrackWidth, height);
+        _scrollThumb.Call("SetXY", MenuLayout.SettingsX + MenuLayout.TrackX, MenuLayout.SettingsY + y);
+        _trackHit?.Set("visible", visible);
+    }
+
+    private static void UpdateTicks(float view, float content, bool visible, float position)
+    {
+        if (_tickLayout != (view, content, _general, visible))
+        {
+            _tickLayout = (view, content, _general, visible);
+            TickPositions.Clear();
+            foreach (var (_, dot) in Ticks) dot.Set("visible", false);
+            var shown = Ticks.Where(tick => MenuLayout.Sections[tick.Section].General == _general).ToList();
+            var ys = MenuLayout.TickYs(shown.Select(tick => MenuLayout.JumpTarget(tick.Section, content, view)).ToArray(), content - view, view);
+            var centre = MenuLayout.SettingsX + MenuLayout.TrackX + MenuLayout.TrackWidth / 2;
+            for (var i = 0; i < shown.Count; i++)
+            {
+                var y = MenuLayout.SettingsY + ys[i];
+                shown[i].Dot.Call("SetXY", centre, y);
+                shown[i].Dot.Set("visible", visible);
+                TickPositions.Add((shown[i].Section, y));
+            }
+            LayoutBubbles();
+            _tickCurrent = _tickHot = -2;
+        }
+        var current = CurrentSection(position, content, view);
+        if (current != _tickCurrent) { _tickCurrent = current; PaintTicks(); }
+        if (_bubblesHideAt >= 0 && Time.unscaledTime >= _bubblesHideAt) ShowBubbles(false);
+        for (var i = 0; i < TickPositions.Count; i++)
+            Bubbles[TickPositions[i].Section].Animate(_bubblesShown, _bubblesShownAt + i * 0.018f - Time.unscaledTime, Time.unscaledDeltaTime);
+        if (_flashBand != null)
+        {
+            // A jumped-to band glows briefly, then returns to its pale fill.
+            var t = Math.Clamp((Time.unscaledTime - _flashAt) / 0.9f, 0f, 1f);
+            _flashBand.Set("color", Color.Lerp(BandFlash, BandFill, t));
+            if (t >= 1) _flashBand = null;
+        }
+    }
+
+    // Each bubble sits at its own dot, right of the track; crowded runs alternate to the left (MenuLayout.BubbleSides).
+    private static void LayoutBubbles()
+    {
+        var left = MenuLayout.BubbleSides(TickPositions.Select(tick => tick.Y).ToArray());
+        var track = MenuLayout.SettingsX + MenuLayout.TrackX;
+        foreach (var bubble in Bubbles) bubble.Hide();
+        for (var i = 0; i < TickPositions.Count; i++)
+        {
+            var bubble = Bubbles[TickPositions[i].Section];
+            bubble.Place(ModText.Text(MenuLayout.Sections[bubble.Section].Title), left[i] ? track : track + MenuLayout.TrackWidth, TickPositions[i].Y, left[i]);
+        }
+    }
+
+    // Entering needs the track; once shown, the bubbles stay while the pointer is anywhere from the widest left bubble
+    // to the widest right bubble, a bubble height above and below the track.
+    private static bool InBubbleSpan(Vector2 local, float view)
+    {
+        float min = MenuLayout.SettingsX + MenuLayout.TrackX - MenuLayout.TrackPad, max = min + MenuLayout.TrackWidth + 2 * MenuLayout.TrackPad;
+        foreach (var (section, _) in TickPositions) { min = Math.Min(min, Bubbles[section].X); max = Math.Max(max, Bubbles[section].X + Bubbles[section].Width); }
+        return local.x >= min && local.x <= max
+            && local.y >= MenuLayout.SettingsY - MenuLayout.BubbleHeight && local.y <= MenuLayout.SettingsY + view + MenuLayout.BubbleHeight;
+    }
+
+    private static void ShowBubbles(bool show)
+    {
+        _bubblesHideAt = -1;
+        if (show == _bubblesShown) return;
+        _bubblesShown = show;
+        if (show) _bubblesShownAt = Time.unscaledTime;
+        if (!show && _helpAction == "CategoryJump") SetHelp("");
+        if (!show) { _tickHot = -1; PaintTicks(); }
+    }
+
+    private static void PaintTicks()
+    {
+        foreach (var (section, dot) in Ticks)
+        {
+            dot.Set("color", section == _tickCurrent ? TickCurrent : TickDark);
+            var scale = section == _tickHot ? 1.4f : 1f;
+            dot.Call("SetScale", scale, scale);
+            Bubbles[section].SetFill(section == _tickHot ? BubbleHot : section == _tickCurrent ? BubbleCurrent : BubblePlain);
+        }
+    }
+
+    private static int CurrentSection(float position, float content, float view)
+    {
+        var current = -1;
+        foreach (var (section, _) in TickPositions)
+            if (MenuLayout.JumpTarget(section, content, view) <= position + 1) current = section;
+        return current < 0 && TickPositions.Count > 0 ? TickPositions[0].Section : current;
+    }
+
+    private static int TickAt(float y)
+    {
+        int best = -1; var distance = MenuLayout.TickHit;
+        foreach (var (section, tickY) in TickPositions)
+            if (Math.Abs(tickY - y) < distance) { distance = Math.Abs(tickY - y); best = section; }
+        return best;
+    }
+
+    private static int BubbleAt(Vector2 point)
+    {
+        if (!_bubblesShown) return -1;
+        foreach (var (section, _) in TickPositions)
+            if (NativeUi.Contains(Bubbles[section].Root, point)) return section;
+        return -1;
+    }
+
+    private static void JumpTo(int section)
+    {
+        var view = _settingsScroll!.Get<float>("viewHeight");
+        _settingsScroll.Call("SetPosY", MenuLayout.JumpTarget(section, _settingsScroll.Get<float>("contentHeight"), view), true);
+        _flashBand = SectionHeaders[section].Band; _flashAt = Time.unscaledTime;
+    }
+
+    // Ends a track press or drag at once; a still release on a dot or bubble jumps there.
+    private static void EndScrollPress(bool jump)
+    {
+        if (jump && !_pressMoved && _pressTick >= 0) JumpTo(_pressTick);
+        _scrollDragging = _scrollPending = false; _pressTick = -1;
     }
 
     private static void AddToggle(string action, float x, float y)
     {
         TraceSettingsOpen(DiagnosticPhase.SettingsControls, action);
-        var width = MenuLayout.ToggleWidth(action);
-        var height = MenuLayout.ToggleHeightFor(action);
+        // A child switch is the native switch drawn at ChildScale: its rendered size is ToggleWidth x ToggleHeightFor.
+        var child = MenuLayout.Parent(action) != null;
+        var scale = child ? MenuLayout.ChildScale : 1f;
+        var width = MenuLayout.ToggleWidth(action) / scale;
+        var height = MenuLayout.ToggleHeightFor(action) / scale;
         x += MenuLayout.Indent(action);
         var toggle = Button(action, "Button_Switch_1", "", x, y, width);
         // Common-mode buttons never remain in the selected/down scaling state.
@@ -686,7 +1052,7 @@ internal static class ModUi
         toggle.SetField("_downEffect", 1); // Native press tint, no size change.
         toggle.SetField("_downEffectValue", 0.88f);
         toggle.Call("SetPivot", 0f, 0f, true); // Tint-only controls retain top-left fixed-size layout.
-        toggle.Call("SetScale", 1f, 1f);
+        toggle.Call("SetScale", scale, scale);
         toggle.Call("SetSize", width, height);
         toggle.Call("SetXY", x, y);
         var background = toggle.Call("GetChild", "n3")
@@ -694,6 +1060,7 @@ internal static class ModUi
         background.Call("SetSize", width, height);
         background.Set("touchable", false);
         ToggleBackgrounds[action] = background;
+        if (child) background.Set("visible", false); // The mod pill behind the switch carries its look (ChildPills).
         var title = toggle.Call("GetChild", "title")!;
         title.Set("autoSize", 3); // Native Shrink: fit translations without expanding the button.
         var dropdown = MenuLayout.Options(action).Length > 2;
@@ -709,9 +1076,30 @@ internal static class ModUi
         catch (Exception ex) { FailSettings(ex); }
     }
 
+    // Open cost per phase (ms), written as one settingsOpen.ms line while diagnostics are ON, to find what makes the
+    // first open slow. Each phase's time runs until the next phase mark.
+    private static readonly System.Diagnostics.Stopwatch OpenWatch = new();
+    private static readonly Dictionary<DiagnosticPhase, double> OpenCosts = new();
+    private static DiagnosticPhase _openPhase;
+    private static double _sliderMs;
+    private static int _sliderCount;
+
+    private static void MarkOpenPhase(DiagnosticPhase stage)
+    {
+        if (!OpenWatch.IsRunning) return;
+        OpenCosts[_openPhase] = OpenCosts.GetValueOrDefault(_openPhase) + OpenWatch.Elapsed.TotalMilliseconds;
+        OpenWatch.Restart();
+        _openPhase = stage;
+        if (stage != DiagnosticPhase.SettingsReturn) return;
+        OpenWatch.Stop();
+        Plugin.Diagnostics.State("settingsOpen.ms", FormattableString.Invariant($"total={OpenCosts.Values.Sum():F1}; ")
+            + string.Join("; ", OpenCosts.OrderByDescending(cost => cost.Value).Select(cost => FormattableString.Invariant($"{cost.Key}={cost.Value:F1}"))));
+    }
+
     // Fixed mod-owned phases only; record BEFORE native work even when detailed diagnostics are OFF.
     private static void TraceSettingsOpen(DiagnosticPhase stage, string detail = "")
     {
+        MarkOpenPhase(stage);
         DiagnosticHub.Stage(DiagnosticFeature.Settings, stage, DiagnosticOutcome.Observed);
         DiagnosticHub.FlushSoon();
         try { Plugin.Logger.LogInfo("[Mod settings] open stage=" + stage + (detail.Length == 0 ? "" : "; item=" + detail)); }
@@ -725,14 +1113,16 @@ internal static class ModUi
         UpdateNotificationUi.CloseForSettings();
         TraceSettingsOpen(DiagnosticPhase.SettingsOpenState);
         if (IsOpen) { ClosePanel(); return; }
+        OpenCosts.Clear(); _openPhase = DiagnosticPhase.UiAction; OpenWatch.Restart(); _sliderMs = 0; _sliderCount = 0;
         DiagnosticHub.UiAction(DiagnosticUiAction.Open, DiagnosticOutcome.Begin, default);
         DiagnosticHub.FlushSoon();
         TraceSettingsOpen(DiagnosticPhase.UiAction);
         var updateNotice = Plugin.Updates.NotificationVersion != null;
         if (updateNotice && GameUi.HomeAvailable) _general = true;
         Create();
-        // The game may unload the Setting package between scenes; rebuild the slider from a fresh load each open.
-        foreach (var action in MenuLayout.Sliders) DisposeSlider(action);
+        // The game may unload the Setting package between scenes; rebuild the sliders only when that package is gone or
+        // was reloaded since they were made, not on every open.
+        if (SettingPackage() != _sliderPackage) foreach (var action in MenuLayout.Sliders) DisposeSlider(action);
         _closingAt = -1;
         _openedAt = Time.unscaledTime;
         TraceSettingsOpen(DiagnosticPhase.SettingsShow);
@@ -783,6 +1173,13 @@ internal static class ModUi
             Plugin.Updates.AcknowledgeNotification();
         }
         catch (Exception ex) { FailSettings(ex); }
+    }
+
+    // A feature cleanup run from a settings action fails into that feature's breaker, not the settings panel's.
+    private static void Isolated(string feature, Action cleanup)
+    {
+        try { cleanup(); }
+        catch (Exception ex) { Compatibility.Block(feature, ex); }
     }
 
     private static void ClosePanel(bool immediately = false)
@@ -841,7 +1238,7 @@ internal static class ModUi
         if (Input.GetMouseButtonDown(0)) { _pressed = current; TraceInput("down", current); }
         if (!Input.GetMouseButtonUp(0)) return;
         TraceInput("up", current);
-        if (current != IntPtr.Zero && current == _pressed && !hit!.Get<bool>("grayed")) Apply(Controls[current].Action);
+        if (current != IntPtr.Zero && current == _pressed && !hit!.Get<bool>("grayed") && !Locked(Controls[current].Action)) Apply(Controls[current].Action);
         _pressed = IntPtr.Zero;
     }
 
@@ -851,19 +1248,42 @@ internal static class ModUi
     // The scroll marker is mod-drawn art; while it is held, move the native scroll pane to match.
     private static bool DragScrollMarker(Vector2 point)
     {
-        if (!_scrollTrack!.Get<bool>("visible")) { _scrollDragging = false; return false; }
+        if (!_scrollTrack!.Get<bool>("visible")) { EndScrollPress(false); ShowBubbles(false); return false; }
         var local = _sheet!.Call("GlobalToLocal", point)!.Value<Vector2>();
         var view = _settingsScroll!.Get<float>("viewHeight");
         var thumbY = _scrollThumb!.Get<float>("y");
         var thumbHeight = _scrollThumb.Get<float>("height");
-        if (Input.GetMouseButtonDown(0) && MenuLayout.OnScrollTrack(local.x, local.y, view))
+        var onTrack = MenuLayout.OnScrollTrack(local.x, local.y, view);
+        var bubble = onTrack ? -1 : BubbleAt(point);
+        if (Input.GetMouseButtonDown(0) && (onTrack || bubble >= 0))
         {
-            _scrollDragging = true;
-            // Grabbing the thumb keeps its offset; clicking the track centres the thumb there.
-            _scrollGrab = local.y >= thumbY && local.y <= thumbY + thumbHeight ? local.y - thumbY : thumbHeight / 2;
+            // A new press always stops a running jump so the list never keeps moving under the pointer.
+            _settingsScroll.Call("SetPosY", _settingsScroll.Get<float>("scrollingPosY"), false);
+            _pressY = local.y; _pressMoved = false; _pressOnTrack = onTrack;
+            _pressTick = onTrack ? TickAt(local.y) : bubble;
+            var onThumb = local.y >= thumbY && local.y <= thumbY + thumbHeight;
+            // The thumb drags at once and keeps its offset; a dot or bubble waits to see whether the press moves;
+            // the rest of the track centres the thumb there as before.
+            if (onTrack && onThumb) { _scrollDragging = true; _scrollGrab = local.y - thumbY; }
+            else if (_pressTick >= 0) _scrollPending = true;
+            else { _scrollDragging = true; _scrollGrab = thumbHeight / 2; }
         }
-        if (!_scrollDragging) return false;
-        if (!Input.GetMouseButton(0)) { _scrollDragging = false; return true; }
+        var pressing = _scrollDragging || _scrollPending;
+        if (pressing && Math.Abs(local.y - _pressY) >= MenuLayout.TickSlop) _pressMoved = true;
+        // A moving press on the track becomes a drag; one that started on a bubble just stops counting as a click.
+        if (_scrollPending && _pressMoved && _pressOnTrack) { _scrollPending = false; _scrollDragging = true; _scrollGrab = thumbHeight / 2; }
+        var hot = bubble >= 0 ? bubble : onTrack ? TickAt(local.y) : -1;
+        if (onTrack || pressing) ShowBubbles(true);
+        if (_bubblesShown && (onTrack || pressing || InBubbleSpan(local, view)))
+        {
+            _bubblesHideAt = -1;
+            if (_tickHot != hot) { _tickHot = hot; PaintTicks(); }
+            SetHelp("CategoryJump");
+        }
+        else if (_bubblesShown && _bubblesHideAt < 0) _bubblesHideAt = Time.unscaledTime + 0.15f;
+        if (!pressing) return false;
+        if (!Input.GetMouseButton(0)) { EndScrollPress(true); return true; }
+        if (!_scrollDragging) return true;
         _settingsScroll.Call("SetPosY", MenuLayout.ScrollFromMarker(local.y - _scrollGrab, view,
             _settingsScroll.Get<float>("contentHeight"), thumbHeight), false);
         return true;
@@ -904,6 +1324,10 @@ internal static class ModUi
 
     private static string AutoUpdateMode() => MenuLayout.AutoUpdateMode(Plugin.AutomaticChecks.Value, Plugin.Automatic.AutoDownload, Plugin.Automatic.ApplyAfterExit);
 
+    // Locked: a parent or the switch an option tunes is OFF. The option dims, ignores clicks and drags, and keeps its value.
+    private static bool Locked(string action) => MenuLayout.Parent(action) is { } parent && !ToggleEnabled(parent)
+        || MenuLayout.SubParent(action) is { } sub && !ToggleEnabled(sub);
+
     private static bool ToggleEnabled(string action) => action switch
     {
         "Enabled" => Plugin.Enabled.Value,
@@ -916,9 +1340,22 @@ internal static class ModUi
         "AutoThanks" => Plugin.AutoThanks.Value,
         "CharacterRoles" => Plugin.CharacterRoles.Value,
         "CharacterGuide" => Plugin.CharacterGuide.Value,
+        "PlayerTab" => Plugin.PlayerTab.Value,
+        "PlayerTabHand" => Plugin.PlayerTabHand.Value,
+        "PlayerTabRole" => Plugin.PlayerTabRole.Value,
         "IndicatorFade" => Plugin.IndicatorFade.Value,
         "IndicatorHide" => Plugin.IndicatorHide.Value,
         "DiceLock" => Plugin.DiceLock.Value,
+        "EncounterAdvice" => Plugin.EncounterAdvice.Value,
+        "DefenseAdvice" => Plugin.DefenseAdvice.Value,
+        "CardAdvice" => Plugin.CardAdvice.Value,
+        "ShootingStarShow" => Plugin.ShootingStarShow.Value,
+        "KoCardPreview" => Plugin.KoCardPreview.Value,
+        "KoSpectator" => Plugin.KoSpectator.Value,
+        "StatusHand" => Plugin.StatusHand.Value,
+        "StatusEffects" => Plugin.StatusEffects.Value,
+        "CounterIcons" => Plugin.CounterIcons.Value,
+        "ShushuMaster" => Plugin.ShushuMaster.Value,
         "CounterSound" => Plugin.CounterSound.Value,
         "CounterAnimation" => Plugin.CounterAnimation.Value,
         "PingFocus" => Plugin.PingFocus.Value,
@@ -1145,11 +1582,11 @@ internal static class ModUi
         {
             case "Language": Plugin.Language.Value = value; ModText.Select(value); break;
             case "HandLayout":
-                HandLayoutUi.Clear();
+                // HandLayoutUi restores native layout itself when it sees the mode change, inside its own breaker.
                 Plugin.HandExpandMode.Value = value == "Click" ? "Click" : "Hover";
                 Plugin.GroupHand.Value = value != "Native";
                 break;
-            case "InputAttention": InputAttention.Stop(); Plugin.InputAttention.Value = value; break;
+            case "InputAttention": Isolated("InputAttention", InputAttention.Stop); Plugin.InputAttention.Value = value; break;
             case "UpdateChannel": Plugin.UpdateChannel.Value = value; Plugin.Updates.CheckTransition(DateTimeOffset.UtcNow); break;
             case "AutoUpdate":
                 var (check, download, apply) = MenuLayout.AutoUpdateValues(value);
@@ -1213,7 +1650,7 @@ internal static class ModUi
                 if (Time.unscaledTime >= _resetArmedUntil) { _resetArmedUntil = Time.unscaledTime + 4f; Refresh(); return; }
                 _resetArmedUntil = 0;
                 Plugin.ResetAllSettings();
-                HandLayoutUi.Clear(); InputAttention.Stop(); FieldZoomUi.Clear(); FieldIndicatorOpacity.Clear();
+                Isolated("InputAttention", InputAttention.Stop); Isolated("FieldZoom", FieldIndicatorOpacity.Clear);
                 break;
             case "SettingsFolder":
                 try
@@ -1234,9 +1671,22 @@ internal static class ModUi
             case "AutoThanks": Plugin.AutoThanks.Value = !Plugin.AutoThanks.Value; break;
             case "CharacterRoles": Plugin.CharacterRoles.Value = !Plugin.CharacterRoles.Value; break;
             case "CharacterGuide": Plugin.CharacterGuide.Value = !Plugin.CharacterGuide.Value; break;
-            case "IndicatorFade": Plugin.IndicatorFade.Value = !Plugin.IndicatorFade.Value; FieldIndicatorOpacity.Clear(); break;
-            case "IndicatorHide": Plugin.IndicatorHide.Value = !Plugin.IndicatorHide.Value; FieldIndicatorOpacity.Clear(); break;
+            case "PlayerTab": Plugin.PlayerTab.Value = !Plugin.PlayerTab.Value; break;
+            case "PlayerTabHand": Plugin.PlayerTabHand.Value = !Plugin.PlayerTabHand.Value; break;
+            case "PlayerTabRole": Plugin.PlayerTabRole.Value = !Plugin.PlayerTabRole.Value; break;
+            case "IndicatorFade": Plugin.IndicatorFade.Value = !Plugin.IndicatorFade.Value; Isolated("FieldZoom", FieldIndicatorOpacity.Clear); break;
+            case "IndicatorHide": Plugin.IndicatorHide.Value = !Plugin.IndicatorHide.Value; Isolated("FieldZoom", FieldIndicatorOpacity.Clear); break;
             case "DiceLock": Plugin.DiceLock.Value = !Plugin.DiceLock.Value; FieldDiceUi.Clear(); break;
+            case "EncounterAdvice": Plugin.EncounterAdvice.Value = !Plugin.EncounterAdvice.Value; break;
+            case "DefenseAdvice": Plugin.DefenseAdvice.Value = !Plugin.DefenseAdvice.Value; break;
+            case "CardAdvice": Plugin.CardAdvice.Value = !Plugin.CardAdvice.Value; CardUi.Clear(keepDice: true); break;
+            case "ShootingStarShow": Plugin.ShootingStarShow.Value = !Plugin.ShootingStarShow.Value; ShootingStarUi.Clear(); break;
+            case "KoCardPreview": Plugin.KoCardPreview.Value = !Plugin.KoCardPreview.Value; CardDiceUi.Clear(); break;
+            case "KoSpectator": Plugin.KoSpectator.Value = !Plugin.KoSpectator.Value; CardDiceUi.Clear(); break;
+            case "StatusHand": Plugin.StatusHand.Value = !Plugin.StatusHand.Value; BattleStatusUi.Clear(); break;
+            case "StatusEffects": Plugin.StatusEffects.Value = !Plugin.StatusEffects.Value; BattleStatusUi.Clear(); break;
+            case "CounterIcons": Plugin.CounterIcons.Value = !Plugin.CounterIcons.Value; BattleStatusUi.Clear(); EncounterCounterUi.Clear(); break;
+            case "ShushuMaster": Plugin.ShushuMaster.Value = !Plugin.ShushuMaster.Value; ShushuShieldUi.ClearDisplay(); ShushuShieldUi.ClearRestrictions(); break;
             case "CounterSound": Plugin.CounterSound.Value = !Plugin.CounterSound.Value; BattleStatusUi.Clear(); EncounterCounterUi.Clear(); break;
             case "CounterAnimation": Plugin.CounterAnimation.Value = !Plugin.CounterAnimation.Value; BattleStatusUi.Clear(); EncounterCounterUi.Clear(); break;
             case "PingFocus": Plugin.PingFocus.Value = !Plugin.PingFocus.Value; if (!Plugin.PingFocus.Value) PingFocusGuard.Reset(); break;
@@ -1244,7 +1694,7 @@ internal static class ModUi
             case "UpdateNotifications": Plugin.UpdateNotifications.Value = !Plugin.UpdateNotifications.Value; break;
             case "FinalDamage": Plugin.FinalDamage.Value = !Plugin.FinalDamage.Value; RemainingHpUi.ClearDisplay(); break;
             case "FieldBuffs": Plugin.FieldBuffs.Value = !Plugin.FieldBuffs.Value; break;
-            case "FieldZoom": Plugin.FieldZoom.Value = !Plugin.FieldZoom.Value; if (!Plugin.FieldZoom.Value) FieldZoomUi.Clear(); break;
+            case "FieldZoom": Plugin.FieldZoom.Value = !Plugin.FieldZoom.Value; break; // FieldZoomUi restores the camera itself once OFF.
             case "Diagnostics": Plugin.DiagnosticLogging.Value = !Plugin.DiagnosticLogging.Value; break;
             case "MuteUnfocused": Plugin.MuteUnfocused.Value = !Plugin.MuteUnfocused.Value; break;
             case "MatchFocus": Plugin.MatchFocus.Value = !Plugin.MatchFocus.Value; break;
@@ -1265,9 +1715,8 @@ internal static class ModUi
             var tab = MenuLayout.GeneralControl(action) == _general;
             var working = tab && Compatibility.Allowed(action);
             var (min, _) = MenuLayout.SliderRange(action);
-            // Dimmed but adjustable while a parent (or the fade switch it tunes) is OFF.
-            var active = (MenuLayout.Parent(action) is not { } parent || ToggleEnabled(parent))
-                && (MenuLayout.SubParent(action) is not { } sub || ToggleEnabled(sub));
+            // Dimmed and locked while a parent (or the switch it tunes) is OFF.
+            var active = !Locked(action);
             if (Sliders.TryGetValue(action, out var slider) && !slider.Get<bool>("isDisposed"))
             {
                 try
@@ -1275,14 +1724,14 @@ internal static class ModUi
                     slider.Set("visible", working);
                     if (working && Math.Abs(slider.Get<double>("value") - (SliderValue(action) - min)) >= 0.5) slider.Set("value", (double)(SliderValue(action) - min));
                     slider.Set("grayed", !active);
-                    slider.Set("touchable", true);
+                    slider.Set("touchable", active);
                 }
                 catch (Exception ex) { Compatibility.Block(action, ex, () => DisposeSlider(action)); working = false; }
             }
             var blocked = SliderBlocked[action];
             blocked.Set("visible", tab && !working);
             ToggleBackgrounds[action].Set("grayed", true);
-            NativeUi.StyleTitle(blocked, ModText.Text(MenuLayout.Help(action).Title) + ": " + ModText.Text("사용 불가"), 22);
+            Title(blocked, ModText.Text(MenuLayout.Help(action).Title) + ": " + ModText.Text("사용 불가"), 22);
             foreach (var key in new[] { action, action + "Value" })
             {
                 Labels[key].Set("visible", working);
@@ -1302,6 +1751,24 @@ internal static class ModUi
             }
     }
 
+    // NativeUi.StyleTitle copies the native title format from a freshly created template button, which costs about
+    // half a millisecond; Refresh runs on every open and every change for ~70 controls. Copy the format once per
+    // control and size, then only swap the text (ModFont.Tick follows text changes for the font fallback).
+    private static readonly Dictionary<IntPtr, (string Text, int Size)> Titles = new();
+    private static void Title(RuntimeObject button, string text, int size = 26)
+    {
+        if (Titles.TryGetValue(button.Pointer, out var last))
+        {
+            // Already carries the native format: a size change only resizes (StyleTitle's own size step).
+            if (last.Text != text) button.Set("title", text);
+            if (last.Size != size) GameUi.StyleText(button.Call("GetChild", "title")!, size);
+            Titles[button.Pointer] = (text, size);
+            return;
+        }
+        NativeUi.StyleTitle(button, text, size);
+        Titles[button.Pointer] = (text, size);
+    }
+
     private static void Refresh()
     {
         foreach (var (button, action) in Controls.Values)
@@ -1319,7 +1786,7 @@ internal static class ModUi
                 button.Set("grayed", missing); ToggleBackgrounds[action].Set("grayed", missing);
                 var state = action == "SettingsSave" && savedAt != null ? savedAt.Value.ToString("MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture)
                     : missing ? ModText.Text("먼저 지금 보관을 누르세요") : armed ? ModText.Text("한 번 더 누르세요") : "";
-                NativeUi.StyleTitle(button, ModText.Text(MenuLayout.Help(action).Title) + (state.Length == 0 ? "" : ": " + state), 22);
+                Title(button, ModText.Text(MenuLayout.Help(action).Title) + (state.Length == 0 ? "" : ": " + state), 22);
                 continue;
             }
             if (action is "DiagnosticsOpen" or "DiagnosticsCollect")
@@ -1327,14 +1794,14 @@ internal static class ModUi
                 var busy = action == "DiagnosticsCollect" && DiagnosticActions.Busy;
                 button.Set("grayed", busy); ToggleBackgrounds[action].Set("grayed", busy);
                 var state = action == "DiagnosticsCollect" ? DiagnosticActions.Status : "";
-                NativeUi.StyleTitle(button, ModText.Text(MenuLayout.Help(action).Title) + (state.Length == 0 ? "" : ": " + state), 22);
+                Title(button, ModText.Text(MenuLayout.Help(action).Title) + (state.Length == 0 ? "" : ": " + state), 22);
                 continue;
             }
             if (action is "UpdateAuth" or "UpdateSignOut")
             {
                 var enabled = action == "UpdateAuth" ? Plugin.UpdateSession?.CanConnect == true : Plugin.UpdateSession?.CanSignOut == true;
                 ToggleBackgrounds[action].Set("grayed", !enabled);
-                NativeUi.StyleTitle(button, ModText.SessionTitle(action), 22);
+                Title(button, ModText.SessionTitle(action), 22);
                 continue;
             }
             if (role is "UpdateChannel" or "UpdateCheck" or "UpdateDownload")
@@ -1343,7 +1810,7 @@ internal static class ModUi
                 var state = role == "UpdateChannel" ? ModText.ChannelName(Plugin.Updates.Channel.ToString()) + (installed == null ? "" : ModText.InstalledChannelSuffix(installed))
                     : role == "UpdateCheck" ? ModText.CheckStatus(Plugin.Updates.Result) : "";
                 ToggleBackgrounds[action].Set("grayed", false);
-                NativeUi.StyleTitle(button, ModText.Text(MenuLayout.Help(role).Title) + (state.Length == 0 ? "" : ": " + state), 22);
+                Title(button, ModText.Text(MenuLayout.Help(role).Title) + (state.Length == 0 ? "" : ": " + state), 22);
                 continue;
             }
             if (role == "UpdateSwitch")
@@ -1351,26 +1818,26 @@ internal static class ModUi
                 var confirmable = UpdateNotificationUi.CanConfirmTransition;
                 var target = confirmable && Plugin.Updates.Result.Release is { } candidate ? ModText.ChannelName(Plugin.Updates.Channel.ToString()) + " " + candidate.Version : null;
                 button.Set("grayed", !confirmable); ToggleBackgrounds[action].Set("grayed", !confirmable);
-                NativeUi.StyleTitle(button, ModText.Text(MenuLayout.Help(role).Title) + ": " + ModText.SwitchState(Plugin.Automatic.Snapshot.RequiresTransition, Plugin.Automatic.TransitionWaiting, target), 20);
+                Title(button, ModText.Text(MenuLayout.Help(role).Title) + ": " + ModText.SwitchState(Plugin.Automatic.Snapshot.RequiresTransition, Plugin.Automatic.TransitionWaiting, target), 20);
                 continue;
             }
             if (role == "UpdateApply")
             {
                 ToggleBackgrounds[action].Set("grayed", false);
-                NativeUi.StyleTitle(button, ModText.Text(MenuLayout.Help(role).Title) + ": " + ModText.AutomaticStatus(Plugin.Automatic.Status, Plugin.Automatic.TransitionWaiting), 20);
+                Title(button, ModText.Text(MenuLayout.Help(role).Title) + ": " + ModText.AutomaticStatus(Plugin.Automatic.Status, Plugin.Automatic.TransitionWaiting), 20);
                 continue;
             }
             if (role is "UpdateGet" or "UpdateCancel")
             {
                 var available = role == "UpdateGet" ? Plugin.Automatic.CanDownload || Plugin.Automatic.CanReactivate || Plugin.Automatic.CanRecheck : Plugin.Automatic.CanCancel;
                 button.Set("grayed", !available); ToggleBackgrounds[action].Set("grayed", !available);
-                NativeUi.StyleTitle(button, (role == "UpdateGet" && Plugin.Automatic.CanReactivate ? ModText.Korean ? "다시 사용" : "Re-enable Updates" : role == "UpdateGet" && Plugin.Automatic.CanRecheck ? ModText.Korean ? "상태 다시 확인" : "Recheck Installation" : ModText.Text(MenuLayout.Help(role).Title)) + ": " + ModText.AutomaticStatus(Plugin.Automatic.Status, Plugin.Automatic.TransitionWaiting), 20);
+                Title(button, (role == "UpdateGet" && Plugin.Automatic.CanReactivate ? ModText.Korean ? "다시 사용" : "Re-enable Updates" : role == "UpdateGet" && Plugin.Automatic.CanRecheck ? ModText.Korean ? "상태 다시 확인" : "Recheck Installation" : ModText.Text(MenuLayout.Help(role).Title)) + ": " + ModText.AutomaticStatus(Plugin.Automatic.Status, Plugin.Automatic.TransitionWaiting), 20);
                 continue;
             }
             if (action == "Language")
             {
                 ToggleBackgrounds[action].Set("grayed", false);
-                NativeUi.StyleTitle(button, ModText.LanguageTitle, 26);
+                Title(button, ModText.LanguageTitle, 26);
                 continue;
             }
             if (ToggleBackgrounds.TryGetValue(action, out var background))
@@ -1385,15 +1852,14 @@ internal static class ModUi
                 if (blocked) state = "사용 불가";
                 // Gray only the yellow artwork: OFF remains fully clickable and hoverable.
                 background.Set("grayed", blocked || !enabled);
-                NativeUi.StyleTitle(button, ModText.Text(title) + ": " + ModText.Text(state), blocked || action is "InputAttention" or "HandLayout" or "AutoUpdate" || MenuLayout.Parent(action) != null ? 22 : 26);
+                Title(button, ModText.Text(title) + ": " + ModText.Text(state), blocked || action is "InputAttention" or "HandLayout" or "AutoUpdate" || MenuLayout.Parent(action) != null ? 22 : 26);
                 continue;
             }
         }
-        // Dependent options stay clickable; only their look says the parent is OFF.
+        // Dependent options dim and lock while their parent (or the switch they tune) is OFF (2026-10-23); values stay.
         foreach (var (button, action) in Controls.Values)
-            if (MenuLayout.Parent(action) is { } parent) button.Set("alpha", ToggleEnabled(parent) ? 1f : 0.5f);
+            if (MenuLayout.Parent(action) != null) button.Set("alpha", Locked(action) ? 0.5f : 1f);
         RefreshSliders();
-        // Sub-options dim with their tray while the parent is OFF but stay adjustable, like every child switch.
         // Beta sign-in rows exist only for the Beta channel.
         var beta = Plugin.UpdateChannel.Value == "Beta";
         foreach (var (button, action) in Controls.Values)
@@ -1405,6 +1871,9 @@ internal static class ModUi
                 part.Set("alpha", ToggleEnabled(parent) ? 1f : 0.5f);
             }
         foreach (var section in SectionHeaders) section.View.Set("visible", section.General == _general);
+        // Child pills follow their switches only in the next tick; sync them first, or the other tab's pills
+        // (Player List Tab's are low in the feature list) stretch this tab's scroll height.
+        PaintChildPills();
         var bottom = 0f;
         for (var i = 0; i < _settingsContent!.Get<int>("numChildren"); i++)
         {

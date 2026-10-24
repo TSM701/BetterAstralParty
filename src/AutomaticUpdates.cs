@@ -33,7 +33,7 @@ internal sealed class AutomaticUpdates : IDisposable {
     private Pending? _pending;
     private object? _ready;
     private IUpdateHelperJob? _job;
-    private int _generation, _attempts, _sourceGeneration;
+    private int _generation, _attempts, _sourceGeneration, _busyRetries;
     private bool _configuredOnce;
     private Task? _cancel, _completion, _reactivation;
     private UpdateContext? _retiredContext;
@@ -46,6 +46,7 @@ internal sealed class AutomaticUpdates : IDisposable {
     private Task<FaultOutcome>? _failure;
     private DateTimeOffset _retryAt;
     private bool _blocked, _recovery, _disposed, _contextAfterCancel, _preferencesRepair;
+    private ReleaseChannel? _deferredChannel;
     internal UpdateFault? Fault { get; private set; }
     internal string? RecoveryStage { get; private set; }
     internal bool AutoDownload { get; private set; } = true;
@@ -57,6 +58,9 @@ internal sealed class AutomaticUpdates : IDisposable {
         _request?.Context.ReleaseId ?? 0, _request?.Context.AssetId ?? 0, _request?.DescriptorAssetId ?? 0, _request?.SignatureAssetId ?? 0,
         Status, CanDownload, CanCancel, _request?.Context.Transition != null, _channels?.ActiveChannel ?? "", _installedVersion ?? "", _requiresTransition);
     internal void SetChannel(ReleaseChannel channel) {
+        // A running apply keeps its status and target; the switch follows once it ends.
+        if (Applying) { _deferredChannel = channel; return; }
+        _deferredChannel = null;
         if (_downloads.Feed?.Channel == channel.ToString()) return;
         Retire(true); _downloads.SelectFeed(channel); _downloads.Configure(_authentication); _identity = Identity;
         RefreshTransition();
@@ -69,7 +73,9 @@ internal sealed class AutomaticUpdates : IDisposable {
     // A downloaded update waits while automatic apply is off; the user can apply it once.
     internal bool CanApply => !_blocked && !ApplyAfterExit && !_applyOnce && Status == AutomaticUpdateStatus.Ready && _ready != null && _handoff != null && _completion == null;
     internal void ApplyOnce() { if (!CanApply) return; _applyOnce = true; Revision++; }
-    internal bool CanCancel => !_blocked && Status is (AutomaticUpdateStatus.Downloading or AutomaticUpdateStatus.Preparing or AutomaticUpdateStatus.Ready or AutomaticUpdateStatus.Queued or AutomaticUpdateStatus.RetryWaiting);
+    // The file replacement cannot stop once it starts; its result must still arrive as Committed or a failure.
+    private bool Applying => _pending is { Queue: true };
+    internal bool CanCancel => !_blocked && !Applying && Status is (AutomaticUpdateStatus.Downloading or AutomaticUpdateStatus.Preparing or AutomaticUpdateStatus.Ready or AutomaticUpdateStatus.Queued or AutomaticUpdateStatus.RetryWaiting);
     internal bool CanReactivate => _blocked && Fault != null && !_preferencesRepair && !_recovery && _failure == null && _reactivation == null && _cancel == null;
     internal AutomaticUpdates(UpdateDownloads downloads, IUpdateHandoff? handoff = null, IUpdateSafety? safety = null) { _downloads = downloads; _handoff = handoff; _safety = safety; }
     private void Set(AutomaticUpdateStatus status) {
@@ -107,7 +113,7 @@ internal sealed class AutomaticUpdates : IDisposable {
             try { if (fault) _handoff.SignalFailure(retired); else _handoff.SignalCancel(retired); waits.Add(Task.Run(() => _handoff.Cancel(retired))); }
             catch (Exception error) { waits.Add(Task.FromException(error)); }
         }
-        _generation++; var pending = _pending; _pending = null;
+        _generation++; var pending = _pending; if (pending is { Queue: true }) pending = null; else _pending = null;
         if (pending != null) {
             try { pending.Cancellation.Cancel(); } catch { }
             waits.Add(pending.Task.ContinueWith(async task => {
@@ -143,17 +149,20 @@ internal sealed class AutomaticUpdates : IDisposable {
     }
     internal void Preferences(bool download, bool apply) {
         if (_blocked) {
-            if (Fault != null && (download || apply)) _preferencesRepair = true;
+            if (Fault != null) { if (download || apply) _preferencesRepair = true; }
+            // Without a recorded fault (a FilesBusy wait, a recheck) the latest choice must hold when the block ends.
+            else if (_failure == null && (AutoDownload != download || ApplyAfterExit != apply)) { AutoDownload = download; ApplyAfterExit = apply; Revision++; }
             return;
         }
         if (AutoDownload == download && ApplyAfterExit == apply) return;
-        var stop = AutoDownload && !download || ApplyAfterExit && !apply && (Status == AutomaticUpdateStatus.Queued || _pending?.Queue == true);
+        var stop = AutoDownload && !download && !Applying || ApplyAfterExit && !apply && Status == AutomaticUpdateStatus.Queued;
         AutoDownload = download; ApplyAfterExit = apply; Revision++;
         if (stop) { _explicitTransition = null; _applyOnce = false; Retire(); Set(Configured ? _cancel != null ? AutomaticUpdateStatus.Cancelling : AutomaticUpdateStatus.Cancelled : AutomaticUpdateStatus.NotConfigured); }
     }
     // A switched channel with no eligible target waits instead of asking for a review that cannot start.
     internal bool TransitionWaiting => Status == AutomaticUpdateStatus.TransitionRequired && _request == null && !_transitionCandidate;
     internal void Context(UpdateDownloadRequest? request, int sourceGeneration = 0, bool transitionCandidate = false) {
+        if (Applying) return;
         if (_explicitTransition != null) { request = _explicitTransition; sourceGeneration = _transitionSourceGeneration; }
         _sourceGeneration = sourceGeneration;
         if (_transitionCandidate != transitionCandidate) { _transitionCandidate = transitionCandidate; Revision++; }
@@ -230,6 +239,7 @@ internal sealed class AutomaticUpdates : IDisposable {
     }
     internal void Tick(DateTimeOffset now) {
         if (_disposed) return;
+        if (_deferredChannel is { } channel && !Applying) SetChannel(channel);
         if (_failure is { IsCompleted: true } failure) { _failure = null; var outcome = failure.GetAwaiter().GetResult(); Fault = outcome.Fault; if (outcome.StorageFailed && !_recovery) Set(AutomaticUpdateStatus.FaultStorageFailed); else Set(Status); Revision++; }
         if (_preferencesRepair && _failure == null && Fault != null) { _preferencesRepair = false; Disable(Fault.Phase, Fault.Reason, Status, Fault); }
         if (_reactivation is { IsCompleted: true } activation) {
@@ -263,7 +273,7 @@ internal sealed class AutomaticUpdates : IDisposable {
             _blocked = false; _inspection = Task.Run(() => _safety.Probe()); Set(AutomaticUpdateStatus.CheckingInstallation);
         }
         if (_blocked) return;
-        if (_identity != Identity) { Retire(true); _identity = Identity; _downloads.Configure(_authentication); Set(Configured ? AutomaticUpdateStatus.Idle : AutomaticUpdateStatus.NotConfigured); return; }
+        if (_identity != Identity && !Applying) { Retire(true); _identity = Identity; _downloads.Configure(_authentication); Set(Configured ? AutomaticUpdateStatus.Idle : AutomaticUpdateStatus.NotConfigured); return; }
         if (_begin is { IsCompleted: true } begin) { _begin = null; try { _operation = begin.GetAwaiter().GetResult(); StartDownload(now); } catch { Disable(FaultPhase.Preparation, FaultReason.Storage, AutomaticUpdateStatus.FaultStorageFailed); } }
         if (Status == AutomaticUpdateStatus.RetryWaiting && now >= _retryAt) StartDownload(now);
         _downloads.Poll();
@@ -275,23 +285,30 @@ internal sealed class AutomaticUpdates : IDisposable {
             } else if (result.Status is UpdateDownloadStatus.Cancelled or UpdateDownloadStatus.AuthenticationRequired or UpdateDownloadStatus.AccessUnavailable or UpdateDownloadStatus.NotConfigured) {
                 CompleteOperation(); Set(result.Status == UpdateDownloadStatus.Cancelled ? AutomaticUpdateStatus.Cancelled : AutomaticUpdateStatus.NotConfigured);
             } else {
-                var transient = result.Status is UpdateDownloadStatus.Failed or UpdateDownloadStatus.TimedOut or UpdateDownloadStatus.RateLimited;
+                var transient = result.Status is UpdateDownloadStatus.Failed or UpdateDownloadStatus.TimedOut;
                 var due = result.RetryAt is { } server && server > now.AddSeconds(60) ? server : now.AddSeconds(60);
-                if (transient && _attempts < 2 && due <= now.AddMinutes(15)) { _retryAt = due; Set(AutomaticUpdateStatus.RetryWaiting); }
+                // GitHub's anonymous quota resets within the hour; waiting for it is the server's request, not a fault.
+                if (result.Status == UpdateDownloadStatus.RateLimited && result.RetryAt != null) { _retryAt = due; Set(AutomaticUpdateStatus.RetryWaiting); }
+                else if (transient && _attempts < 2 && due <= now.AddMinutes(15)) { _retryAt = due; Set(AutomaticUpdateStatus.RetryWaiting); }
                 else Disable(result.Status is UpdateDownloadStatus.VerificationFailed or UpdateDownloadStatus.TooLarge ? FaultPhase.Verification : FaultPhase.Download,
-                    result.Status == UpdateDownloadStatus.TimedOut ? FaultReason.Timeout : result.Status == UpdateDownloadStatus.RateLimited ? FaultReason.RateLimited : result.Status is UpdateDownloadStatus.VerificationFailed or UpdateDownloadStatus.TooLarge ? FaultReason.Integrity : FaultReason.Network);
+                    result.Status == UpdateDownloadStatus.TimedOut ? FaultReason.Timeout : result.Status is UpdateDownloadStatus.VerificationFailed or UpdateDownloadStatus.TooLarge ? FaultReason.Integrity : FaultReason.Network);
             }
         }
         if (_pending is { } pending && pending.Task.IsCompleted) {
             _pending = null; pending.Cancellation.Dispose();
             try {
-                var result = pending.Task.GetAwaiter().GetResult(); if (pending.Generation != _generation) return;
+                var result = pending.Task.GetAwaiter().GetResult(); if (!pending.Queue && pending.Generation != _generation) return;
                 if (pending.Queue) { _job = (IUpdateHelperJob)result; CaptureQueuedDiagnostics(_job); Set(AutomaticUpdateStatus.Queued); }
                 else { _ready = result; CompleteOperation(); Set(AutomaticUpdateStatus.Ready); }
             } catch (AutomaticUpdateException error) {
                 if (error.Status is AutomaticUpdateStatus.NotConfigured or AutomaticUpdateStatus.ManualUpgradeRequired or AutomaticUpdateStatus.FilesBusy or AutomaticUpdateStatus.AlreadyClaimed or AutomaticUpdateStatus.Cancelled) {
                     if (pending.Queue && error.Status != AutomaticUpdateStatus.NotConfigured) _ready = null;
                     CompleteOperation(); Set(error.Status);
+                    // Antivirus or another program briefly holding a file: recheck and download again, at most three times.
+                    if (error.Status == AutomaticUpdateStatus.FilesBusy) {
+                        _blocked = true; _autoSeen = "";
+                        _retryAt = ++_busyRetries <= 3 ? now.AddSeconds(30) : DateTimeOffset.MaxValue;
+                    }
                 }
                 else { _recovery = error.Status == AutomaticUpdateStatus.RecoveryRequired; Disable(FaultPhase.Preparation, FaultReason.Preparation, _recovery ? error.Status : AutomaticUpdateStatus.FaultDisabled); }
             } catch (OperationCanceledException) { CompleteOperation(); Set(AutomaticUpdateStatus.Cancelled); }

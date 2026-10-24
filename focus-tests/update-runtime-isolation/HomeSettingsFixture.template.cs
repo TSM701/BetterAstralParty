@@ -48,6 +48,7 @@ __COMPATIBILITY__
 sealed class Badge { internal void Animate() { Probe.Visit("advice.animate"); } internal void Tick() { } }
 static class CharacterNameUi { internal static void Tick(RuntimeObject root) { Probe.Visit("character.tick"); } }
 static class CardDiceUi { internal static void PollResolved() { Probe.Visit("dice.tick"); } }
+static class ShootingStarUi { internal static void Tick() { } internal static void Clear() { } }
 static class CardUi { internal static void Animate() { Probe.Visit("cards.tick"); } }
 static class RemainingHpUi { internal static void PollFinalPoints() { } internal static void Animate() { } }
 static class CardPreviewUi { internal static void Reset() { Probe.LanguageStep("CardPopups"); } }
@@ -80,6 +81,7 @@ static class GameUi {
     static void UpdateFight() { Probe.Visit("fight.tick"); }
     static void UpdateHover() { Probe.Visit("hover.tick"); }
     static void ClearAdvice() { Probe.Visit("advice.clear"); Probe.LanguageStep("Enabled"); }
+    static void ClearAdviceDisplay() { Probe.Visit("advice.clear"); Probe.LanguageStep("Enabled"); }
     static void HideAdvice() { }
 __FAIL_HOME__
 __CLEAR_HOME__

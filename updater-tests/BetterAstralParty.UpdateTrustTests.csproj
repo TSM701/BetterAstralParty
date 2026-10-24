@@ -13,6 +13,9 @@
     <Compile Include="..\src\ReleaseHttpClient.cs" Link="ReleaseHttpClient.cs" />
     <Compile Include="..\src\ReleaseFeedTransport.cs" Link="ReleaseFeedTransport.cs" />
     <Compile Include="..\src\UpdateDownload.cs" Link="UpdateDownload.cs" />
+    <Compile Include="..\src\AutomaticUpdates.cs" Link="AutomaticUpdates.cs" />
+    <Compile Include="..\src\AutomaticUpdateSnapshot.cs" Link="AutomaticUpdateSnapshot.cs" />
+    <Compile Include="..\src\UpdateSafety.cs" Link="UpdateSafety.cs" />
     <Reference Include="SemanticVersioning">
       <HintPath>..\.deps\bepinex\BepInEx\core\SemanticVersioning.dll</HintPath>
     </Reference>

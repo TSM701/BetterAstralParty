@@ -23,7 +23,9 @@ public static class Probe {
     public static int Count(string name) { return Calls.FindAll(x => x == name).Count; }
 }
 static class Time { internal static int frameCount; internal static float realtimeSinceStartup = 0f; }
+static class Input { internal static bool GetMouseButton(int button) => false; }
 static class StartupGuard { internal const float HealthySeconds = 90f; internal static int HealthyCalls; internal static void Healthy() { HealthyCalls++; } }
+static class RuntimeObject { internal static int Flushes; internal static void FlushLedger(bool due = false) { Flushes++; } }
 enum AutomaticUpdateStatus { Idle, CheckingInstallation }
 enum DiagnosticFeature { Coordinator, CoreUi, Loader }
 enum DiagnosticPhase { None, Catalog }
@@ -141,6 +143,8 @@ static class ModUi {
     static readonly Action[] PvpCleanup = { () => { Probe.Visit("native.cleanup", true); if (Probe.ThrowCleanup) throw new Exception("inert cleanup failure"); } };
     internal static void Reset() { _lastFrame = -1; _pvpCleaned = false; }
     static void FailUi(Exception ex) { Probe.Visit("ui.failed"); Probe.Core = false; }
+    static bool? _sliderSave;
+    static void FlushSliderSave() { _sliderSave = null; }
 __PREFIX__
         try {
 __CATALOG_TICK__

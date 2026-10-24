@@ -203,7 +203,7 @@ internal static partial class TestCommands
 
     private static void KoMinimum(DevContext context, string stage, Action<string> pin)
     {
-        var paths = new[] { "src/CombatAdvisor.cs", "src/PublicCombatEffects.cs", "src/VisibleCombat.cs", "src/CardAdvisor.cs", "src/CardKoMinimum.cs", "src/CardDiceLayout.cs",
+        var paths = new[] { "src/CombatAdvisor.cs", "src/PublicCombatEffects.cs", "src/CombatBuffAudit.cs", "src/ShootingStar.cs", "src/VisibleCombat.cs", "src/CardAdvisor.cs", "src/CardKoMinimum.cs", "src/CardDiceLayout.cs",
             "src/EncounterAdvisor.cs", "src/AdviceText.cs", "self-test/CombatEffectsCheck.cs", "self-test/CombatSimulationCheck.cs", "self-test/CombatLogReplayCheck.cs" };
         var publicSource = ReadSource(context, "self-test/PublicCombatEffectsCheck.cs");
         var fixture = Regex.Match(publicSource, @"(?s)namespace BetterAstralParty\s*\{\s*(internal sealed class RuntimeObject.*?)\r?\n\}\r?\n\r?\ninternal static class PublicCombatEffectsCheck").Groups[1].Value;
@@ -219,7 +219,7 @@ internal static partial class TestCommands
             ("missing-final-damage", "if (damage is { } bounds)", "if (pair == null) return \"계산 정보 부족\"; if (damage is { } bounds)", "Thresholds", "final arithmetic known without pre-roll support"),
             ("missing-final-defense", "if (unconditional) return (0, \"\", \"—\");", "if (pair == null) return (0, \"\", \"?\"); if (unconditional) return (0, \"\", \"—\");", "Thresholds", "known final condition-free defense"),
             ("unknown-grants", grant, "effectType == 1 && parameters[2] == 10010", "Schema", "later-card semantic mapping not generalized"),
-            ("unknown-final-atk", grant, "(id == 10009 && effectType == 1 && parameters[2] == 10010 || id == 10010 && effectType == 1)", "Schema", "Known later-hand side effect")
+            ("final-atk-as-additive", "FinalPercent = finalBoost ? parameters[2] : 0", "FinalPercent = 0", "Schema", "final-ATK percent")
         };
         foreach (var (name, from, to, method, reason) in mutants) {
             Check(code.Contains(from, StringComparison.Ordinal), "KO mutation anchor " + name);

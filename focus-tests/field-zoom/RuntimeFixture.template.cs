@@ -127,11 +127,13 @@ sealed class RuntimeObject {
     RuntimeObject? DisposeIterator(){if(IteratorOwner!=null)IteratorOwner.Disposals++;return null;}
 }
 static class GameUi {
-    public static RuntimeObject? Root; public static bool FightWindowPresent; public static string? SettingsWindow;
+    public static RuntimeObject? Root; public static bool FightWindowPresent,EncounterHidden; public static string? SettingsWindow;
+    public static RuntimeObject? LiveDrag()=>RuntimeObject.Dragging?new RuntimeObject():null;
     public static List<RuntimeObject> Path=new(),CachedPath=new(); public static int FreshReads,CachedReads;
     public static IReadOnlyList<RuntimeObject> PointerPath(bool refresh=false,bool hitTest=false){if(!refresh)throw new Exception("Field gesture requires fresh hit");if(!hitTest){CachedReads++;return CachedPath;}FreshReads++;return Path;}
     public static RuntimeObject? Find(RuntimeObject root,string type,int depth=0,int maxDepth=4)=>maxDepth==1&&type is "FightWindow" or "SettingWindow" or "SettingInBattleWindow" or "SinglePlayerSettingInBattleWindow" or "SettingListWindow"
-        ?((type=="FightWindow"?FightWindowPresent:SettingsWindow==type)?new():null):throw new Exception("Unexpected window query");
+        ?(type=="FightWindow"?FightWindowPresent?Fight():null:SettingsWindow==type?new():null):throw new Exception("Unexpected window query");
+    static RuntimeObject Fight(){var r=new RuntimeObject();var launch=new RuntimeObject();var tip=new RuntimeObject();tip.Data["visible"]=EncounterHidden;launch.Data["txt_HideTip"]=tip;var pane=new RuntimeObject();pane.Data["com_LaunchPK"]=launch;r.Data["contentPane"]=pane;return r;}
     public static bool Visible(RuntimeObject? window)=>window!=null&&!window.Dead&&window.Data.GetValueOrDefault("visible") is not false&&window.Data.GetValueOrDefault("onStage") is not false;
 }
 static class PvpSafety { public static bool Suspended; }
@@ -142,6 +144,7 @@ static class FieldCameraReturnUi {
     public static void Clear(){Visible=false;ConsumedInput=false;}
 }
 static class FieldMonsterPlates { public static int Ticks, Clears; public static float LastScale=1f; internal static void Tick(float scale){Ticks++;LastScale=scale;} internal static void Clear(){Clears++;} }
+static class FieldStatePlates { internal static void Tick(float scale){} internal static void Clear(){} }
 static class FieldIndicatorOpacity {
     public static float Progress;
     public static bool Dimmed=>Progress>0;
@@ -223,7 +226,7 @@ public static class Check {
     static void Assert(bool value,[System.Runtime.CompilerServices.CallerLineNumber]int line=0){Assertions++;if(!value)throw new Exception("Field zoom regression at fixture line "+line);}
     static RuntimeObject Obj(params (string Key,object Value)[] pairs){var r=new RuntimeObject();foreach(var p in pairs)r.Data[p.Key]=p.Value;return r;}
     sealed class Scene {
-        public RuntimeObject Root=Obj(("hasModalWindow",false),("modalWaiting",false),("hasAnyPopup",false));
+        public RuntimeObject Root=Obj(("hasModalWindow",false),("modalWaiting",false),("hasAnyPopup",false),("touchTarget",Obj(("touchable",true))));
         public RuntimeObject Body=Obj(("m_FollowOffset",new Vector3(0,0,-10)),("m_BindingMode",Obj(("value",4))),("IsValid",true));
         public RuntimeObject Follow=Obj(("position",new Vector3()));
         public RuntimeObject Camera=Obj(("enabled",true),("orthographic",false),("usePhysicalProperties",false),("lensShift",new Vector2()),
@@ -232,7 +235,7 @@ public static class Check {
         public RuntimeObject WindowStack=Obj(("Count",0));
         public RuntimeObject Attributes=new(),PlayerAttributes=new(),BattleUi;
         public Scene(bool clear=true){
-            if(clear)FieldZoomUi.Clear(); Compatibility.Reset(); GameUi.FightWindowPresent=false;GameUi.SettingsWindow=null; PvpSafety.Suspended=false; ModUi.IsOpen=false; Plugin.FieldZoom.Value=true;
+            if(clear)FieldZoomUi.Clear(); Compatibility.Reset(); GameUi.FightWindowPresent=GameUi.EncounterHidden=false;GameUi.SettingsWindow=null; PvpSafety.Suspended=false; ModUi.IsOpen=false; Plugin.FieldZoom.Value=true;
             Input.Buttons=new bool[3];Input.Down=new bool[3];Input.Up=new bool[3];Input.touchCount=0;Input.mouseScrollDelta=new();Application.isFocused=true;RuntimeObject.OnUi=false;RuntimeObject.Dragging=false;Time.unscaledTime=0;Time.unscaledDeltaTime=1f/60;
             GameUi.Path.Clear();GameUi.CachedPath.Clear();GameUi.FreshReads=GameUi.CachedReads=0;
             Plugin.Diagnostics.States.Clear();Plugin.Diagnostics.Geometry.Clear();Plugin.Diagnostics.IsRecording=false;
@@ -451,6 +454,16 @@ public static class Check {
         GameUi.Path.Clear();GameUi.Path.Add(Obj(("asTextInput",input)));GameUi.Path.Add(scene.Root);
     }
     public static int NonScrollUiCases,ConsumerCases,PresentationCases,FrameCases;
+    public static int HiddenEncounterCases;
+    static void HiddenEncounter(){
+        foreach(var hidden in new[]{false,true}){
+            var s=new Scene();s.Wheel(1);s.Finish();GameUi.FightWindowPresent=true;GameUi.EncounterHidden=hidden;
+            var body=FieldFreeCamera.Camera!.Get("body")!;var before=body.Field<Vector3>("m_FollowOffset");
+            s.Wheel(1);s.Finish();Assert((body.Field<Vector3>("m_FollowOffset").magnitude<before.magnitude)==hidden);
+            Input.Buttons[0]=true;RuntimeObject.OnUi=true;FieldZoomUi.Tick();Assert(FieldFreeCamera.PanAllowed==hidden);Input.Buttons[0]=false;
+            GameUi.FightWindowPresent=GameUi.EncounterHidden=false;HiddenEncounterCases++;
+        }
+    }
     public static int PanUiCases;
     static void PanUi(){
         FieldCameraReturnUi.Available=true;
@@ -685,7 +698,7 @@ public static class Check {
         }){
             var s=new Scene();s.Brain.Data["IsBlending"]=true;s.Blend.Data["Duration"]=2f;s.Wheel(1);Time.unscaledTime=1;cancel(s);FieldZoomUi.Tick();
             Application.isFocused=true;ModUi.IsOpen=false;Input.Buttons=new bool[3];Input.touchCount=0;FieldCameraReturnUi.ConsumedInput=false;
-            RuntimeObject.Dragging=false;s.Root.Data["modalWaiting"]=false;GameUi.Path.Clear();GameUi.FightWindowPresent=false;GameUi.SettingsWindow=null;
+            RuntimeObject.Dragging=false;s.Root.Data["modalWaiting"]=false;GameUi.Path.Clear();GameUi.FightWindowPresent=GameUi.EncounterHidden=false;GameUi.SettingsWindow=null;
             s.Frames.Data["Count"]=1;s.Blend.Data["CamB"]=s.Active;s.Camera.Data["enabled"]=true;PvpSafety.Suspended=false;Plugin.FieldZoom.Value=true;
             s.Body.Data["m_FollowOffset"]=new Vector3(0,0,-10);
             s.Brain.Data["IsBlending"]=false;Time.unscaledTime=2.1f;FieldZoomUi.Tick();Assert(!FieldFreeCamera.Holding&&s.Body.Writes==0);BlendLifetimeCases++;
@@ -924,7 +937,7 @@ public static class Check {
         GameUi.Path.AddRange(new[]{new RuntimeObject{TypeName="UICom_AttrInfo"},s.Attributes});
         Input.Buttons[0]=Input.Down[0]=RuntimeObject.OnUi=true;FieldZoomUi.Tick();
         Assert(FieldFreeCamera.PanAllowed&&FieldFreeCamera.PanIndicator);
-        IndicatorWheel();WheelUi();PanUi();PresentationAndFrames();TurnTransitions();BlendLifetime();BranchGeometryAndOpacity();FocusAndEncounterRecovery();
+        IndicatorWheel();WheelUi();HiddenEncounter();Assert(HiddenEncounterCases==2);PanUi();PresentationAndFrames();TurnTransitions();BlendLifetime();BranchGeometryAndOpacity();FocusAndEncounterRecovery();
         foreach(var cancel in new Action<Scene>[]{a=>Application.isFocused=false,a=>ModUi.IsOpen=true,a=>a.Root.Data["modalWaiting"]=true,a=>RuntimeObject.Dragging=true,a=>Input.touchCount=1,a=>FieldCameraReturnUi.ConsumedInput=true}){
             s=new Scene();s.Wheel(1);Input.Buttons[0]=true;cancel(s);FieldZoomUi.Tick();
             Assert(!FieldFreeCamera.PanAllowed&&FieldFreeCamera.Holding&&FieldCameraReturnUi.Visible);

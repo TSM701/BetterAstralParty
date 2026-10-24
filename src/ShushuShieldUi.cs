@@ -16,6 +16,8 @@ internal static class ShushuShieldUi
     private static readonly ShieldDefenseButton Defense = new();
     private static readonly Dictionary<IntPtr, (RuntimeObject Card, IntPtr Data, ShieldDefenseButton Lock)> Cards = new();
     private static readonly HashSet<IntPtr> LiveCards = new();
+    // Defense cards the shield restriction currently dims and blocks; card advice treats them as unusable.
+    internal static bool BlocksCard(IntPtr card) => Cards.ContainsKey(card);
     private static readonly List<IntPtr> StaleCards = new();
     private static IntPtr _gobject;
     private static float _findAt;
@@ -26,6 +28,8 @@ internal static class ShushuShieldUi
     {
         internal RuntimeObject? Actor, Player, Buff, Effect, Awaiter;
         internal GameObject? Container;
+        internal Transform? Body;
+        internal Vector3 Rest;
         internal long BuffKey;
         internal float ScanAt;
         internal bool Retired;
@@ -36,7 +40,7 @@ internal static class ShushuShieldUi
             var effect = Effect;
             var loading = Awaiter != null;
             Retired = true;
-            Effect = Awaiter = null; Container = null;
+            Effect = Awaiter = null; Container = null; Body = null;
             Actor = Player = Buff = null; BuffKey = 0; ScanAt = 0;
             try
             {
@@ -105,8 +109,8 @@ internal static class ShushuShieldUi
 
     internal static void Tick()
     {
-        var display = Plugin.ShushuShield.Value && Compatibility.Allowed(Feature);
-        var restrictions = Plugin.ShushuShieldRestrictions.Value && Compatibility.Allowed(RestrictionsFeature);
+        var display = Plugin.ShushuMaster.Value && Plugin.ShushuShield.Value && Compatibility.Allowed(Feature);
+        var restrictions = Plugin.ShushuMaster.Value && Plugin.ShushuShieldRestrictions.Value && Compatibility.Allowed(RestrictionsFeature);
         if (!display && !restrictions) { Clear(); return; }
         try
         {
@@ -130,7 +134,7 @@ internal static class ShushuShieldUi
 
     internal static void Tick(RuntimeObject logic, RuntimeObject? director)
     {
-        if (!Plugin.ShushuShield.Value || !Compatibility.Allowed(Feature)) ClearDisplay();
+        if (!Plugin.ShushuMaster.Value || !Plugin.ShushuShield.Value || !Compatibility.Allowed(Feature)) ClearDisplay();
         else
             try
             {
@@ -138,7 +142,7 @@ internal static class ShushuShieldUi
                 UpdateActor(Defender, director?.Get("victim"), logic, false);
             }
             catch (Exception ex) { Compatibility.Block(Feature, ex, ClearDisplay); }
-        if (!Plugin.ShushuShieldRestrictions.Value || !Compatibility.Allowed(RestrictionsFeature)) ClearRestrictions();
+        if (!Plugin.ShushuMaster.Value || !Plugin.ShushuShieldRestrictions.Value || !Compatibility.Allowed(RestrictionsFeature)) ClearRestrictions();
         else
             try { UpdateRestrictions(director); }
             catch (Exception ex) { Compatibility.Block(RestrictionsFeature, ex, ClearRestrictions); }
@@ -262,6 +266,9 @@ internal static class ShushuShieldUi
                 if (visible && OwnsEffect(slot.Effect, slot.Container))
                     slot.Effect!.Call("PlayAllParticles", slot.Effect.Get("transform"));
             }
+            // Attack and move timelines animate actorRenderer, not EffectParent, so carry its offset from rest.
+            if (visible && slot.Body?.parent is { } body && slot.Container.transform.parent is { } anchor)
+                slot.Container.transform.localPosition = anchor.InverseTransformVector(body.TransformVector(slot.Body.localPosition - slot.Rest));
         }
     }
 
@@ -283,7 +290,15 @@ internal static class ShushuShieldUi
         if (id == 0 || parent == null) return;
         slot.Container = new GameObject("BetterAstralParty.ShushuShield");
         slot.Container.SetActive(false);
-        slot.Container.transform.SetParent(new Transform(parent.Pointer), false);
+        var anchor = new Transform(parent.Pointer);
+        slot.Container.transform.SetParent(anchor, false);
+        // shortcut: rest is the renderer pose when the shield is first seen (the battle intro); a shield first
+        // seen mid-lunge would sit offset for that fight, read a native rest pose if that ever shows up.
+        var body = slot.Actor.Field("actorRenderer")?.Get("transform");
+        slot.Body = body == null ? null : new Transform(body.Pointer);
+        // A renderer on the actor root already carries EffectParent with it.
+        if (slot.Body != null && anchor.IsChildOf(slot.Body)) slot.Body = null;
+        slot.Rest = slot.Body?.localPosition ?? default;
         var manager = RuntimeObject.StaticCall(RuntimeObject.FindClass("Core", "EffectManager"), "get_inst")!;
         // Match BattleActor.CreateBuffEffect's local placement and combat scale.
         slot.Awaiter = manager.Call("PlayById", id, Vector3.zero, Quaternion.identity,

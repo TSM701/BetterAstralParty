@@ -173,7 +173,10 @@ internal static class TransactionFixture
                 var committed = phase != "rollback";
                 for (var repeat = 0; repeat < 2; repeat++) {
                     using var fence = new WindowsFileFence(root);
-                    Check(UpdateTransaction.Recover(fence, Work(root), package.Trust, selected) == (committed ? TransactionResult.Committed : TransactionResult.RolledBack), "actual channel recovery is repeatable: " + label + "/" + repeat);
+                    // The first recovery rebuilds its context from the stage like startup does (public releases are channel-neutral).
+                    var pending = repeat == 0 && phase != "commit" ? UpdateRecovery.PendingWork(fence) : null;
+                    var context = pending != null ? UpdateRecovery.RecoveryContext(fence, pending, package.Trust) : selected;
+                    Check(UpdateTransaction.Recover(fence, Work(root), package.Trust, context) == (committed ? TransactionResult.Committed : TransactionResult.RolledBack), "actual channel recovery is repeatable: " + label + "/" + repeat);
                     if (missingSettingsParent) Check(!Directory.Exists(configParent), "channel apply/recovery never creates an absent settings parent: " + label + "/" + repeat);
                 }
                 if (missingSettingsParent) {
@@ -193,6 +196,50 @@ internal static class TransactionFixture
             }
         }
         Console.WriteLine("Three-channel transactions: all directions and shared-public variants x commit/rollback/forward, plus 3 absent-settings-parent cases with repeated real NTFS recovery; ephemeral fixture signatures only.");
+    }
+    // A public release applied on the Pre-release channel without a transition is recovered from the channel the
+    // plan recorded (channel.bin): interrupted before and after its commit intent, the receipt stays on Pre-release.
+    private static void SameChannelPublic(string baseDirectory, Package package, byte[] inert)
+    {
+        var feed = ReleaseFeedPolicy.PreRelease;
+        var descriptor = Encoding.ASCII.GetBytes(Encoding.ASCII.GetString(package.Descriptor)
+            .Replace("repository=" + ReleaseFeedPolicy.StableRepository + "\n", "repository=" + feed.Repository + "\n")
+            .Replace("repository-id=" + ReleaseFeedPolicy.StableRepositoryId.ToString(CultureInfo.InvariantCulture) + "\n", "repository-id=" + feed.RepositoryId.ToString(CultureInfo.InvariantCulture) + "\n")
+            .Replace("purpose=release/Stable\n", "purpose=release/Public\n"));
+        var signature = package.Sign(descriptor);
+        var selected = new UpdateContext(feed.Repository, feed.Channel, "1.4.0-dev", "1.4.0", 123, 456, UpdateTrust.PlatformId, repositoryId: feed.RepositoryId);
+        foreach (var boundary in new[] { "before:commit-intent", "after:commit-intent" })
+        {
+            var root = Install(baseDirectory, "same-prerelease-" + boundary.Replace(':', '-'), package, inert);
+            using (var fence = new WindowsFileFence(root))
+            {
+                var channels = new ReceiptChannelState(fence.RootIdentity.Text, feed.Channel, new string('a', 32), 0, null, "-", 0, null, "-", feed.RepositoryId, "1.4.0-dev", new string('A', 64));
+                var originalState = InstallReceipt.Parse(package.OldReceipt).Channels ?? throw new Exception("Fixture source channel missing");
+                File.WriteAllBytes(Path.Combine(root, InstallReceipt.Path), Encoding.ASCII.GetBytes(Encoding.ASCII.GetString(package.OldReceipt)
+                    .Replace("\"channelState\":\"" + originalState.Encoded + "\"", "\"channelState\":\"" + channels.Encoded + "\"")));
+            }
+            var originalReceipt = File.ReadAllBytes(Path.Combine(root, InstallReceipt.Path));
+            var interrupted = false;
+            try {
+                using var fence = new WindowsFileFence(root);
+                UpdateTransaction.Apply(fence, descriptor, "transaction-fixture", signature, package.Zip, package.Trust, selected, step => { if (step == boundary) { interrupted = true; throw new Interruption(); } });
+            } catch (Interruption) { }
+            Check(interrupted, "same-channel public apply reached " + boundary);
+            var committed = boundary.StartsWith("after", StringComparison.Ordinal);
+            for (var repeat = 0; repeat < 2; repeat++) {
+                using var fence = new WindowsFileFence(root);
+                // Recovery rebuilds its context from the plan, as startup does.
+                var pending = UpdateRecovery.PendingWork(fence);
+                var context = pending != null ? UpdateRecovery.RecoveryContext(fence, pending, package.Trust) : selected;
+                Check(repeat == 1 || pending != null, "interrupted same-channel public apply leaves pending work");
+                Check(UpdateTransaction.Recover(fence, Work(root), package.Trust, context) == (committed ? TransactionResult.Committed : TransactionResult.RolledBack),
+                    "same-channel public recovery: " + boundary + "/" + repeat);
+            }
+            var state = InstallReceipt.Parse(File.ReadAllBytes(Path.Combine(root, InstallReceipt.Path))).Channels ?? throw new Exception("Recovered fixture channels missing");
+            Check(state.ActiveChannel == feed.Channel && (committed ? state.VersionFor(feed.Channel) == "1.4.0"
+                : UpdateTrust.Hash(File.ReadAllBytes(Path.Combine(root, InstallReceipt.Path))) == UpdateTrust.Hash(originalReceipt)), "recovered receipt stays on Pre-release: " + boundary);
+        }
+        Console.WriteLine("Same-channel public release on Pre-release: recovery from channel.bin before and after commit intent.");
     }
     private static void SharedLoaderPreservation(string baseDirectory, Package package, byte[] inert)
     {
@@ -230,7 +277,57 @@ internal static class TransactionFixture
             Check(UpdateTransaction.Apply(fence, package.Descriptor, "transaction-fixture", package.Signature, package.Zip, package.Trust, Selection, inProcess: true) == TransactionResult.Committed, "in-process apply replaces a loaded plugin");
         Verify(root, package, true, water);
         Check(Directory.GetFiles(Path.Combine(root, "BetterAstralParty.Update"), "*", SearchOption.AllDirectories).Any(path => UpdateTrust.Hash(File.ReadAllBytes(path)) == UpdateTrust.Hash(package.Old[UpdateTrust.PluginPath])), "loaded original stays aside in contained work until a later start");
+        // An apply guard left after this commit is finished work, not an interruption; other phases and targets stay interrupted.
+        using (var fence = new WindowsFileFence(root))
+        {
+            var guard = UpdateFaults.Begin(fence, Selection, FaultPhase.Apply);
+            Check(UpdateFaults.Committed(fence, guard), "apply guard whose target is the installed plugin counts as committed");
+            UpdateFaults.Complete(fence, guard);
+            var download = UpdateFaults.Begin(fence, Selection, FaultPhase.Download);
+            Check(!UpdateFaults.Committed(fence, download), "a download guard never counts as committed");
+            UpdateFaults.Complete(fence, download);
+            var other = UpdateFaults.Begin(fence, new UpdateContext(Selection.Repository, Selection.Channel, Selection.CurrentVersion, "1.4.1", Selection.ReleaseId, Selection.AssetId, UpdateTrust.PlatformId, repositoryId: Selection.RepositoryId), FaultPhase.Apply);
+            Check(!UpdateFaults.Committed(fence, other), "an apply guard for another target stays interrupted");
+            UpdateFaults.Complete(fence, other);
+        }
         Console.WriteLine("In-process apply: loaded plugin renamed aside and replaced; next launch uses the new version.");
+    }
+    // Finished operations and acknowledged faults leave nothing in the game root; records earlier versions archived
+    // there are removed only when they are this root's v5 records, and anything unverified stays.
+    private static void FinishedRecords(string baseDirectory)
+    {
+        var root = Path.Combine(baseDirectory, "finished-records"); Directory.CreateDirectory(root);
+        string Name(string kind) => "bap-" + kind + "-" + Guid.NewGuid().ToString("N");
+        string[] Records() => Directory.GetFiles(root).Select(path => Path.GetFileName(path)).Where(name => name.StartsWith("bap-", StringComparison.Ordinal)
+            || name.StartsWith("BetterAstralParty.update-v5.", StringComparison.Ordinal)).OrderBy(name => name, StringComparer.Ordinal).ToArray();
+        using (var fence = new WindowsFileFence(root))
+        {
+            var first = UpdateFaults.Begin(fence, Selection, FaultPhase.Download);
+            var own = File.ReadAllBytes(Path.Combine(root, UpdateFaults.OperationPath));
+            string done = Name("operation-done"), ack = Name("fault-ack"), foreign = Name("operation-done"), garbage = Name("fault-ack"), other = "bap-operation-done-keep";
+            File.WriteAllBytes(Path.Combine(root, done), own);
+            File.WriteAllText(Path.Combine(root, ack), UpdateTrust.Hash(own) + "\n");
+            File.WriteAllText(Path.Combine(root, foreign), Encoding.ASCII.GetString(own).Replace("root=" + fence.RootIdentity.Text + "\n", "root=00000000:0000000000000000\n"));
+            File.WriteAllText(Path.Combine(root, garbage), "not a record");
+            File.WriteAllBytes(Path.Combine(root, other), own);
+            // Well-formed records whose values do not validate (release 0, an unparsable tag) stay without failing the cleanup.
+            string zero = Name("fault-ack"), badTag = Name("operation-done"), text = Encoding.ASCII.GetString(own);
+            File.WriteAllText(Path.Combine(root, zero), text.Replace("\nrelease=" + Selection.ReleaseId.ToString(CultureInfo.InvariantCulture) + "\n", "\nrelease=0\n"));
+            File.WriteAllText(Path.Combine(root, badTag), text.Replace("\ntag=" + Selection.ReleaseTag + "\n", "\ntag=not-a-version\n"));
+            Check(UpdateFaults.RemovableArchived(root) == 2, "previews count only the records removal will take");
+            UpdateFaults.Complete(fence, first);
+            Check(!File.Exists(Path.Combine(root, UpdateFaults.OperationPath)) && !File.Exists(Path.Combine(root, done)) && !File.Exists(Path.Combine(root, ack)),
+                "completed operation and this root's archived records leave the game root");
+            Check(Records().SequenceEqual(new[] { foreign, garbage, other, zero, badTag }.OrderBy(name => name, StringComparer.Ordinal)), "foreign, unreadable, invalid and differently named records stay");
+            foreach (var name in new[] { foreign, garbage, other, zero, badTag }) File.Delete(Path.Combine(root, name));
+            UpdateFaults.Begin(fence, Selection, FaultPhase.Download);
+            UpdateFaults.Fail(fence, Selection, FaultPhase.Download, FaultReason.Network);
+            UpdateFaults.SaveFailed(fence, UpdateFaults.Read(fence)!);
+            Check(Records().Length == 3, "operation, failure latch and preferences marker are live");
+            UpdateFaults.Acknowledge(fence);
+            Check(Records().Length == 0 && UpdateFaults.Read(fence) == null, "an acknowledged fault removes its records instead of archiving them");
+        }
+        Console.WriteLine("Finished update records: none left in the game root; unverified leftovers kept.");
     }
     private static void Boundaries(string baseDirectory, Package package, byte[] inert)
     {
@@ -363,7 +460,7 @@ internal static class TransactionFixture
             if (!sharedOnly) { var probe = InstalledPluginMetadata.Read(File.ReadAllBytes(args[4])); Check(probe.UpdateProtocol == 5 && probe.SettingsSchema == 1 && UpdateVersion.Parse(probe.Version).CompareTo(UpdateVersion.Parse("1.4.0-0")) >= 0, "actual compiled supported DLL metadata read only"); }
             using (var package = new Package(oldPlugin, newPlugin, inert)) {
                 SharedLoaderPreservation(directory, package, inert);
-                if (!sharedOnly) { ChannelMatrix(directory, package, inert); Boundaries(directory, package, inert); InProcess(directory, package, inert); RecoveryFailures(directory, package, inert); ChildRecovery(directory, package, inert); }
+                if (!sharedOnly) { ChannelMatrix(directory, package, inert); SameChannelPublic(directory, package, inert); Boundaries(directory, package, inert); InProcess(directory, package, inert); RecoveryFailures(directory, package, inert); ChildRecovery(directory, package, inert); FinishedRecords(directory); }
             }
             if (!sharedOnly) foreach (var metadata in new[] { new byte[] { 255 }, new byte[65537] }) {
                 using var package = new Package(oldPlugin, newPlugin, inert, metadata);

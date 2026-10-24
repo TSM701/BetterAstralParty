@@ -38,7 +38,7 @@ static class Compatibility {
     public static void Block(string feature,Exception error,params Action[] cleanup){if(!Blocked.Add(feature))return;foreach(var action in cleanup)action();}
 }
 static class Plugin {
-    public sealed class Setting{public bool Value=true;}public static Setting BattleStatus=new();
+    public sealed class Setting{public bool Value=true;}public static Setting BattleStatus=new(), CounterIcons=new(), StatusHand=new(), StatusEffects=new();
     public sealed class Log{public void State(string key,string value){}}public static Log Diagnostics=new();
 }
 static class ModUi{public static bool IsOpen=>false;}
@@ -64,6 +64,7 @@ static class BattleStatusUi {
     private static void ClearRows(){Probe.RowsCleared++;}
     public static void Clear(){ClearRows();ClearCounter();}
     public static void ClearCounter(){Probe.CounterCleared++;}
+    private static IntPtr _quietCounter,_counterDefender;private static bool _counterShown;
     private static void RefreshCounter(RuntimeObject? actor){Probe.Refreshes++;if(Probe.FailRefresh)throw new MissingFieldException("Inert changed counter construction");}
     private static void PositionCounter(){Probe.Positions++;if(Probe.FailPosition)throw new InvalidOperationException("Inert changed counter positioning");}
 __COUNTER_BOUNDARY__

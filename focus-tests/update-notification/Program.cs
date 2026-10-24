@@ -161,7 +161,7 @@ Case("long notes reuse native scroll list and preserve reading position on refre
     var track=Marker(false);var thumb=Marker(true);
     Check(NativeUi.ScrollTemplates.Last().Get<bool>("isDisposed")&&!view.Get<bool>("isDisposed")&&view.Parent==panel,"reparented native list survives template disposal");
     Check(view.Relations!.RelationClears==1&&view.RemoveChildrenCalls==1&&view.Children.Count==1,"native relations and pooled placeholder children cleared exactly once");
-    Check(view.Get<float>("x")==110&&view.Get<float>("y")==110&&view.Get<float>("width")==840&&view.Get<float>("height")==300,"existing body viewport retained");
+    Check(view.Get<float>("x")==110&&view.Get<float>("y")==110&&view.Get<float>("width")==840&&view.Get<float>("height")==360,"body viewport reaches the buttons when no progress bar is shown");
     Check(view.Get<bool>("touchable")&&view.Get<bool>("opaque")&&!view.Get<bool>("autoResizeItem")&&view.Get<int>("layout")==0
         &&view.Get<int>("selectionMode")==3&&!view.Get<bool>("scrollItemToViewOnClick"),"native clipping/hit/selection contract");
     Check(scroll.Get<bool>("mouseWheelEnabled")&&!scroll.Get<bool>("bouncebackEffect")&&scroll.Get<float>("scrollStep")==48,"native wheel remains enabled");
@@ -172,13 +172,13 @@ Case("long notes reuse native scroll list and preserve reading position on refre
     Check(body.Get<string>("text").EndsWith(ReleaseUpdates.PlainText(notes,ReleaseUpdates.MaxNotes)),"full bounded notes present");
     Check(track.Get<bool>("visible")&&thumb.Get<bool>("visible")&&!track.Get<bool>("touchable")&&!thumb.Get<bool>("touchable"),"overflow marker visible but never takes native input");
     Check(track.Parent==panel&&thumb.Parent==panel&&track.Get<float>("x")==958&&track.Get<float>("y")==110
-        &&track.Get<float>("height")==300&&thumb.Get<float>("x")==958&&thumb.Get<float>("y")==110
-        &&thumb.Get<float>("height")>=24&&thumb.Get<float>("height")<300,"marker fits beside body, above action button area");
+        &&track.Get<float>("height")==360&&thumb.Get<float>("x")==958&&thumb.Get<float>("y")==110
+        &&thumb.Get<float>("height")>=24&&thumb.Get<float>("height")<360,"marker fits beside body, above action button area");
     foreach(var button in new[]{Button("Button_ReturnRounded"),Button("Button_ConfirmRounded")})
         Check(button.Parent==panel&&button.Get<float>("y")>=view.Get<float>("y")+view.Get<float>("height"),"action buttons remain outside scrolling clip");
     Check(scroll.ScrollTopCalls==1,"only initial Create resets scroll");scroll.Values["posY"]=240f;
     var markerY=thumb.Get<float>("y");Frame();
-    Check(thumb.Get<float>("y")>markerY&&thumb.Get<float>("y")+thumb.Get<float>("height")<=410,"native scroll position moves marker within body bounds");
+    Check(thumb.Get<float>("y")>markerY&&thumb.Get<float>("y")+thumb.Get<float>("height")<=470,"native scroll position moves marker within body bounds");
     var trackWrites=MarkerWrites(track);var thumbWrites=MarkerWrites(thumb);Frame();Frame();
     Check(MarkerWrites(track)==trackWrites&&MarkerWrites(thumb)==thumbWrites,"unchanged frames do not write marker visibility/size/position");
     var count=NativeUi.Panels.Count;var bounds=view.BoundsCalls;var opens=ModUi.Opens;
@@ -371,11 +371,14 @@ Case("explicit lower-channel native confirmation displays source target and one-
     var before=Plugin.Automatic.ConfirmCalls;
     Check(Body().Get<string>("text").Contains("3.0.0")&&Body().Get<string>("text").Contains("2.0.0"),"both versions are visible before approval");
     Check(Plugin.Automatic.ConfirmCalls==before,"showing review does not approve");
+    Check(ScrollView().Get<float>("height")==360,"review text reaches the buttons without a progress bar");
     Click("Button_ConfirmRounded",true);Click("Button_ConfirmRounded",false);
     Check(Plugin.Automatic.ConfirmCalls==before+1&&Plugin.Automatic.ApplyOnce&&Live()==1,"only exact confirm click approves once and keeps the window");
     Plugin.Automatic.Status=AutomaticUpdateStatus.Downloading;Plugin.Automatic.Revision++;Frame();
     var exit=Button("Button_ConfirmRounded");
     Check(exit.Get<string>("title")==ModText.ChannelTransitionExit&&exit.Get<bool>("grayed")&&Body().Get<string>("text").Contains("2.0.0"),"Exit and Switch stays gray while downloading");
+    UpdateProgress.Shared.Observe(AutomaticUpdateStatus.Downloading,"2.0.0",true,100,400);Frame();
+    Check(ScrollView().Get<float>("height")==300,"progress bar shortens the text to keep its row clear");
     var quits=UnityEngine.Application.QuitCalls;
     Click("Button_ConfirmRounded",true);Click("Button_ConfirmRounded",false);
     Check(UnityEngine.Application.QuitCalls==quits&&Live()==1,"gray Exit and Switch never closes the game");
@@ -385,6 +388,7 @@ Case("explicit lower-channel native confirmation displays source target and one-
     Check(!Button("Button_ConfirmRounded").Get<bool>("grayed")&&Body().Get<string>("text")==ModText.ChannelTransitionReady("2.0.0"),"a later status refresh cannot undo a seen commit");
     Click("Button_ConfirmRounded",true);Click("Button_ConfirmRounded",false);
     Check(UnityEngine.Application.QuitCalls==quits+1&&Live()==0,"Exit and Switch closes the game normally once");
+    UpdateProgress.Shared.Observe(AutomaticUpdateStatus.Preparing,"",false);UpdateProgress.Shared.Observe(AutomaticUpdateStatus.Cancelled,"",false);
     Plugin.Automatic.Status=AutomaticUpdateStatus.Idle;Plugin.Automatic.Revision++;
 });
 Case("update progress stages never step back and a commit stays until restart",()=>{

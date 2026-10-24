@@ -246,8 +246,8 @@ internal static partial class NativeMaintenanceIntegrationFixture
         {
             _heldBackupLock = heldLock;
             try {
-            foreach (var relative in new[] { "BepInEx/config/kr.betterastralparty.mod.cfg", "changelog.txt" }) {
-            var path = Full(Game, relative); var bytes = Read(path);
+            foreach (var relative in new[] { "BepInEx/config/kr.betterastralparty.mod.cfg", "changelog.txt", "BetterAstralParty.update-v4.version", "BetterAstralParty.channel-adopt" }) {
+            var path = Full(Game, relative); if (!File.Exists(WindowsPath.ForIo(path))) Text(path, "inert takeover/adoption marker"); var bytes = Read(path);
             var txn = NativeMaintenance.StartTransaction(bundle, new[] { path }, 0); Text(path, "inert edit after interruption");
             Check(NativeMaintenance.HasPending(bundle), "actual ordinary journal exists after simulated interruption"); var before = State();
             Check(!NativeMaintenance.RecoverPending(bundle, Consent, Say, true), "pending recovery preview detects actual journal"); Same(before, "pending recovery preview is read-only");
@@ -255,6 +255,21 @@ internal static partial class NativeMaintenanceIntegrationFixture
             Check(Read(path).SequenceEqual(bytes) && File.Exists(WindowsPath.ForIo(Full(txn.BackupDir, "restored.json"))), "pending recovery restores exact bytes and retains journal evidence");
             }
             } finally { _heldBackupLock = null; }
+        }
+        // A guard an apply left after committing is finished work and leaves without a latch; a guard alone from an
+        // update cut off before any file move becomes the interruption latch. Both guards are removed.
+        using (var fence = new WindowsFileFence(Game))
+        {
+            string installed; using (var plugin = fence.OpenFile(UpdateTrust.PluginPath)) installed = InstalledPluginMetadata.Read(UpdateTicket.Read(plugin, UpdateTrust.MaxFileBytes)).Version;
+            var context = new UpdateContext(ReleaseFeedPolicy.StableRepository, "Stable", "0.0.0", installed, 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId);
+            UpdateFaults.Begin(fence, context, FaultPhase.Apply);
+            Check(SetupHost.HasPendingUpdate(Game) && SetupHost.RecoverPendingUpdate(Game) == "Committed" && UpdateFaults.ReadFile(fence, UpdateFaults.OperationPath) == null
+                && UpdateFaults.ReadFile(fence, UpdateFaults.FailurePath) == null, "a committed apply's leftover guard is removed without an interruption latch");
+            UpdateFaults.Begin(fence, context, FaultPhase.Download);
+            Check(SetupHost.RecoverPendingUpdate(Game) == "Interrupted" && UpdateFaults.ReadFile(fence, UpdateFaults.OperationPath) == null
+                && UpdateFaults.ReadFile(fence, UpdateFaults.FailurePath) != null, "a guard-only interruption becomes the failure latch and the guard is removed");
+            UpdateFaults.Acknowledge(fence);
+            Check(UpdateFaults.Read(fence) == null && !SetupHost.HasPendingUpdate(Game), "the fixture latch is acknowledged before the next mode");
         }
     }
     private static void ChangedOwned()
@@ -407,7 +422,10 @@ internal static partial class NativeMaintenanceIntegrationFixture
         }
         using (var bundle = new NativeMaintenanceBundle(Package, Game)) Check(NativeUninstall.Run(bundle, Steam, 1, "Keep", false, Consent, Say) == 0, "ordinary shortcut removal remains available after optional-Steam checks");
         Preserved();
-        ForeignLoaderUninstall();
+        // The shortcut removal it reaches checks Steam's processes; a Steam running on the build PC must not decide it.
+        NativeSteamMaintenance.ProcessObserver = () => Array.Empty<SteamProcessObservation>();
+        try { ForeignLoaderUninstall(); }
+        finally { NativeSteamMaintenance.ProcessObserver = null; }
     }
     private static void ForeignLoaderUninstall()
     {

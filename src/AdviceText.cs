@@ -63,49 +63,4 @@ internal static class AdviceText
         if (elapsed < 0.5f) return 0.95f + 0.05f * Ease((elapsed - 20f / 60) / (10f / 60));
         return 1f;
     }
-    private static readonly Regex Tokens = new(
-        @"방어 추천|회피 추천|효과 있음|조건부 이득|효과 없음 · 보존|더 싼 카드 우선|판단 보류|사용 불가|회피 불가|평균 체력 손실|평균 피해|전투불능|추가 피해|피해 감소|비용|방어(?=\*| ·| 전투)|회피(?=\*| 전투)|-?[0-9]+(?:[.,][0-9]+)?(?:~[0-9]+(?:[.,][0-9]+)?)?%?");
-
-    internal static string Format(string plain, int size, string? attack = null, string? defense = null, string? hp = null)
-    {
-        // Escape each plain segment once, before inserting our own markup.
-        return string.Join("\n", plain.Replace("★ ", "").Split('\n').Select(line =>
-        {
-            var numeric = line.Contains("피해") || line.Contains("손실") || line.Contains("전투불능") || line.Contains("비용");
-            var cursor = 0;
-            var result = new System.Text.StringBuilder();
-            foreach (Match match in Tokens.Matches(line))
-            {
-                result.Append(SecurityElement.Escape(ModText.Text(line[cursor..match.Index])));
-                var word = match.Value;
-                var icon = word switch
-                {
-                    "방어 추천" or "방어" or "피해 감소" => Icon(defense, "◇", size),
-                    "추가 피해" => Icon(attack, "◆", size),
-                    "평균 체력 손실" or "평균 피해" or "전투불능" => Icon(hp, "♥", size),
-                    "회피 추천" or "회피" or "회피 불가" => "↗ ",
-                    "비용" => "◆ ",
-                    _ => ""
-                };
-                var color = word switch
-                {
-                    "방어 추천" or "회피 추천" or "효과 있음" => "17663C",
-                    "조건부 이득" or "효과 없음 · 보존" or "더 싼 카드 우선" or "판단 보류" => "795000",
-                    "사용 불가" or "회피 불가" => "B5163B",
-                    _ => numeric && (char.IsDigit(word[0]) || word[0] == '-') ? "005B83" : null
-                };
-                result.Append(icon);
-                var escaped = SecurityElement.Escape(ModText.Text(word));
-                result.Append(color == null ? escaped : $"<font color='#{color}'>{escaped}</font>");
-                cursor = match.Index + match.Length;
-            }
-            result.Append(SecurityElement.Escape(ModText.Text(line[cursor..])));
-            return result.ToString();
-        }));
-    }
-
-    private static string Icon(string? url, string fallback, int size) =>
-        url != null && Regex.IsMatch(url, @"\Aui://[A-Za-z0-9_/]+\z")
-            ? $"<img src='{url}' width='{Math.Clamp(size, 14, 48)}' height='{Math.Clamp(size, 14, 48)}'/> "
-            : fallback + " ";
 }

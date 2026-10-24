@@ -12,7 +12,7 @@ internal static class SetupHost
     // The host's own component version, independent of the release version, so an unchanged host
     // stays byte-identical across releases (a stable hash keeps antivirus clearance and reputation).
     // Bump it whenever this host or anything it compiles changes.
-    public const string SetupVersion = "1.4.1";
+    public const string SetupVersion = "1.5.0";
     internal const string Image = "BetterAstralParty-Setup.exe";
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
@@ -104,7 +104,14 @@ internal static class SetupHost
     public static string RecoverPendingUpdate(string root) {
         var trust=UpdateTrust.Production();
         using(var fence=new WindowsFileFence(root)) {
-            var pending=UpdateRecovery.PendingWork(fence); if(pending==null) return "none";
+            var pending=UpdateRecovery.PendingWork(fence);
+            if(pending==null) {
+                // Interrupted before any file replacement (download/prepare): only the guard remains. The game is
+                // already confirmed closed, so latch and close it exactly as the plugin does at start-up.
+                var guard=UpdateFaults.ReadFile(fence,UpdateFaults.OperationPath); if(guard==null) return "none";
+                if(UpdateFaults.Committed(fence,guard)) {UpdateFaults.Complete(fence,guard); return "Committed";}
+                UpdateFaults.LatchInterrupted(fence,guard); UpdateFaults.Complete(fence,guard); return "Interrupted";
+            }
             var context=UpdateRecovery.RecoveryContext(fence,pending,trust);
             var result=UpdateTransaction.Recover(fence,pending.Work,trust,context);
             var operation=UpdateFaults.ReadFile(fence,UpdateFaults.OperationPath);
@@ -113,7 +120,7 @@ internal static class SetupHost
             return result.ToString();
         }
     }
-    public static bool HasPendingUpdate(string root) { using(var fence=new WindowsFileFence(root)) return UpdateRecovery.PendingWork(fence)!=null; }
+    public static bool HasPendingUpdate(string root) { using(var fence=new WindowsFileFence(root)) return UpdateRecovery.PendingWork(fence)!=null || UpdateFaults.ReadFile(fence,UpdateFaults.OperationPath)!=null; }
 
     internal static string LaunchFailure(string phase, Exception error)
     {

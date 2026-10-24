@@ -13,8 +13,19 @@ internal static class CharacterNameUi
     private static IntPtr _root;
     private static float _scanAt;
     private static int _rootChildren = -1;
-    // Windows open as root children and panels switch characters on clicks; rescan at once on either, otherwise rarely.
-    private const float IdleRescan = 2f;
+    // Windows open as root children and panels switch characters on clicks or the wheel. Each such cue rescans at once
+    // and keeps rescanning every 0.25 s for a few seconds, because lists and the post-match preparation screen fill
+    // their name slots in late; a pass that still finds new slots or replaces names extends that. Otherwise rarely.
+    private const float IdleRescan = 2f, FillingRescan = 0.25f, CueBurst = 3f;
+    private static float _burstUntil;
+    private static bool _cue;
+    // Every name slot found so far, hidden or not, until it is disposed: a list hidden behind character details shows
+    // epithets again when it returns, and virtual lists reuse slots on scroll, so slots on stage are rechecked every
+    // frame. Off-stage slots only wait for their return, and make room at the cap.
+    private static readonly Dictionary<IntPtr, (RuntimeObject Label, string Property)> Slots = new();
+    private static readonly List<IntPtr> Gone = new();
+    private const int MaxSlots = 256;
+    private static int _replaced, _newSlots;
 
     internal static void Tick(RuntimeObject root)
     {
@@ -24,18 +35,33 @@ internal static class CharacterNameUi
             if (!Plugin.UseRealNames.Value) { RestoreAll(); return; }
             // Wait until login/config loading has finished before querying public name tables.
             if (_table == IntPtr.Zero && !GameUi.HomeAvailable) return;
-            if (_root != root.Pointer) { Pending.Clear(); _root = root.Pointer; _scanAt = 0; }
+            if (_root != root.Pointer) { Pending.Clear(); Slots.Clear(); _root = root.Pointer; _scanAt = 0; }
+            if (_table != IntPtr.Zero)
+            {
+                Gone.Clear();
+                foreach (var (key, (label, property)) in Slots)
+                    if (label.Get<bool>("isDisposed")) Gone.Add(key); else if (label.Get<bool>("onStage")) Replace(label, property);
+                foreach (var key in Gone) Slots.Remove(key);
+            }
+            // Cues are read every frame, also while a pass is running, so none is lost.
+            var children = root.Get<int>("numChildren");
+            if (children != _rootChildren || Input.GetMouseButtonUp(0) || Input.mouseScrollDelta.y != 0)
+            { _rootChildren = children; _cue = true; _burstUntil = Time.unscaledTime + CueBurst; }
             if (Pending.Count == 0)
             {
-                var children = root.Get<int>("numChildren");
-                if (children != _rootChildren || Input.GetMouseButtonUp(0)) { _rootChildren = children; _scanAt = 0; }
+                if (_cue) { _cue = false; _scanAt = 0; }
                 if (Time.unscaledTime < _scanAt || !LoadNames()) return;
                 foreach (var (key, edit) in Changed.ToArray())
                     if (edit.Label.Get<bool>("isDisposed")) Changed.Remove(key);
+                _replaced = _newSlots = 0;
                 Pending.Push((root, 0, -1));
             }
             VisitSlice();
-            if (Pending.Count == 0) _scanAt = Time.unscaledTime + IdleRescan;
+            if (Pending.Count == 0)
+            {
+                var filling = _replaced != 0 || _newSlots != 0 || Time.unscaledTime < _burstUntil;
+                _scanAt = Time.unscaledTime + (filling ? FillingRescan : IdleRescan);
+            }
         }
         catch (Exception ex)
         {
@@ -80,6 +106,14 @@ internal static class CharacterNameUi
         return true;
     }
 
+    // A full table drops one slot that is off stage now; its list is scanned again when it returns.
+    private static bool MakeRoom()
+    {
+        foreach (var (key, (label, _)) in Slots)
+            if (label.Get<bool>("isDisposed") || !label.Get<bool>("onStage")) return Slots.Remove(key);
+        return false;
+    }
+
     private static void VisitSlice()
     {
         // Bound native UI work per frame instead of walking 4096 nodes in one update.
@@ -100,7 +134,14 @@ internal static class CharacterNameUi
                 if (field != null)
                 {
                     var label = field.Length == 0 ? node : node.Field(field);
-                    if (label != null) Replace(label, CharacterNames.LabelProperty(node.TypeName));
+                    if (label != null)
+                    {
+                        var property = CharacterNames.LabelProperty(node.TypeName);
+                        var before = Changed.Count;
+                        Replace(label, property);
+                        if (Changed.Count > before) _replaced++;
+                        if (!Slots.ContainsKey(label.Pointer) && (Slots.Count < MaxSlots || MakeRoom())) { Slots[label.Pointer] = (label, property); _newSlots++; }
+                    }
                 }
                 if (depth >= 24 || node.Get("asCom") == null) continue;
                 childIndex = 0;

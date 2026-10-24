@@ -47,6 +47,44 @@ installation. Signed package preparation and the development maintenance binding
 remain separate from an unsigned build; report pending signing or runtime checks
 without changing a previously approved package.
 
+## In-game verification coverage — 2026-10-21
+
+Automated checks cannot see whether a native member the plugin reads really
+exists in the running game. With diagnostic logging ON, the plugin writes each
+native class, field and method it resolves (once per session, names only) as
+`native.access` lines in the runtime log, and a failed lookup names the native
+class, the member and a likely mix-up such as a field read as a property.
+After playing the scenarios a change touches, run:
+
+```
+Developer.cmd native-coverage --since artifacts\cc\<previous build>
+```
+
+It lists failed native lookups first, then for each `src` file how many of its
+literal native accesses were resolved in game, with changed files marked `*`.
+A member counts as exercised when its name was resolved on any class, so treat
+the result as coverage evidence, not a per-call-site proof. Exit code 2 means
+at least one failed lookup was recorded.
+
+## Combat audit — 2026-10-21
+
+With diagnostic logging ON the plugin logs, for every PvE hit, the public
+inputs (HP, final ATK/DEF, revealed die, dodge, modifiers), the shown buffs on
+both combatants and the observed HP. After playing, run:
+
+```
+Developer.cmd combat-audit
+```
+
+It replays each logged hit through the current `CombatAdvisor` model, lists
+mismatches with their inputs and buffs, and counts per shown buff the exact
+matches, lethal matches and mismatches together with its status (modeled,
+audited neutral or not counted). Uncounted buffs that only appear in three or
+more exact matches are listed as review candidates for the neutral list in
+`src/CombatBuffAudit.cs`; read the buff's original description before adding
+it. Exit code 2 means at least one mismatch. Lethal hits only confirm that the
+hit was lethal, because overkill is not visible.
+
 ## SDK PATH safety — 2026-10-14
 
 Development/test SDK invocations disable global-tool PATH registration in their

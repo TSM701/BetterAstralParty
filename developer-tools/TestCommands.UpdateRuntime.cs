@@ -39,6 +39,21 @@ internal static partial class TestCommands
         var modEntry = ReadSource(context, "tools/BetterAstralParty-Mod.cmd");
         Contains(modEntry, new[] { "type nul > \"%REQUEST%\\mod-launch.request\"", "start \"\" \"steam://rungameid/2622000\"", "steam://run/2622000//--doorstop-enabled true --bap-compatibility-checked/" }, "Mod entry lets Steam start the owned app");
         NoPattern(modEntry, @"SteamOverlayGameId|SteamGameId|AstralParty_INT\.exe"" --doorstop", "Mod entry never starts the game itself or overrides Steam overlay identity");
+        // Issue #15: a PC whose PATH lacks System32 cannot find tasklist/find/findstr; call them by full path.
+        var vanillaEntry = ReadSource(context, "tools/AstralParty-Vanilla.cmd");
+        foreach (var (name, batchText) in new[] { ("Mod", modEntry), ("Vanilla", vanillaEntry) })
+        {
+            Contains(batchText, new[] { "\"%SystemRoot%\\System32\\tasklist.exe\"", "\"%SystemRoot%\\System32\\find.exe\"" }, name + " entry calls system tools by full path");
+            NoPattern(batchText, @"(?mi)^\s*(tasklist|find|findstr)\b|\|\s*(find|findstr)\b", name + " entry never relies on PATH for system tools");
+        }
+        Contains(modEntry, new[] { "\"%SystemRoot%\\System32\\findstr.exe\"" }, "Mod entry reads the loader switch by full path");
+        // cmd.exe misreads LF-only batch files once chcp changes the code page (issue #15).
+        Check(PackagingWhole.CrlfOnly("a\r\nb\r\n"u8.ToArray()) && !PackagingWhole.CrlfOnly("a\nb\r\n"u8.ToArray()) && !PackagingWhole.CrlfOnly("a\r\nb"u8.ToArray()), "CRLF batch detector");
+        foreach (var batch in Directory.GetFiles(context.Root, "*.cmd").Concat(Directory.GetFiles(Path.Combine(context.Root, "tools"), "*.cmd")))
+        {
+            Check(PackagingWhole.CrlfOnly(File.ReadAllBytes(batch)), "CRLF batch file: " + Path.GetFileName(batch));
+            NoPattern(File.ReadAllText(batch), @"(?mi)^\s*(tasklist|find|findstr|chcp)\b|\|\s*(find|findstr)\b", Path.GetFileName(batch) + " never relies on PATH for system tools");
+        }
         var image = BuildProject(context, "focus-tests/update-runtime-isolation/SharedLoaderFixture.csproj", stage, pin);
         Ensure(context.Run(Dotnet(context), new[] { image, scratch, Path.Combine(context.Root, "artifacts") }, env: EnvironmentFor(stage), timeoutMilliseconds: 60000, logPath: Path.Combine(stage, "shared-loader.log")), "Actual native shared-loader policy");
     }
