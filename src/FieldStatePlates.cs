@@ -19,7 +19,7 @@ internal static class FieldStatePlates
     }
     private static readonly Group StatePlates = new("com_PlayerAttrInfos", "UICom_PlayerAttrInfo"),
         UpgradeTips = new("com_UpgradeTips", "UIBattleInfo_Com_UpgradeTips");
-    private static IntPtr _sceneClass;
+    private static IntPtr _sceneClass, _roadClass;
     private static float _scanAt;
 
     // Adopted character state plates, for the counter badges.
@@ -44,6 +44,7 @@ internal static class FieldStatePlates
             if (group.Layer.Get<float>("width") != parent.Get<float>("width") || group.Layer.Get<float>("height") != parent.Get<float>("height"))
                 group.Layer.Call("SetSize", parent.Get<float>("width"), parent.Get<float>("height"));
             if (scan) Adopt(group);
+            if (group == UpgradeTips) DropRemovedTips();
             // Hide When Far hides only the state plates; upgrade tips stay visible and keep following their character.
             if (cameraObject != null && (group == UpgradeTips || !FieldIndicatorOpacity.Hidden)) Layout(group, new Camera(cameraObject.Pointer), scale);
         }
@@ -59,6 +60,23 @@ internal static class FieldStatePlates
             group.Layer!.Call("AddChild", child);
             group.Adopted.Add(child);
         }
+    }
+
+    // Native RoadLineManager.DestroyRoad removes tips with com_UpgradeTips.RemoveChild(tip, true), which misses a tip held
+    // in the owned layer and left it on screen. A tip its list no longer holds is one the native removed: dispose it.
+    private static void DropRemovedTips()
+    {
+        if (UpgradeTips.Adopted.Count == 0) return;
+        if (_roadClass == IntPtr.Zero) _roadClass = RuntimeObject.FindClass("Core", "RoadLineManager");
+        if (RuntimeObject.StaticField(_roadClass, "_inst")?.Field("UpgradeTips") is not { } live) return;
+        var count = live.Get<int>("Count");
+        UpgradeTips.Adopted.RemoveAll(tip =>
+        {
+            for (var i = 0; i < count; i++)
+                if (live.Call("get_Item", i)?.Pointer == tip.Pointer) return false;
+            GameUi.Dispose(tip);
+            return true;
+        });
     }
 
     private static void Layout(Group group, Camera camera, float scale)

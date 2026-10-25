@@ -60,6 +60,12 @@ internal static class DragStateCheck
         var writes = ExactMethod(native, "FairyGUI.Stage", "CancelClick", "System.Void", "System.Int32").Body.Instructions.Where(instruction => instruction.OpCode.Name == "stfld").Select(instruction => ((FieldReference)instruction.Operand).FullName).ToArray();
         Check(writes.Length == 1 && writes[0] == "System.Boolean FairyGUI.TouchInfo::clickCancelled", "CancelClick writes only matching touch click flag");
         ExactMethod(native, "FairyGUI.GObject", "get_draggable", "System.Boolean"); ExactField(native, "FairyGUI.UIConfig", "clickDragSensitivity", "System.Int32", true, true);
+        // Focus clicks follow the native click rule: 50 pixels per axis, clickDragSensitivity only where a drag can start.
+        var touchMove = Body(NativeMethod(native, "FairyGUI.TouchInfo", "Move"));
+        foreach (var axis in new[] { "X", "Y" })
+            Pattern(touchMove, @"FairyGUI.TouchInfo::down" + axis + @"\nIL_[0-9a-f]+: sub\nIL_[0-9a-f]+: call System.Single UnityEngine.Mathf::Abs\(System.Single\)\nIL_[0-9a-f]+: ldc.r4 50\n", "Native click cancels past 50 pixels: " + axis);
+        Pattern(Body(NativeMethod(native, "FairyGUI.GObject", "__touchMove")), @"::_dragTesting[\s\S]*UIConfig::clickDragSensitivity", "Native drag start uses clickDragSensitivity");
+        Contains(ReadSource(context, "src/FieldFreeCamera.cs"), new[] { "draggable |= item.Get<bool>(\"draggable\")", "return dx <= 50 && dy <= 50 && (dragThreshold < 0 || dx < dragThreshold && dy < dragThreshold);" }, "Focus click follows the native click rule");
         var screen = native.MainModule.GetType("FairyGUI.Stage").Methods.Where(method => method.Name == "get_touchScreen" && method.IsPublic && method.IsStatic && method.ReturnType.FullName == "System.Boolean" && method.Parameters.Count == 0).ToArray(); Check(screen.Length == 1, "Desktop input mode static reader");
         Pattern(Body(NativeMethod(native, "FairyGUI.Stage", "ResetInputState")), @"ldc.i4.0\nIL_[0-9a-f]+: ldelem.ref\nIL_[0-9a-f]+: ldc.i4.0\nIL_[0-9a-f]+: stfld System.Int32 FairyGUI.TouchInfo::touchId", "Desktop touch ID is zero");
         Check(ExactMethod(native, "FairyGUI.Stage", "get_touchPosition", "UnityEngine.Vector2").Body.Instructions.Any(instruction => instruction.Operand is MethodReference reference && reference.Name == "UpdateTouchPosition"), "Gesture samples freshly updated touch position");

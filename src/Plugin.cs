@@ -11,7 +11,7 @@ public sealed class Plugin : BasePlugin
 {
     public const string Guid = "kr.betterastralparty.mod";
     public const string Name = "BetterAstralParty";
-    public const string Version = "1.6.0-dev.17";
+    public const string Version = "1.6.1-dev.1";
     public const int InstallBundleProtocol = 1;
     public const string UpdateProtocol = "5";
     public const string SettingsSchema = "1";

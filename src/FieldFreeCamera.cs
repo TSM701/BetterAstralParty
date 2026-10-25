@@ -22,6 +22,7 @@ internal static class FieldFreeCamera
     private static readonly string[] FocusTypes = { PlayerInfo, "UIButton_MonsterItem", "UIBattleInfo_Com_Minimap" };
     private static string? _focusTarget;
     private static Vector2 _focusPress;
+    private static int _focusDrag = -1;
     // pathTypes runs from the hit object up to the root; the player head graph is listed by its name.
     internal static string? FocusTarget(IEnumerable<string> pathTypes, bool watcher = false)
     {
@@ -33,8 +34,14 @@ internal static class FieldFreeCamera
         }
         return null;
     }
-    internal static bool ClickGesture(Vector2 press, Vector2 release, int threshold)
-        => threshold >= 0 && (release - press).sqrMagnitude <= threshold * (float)threshold;
+    // Native click rule: FairyGUI TouchInfo.Move cancels a click once the press strays past 50 pixels on an axis, and a
+    // draggable target's drag start cancels it at clickDragSensitivity (dragThreshold; negative when nothing is draggable).
+    // Using clickDragSensitivity (2) for every target missed monster clicks that moved a few pixels (2026-10-25).
+    internal static bool ClickGesture(Vector2 press, Vector2 point, int dragThreshold)
+    {
+        var dx = Math.Abs(point.x - press.x); var dy = Math.Abs(point.y - press.y);
+        return dx <= 50 && dy <= 50 && (dragThreshold < 0 || dx < dragThreshold && dy < dragThreshold);
+    }
     internal static bool Holding => _camera != null;
     internal static RuntimeObject? Camera => _camera == null ? null : new RuntimeObject(_camera.Pointer);
 
@@ -87,16 +94,22 @@ internal static class FieldFreeCamera
         {
             _focusPress = Input.mousePosition;
             var types = new List<string>();
+            var draggable = false;
             foreach (var item in GameUi.PointerPath(hitTest: true))
+            {
                 types.Add(item.Field("name")?.String() == PlayerHead ? PlayerHead : item.TypeName); // GObject.name is a field, not a property.
+                draggable |= item.Get<bool>("draggable");
+            }
             _focusTarget = FocusTarget(types, types.Contains(PlayerInfo) && RuntimeObject.StaticField(RuntimeObject.FindClass("GameLogic", "GameLogicManager"), "_inst")
                 ?.Get("watch")?.Call("PlayerIsWatcher")?.Value<bool>() == true);
+            _focusDrag = draggable ? RuntimeObject.StaticField(RuntimeObject.FindClass("FairyGUI", "UIConfig"), "clickDragSensitivity")!.Value<int>() : -1;
         }
+        // A press that strayed once stays cancelled, as the native click does.
+        else if (_focusTarget != null && !ClickGesture(_focusPress, Input.mousePosition, _focusDrag)) _focusTarget = null;
         else if (_focusTarget != null && Input.GetMouseButtonUp(0))
         {
             var target = _focusTarget; _focusTarget = null;
-            var threshold = RuntimeObject.StaticField(RuntimeObject.FindClass("FairyGUI", "UIConfig"), "clickDragSensitivity")!.Value<int>();
-            if (!_returnPending && ClickGesture(_focusPress, Input.mousePosition, threshold))
+            if (!_returnPending)
             {
                 // Same as the exit button, but leave the camera to the native click handler instead of returning home.
                 Plugin.Diagnostics.Write("fieldFreeCamera released for native focus; target=" + target + "; suspended=" + (_override < 0 ? "true" : "false")

@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "version": "1.6.0",
-  "buildSourceManifestSha256": "93341FE90DC172C12F15F75F9BA878F155FCCD7FA16511599F97A54C7B88E1E6",
+  "version": "1.6.1",
+  "buildSourceManifestSha256": "77DDD5B67E3B8CDE43206CEAECBC7C6D55A64BA309AA6B5750FF5782AB42E7D9",
   "files": [
     {
       "path": "Create-Diagnostics.cmd",
@@ -325,13 +325,13 @@
     },
     {
       "path": "developer-tools/TestCommands.FieldBuffs.cs",
-      "bytes": 15653,
-      "sha256": "3BD55DED24F3404444438832832E7F86BF1C728335C548D27154A5F498BA4D24"
+      "bytes": 16490,
+      "sha256": "DB22BBDE33A24FD37CEF7D780FF9336517308716D5EBC6F954AA482FAB5ABD73"
     },
     {
       "path": "developer-tools/TestCommands.FieldFreeCamera.cs",
-      "bytes": 17510,
-      "sha256": "8B89205FC2368E767BAA448C476F0EFD5D67B27E59E8C7E318D2909DE94B3D81"
+      "bytes": 18455,
+      "sha256": "41364A28E4CC8A74CE2DFE4A7AEB00FC9E3A657EE781C7ECC3C5F1E8858D4ACA"
     },
     {
       "path": "developer-tools/TestCommands.FieldHelpers.cs",
@@ -900,8 +900,8 @@
     },
     {
       "path": "focus-tests/free-camera/FieldFreeCameraFixture.cs",
-      "bytes": 38752,
-      "sha256": "EE374CA1B44981BF53A27FB2680358C7DC8C30A2ADD9D6CE3C4A5158270B7D6A"
+      "bytes": 40104,
+      "sha256": "6446F99BE294A3BF48D371C99AF5F5127286E5C3BD3E7B90B3402274774D231E"
     },
     {
       "path": "focus-tests/handoff-start-failure/Metadata.cs",
@@ -1450,8 +1450,8 @@
     },
     {
       "path": "src/FieldFreeCamera.cs",
-      "bytes": 13800,
-      "sha256": "F4FA32E3C3975A88FB8F765FE8CF70CF588F33A57DF9AE3464985E9AF7398ED1"
+      "bytes": 14587,
+      "sha256": "CA03C7E67840FC1E6ACAC13A1B58433E7196B286F26EDD207F883BDF390B8923"
     },
     {
       "path": "src/FieldIndicatorOpacity.cs",
@@ -1475,8 +1475,8 @@
     },
     {
       "path": "src/FieldStatePlates.cs",
-      "bytes": 6329,
-      "sha256": "8E9BF323CE22727FF38819C9A751663C0DC890BEB26D6E0D233B49D3B25E9083"
+      "bytes": 7255,
+      "sha256": "E54FEF69359AABBF9BA1304EE9CF297DD3D1AA038F9B2856E1A6337F26F03CB2"
     },
     {
       "path": "src/FieldZoomGeometry.cs",
@@ -1630,8 +1630,8 @@
     },
     {
       "path": "src/Plugin.cs",
-      "bytes": 43747,
-      "sha256": "D8DD160A6E04B7C7ED422473137BDC5C68A2A6A6D2EB8E24020E33ECEB2C0299"
+      "bytes": 43746,
+      "sha256": "0CA988185FC31B6A18EE4F9743A62DFF6D83824CFA63489FA17210FEB13A8175"
     },
     {
       "path": "src/PrivateReleaseSession.cs",

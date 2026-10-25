@@ -159,6 +159,7 @@ internal sealed class RuntimeObject {
             ("Character","Field","vCamera")=>typeof(RuntimeObject),
             ("Stage","Get","touchPosition")=>typeof(Vector2),
             ("UIButton_MonsterItem","Field","name")=>typeof(RuntimeObject),
+            ("UIButton_MonsterItem","Get","draggable")=>typeof(bool),
             ("Box","Value","value")=>Data["value"]!.GetType(),
             _=>throw new Exception("Unsupported native reader "+Kind+"."+member+"."+name)
         };
@@ -428,7 +429,21 @@ public static class Check {
         Assert(FieldFreeCamera.FocusTarget(new[]{"GGraph","UIBattleInfo_Button_PlayerInfo","UIBattleInfo_Com_Player","GRoot"})==null
             && FieldFreeCamera.FocusTarget(new[]{"GGraph","UIBattleInfo_Button_PlayerInfo"},watcher:true)=="UIBattleInfo_Button_PlayerInfo");
         Assert(FieldFreeCamera.FocusTarget(new[]{"GRoot","UIButton_ThrowDice","UICom_AttrInfo"})==null && FieldFreeCamera.FocusTarget(System.Array.Empty<string>())==null);
-        Assert(FieldFreeCamera.ClickGesture(new(100,100),new(102,100),2) && !FieldFreeCamera.ClickGesture(new(100,100),new(140,100),2) && !FieldFreeCamera.ClickGesture(new(1,1),new(1,1),-1));
+        // Native: 50 pixels per axis, or a draggable target's clickDragSensitivity.
+        Assert(FieldFreeCamera.ClickGesture(new(100,100),new(106,97),-1) && FieldFreeCamera.ClickGesture(new(100,100),new(150,50),-1)
+            && !FieldFreeCamera.ClickGesture(new(100,100),new(151,100),-1) && !FieldFreeCamera.ClickGesture(new(100,100),new(float.NaN,100),-1));
+        Assert(FieldFreeCamera.ClickGesture(new(100,100),new(101,100),2) && !FieldFreeCamera.ClickGesture(new(100,100),new(102,100),2));
+    }
+    // 2026-10-25: a monster click that moved a few pixels still focused natively but kept the free view.
+    static void MovedFocusClick() {
+        var s=new Scene();s.Enter();Assert(s.Update());
+        GameUi.Path.Clear();GameUi.Path.Add(Obj("UIButton_MonsterItem",("name",null),("draggable",false)));Array.Clear(Input.Up);
+        Input.mousePosition=new(500,400,0);Input.Down[0]=true;Assert(s.Update());Input.Down[0]=false;
+        Input.mousePosition=new(570,400,0);Assert(s.Update());Input.mousePosition=new(505,400,0);
+        Input.Up[0]=true;Assert(s.Update() && FieldFreeCamera.Holding);Input.Up[0]=false;
+        Input.mousePosition=new(500,400,0);Input.Down[0]=true;Assert(s.Update());Input.Down[0]=false;
+        Input.mousePosition=new(508,396,0);Input.Up[0]=true;Assert(!s.Update() && !FieldFreeCamera.Holding);
+        Input.Up[0]=false;Input.mousePosition=default;GameUi.Path.Clear();FieldFreeCamera.Clear();
     }
     // A monster-item click ends the free view even while a foreign frame suspended the owned override, so the
     // view does not come back over the native focus (2026-10-24: skill monster targets needed a third click).
@@ -436,11 +451,11 @@ public static class Check {
         var s=new Scene();s.Enter();Assert(s.Update());
         var foreign=new CinemachineBrain.BrainFrame{id=900,blend=new(){CamB=s.NativeCamera.Cast<ICinemachineCamera>()}};
         s.Brain.mFrameStack.Add(foreign);Assert(!s.Update() && FieldFreeCamera.Holding);
-        GameUi.Path.Clear();GameUi.Path.Add(Obj("UIButton_MonsterItem",("name",null)));Array.Clear(Input.Up);
+        GameUi.Path.Clear();GameUi.Path.Add(Obj("UIButton_MonsterItem",("name",null),("draggable",false)));Array.Clear(Input.Up);
         Input.Down[0]=true;Assert(!s.Update() && FieldFreeCamera.Holding);Input.Down[0]=false;
         Input.Up[0]=true;Assert(!s.Update() && !FieldFreeCamera.Holding && FieldZoomUi.Clears==1);
         Input.Up[0]=false;GameUi.Path.Clear();s.Brain.mFrameStack.Remove(foreign);
     }
-    public static void Run() { FocusRelease();SuspendedFocusClick();Ownership();ReturnAndCleanup();Pan();RenderedOrientation();Console.WriteLine("Free-camera production assertions: "+assertions); }
+    public static void Run() { FocusRelease();SuspendedFocusClick();MovedFocusClick();Ownership();ReturnAndCleanup();Pan();RenderedOrientation();Console.WriteLine("Free-camera production assertions: "+assertions); }
 }
 }

@@ -25,6 +25,11 @@ internal static partial class TestCommands
         var description = Il("UI.UICom_AttrInfo", "OpenBuffInfo", 1); Pattern(description, "::GetShowBuffs", "Native description public buffs"); Pattern(description, "::RefreshMonsterInfo", "Native monster info"); NoPattern(description, "Request|RPC", "Native description no RPC");
         var popupMethod = NativeAsyncMoveNext(native, "UI.BattlePlayerInfoWindow", "RefreshMonsterInfo"); var popup = Body(popupMethod); NoPattern(popup, "Request|RPC", "Popup no RPC"); Pattern(popup, "::RefreshMonsterBuffList", "Native monster buff list");
         foreach (var name in new[] { "UpdateHP", "UpdateATK", "UpdateDEF", "UpdateExtraMovePoint", "SwitchInfo", "Dispose" }) NoPattern(Il("UI.UICom_AttrInfo", name, name == "UpdateHP" ? 2 : name == "Dispose" ? 0 : 1), "Request|RPC|AddListener|Delegate::Combine", "No plate update/dispose side effects: " + name);
+        // Native road teardown removes upgrade tips from com_UpgradeTips only, then clears its list, so the zoom layer
+        // disposes adopted tips the list no longer holds.
+        Pattern(Il("UI.BattleInfoPanel", "RemoveUpgradeTips", 1), @"::com_UpgradeTips\nIL_[0-9a-f]+: ldarg.1\nIL_[0-9a-f]+: ldc.i4.1\nIL_[0-9a-f]+: callvirt [^\n]*GComponent::RemoveChild", "Native upgrade tip removal");
+        Pattern(Il("Core.RoadLineManager", "DestroyRoad", 0), @"::RemoveUpgradeTips[\s\S]*::UpgradeTips\nIL_[0-9a-f]+: callvirt [^\n]*UIBattleInfo_Com_UpgradeTips>::Clear", "Native road teardown clears its tip list");
+        Contains(ReadSource(context, "src/FieldStatePlates.cs"), new[] { "FindClass(\"Core\", \"RoadLineManager\")", "Field(\"UpgradeTips\")", "GameUi.Dispose(tip)" }, "Adopted upgrade tips follow native removal");
         var source = ReadSource(context, "src/FieldBuffUi.cs"); var list = Il("UI.BattlePlayerInfoWindow", "RefreshMonsterBuffList", 3);
         Contains(source, new[] { "Call(\"UpdateOffset\", target)", "Call(\"UpdateGuideLine\", point)", "PlateLift = 200f, MarkerLift = 120f", "FieldZoomUi.IndicatorScale", "Plugin.FieldIndicatorHeight.Value" }, "Owned hero plate layout");
         // Monster plate zoom-follow: native plates move into an owned layer the native pass skips; a hidden owned
