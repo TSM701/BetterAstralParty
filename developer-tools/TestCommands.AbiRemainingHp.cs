@@ -25,6 +25,11 @@ internal static partial class TestCommands
         Check(new[] { "_attackerData", "_defenderData" }.All(name => director.Fields.Single(field => field.Name == name).FieldType.FullName == "GameLogic.BattlePlayerData")
             && Regex.IsMatch(Il(director.Methods.Single(method => method.Name == "ActiveBattlePlatform")), @"stfld [^\n]*BattleShowDirector::_attackerData[\s\S]*stfld [^\n]*BattleShowDirector::_defenderData[\s\S]*BattleActor::RefreshUI"),
             "Director binds the fight's players before refreshing its panels");
+        // Release diagnostics find the released monster by pointer in BattleLogic.PlayerDatas, not by its (shared) hero ID.
+        Check(native.MainModule.GetType("GameLogic.BattleLogic").Fields.Single(field => field.Name == "PlayerDatas").FieldType.FullName
+            == "System.Collections.Generic.List`1<GameLogic.BattlePlayerData>", "Native battle player list");
+        Contains(ReadSource(context, "src/ReleaseWatch.cs"), new[] { "Find(logic?.Get(\"battle\")?.Field(\"PlayerDatas\"))", "player.Pointer == _monster", "hits={string.Join(\",\", Hits)}" },
+            "Release diagnostics follow the same monster through every hit");
         Check(!view.Contains(".Get(\"name\")", StringComparison.Ordinal) && view.Contains("child.Field(\"name\")", StringComparison.Ordinal), "Final artwork reads actual native name field");
         Check(!Regex.IsMatch(view, "PKMainCamera|ProjectBattlePoint|LocalToGlobal|GlobalToLocal"), "Final damage artwork is screen-fixed");
         Contains(view, new[] { "Ensure(root)", "AdviceText.DamageLifetime", "AdviceText.DamageAlpha", "AdviceText.RecommendationScale", "damage.layout", "_modifiers = finalModifiers.Value;",

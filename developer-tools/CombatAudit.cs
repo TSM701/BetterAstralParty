@@ -33,6 +33,8 @@ internal static class CombatAudit
         internal int Before, After = -1, Purple, Gold, Starlight, Incoming, Cap, Stacks, Raises;
         internal int? ChangeHp;
         internal bool Boss;
+        // HP losses in the order seen (ReleaseWatch since 2026-10-25); two held relics show two when they land apart.
+        internal List<int> Hits = new();
         // Exact damage when the monster survived, or when a KO's native change is deeper than its HP (overkill kept).
         internal int? Damage => After > 0 ? Before - After : After == 0 && ChangeHp is { } change && -change > Before ? -change : null;
         internal bool Lethal => After == 0;
@@ -65,7 +67,17 @@ internal static class CombatAudit
     // A rule fits a release when its range holds the exact damage, or, for a KO without one, reaches the monster's HP.
     internal static bool Fits(Release r, (int Min, int Max) p) => r.Damage is { } exact ? p.Min <= exact && exact <= p.Max : r.Lethal && p.Max >= r.Before;
 
-    private static readonly Regex ReleaseLine = new(@"shootingStar\.result=release=\d+; before=(\d+); after=(\w+); (?:changeHP=(-?\d+); )?purple=(\d+); gold=(\d+); boss=(True|False); starlight=(-?\d+); incoming=(-?\d+); cap=(\d+); stacks=(\d+);");
+    // Per relic: what the current rule predicts for each of the two hits, purple first (matched in either order).
+    internal static ((int Min, int Max) Purple, (int Min, int Max) Gold) SplitHits(Release r) => (Clamp(r.Purple + r.Incoming, r.Cap), Clamp(GoldRaw(r, false) + r.Incoming, r.Cap));
+    internal static bool HitsFit(Release r)
+    {
+        if (r.Hits.Count != 2) return false;
+        var (purple, gold) = SplitHits(r);
+        bool In(int lost, (int Min, int Max) p) => p.Min <= lost && lost <= p.Max;
+        return In(-r.Hits[0], purple) && In(-r.Hits[1], gold) || In(-r.Hits[0], gold) && In(-r.Hits[1], purple);
+    }
+
+    private static readonly Regex ReleaseLine = new(@"shootingStar\.result=release=\d+; before=(\d+); after=(\w+); (?:changeHP=(-?\d+); )?(?:hits=(-?\d+(?:,-?\d+)*); )?(?:removed=True; )?purple=(\d+); gold=(\d+); boss=(True|False); starlight=(-?\d+); incoming=(-?\d+); cap=(\d+); stacks=(\d+);");
     private static readonly Regex EncounterEnemy = new(@"combatEffects\.encounter\.enemy=(.*)$");
     private static readonly Regex ChangeHp = new(@"changeHP=(-?\d+)");
 
@@ -88,8 +100,9 @@ internal static class CombatAudit
             int At(int group) => int.Parse(m.Groups[group].Value, CultureInfo.InvariantCulture);
             releases.Add(new Release
             {
-                Before = At(1), After = after, ChangeHp = m.Groups[3].Success ? At(3) : null, Purple = At(4), Gold = At(5), Boss = m.Groups[6].Value == "True",
-                Starlight = At(7), Incoming = At(8), Cap = At(9), Stacks = At(10), Raises = raises
+                Before = At(1), After = after, ChangeHp = m.Groups[3].Success ? At(3) : null, Purple = At(5), Gold = At(6), Boss = m.Groups[7].Value == "True",
+                Starlight = At(8), Incoming = At(9), Cap = At(10), Stacks = At(11), Raises = raises,
+                Hits = m.Groups[4].Success ? m.Groups[4].Value.Split(',').Select(hit => int.Parse(hit, CultureInfo.InvariantCulture)).ToList() : new()
             });
         }
         return releases;
@@ -106,6 +119,8 @@ internal static class CombatAudit
         foreach (var (name, rule) in ReleaseRules.Skip(1))
             if (!releases.Any(r => Fits(r, current(r)) != Fits(r, rule(r))))
                 output.AppendLine($"  Not separated yet from the current rule: {name}");
+        var split = releases.Where(r => r.Purple > 0 && r.Gold > 0 && r.Hits.Count == 2).ToList();
+        if (split.Count > 0) output.AppendLine($"  Two relics seen as two hits: {split.Count(HitsFit)} fit / {split.Count(r => !HitsFit(r))} miss  each relic its own hit");
         return output.ToString();
     }
 
@@ -263,6 +278,11 @@ internal static class CombatAudit
         var releaseReport = ReleaseReport(releases.Take(3).ToList()); // the single-relic evidence alone
         check(releaseReport.Contains("Not separated yet from the current rule: this release's own Starlight counted", StringComparison.Ordinal)
             && !releaseReport.Contains("separated yet from the current rule: no incoming", StringComparison.Ordinal), "Release audit names the rules the evidence has not separated");
+        // 2026-10-25 format: both hits of two relics against a boss (purple 1, then gold 2 + 12 held Starlight).
+        var split = ParseReleases(new[] { "t | shootingStar.result=release=8; before=59; after=44; changeHP=-15; hits=-1,-14; purple=1; gold=2; boss=True; starlight=12; incoming=0; cap=0; stacks=2; damage=15",
+            "t | shootingStar.result=release=9; before=4; after=removed; purple=0; gold=2; boss=False; starlight=0; incoming=0; cap=0; stacks=1; damage=2" });
+        check(split.Count == 1 && split[0].Damage == 15 && split[0].Hits.SequenceEqual(new[] { -1, -14 }) && HitsFit(split[0]) && Fits(split[0], ReleaseRules[0].Rule(split[0]))
+            && ReleaseReport(split).Contains("Two relics seen as two hits: 1 fit / 0 miss", StringComparison.Ordinal), "Release audit checks each relic's hit");
         check(ChangeHpReport(new[] { "t | combat=k-1; damage.result before=3; predictedDamage=8; expectedHP=0; observedHP=0; expectedDisplayHP=0; monsterDefeatPresentation=False; hpMismatch=False; modifiers=x; changeHP=-8" })
             .Contains("1 kept the predicted overkill", StringComparison.Ordinal), "KO changeHP report");
     }

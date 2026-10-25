@@ -36,6 +36,11 @@ internal static partial class TestCommands
             && throwDice.Body.Instructions.Any(instruction => instruction.Operand is float value && value == 48f), "Native dice root placed above the player by ThrowDice");
         Check(Operands(NativeMethod(native, "DiceController", "Awake")).Contains("DiceController::Container", StringComparison.Ordinal)
             && Operands(NativeMethod(native, "DiceController", "Awake")).Contains("Animator", StringComparison.Ordinal), "Native dice animator lives on the Container child, not the moved root");
+        // GetCurPlayerCamera returns the first character camera with priority, null while none has one.
+        Pattern(Body(NativeMethod(native, "Core.Camera.CameraManager", "GetCurPlayerCamera")), @"CinemachineVirtualCameraBase::get_Priority\(\)\nIL_[0-9a-f]+: brfalse[\s\S]*ldnull\nIL_[0-9a-f]+: ret", "Current player camera can be absent");
+        Contains(ReadSource(context, "src/FieldZoomUi.cs"), new[] { "?.Call(\"GetCurrentPlayer\")?.Field(\"CharacterInst\")?.Field(\"vCamera\")?.Field(\"vCamera\")", "if (camera?.TypeName != \"CinemachineVirtualCamera\") return null;" }, "Dice fall back to the turn player's camera view");
+        NoPattern(ReadSource(context, "src/FieldZoomUi.cs"), "mFrameStack\"\\)\\?\\.Get<int>\\(\"Count\"\\) >= 1", "Dice never measure from the native base frame, which a native drag moves");
+        Contains(ReadSource(context, "src/FieldDiceUi.cs"), new[] { "Plugin.Diagnostics.State(\"fieldDice\"", "enabled && FieldFreeCamera.Holding" }, "Dice view diagnostics");
         Contains(ReadSource(context, "src/FieldDiceUi.cs"), new[] { "\"_diceControllerPool\"", "\"Cache\"", "FieldZoomUi.DiceViewDelta" }, "Dice follow the camera displacement from the native default view");
         foreach (var (type, name) in new[] { ("Core.Scene.BattleSceneController", "freeCamera"), ("Core.Scene.BattleSceneController", "freeObject"), ("Core.Unit.LandManager", "NodeDict"), ("Core.Camera.CharacterCamera", "vCamera"), ("Core.FreeCameraObject", "status") })
             Check(native.MainModule.GetType(type).Fields.Single(field => field.Name == name).IsPublic, "Public camera field: " + type + "." + name);

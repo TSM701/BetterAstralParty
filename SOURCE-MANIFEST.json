@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "version": "1.6.1",
-  "buildSourceManifestSha256": "77DDD5B67E3B8CDE43206CEAECBC7C6D55A64BA309AA6B5750FF5782AB42E7D9",
+  "version": "1.6.2",
+  "buildSourceManifestSha256": "A05EEDE8431E86C44FC7DCBFB70CE9A27A2EF8299D04508A74C4F4ECE78E4E11",
   "files": [
     {
       "path": "Create-Diagnostics.cmd",
@@ -190,8 +190,8 @@
     },
     {
       "path": "developer-tools/CombatAudit.cs",
-      "bytes": 19741,
-      "sha256": "BDACC7B5AC07480D6DBD377174C61E6E0A320D2C97C3F9347FDED6A1346BDA85"
+      "bytes": 21834,
+      "sha256": "AF2008E4F7EB242F3957782F6DFEBC5494B666E28672FE9081CF39D994B6EA65"
     },
     {
       "path": "developer-tools/CompatibilitySnapshot.cs",
@@ -280,8 +280,8 @@
     },
     {
       "path": "developer-tools/TestCommands.AbiRemainingHp.cs",
-      "bytes": 16142,
-      "sha256": "02551AF028FC651674805E5462280098DBACB9B3E9946471486DEEA517D5AE69"
+      "bytes": 16783,
+      "sha256": "D33E18A95A43637CFBD5A16349118ACCF4E734164C9036C57D059A8096C7D558"
     },
     {
       "path": "developer-tools/TestCommands.AbiStartup.cs",
@@ -325,8 +325,8 @@
     },
     {
       "path": "developer-tools/TestCommands.FieldBuffs.cs",
-      "bytes": 16490,
-      "sha256": "DB22BBDE33A24FD37CEF7D780FF9336517308716D5EBC6F954AA482FAB5ABD73"
+      "bytes": 18871,
+      "sha256": "E176B72BAAE8B8184E43500BD36AEBD328F4D94DE90513246C128A631321A1D0"
     },
     {
       "path": "developer-tools/TestCommands.FieldFreeCamera.cs",
@@ -350,8 +350,8 @@
     },
     {
       "path": "developer-tools/TestCommands.FieldZoom.cs",
-      "bytes": 11526,
-      "sha256": "380BCE3849C60F6609B7CEEA2D2AB29919437430DBCA4891DBE05BF0C3427A91"
+      "bytes": 12530,
+      "sha256": "712E59E65B1748CADC5B419B78C42445C70F51063C6414B80B08E8E2B77B8BBA"
     },
     {
       "path": "developer-tools/TestCommands.Fixtures.cs",
@@ -1445,8 +1445,8 @@
     },
     {
       "path": "src/FieldDiceUi.cs",
-      "bytes": 4137,
-      "sha256": "6A9CB53A7C0A29EFC91D9D9A47D74BE49AC6AEFEF30CBC4D476D9FDEB8D115DF"
+      "bytes": 4616,
+      "sha256": "45C71CA5494F5FED1810131625871A12D17895831A97D91D2DC274B4B9F4E93F"
     },
     {
       "path": "src/FieldFreeCamera.cs",
@@ -1485,8 +1485,8 @@
     },
     {
       "path": "src/FieldZoomUi.cs",
-      "bytes": 19951,
-      "sha256": "659566A3AF7A4F5233EC30FE436A9D8B4403EDF74ECA8F988B1AC8CEF6D0A681"
+      "bytes": 21074,
+      "sha256": "FE1536DC89034957BD9326B243F53E3F220031350B29665321C0A78EFED87D36"
     },
     {
       "path": "src/FocusAudio.cs",
@@ -1625,13 +1625,13 @@
     },
     {
       "path": "src/PlayerTabUi.cs",
-      "bytes": 9234,
-      "sha256": "BE6B3598388BDA80F58069FA0F8CA715BF1237CC4FF64195DE521DE41606D209"
+      "bytes": 10652,
+      "sha256": "A4BA498A2C26AF5A005A4855B38678D60A0F8544368BDC878F05EEFBC2EA7DE6"
     },
     {
       "path": "src/Plugin.cs",
       "bytes": 43746,
-      "sha256": "0CA988185FC31B6A18EE4F9743A62DFF6D83824CFA63489FA17210FEB13A8175"
+      "sha256": "B17A36EB1EC9FEBC5FC264F1B5F1C306509D0195D396A9FEA3C092B17A8BF512"
     },
     {
       "path": "src/PrivateReleaseSession.cs",
@@ -1665,8 +1665,8 @@
     },
     {
       "path": "src/ReleaseWatch.cs",
-      "bytes": 2853,
-      "sha256": "F4108F8F6B10CF761928A28E8AA2C02C29A6D3D7741572D9AA31F5577989A5E4"
+      "bytes": 3765,
+      "sha256": "D5CE2CDE153D5AFD2DCD8E31BD93B66789E9C4BC7BF4176B79F90E818F0EA5EA"
     },
     {
       "path": "src/RemainingHpUi.cs",

@@ -49,30 +49,53 @@ internal static class PlayerTabUi
         var logic = RuntimeObject.StaticField(_logicClass, "_inst");
         var room = logic?.Get("room")?.Get("curRoomInfo");
         if (!VisibleCombatAdvisor.IsPve(room?.Field("info")?.Get<int>("MapType") ?? 0)) { Clear(); return; }
-        var container = logic?.Get("battle")?.Field("battleInfo")?.Get("ui")?.Field("com_BattlePlayer")?.Field("com_Container");
-        if (!GameUi.Visible(container)) { Clear(); return; }
         Seen.Clear();
-        for (var slot = 1; slot <= 4; slot++)
-        {
-            var button = container!.Field("com_Player_" + slot);
-            var owner = button?.Field("com_player");
-            var player = button?.Field("PlayerData");
-            if (owner == null || player == null || !GameUi.Visible(owner)) continue;
-            Seen.Add(owner.Pointer);
-            if (!Tabs.TryGetValue(owner.Pointer, out var tab) || tab.Panel.Get<bool>("isDisposed"))
+        // No container gate: picking a player (sending coins) moves the selectable buttons into com_Empty
+        // (AdjustPlayerParent) and hides the container (2026-10-25); each bar's own visibility decides.
+        var container = logic?.Get("battle")?.Field("battleInfo")?.Get("ui")?.Field("com_BattlePlayer")?.Field("com_Container");
+        if (container != null)
+            for (var slot = 1; slot <= 4; slot++)
             {
-                tab = Create(owner);
-                Tabs[owner.Pointer] = tab;
+                var button = container.Field("com_Player_" + slot);
+                Attach(button?.Field("com_player"), button?.Field("PlayerData"), hand, role);
             }
-            // Same public count as Combat Status; the role is the native CharacterTagType the preparation screen shows.
-            var count = player.Get("cardContainer")?.Get<int>("CardCount") ?? -1;
-            // RoomPlayer.characterConfig is a CharacterHandle (Id only); the role lives in the Character table.
-            var id = player.Field("player")?.Field("characterConfig")?.Field("Id")?.Value<int>() ?? 0;
-            var text = CharacterRole.Label(id > 0 ? CharacterGuideUi.Config(id)?.Get<int>("TagType") ?? 0 : 0, ModText.Korean);
-            Refresh(tab, hand, role && text.Length > 0, count, text);
-        }
+        // The encounter screen (Fight_LaunchPK) draws its own Com_PlayerInfo copies over the field list (2026-10-25:
+        // the tabs vanished on the local player's encounter); FightWindow.RefreshPlayerInfo fills their _playerData.
+        var launch = GameUi.Find(GameUi.Root!, "FightWindow", maxDepth: 1)?.Get("contentPane")?.Field("com_LaunchPK");
+        if (GameUi.Visible(launch))
+            for (var slot = 1; slot <= 4; slot++)
+            {
+                var owner = launch!.Field("com_P" + slot);
+                Attach(owner, owner?.Field("_playerData"), hand, role);
+            }
+        // Sending coins (ATMWindow) lists its own copies too: each list_Players item's com_playerInfo, filled by
+        // RendererTargetPlayers through RefreshData.
+        var atm = GameUi.Find(GameUi.Root!, "ATMWindow", maxDepth: 1)?.Get("contentPane")?.Field("list_Players");
+        if (GameUi.Visible(atm))
+            for (int i = 0, count = atm!.Get<int>("numChildren"); i < count; i++)
+            {
+                var owner = atm.Call("GetChildAt", i)?.Field("com_playerInfo");
+                Attach(owner, owner?.Field("_playerData"), hand, role);
+            }
         foreach (var pair in Tabs.ToArray())
             if (!Seen.Contains(pair.Key)) { GameUi.Dispose(pair.Value.Panel); Tabs.Remove(pair.Key); }
+    }
+
+    private static void Attach(RuntimeObject? owner, RuntimeObject? player, bool hand, bool role)
+    {
+        if (owner == null || player == null || !GameUi.Visible(owner)) return;
+        Seen.Add(owner.Pointer);
+        if (!Tabs.TryGetValue(owner.Pointer, out var tab) || tab.Panel.Get<bool>("isDisposed"))
+        {
+            tab = Create(owner);
+            Tabs[owner.Pointer] = tab;
+        }
+        // Same public count as Combat Status; the role is the native CharacterTagType the preparation screen shows.
+        var count = player.Get("cardContainer")?.Get<int>("CardCount") ?? -1;
+        // RoomPlayer.characterConfig is a CharacterHandle (Id only); the role lives in the Character table.
+        var id = player.Field("player")?.Field("characterConfig")?.Field("Id")?.Value<int>() ?? 0;
+        var text = CharacterRole.Label(id > 0 ? CharacterGuideUi.Config(id)?.Get<int>("TagType") ?? 0 : 0, ModText.Korean);
+        Refresh(tab, hand, role && text.Length > 0, count, text);
     }
 
     private static Tab Create(RuntimeObject owner)

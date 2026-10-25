@@ -30,6 +30,20 @@ internal static partial class TestCommands
         Pattern(Il("UI.BattleInfoPanel", "RemoveUpgradeTips", 1), @"::com_UpgradeTips\nIL_[0-9a-f]+: ldarg.1\nIL_[0-9a-f]+: ldc.i4.1\nIL_[0-9a-f]+: callvirt [^\n]*GComponent::RemoveChild", "Native upgrade tip removal");
         Pattern(Il("Core.RoadLineManager", "DestroyRoad", 0), @"::RemoveUpgradeTips[\s\S]*::UpgradeTips\nIL_[0-9a-f]+: callvirt [^\n]*UIBattleInfo_Com_UpgradeTips>::Clear", "Native road teardown clears its tip list");
         Contains(ReadSource(context, "src/FieldStatePlates.cs"), new[] { "FindClass(\"Core\", \"RoadLineManager\")", "Field(\"UpgradeTips\")", "GameUi.Dispose(tip)" }, "Adopted upgrade tips follow native removal");
+        // Player list tabs also hang under the encounter screen's own Com_PlayerInfo copies, whose data RefreshPlayerInfo fills.
+        var launchPk = native.MainModule.GetType("UI.UIFight_LaunchPK");
+        Check(Enumerable.Range(1, 4).All(slot => launchPk.Fields.Single(field => field.Name == "com_P" + slot).FieldType.FullName == "FairyGUI.GButton")
+            && native.MainModule.GetType("UI.UICom_PlayerInfo").Fields.Single(field => field.Name == "_playerData").FieldType.FullName == "GameLogic.BattlePlayerData", "Encounter screen player bars");
+        Pattern(Il("UI.FightWindow", "RefreshPlayerInfo", 0), @"UIFight_LaunchPK::com_P1\nIL_[0-9a-f]+: castclass UI.UICom_PlayerInfo", "Encounter screen bars are Com_PlayerInfo");
+        Pattern(Il("UI.FightWindow", "RefreshPlayerInfo", 2), @"UICom_PlayerInfo::RefreshData\(GameLogic.BattlePlayerData\)", "Encounter screen fills its player bars");
+        // The coin transfer window lists its own Com_PlayerInfo copies.
+        Check(native.MainModule.GetType("UI.UIATMWindow").Fields.Single(field => field.Name == "list_Players").FieldType.FullName == "FairyGUI.GList"
+            && native.MainModule.GetType("UI.UIATM_Button_RoleHeadshot").Fields.Single(field => field.Name == "com_playerInfo").FieldType.FullName == "FairyGUI.GButton", "Coin transfer player list");
+        Pattern(Body(NativeAsyncMoveNext(native, "UI.ATMWindow", "RendererTargetPlayers")), @"UIATM_Button_RoleHeadshot::com_playerInfo\nIL_[0-9a-f]+: castclass UI.UICom_PlayerInfo[\s\S]*UICom_PlayerInfo::RefreshData", "Coin transfer fills its player bars");
+        Contains(ReadSource(context, "src/PlayerTabUi.cs"), new[] { "\"ATMWindow\"", "?.Field(\"list_Players\")", "?.Field(\"com_playerInfo\")" }, "Player list tabs follow the coin transfer copies");
+        // Picking a player moves the selectable buttons out of com_Container into com_Empty.
+        Pattern(Il("UI.UIBattleInfo_Com_Player", "AdjustPlayerParent", 2), @"UIBattleInfo_Com_Player::com_Empty\nIL_[0-9a-f]+: ldarg.1\nIL_[0-9a-f]+: callvirt [^\n]*GComponent::AddChild", "Player selection moves bars into com_Empty");
+        Contains(ReadSource(context, "src/PlayerTabUi.cs"), new[] { "if (container != null)", "?.Field(\"com_LaunchPK\")", "launch!.Field(\"com_P\" + slot)", "owner?.Field(\"_playerData\")" }, "Player list tabs follow the encounter screen copies");
         var source = ReadSource(context, "src/FieldBuffUi.cs"); var list = Il("UI.BattlePlayerInfoWindow", "RefreshMonsterBuffList", 3);
         Contains(source, new[] { "Call(\"UpdateOffset\", target)", "Call(\"UpdateGuideLine\", point)", "PlateLift = 200f, MarkerLift = 120f", "FieldZoomUi.IndicatorScale", "Plugin.FieldIndicatorHeight.Value" }, "Owned hero plate layout");
         // Monster plate zoom-follow: native plates move into an owned layer the native pass skips; a hidden owned

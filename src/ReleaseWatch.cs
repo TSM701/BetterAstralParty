@@ -4,17 +4,19 @@ namespace BetterAstralParty;
 // so combat-audit can test the release-damage rules against real results. Nothing is shown in game.
 internal static class ReleaseWatch
 {
+    // Two held relics hit one after the other: the result waits until the HP has been still this long.
+    private const float Settle = 2, Timeout = 10;
     private static IntPtr _monster;
-    private static int _heroId, _hp, _sequence;
+    private static int _hp, _lastHp, _changeTotal, _sequence;
+    private static readonly List<int> Hits = new();
     private static string _evidence = "";
-    private static float _armedAt = -1;
+    private static float _armedAt = -1, _changedAt;
 
     // Offered on the encounter screen; refreshed every frame until the screen closes.
     internal static void Offer(RuntimeObject monster, string evidence)
     {
         if (_armedAt >= 0) return;
         _monster = monster.Pointer;
-        _heroId = monster.Field("player")?.Get("Hero")?.Get<int>("HeroId") ?? 0;
         _hp = monster.Get("Property")?.Field("HP")?.Get<int>("Value") ?? -1;
         _evidence = evidence;
     }
@@ -30,25 +32,41 @@ internal static class ReleaseWatch
 
     private static void Watch(RuntimeObject? logic, int step)
     {
+        var now = UnityEngine.Time.unscaledTime;
         if (_armedAt < 0)
         {
             if (_monster == IntPtr.Zero || step == 1) return;
-            if (step == -1 && _hp >= 0) _armedAt = UnityEngine.Time.unscaledTime;
+            if (step == -1 && _hp >= 0) { _armedAt = now; _lastHp = _hp; _changeTotal = 0; Hits.Clear(); }
             else _monster = IntPtr.Zero;
             return;
         }
         // A fight that starts before the result arrives can move the same HP; that change is not the release's.
         if (step >= 2) { Log("after=interrupted"); return; }
-        // Only an object the game hands back this frame is read: never dereference the remembered pointer itself.
-        var monster = logic?.Get("battle")?.Call("GetPlayerDataByHeroId", _heroId);
-        var property = monster?.Pointer == _monster ? monster!.Get("Property") : null;
+        // Only objects the game hands back this frame are read: the remembered pointer is compared, never dereferenced.
+        // GetPlayerDataByHeroId found another monster of the same kind, so most releases logged as unresolved.
+        var monster = Find(logic?.Get("battle")?.Field("PlayerDatas"));
+        var property = monster?.Get("Property");
         if (property != null)
         {
             var hp = property.Field("HP")!.Get<int>("Value");
-            // ChangeHP is the native applied change (BattleProperty.OnLifeChanged); on a KO it may keep the overkill.
-            if (hp != _hp) { Log($"after={hp}; changeHP={property.Field("ChangeHP")!.Get<int>("Value")}"); return; }
+            if (hp != _lastHp)
+            {
+                // ChangeHP is the native applied change (BattleProperty.OnLifeChanged); on a KO it may keep the overkill.
+                var change = property.Field("ChangeHP")!.Get<int>("Value");
+                Hits.Add(hp - _lastHp); _changeTotal += change; _lastHp = hp; _changedAt = now;
+            }
         }
-        if (UnityEngine.Time.unscaledTime - _armedAt > 10) Log(property == null ? "after=unresolved" : "after=unchanged");
+        if (Hits.Count > 0 && (property == null || now - _changedAt > Settle))
+            Log($"after={_lastHp}; changeHP={_changeTotal}; hits={string.Join(",", Hits)}" + (property == null ? "; removed=True" : ""));
+        else if (property == null) Log("after=removed");
+        else if (now - _armedAt > Timeout) Log("after=unchanged");
+    }
+
+    private static RuntimeObject? Find(RuntimeObject? players)
+    {
+        for (int i = 0, count = players?.Get<int>("Count") ?? 0; i < count; i++)
+            if (players!.Call("get_Item", i) is { } player && player.Pointer == _monster) return player;
+        return null;
     }
 
     private static void Log(string result)

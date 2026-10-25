@@ -26,10 +26,13 @@ internal static class FieldDiceUi
     private static void Update()
     {
         // Pin Dice to Screen OFF returns tracked dice to their native field position and stops tracking.
-        var delta = Plugin.FieldZoom.Value && Plugin.DiceLock.Value && !PvpSafety.Suspended ? FieldZoomUi.DiceViewDelta : Vector3.zero;
-        if (delta == Vector3.zero && Dice.Count == 0) return;
+        var enabled = Plugin.FieldZoom.Value && Plugin.DiceLock.Value && !PvpSafety.Suspended;
+        var delta = enabled ? FieldZoomUi.DiceViewDelta : Vector3.zero;
+        // In the free view a roll is tracked even while the delta reads zero, so the diagnostics see it.
+        var watch = delta != Vector3.zero || enabled && FieldFreeCamera.Holding;
+        if (!watch && Dice.Count == 0) return;
         // Picks up a new throw on its first frame; the pool holds only a few controllers.
-        if (delta != Vector3.zero) Scan();
+        if (watch) Scan();
         Gone.Clear();
         foreach (var (pointer, dice) in Dice)
         {
@@ -44,6 +47,8 @@ internal static class FieldDiceUi
             if ((position - dice.Applied).sqrMagnitude > 0.0001f) transform.position = dice.Applied;
         }
         foreach (var pointer in Gone) Dice.Remove(pointer);
+        // Bounded (logged on change): which native view pinned the tracked dice, so an unpinned roll names its cause.
+        if (Dice.Count > 0) Plugin.Diagnostics.State("fieldDice", "tracked=" + Dice.Count + "; pinned=" + (delta != Vector3.zero) + "; view=" + FieldZoomUi.DiceViewSource);
     }
 
     // Pooled controllers: DiceManager._diceControllerPool.Cache holds every created DiceController.
