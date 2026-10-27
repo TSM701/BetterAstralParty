@@ -19,7 +19,7 @@ internal static class MenuLayout
     {
         ("전투 추천", false, new[] { "Enabled", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "Details", "ShootingStarShow", "KoMinimum", "KoCardPreview", "KoSpectator", "FinalDamage" }),
         ("전투 표시", false, new[] { "BattleStatus", "StatusHand", "StatusEffects", "CounterIcons", "CounterAnimation", "CounterSound", "ShushuMaster", "ShushuShield", "ShushuShieldRestrictions" }),
-        ("필드·카메라", false, new[] { "FieldBuffs", "FieldMarker", "FieldZoom", "ZoomSensitivity", "IndicatorFade", "IndicatorFadeStrength", "IndicatorHide", "IndicatorHideDistance", "DiceLock" }),
+        ("필드·카메라", false, new[] { "FieldBuffs", "FieldMarker", "FieldZoom", "ZoomSensitivity", "ZoomOutLimit", "IndicatorFade", "IndicatorFadeStrength", "IndicatorHide", "IndicatorHideDistance", "DiceLock" }),
         ("손패·카드", false, new[] { "HandLayout", "FoldedHandOpacity", "CardPopups" }),
         ("캐릭터", false, new[] { "Names", "CharacterRoles", "CharacterGuide", "PlayerTab", "PlayerTabHand", "PlayerTabRole" }),
         ("편의 기능", false, new[] { "AutoThanks", "PingFocus" }),
@@ -115,7 +115,7 @@ internal static class MenuLayout
         "StatusHand" or "StatusEffects" or "CounterIcons" or "CounterAnimation" or "CounterSound" => "BattleStatus",
         "ShushuShield" or "ShushuShieldRestrictions" => "ShushuMaster",
         "FieldMarker" => "FieldBuffs",
-        "ZoomSensitivity" or "IndicatorFade" or "IndicatorFadeStrength" or "IndicatorHide" or "IndicatorHideDistance" or "DiceLock" => "FieldZoom",
+        "ZoomSensitivity" or "ZoomOutLimit" or "IndicatorFade" or "IndicatorFadeStrength" or "IndicatorHide" or "IndicatorHideDistance" or "DiceLock" => "FieldZoom",
         "FoldedHandOpacity" => "HandLayout",
         "PlayerTabHand" or "PlayerTabRole" => "PlayerTab",
         "UpdateAuth" or "UpdateSignOut" => "UpdateChannel",
@@ -185,7 +185,7 @@ internal static class MenuLayout
         "Language" => "모드 글자 전체",
         "Scale" => "모드 전투 패널",
         "IndicatorFadeStrength" or "IndicatorHideDistance" => "필드 인디케이터",
-        "ZoomSensitivity" => "필드",
+        "ZoomSensitivity" or "ZoomOutLimit" => "필드",
         "FoldedHandOpacity" => "내 필드 손패",
         "Opacity" => "모드 전투 패널",
         "MuteUnfocused" => "다른 창을 쓰는 동안",
@@ -218,16 +218,16 @@ internal static class MenuLayout
     internal static float SliderValueX(string action) => SliderPill(action).X + SliderPill(action).Width - (Parent(action) == null ? 80 : 70);
     internal const float SliderScale = 250f / 1010f;
     internal static float SliderBarWidth(string action) => Parent(action) == null ? 250 : SliderPill(action).Width - 204;
-    internal static readonly string[] Sliders = { "FieldMarker", "ZoomSensitivity", "IndicatorFadeStrength", "IndicatorHideDistance", "FoldedHandOpacity", "Scale", "Opacity" };
+    internal static readonly string[] Sliders = { "FieldMarker", "ZoomSensitivity", "ZoomOutLimit", "IndicatorFadeStrength", "IndicatorHideDistance", "FoldedHandOpacity", "Scale", "Opacity" };
     internal static bool IsSlider(string action) => Array.IndexOf(Sliders, action) >= 0;
     internal static (int Min, int Max) SliderRange(string action) => action switch
     {
-        "Scale" => (75, 150), "ZoomSensitivity" => (50, 200), "IndicatorHideDistance" => (30, 90), _ => (0, 100)
+        "Scale" => (75, 150), "ZoomSensitivity" => (10, 300), "ZoomOutLimit" => (0, 100), "IndicatorHideDistance" => (0, 100), _ => (0, 100)
     };
     internal static string SliderLabel(string action) => action switch
     {
         "FieldMarker" => "위치 조정", "IndicatorFadeStrength" => "반투명 정도", "FoldedHandOpacity" => "불투명도",
-        "ZoomSensitivity" => "줌 감도", "IndicatorHideDistance" => "숨김 거리",
+        "ZoomSensitivity" => "줌 감도", "ZoomOutLimit" => "최대 줌 아웃", "IndicatorHideDistance" => "숨김 거리",
         "Scale" => "표시 크기", _ => "배경 불투명도"
     };
     // Culture P0 can insert a space ("50 %") that wraps the sign; always "50%".
@@ -333,7 +333,7 @@ internal static class MenuLayout
         "General" => ("일반 설정", "언어·음소거·알림·진단을 설정합니다."),
         "Enabled" => ("행동 추천", "공격·놓아주기, 방어·회피와\n쓸 만한 카드를 추천합니다."),
         "Details" => ("추천 상세 수치", "예상 피해와\n전투불능 확률을 보여줍니다."),
-        "KoMinimum" => ("KO 주사위 조건", "KO·생존에 필요한 최소 주사위를\n가장 유리한 경우 기준으로 보여줍니다."),
+        "KoMinimum" => ("KO 주사위 조건", "KO·생존이 확정되는 최소 주사위를\n보여줍니다."),
         "CardPopups" => ("핑 상세 보기", "카드·칩 핑 말풍선을 클릭하면\n원본 이미지와 설명이 열립니다."),
         "HandLayout" => ("손패 묶기", "손패를 기능별로 모아\n클릭이나 호버로 펼칩니다."),
         "BattleStatus" => ("전투 상태", "양쪽의 손패 장수·공개 효과와\n반격 가능 여부를 보여줍니다.\n아이콘에 마우스를 올리면 설명이 나옵니다."),
@@ -378,9 +378,10 @@ internal static class MenuLayout
         "UpdateGet" => ("업데이트 받기", "선택한 채널의 검증된 업데이트를 받습니다.\n비공개 베타만 토큰 인증이 필요합니다."),
         "UpdateApply" => ("업데이트 적용", "받아 둔 업데이트를 적용합니다.\n다음 실행부터 새 버전을 사용합니다."),
         "UpdateCancel" => ("업데이트 취소", "다운로드 또는 적용 대기를 취소합니다."),
-        "ZoomSensitivity" => ("줌 감도", "휠 한 칸에 확대·축소되는 양입니다.\n100%가 기본입니다."),
+        "ZoomSensitivity" => ("줌 감도", "휠 한 칸에 확대·축소되는 양입니다."),
+        "ZoomOutLimit" => ("최대 줌 아웃", "휠로 멀어질 수 있는 최대 거리입니다.\n100%는 필드 전체가 보이는 거리입니다."),
         "IndicatorHideDistance" => ("숨김 거리", "인디케이터가 숨는 줌 아웃 거리입니다.\n값이 작을수록 더 일찍 숨습니다."),
-        "IndicatorFadeStrength" => ("반투명 정도", "줌 아웃했을 때 인디케이터가 흐려지는 정도입니다.\n0%는 흐려지지 않고 100%가 기본입니다."),
+        "IndicatorFadeStrength" => ("반투명 정도", "줌 아웃했을 때 인디케이터가 흐려지는 정도입니다.\n0%는 흐려지지 않습니다."),
         "FoldedHandOpacity" => ("접힌 카드 불투명도", "묶여 접힌 카드의 불투명도입니다.\n100%는 원래대로, 0%는 보이지 않습니다."),
         "Scale" => ("표시 크기", "75%부터 150%까지 조절합니다."),
         "Opacity" => ("배경 불투명도", "0%에서도 글자·아이콘·테두리는\n그대로 보입니다."),

@@ -19,8 +19,8 @@ internal static class CardDiceLayout
         if (pair == null) return "계산 정보 부족";
         if (pair.Value.DefenseDie != 0) return "";
         if (damage == null) return "계산 정보 부족";
-        // A missing guaranteed threshold is not necessarily an impossible outcome.
-        return "계산 정보 부족"; // Supported mixed outcomes must use the possible-threshold search.
+        // Possible but no roll guarantees it (only a lucky card roll reaches it): not impossible, not a threshold.
+        return "보장 조건 없음";
     }
 
     internal static (int Die, string Symbol, string Empty) Content(KoPair? pair, int fixedDie, int row, bool survival = false, bool unconditional = false, DiceFaces defenseDice = default, int fixedDefense = 0)

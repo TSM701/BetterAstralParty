@@ -74,9 +74,11 @@ internal static class CardDiceUi
             _key = key;
             // All roles use the publicly revealed roll. Zero means it is still unknown.
             var thresholdDie = fixedDie;
+            // Guaranteed thresholds (user-decided 2026-10-25): a met condition decides the outcome even at the worst
+            // public card roll. Best-case thresholds assumed the top of random card bonuses (+1~N) and kept missing.
             var pair = unsupported ? (KoPair?)null : survival
-                ? CardKoMinimum.Survival(input, card, thresholdDie, possible: true)
-                : CardKoMinimum.Calculate(input, card, thresholdDie, possible: true);
+                ? CardKoMinimum.Survival(input, card, thresholdDie, possible: false)
+                : CardKoMinimum.Calculate(input, card, thresholdDie, possible: false);
             var damage = pair == null ? null : CardKoMinimum.OutcomeRange(input, card, thresholdDie);
             // Supplied only by RemainingHpUi after its public final-number readiness gate.
             if (finalDamage is >= 0) damage = ((long)finalDamage.Value, (long)finalDamage.Value);

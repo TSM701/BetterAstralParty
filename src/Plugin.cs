@@ -11,7 +11,7 @@ public sealed class Plugin : BasePlugin
 {
     public const string Guid = "kr.betterastralparty.mod";
     public const string Name = "BetterAstralParty";
-    public const string Version = "1.6.2-dev.5";
+    public const string Version = "1.6.3-dev.7";
     public const int InstallBundleProtocol = 1;
     public const string UpdateProtocol = "5";
     public const string SettingsSchema = "1";
@@ -62,6 +62,7 @@ public sealed class Plugin : BasePlugin
     internal static ConfigEntry<float> FoldedHandOpacity { get; private set; } = null!;
     internal static ConfigEntry<float> ZoomSensitivity { get; private set; } = null!;
     internal static ConfigEntry<float> IndicatorHideDistance { get; private set; } = null!;
+    internal static ConfigEntry<float> ZoomOutLimit { get; private set; } = null!;
     internal static BepInEx.Configuration.ConfigFile Settings { get; private set; } = null!;
 
     // Every setting back to its first-install value. A few defaults were derived at bind time from older
@@ -193,8 +194,8 @@ public sealed class Plugin : BasePlugin
         GroupHand = Config.Bind("화면", "손패 기능별 정렬", false, "[설정 창: 손패 묶기 / Settings: Group Hand] 필드 손패를 기능별로 모읍니다. OFF는 기본 배치입니다. / Groups field cards by function; OFF uses the native layout.");
         HandExpandMode = Config.Bind("화면", "손패 펼치기 방식", "Hover", "Hover는 세로로, Click은 가로로 펼칩니다. / Hover expands vertically; Click expands horizontally.");
         BattleStatus = Config.Bind("화면", "전투 공개 상태", true, "[설정 창: 전투 상태 / Settings: Combat Status] PvE HP 아래 공개 손패 장수·효과와 플레이어·몬스터의 반격 가능 여부를 표시합니다. / Public hand counts, effects and player/monster counter indicators in PvE.");
-        ShushuShield = Config.Bind("화면", "슈슈 쉴드 표시", BattleStatus.Value, "[설정 창: 슈슈 쉴드 효과 / Settings: Shushu Shield Effect] 전투 중 캐릭터에 슈슈 쉴드 효과를 표시합니다. / Shows Shushu shield effects on combat actors.");
-        ShushuShieldRestrictions = Config.Bind("화면", "슈슈 쉴드 방어 제한", ShushuShield.Value, "[설정 창: 슈슈 쉴드 방어 잠금 / Settings: Shushu Shield Defend Lock] 쉴드가 있는 내가 방어자이면 방어 버튼·방어 카드를 잠급니다. / Locks Defend and defense cards when you are the shielded defender.");
+        ShushuShield = Config.Bind("화면", "슈슈 쉴드 표시", BattleStatus.Value, "[설정 창: 슈슈 쉴드 효과 / Settings: Shiyu-Shiyu Shield Effect] 전투 중 캐릭터에 슈슈 쉴드 효과를 표시합니다. / Shows Shiyu-Shiyu Shield effects on combat characters.");
+        ShushuShieldRestrictions = Config.Bind("화면", "슈슈 쉴드 방어 제한", ShushuShield.Value, "[설정 창: 슈슈 쉴드 방어 잠금 / Settings: Shiyu-Shiyu Shield Defend Lock] 쉴드가 있는 내가 방어자이면 방어 버튼·방어 카드를 잠급니다. / Locks Defend and defense cards when you are the shielded defender.");
         AutoThanks = Config.Bind("편의", "자동 감사합니다", true, "[설정 창: 감사합니다 자동 전송 / Settings: Auto Thanks] 게임 기본 감사합니다 추천을 추천마다 한 번 전송합니다. / Confirm each native Thanks recommendation at most once.");
         CharacterGuide = Config.Bind("화면", "캐릭터 준비 설명", true, "[설정 창: 준비 화면 스킬 설명 / Settings: Skill Info in Preparation] 준비 화면의 초상화 호버에 공개 스킬·잠재력 설명을 표시합니다. / Public character skill and potential descriptions on preparation portraits.");
         PlayerTab = Config.Bind("화면", "플레이어 목록 탭", true, "[설정 창: 플레이어 목록 탭 / Settings: Player List Tab] 필드 플레이어 목록 바 아래 탭에 손패 장수와 역할을 표시합니다. / Shows hand counts and roles in a tab under the field player list bars.");
@@ -209,11 +210,11 @@ public sealed class Plugin : BasePlugin
         CardAdvice = Config.Bind("전투 추천", "카드 추천", true, "[설정 창: 카드 추천 / Settings: Card Advice] 쓸 만한 카드 위에 효과를 표시합니다. / Marks useful cards with their effect.");
         ShootingStarShow = Config.Bind("전투 추천", "슈팅 스타 표시", true, "[설정 창: 슈팅 스타 표시 / Settings: Shooting Star] 놓아줄 때 몬스터에게 주는 피해와 얻는 스타라이트를 보여줍니다. / Shows the damage dealt to the monster and the Starlight gained when you let it go.");
         KoCardPreview = Config.Bind("화면", "KO 카드 호버 조건", true, "[설정 창: 카드 호버 조건 / Settings: Card Hover Target] 카드에 마우스를 올리면 카드 사용 후 조건으로 보여줍니다. / Hovering a card shows the target after using it.");
-        KoSpectator = Config.Bind("화면", "KO 관전 전투 표시", true, "[설정 창: 관전 전투 표시 / Settings: Spectated Fights] 다른 사람 전투에서도 조건을 보여줍니다. / Also shows the target in fights you watch.");
+        KoSpectator = Config.Bind("화면", "KO 관전 전투 표시", true, "[설정 창: 관전 전투 표시 / Settings: Spectated Battles] 다른 사람 전투에서도 조건을 보여줍니다. / Also shows the target in fights you watch.");
         StatusHand = Config.Bind("화면", "전투 상태 손패 장수", true, "[설정 창: 손패 장수 / Settings: Hand Count] 양쪽의 공개 손패 장수를 보여줍니다. / Shows the public hand counts of both sides.");
         StatusEffects = Config.Bind("화면", "전투 상태 공개 효과", true, "[설정 창: 공개 효과 아이콘 / Settings: Effect Icons] 양쪽의 공개 효과를 아이콘으로 보여줍니다. 아이콘에 마우스를 올리면 설명이 나옵니다. / Shows the public effects of both sides as icons. Hover an icon for its description.");
         CounterIcons = Config.Bind("화면", "반격 아이콘", true, "[설정 창: 반격 아이콘 / Settings: Counter Icons] 인카운트·전투에서 반격 가능 여부를 아이콘으로 보여줍니다. / Shows whether a counterattack is possible in encounters and combat.");
-        ShushuMaster = Config.Bind("화면", "슈슈 쉴드 전체", true, "[설정 창: 슈슈 쉴드 / Settings: Shushu Shield] 슈슈 쉴드 효과와 방어 잠금을 사용합니다. / Uses the Shushu Shield effect and Defend Lock.");
+        ShushuMaster = Config.Bind("화면", "슈슈 쉴드 전체", true, "[설정 창: 슈슈 쉴드 / Settings: Shiyu-Shiyu Shield] 슈슈 쉴드 효과와 방어 잠금을 사용합니다. / Uses the Shiyu-Shiyu Shield effect and Defend Lock.");
         UnknownHelpSeen = Config.Bind("화면", "미반영 효과 도움말 확인함", false, "[내부 / Internal] 미반영 효과 도움말을 한 번 저절로 보여 줬는지 기록합니다. 모든 설정 초기화 때 처음 상태로 돌아갑니다. / Records that the uncounted-effects help has opened once by itself; Reset All Settings clears it.");
         CounterSound = Config.Bind("화면", "반격 표시 소리", true, "[설정 창: 반격 아이콘 > 소리 / Settings: Counter Icons > Sound] 인카운트·전투 반격 아이콘에 알림음을 재생합니다. / Plays sounds for encounter and combat counter icons.");
         CounterAnimation = Config.Bind("화면", "반격 표시 애니메이션", true, "[설정 창: 반격 아이콘 > 애니메이션 / Settings: Counter Icons > Animation] 반격 아이콘을 애니메이션으로 표시합니다. OFF는 정적인 아이콘입니다. / Animates counter icons; OFF shows static icons.");
@@ -223,7 +224,7 @@ public sealed class Plugin : BasePlugin
         AutomaticChecks = Config.Bind("업데이트", "자동 업데이트 확인", true, "주기적으로 새 버전을 확인합니다. / Periodically checks for new versions.");
         FieldBuffs = Config.Bind("화면", "필드 버프 표시", true, "[설정 창: 플레이어 인디케이터 / Settings: Player Indicators] 필드 플레이어의 이름·HP·공개 효과를 표시합니다. 아이콘을 클릭하면 효과 설명을 엽니다. / Shows field player names, HP and public effects. Click an icon for effect details.");
         FieldZoom = Config.Bind("화면", "필드 휠 줌", true,
-            "[설정 창: 휠 줌·자유 시점 / Settings: Wheel Zoom and Free View] 필드 휠 줌과 자유 시점 이동을 사용합니다. ‘자유 시점 카메라 종료’로 기본 시점에 돌아갑니다. / Enables field wheel zoom and free-camera movement. Exit Free Camera returns to the default view.");
+            "[설정 창: 휠 줌·자유 시점 / Settings: Wheel Zoom and Free Camera] 필드 휠 줌과 자유 시점 이동을 사용합니다. ‘자유 시점 카메라 종료’로 기본 시점에 돌아갑니다. / Enables field wheel zoom and free-camera movement. Exit Free Camera returns to the default view.");
         // 1 keeps the native marker height (face level at the native camera distance); 0 is the character's base.
         FieldIndicatorHeight = Config.Bind("화면", "필드 인디케이터 점 높이", 1f, new ConfigDescription("[설정 창: 인디케이터 높이 / Settings: Indicator Height] 필드 플레이어 인디케이터 점의 높이입니다. 100%는 원래 위치입니다. / Height of the field player indicator marker; 100% is the original position.", new AcceptableValueRange<float>(0f, 1f)));
         UiScale = Config.Bind("화면", "UI 배율", 1.0f, new ConfigDescription("추천·전투 상태 표시의 크기를 조절합니다. / Scales advice and battle status panels.", new AcceptableValueRange<float>(0.75f, 1.5f)));
@@ -277,12 +278,15 @@ public sealed class Plugin : BasePlugin
             new AcceptableValueRange<float>(0f, 1f)));
         ZoomSensitivity = Config.Bind("화면", "휠 줌 감도", 1f, new ConfigDescription(
             "[설정 창: 줌 감도 / Settings: Zoom Sensitivity] 휠 한 칸에 확대·축소되는 양입니다. 100%가 기본입니다. / How far one wheel tick zooms; 100% is the default.",
-            new AcceptableValueRange<float>(0.5f, 2f)));
+            new AcceptableValueRange<float>(0.1f, 3f)));
         IndicatorHideDistance = Config.Bind("화면", "인디케이터 숨김 거리", 0.6f, new ConfigDescription(
             "[설정 창: 숨김 거리 / Settings: Hide Distance] 멀면 숨기기에서 인디케이터가 숨는 줌 아웃 거리입니다. / Zoom-out distance at which Hide When Far hides indicators.",
-            new AcceptableValueRange<float>(0.3f, 0.9f)));
+            new AcceptableValueRange<float>(0f, 1f)));
+        ZoomOutLimit = Config.Bind("화면", "최대 줌 아웃", 1f, new ConfigDescription(
+            "[설정 창: 최대 줌 아웃 / Settings: Max Zoom-Out] 휠로 멀어질 수 있는 최대 거리입니다. 100%는 필드 전체가 보이는 거리입니다. / How far the wheel can zoom out; 100% shows the whole field.",
+            new AcceptableValueRange<float>(0f, 1f)));
         SettingsAutoKeep = Config.Bind("일반", "설정 자동 보관", true,
-            "[설정 창: 자동 보관 / Settings: Keep Automatically] 설정을 바꿀 때마다 사용자 폴더에 보관합니다. / Keeps a copy in the user folder whenever settings change.");
+            "[설정 창: 자동 보관 / Settings: Automatic Backup] 설정을 바꿀 때마다 사용자 폴더에 보관합니다. / Backs up settings to the user folder whenever they change.");
         MuteUnfocused = Config.Bind("환경", "비활성 창 음소거", true,
             "[설정 창: 백그라운드 음소거 / Settings: Mute in Background] 다른 창으로 전환하면 소리를 끄고 게임으로 돌아오면 복원합니다. / Mutes when focus is lost and restores audio on return.");
         MatchFocus = Config.Bind("환경", "매칭 성사 시 창 포커스", true,

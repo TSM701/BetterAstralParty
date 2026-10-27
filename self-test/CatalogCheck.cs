@@ -27,6 +27,9 @@ internal static class CatalogCheck
         guard.Verify(now.AddSeconds(11));
         if (!guard.Changed) throw new Exception("Changed catalog was not observed");
         File.WriteAllText(path, "baseline");
+        // Both writes are 8 bytes and can land on one file-time tick under load; the guard's 10 s polling never sees
+        // edits that close in the game, so give the restore its own timestamp.
+        File.SetLastWriteTimeUtc(path, File.GetLastWriteTimeUtc(path).AddSeconds(1));
         guard.Verify(now.AddSeconds(22));
         if (guard.Changed) throw new Exception("Restored catalog remained changed");
         File.WriteAllText(Path.Combine(root, "catalog_new.hash"), "new");

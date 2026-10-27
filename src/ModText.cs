@@ -85,13 +85,13 @@ internal static class ModText
     };
     internal static string UpdateStopDetails(string version, int percent, string key, string code) => Korean
         ? $"{version} 업데이트 중 오류가 발생했습니다 ({percent}%).\n\n이유: {UpdateStopReason(key)}\n할 일: {UpdateStopAdvice(key)}\n오류 코드: {code}\n\n지금 버전은 그대로 사용할 수 있습니다. 문의할 때는 오류 코드와 진단 ZIP을 함께 보내 주세요."
-        : $"The {version} update hit an error at {percent}%.\n\nReason: {UpdateStopReason(key)}\nWhat to do: {UpdateStopAdvice(key)}\nError code: {code}\n\nThe current version keeps working. When asking for help, include the error code and a diagnostics ZIP.";
+        : $"The {version} update stopped at {percent}%.\n\nReason: {UpdateStopReason(key)}\nWhat to do: {UpdateStopAdvice(key)}\nError code: {code}\n\nThe current version keeps working. When asking for help, include the error code and a diagnostics ZIP.";
     internal static string ChannelTransitionStopped(AutomaticUpdateStatus status) => Korean
         ? $"전환을 끝내지 못했습니다: {AutomaticStatus(status)}\n\n업데이트 설정에서 다시 시도하세요. 지금 버전은 그대로 사용할 수 있습니다."
         : $"The switch did not finish: {AutomaticStatus(status)}\n\nTry again in Update Settings. The current version keeps working.";
     internal static string ChannelTransitionDetails(string source, string current, string target, string kind, string version, string repository) => Korean
         ? $"전환할 채널: {ChannelName(target)}\n현재: {ChannelName(source)} {current}\n대상: {ChannelName(kind)} {version}\n저장소: {repository}\n\n선택한 채널의 서명된 최신 대상을 확인했습니다. '전환 시작'을 누르면 게임 안에서 바로 받아 적용합니다. 끝날 때까지 게임을 끄지 마세요. 설정과 저장된 자동 업데이트 선택은 바꾸지 않습니다."
-        : $"Switch to: {ChannelName(target)}\nInstalled: {ChannelName(source)} {current}\nTarget: {ChannelName(kind)} {version}\nRepository: {repository}\n\nThe signed latest target from the selected channel has been checked. Start Switch downloads and applies it right away in this game session; keep the game open until it finishes. Settings and saved automatic update choices are kept.";
+        : $"Switch to: {ChannelName(target)}\nInstalled: {ChannelName(source)} {current}\nTarget: {ChannelName(kind)} {version}\nRepository: {repository}\n\nThe latest signed version on the selected channel has been verified. Start Switch downloads and applies it right away in this game session; keep the game open until it finishes. Settings and saved automatic update choices are kept.";
     internal static string SessionTitle(string action) => Korean ? (action == "UpdateAuth" ? "업데이트 인증" : "업데이트 로그아웃") : (action == "UpdateAuth" ? "Connect Updates" : "Sign Out of Updates");
     internal static string SessionDetails(ReleaseSessionStatus status) => (Korean ? "비공개 베타 인증: " : "Private Beta access: ") + (Korean ? status switch {
         ReleaseSessionStatus.NotConfigured => "업데이트 인증이 준비되지 않았습니다.",
@@ -142,7 +142,7 @@ internal static class ModText
         ["닫기"] = "Close",
         ["현재 업데이트 상태"] = "Current Update Status",
         ["업데이트 채널"] = "Update Channel",
-        ["자동 다운로드"] = "Auto Download",
+        ["자동 다운로드"] = "Download Automatically",
         ["자동 적용"] = "Apply Automatically",
         ["업데이트 받기"] = "Get Update",
         ["채널 전환"] = "Switch Channel",
@@ -186,7 +186,7 @@ internal static class ModText
         ["게임 기본 배치로 보여줍니다."] = "Uses the native hand layout.",
         ["클릭한 묶음을 가로로 펼치고\n다른 곳을 클릭하면 접습니다."] = "Clicked groups expand sideways\nand fold when you click elsewhere.",
         ["마우스를 올린 묶음을 위로 펼치고\n벗어나면 접습니다."] = "Hovered groups expand upward\nand fold when the mouse leaves.",
-        ["슈슈 쉴드가 있는 전투 캐릭터에\n쉴드 효과를 그립니다."] = "Draws the shield effect on combat\ncharacters with a Shushu shield.",
+        ["슈슈 쉴드가 있는 전투 캐릭터에\n쉴드 효과를 그립니다."] = "Draws the shield effect on combat\ncharacters with a Shiyu-Shiyu Shield.",
         ["쉴드 효과를 그리지 않습니다."] = "Draws no shield effect.",
         ["내가 쉴드를 가진 방어자이면\n방어 버튼과 방어 카드를 잠급니다."] = "Locks Defend and defense cards\nwhen you defend with a shield.",
         ["방어 버튼과 카드를 잠그지 않습니다."] = "Leaves Defend and cards unlocked.",
@@ -200,11 +200,11 @@ internal static class ModText
         ["핑 선택 모드를 그대로 둡니다."] = "Leaves ping mode as it is.",
         ["피해 숫자를 보여주지 않습니다."] = "Shows no damage number.",
         ["공지가 자동으로 열립니다."] = "Login notices open automatically.",
-        ["업데이트 확인을 눌렀을 때만 찾습니다."] = "Looks only when you press Check.",
+        ["업데이트 확인을 눌렀을 때만 찾습니다."] = "Checks only when you press Check Updates.",
         ["팝업을 띄우지 않습니다."] = "Shows no pop-up.",
         ["자동으로 받지 않습니다."] = "Downloads nothing automatically.",
         ["자동으로 적용하지 않습니다."] = "Applies nothing automatically.",
-        ["슈슈 쉴드 방어 잠금"] = "Shushu Shield Defend Lock",
+        ["슈슈 쉴드 방어 잠금"] = "Shiyu-Shiyu Shield Defend Lock",
         ["감사합니다 자동 전송"] = "Auto Thanks",
         ["역할 표시"] = "Role Labels",
         ["역할"] = "Role",
@@ -217,7 +217,7 @@ internal static class ModText
         ["줌 아웃 시 반투명"] = "Fade When Zoomed Out",
         ["멀면 숨기기"] = "Hide When Far",
         ["주사위 화면 고정"] = "Pin Dice to Screen",
-        ["줌·자유 시점에서도 굴린 주사위를\n기본 시점과 같은 위치·크기로 보여줍니다."] = "Shows thrown dice at the default\nview's position and size while zoomed.",
+        ["줌·자유 시점에서도 굴린 주사위를\n기본 시점과 같은 위치·크기로 보여줍니다."] = "Shows rolled dice at the default\nview's position and size while zoomed.",
         ["게임 기본처럼 필드 위에 두어\n줌에 따라 크기가 바뀝니다."] = "Leaves dice on the field as in the\nbase game, so zoom changes their size.",
         ["소리"] = "Sound",
         ["애니메이션"] = "Animation",
@@ -226,19 +226,19 @@ internal static class ModText
         ["시작 공지 끄기"] = "Skip Startup Notice",
         ["자동 업데이트 확인"] = "Automatic Update Checks",
         ["업데이트 알림 팝업"] = "Update Notification Popups",
-        ["게임 기본 감사합니다 추천을\n추천마다 한 번 보냅니다."] = "Sends each native Thanks\nsuggestion once.",
+        ["게임 기본 감사합니다 추천을\n추천마다 한 번 보냅니다."] = "Sends the game's Thanks suggestion\nonce each time it appears.",
         ["게임 내부 분류로\n캐릭터 역할을 보여줍니다."] = "Shows character roles from\nthe game's own classification.",
-        ["준비 화면 초상화에 마우스를 올리면\n스킬·재사용 대기시간·잠재력이 나옵니다."] = "Hovering a preparation portrait shows\nskills, cooldowns and potentials.",
+        ["준비 화면 초상화에 마우스를 올리면\n스킬·재사용 대기시간·잠재력이 나옵니다."] = "Hovering a preparation portrait shows\nskills, cooldowns and Potential.",
         ["줌 아웃할수록 플레이어·몬스터\n인디케이터를 반투명하게 합니다."] = "Fades player and monster\nindicators as you zoom out.",
         ["멀리 줌 아웃하면 숨기고\n다시 확대하면 보여줍니다."] = "Hides indicators far out and\nshows them again closer in.",
         ["반격 아이콘이 나타날 때\n알림음을 냅니다."] = "Plays a chime when\na counter icon appears.",
         ["인카운트·전투 반격 아이콘을\n움직여 보여줍니다."] = "Animates encounter and\ncombat counter icons.",
         ["Alt+Tab 후 남은 핑 선택 모드를\n핑을 보내지 않고 끕니다."] = "Ends ping mode left after Alt+Tab\nwithout sending a ping.",
-        ["공개된 최종 수치로\n계산한 피해를 보여줍니다."] = "Shows damage calculated\nfrom public final values.",
+        ["공개된 최종 수치로\n계산한 피해를 보여줍니다."] = "Shows damage calculated\nfrom the revealed final totals.",
         ["공지가 자동으로 열리지 않습니다."] = "Login notices do not open automatically.",
-        ["따로 누르지 않아도\n새 버전을 찾습니다."] = "Looks for new versions\nwithout pressing Check.",
+        ["따로 누르지 않아도\n새 버전을 찾습니다."] = "Checks for new versions\nwithout pressing Check Updates.",
         ["새 버전과 변경 내역을\n팝업으로 알려줍니다."] = "Shows new versions and\nrelease notes in a pop-up.",
-        ["새 버전을 자동으로 받습니다.\n서명이 확인된 버전만 받습니다."] = "Downloads new versions automatically,\nonly when their signature checks out.",
+        ["새 버전을 자동으로 받습니다.\n서명이 확인된 버전만 받습니다."] = "Downloads new versions automatically.\nOnly versions with a verified signature.",
         ["받은 업데이트를 바로 적용하고\n다음 실행부터 새 버전을 사용합니다."] = "Applies downloaded updates and\nruns the new version from the next launch.",
         ["선택한 채널의 검증된 업데이트를 받습니다.\n비공개 베타만 토큰 인증이 필요합니다."] = "Downloads verified updates for the selected channel.\nOnly Private Beta needs a token.",
         ["다운로드 또는 적용 대기를 취소합니다."] = "Cancels a download or a pending apply.",
@@ -247,7 +247,7 @@ internal static class ModText
         ["주사위 조건을 보여주지 않습니다."] = "Shows no dice targets.",
         ["예상 피해와\n전투불능 확률을 보여줍니다."] = "Shows expected damage\nand KO chances.",
         ["KO 주사위 조건"] = "KO Dice Target",
-        ["KO·생존에 필요한 최소 주사위를\n가장 유리한 경우 기준으로 보여줍니다."] = "Shows the lowest dice needed to\nKO or survive, based on the best case.",
+        ["KO·생존이 확정되는 최소 주사위를\n보여줍니다."] = "Shows the dice rolls that\nguarantee a KO or survival.",
         ["클릭해도 열지 않습니다."] = "Clicking opens nothing.",
         ["추가 정보를 보여주지 않습니다."] = "Shows no extra information.",
         ["인디케이터를 보여주지 않습니다."] = "Shows no indicators.",
@@ -279,24 +279,26 @@ internal static class ModText
         ["반투명 정도"] = "Fade Strength",
         ["줌 감도"] = "Zoom Sensitivity",
         ["숨김 거리"] = "Hide Distance",
-        ["휠 한 칸에 확대·축소되는 양입니다.\n100%가 기본입니다."] = "How far one wheel tick zooms.\n100% is the default.",
+        ["최대 줌 아웃"] = "Max Zoom-Out",
+        ["휠 한 칸에 확대·축소되는 양입니다."] = "How far one wheel tick zooms.",
+        ["휠로 멀어질 수 있는 최대 거리입니다.\n100%는 필드 전체가 보이는 거리입니다."] = "How far the wheel can zoom out.\n100% shows the whole field.",
         ["인디케이터가 숨는 줌 아웃 거리입니다.\n값이 작을수록 더 일찍 숨습니다."] = "Zoom-out distance at which indicators hide.\nLower values hide them sooner.",
         ["접힌 카드 불투명도"] = "Folded Card Opacity",
         ["불투명도"] = "Opacity",
-        ["줌 아웃했을 때 인디케이터가 흐려지는 정도입니다.\n0%는 흐려지지 않고 100%가 기본입니다."] = "How much indicators fade when zoomed out.\n0% keeps them opaque; 100% is the default.",
+        ["줌 아웃했을 때 인디케이터가 흐려지는 정도입니다.\n0%는 흐려지지 않습니다."] = "How much indicators fade when zoomed out.\n0% keeps them opaque.",
         ["묶여 접힌 카드의 불투명도입니다.\n100%는 원래대로, 0%는 보이지 않습니다."] = "Opacity of folded grouped cards.\n100% is unchanged; 0% hides them.",
         ["설정 보관"] = "Settings Backup",
         ["모든 설정 초기화"] = "Reset All Settings",
         ["모든 설정을 처음 설치한 상태로 되돌립니다.\n한 번 더 눌러야 적용됩니다."] = "Returns every setting to its first-install value.\nPress twice to apply.",
-        ["자동 보관"] = "Keep Automatically",
-        ["지금 보관"] = "Save Now",
-        ["보관본 불러오기"] = "Load Saved Settings",
+        ["자동 보관"] = "Automatic Backup",
+        ["지금 보관"] = "Back Up Now",
+        ["보관본 불러오기"] = "Load Backup",
         ["보관 폴더 열기"] = "Open Backup Folder",
         ["한 번 더 누르세요"] = "Press Again",
-        ["먼저 지금 보관을 누르세요"] = "Use Save Now First",
-        ["설정을 자동으로 보관하지 않습니다."] = "Does not keep settings automatically.",
-        ["설정을 바꿀 때마다 보관합니다.\n게임 쪽 설정 파일이 없을 때만 되살립니다."] = "Keeps a copy whenever settings change.\nRestores it only when the game has no settings file.",
-        ["지금 설정을 보관본으로 남깁니다.\n자동 보관은 이 보관본을 덮어쓰지 않습니다."] = "Saves the current settings as a backup.\nAutomatic keeping never overwrites it.",
+        ["먼저 지금 보관을 누르세요"] = "Use Back Up Now First",
+        ["설정을 자동으로 보관하지 않습니다."] = "Makes no automatic backup.",
+        ["설정을 바꿀 때마다 보관합니다.\n게임 쪽 설정 파일이 없을 때만 되살립니다."] = "Backs up settings whenever they change.\nRestores the backup only when the settings file is missing.",
+        ["지금 설정을 보관본으로 남깁니다.\n자동 보관은 이 보관본을 덮어쓰지 않습니다."] = "Saves the current settings as a backup.\nAutomatic backups never overwrite it.",
         ["남겨 둔 보관본으로 지금 설정을 바꿉니다.\n한 번 더 눌러야 적용됩니다."] = "Replaces the current settings with the saved backup.\nPress twice to apply.",
         ["보관 파일이 있는 폴더를 엽니다.\n다른 PC로 옮길 때 쓰세요."] = "Opens the folder with the backup files.\nUse it to move them to another PC.",
         ["업데이트 적용"] = "Apply Update",
@@ -354,12 +356,12 @@ internal static class ModText
         ["손패를 기능별로 모아\n클릭이나 호버로 펼칩니다."] = "Groups cards by function\nfor click or hover expansion.",
         ["전투 상태"] = "Combat Status",
         ["플레이어 인디케이터"] = "Player Indicators",
-        ["휠 줌·자유 시점"] = "Wheel Zoom and Free View",
+        ["휠 줌·자유 시점"] = "Wheel Zoom and Free Camera",
         ["인디케이터 높이"] = "Indicator Height",
         ["위치 조정"] = "Position",
         ["점을 캐릭터 발밑(0%)부터\n원래 위치(100%) 사이로 옮깁니다."] = "Moves the marker between the\ncharacter's base (0%) and\nits original height (100%).",
         ["매칭 시 게임 창 띄우기"] = "Bring Game Forward on Match",
-        ["휠 줌과 자유 시점을 쓰지 않습니다."] = "Uses no wheel zoom or free view.",
+        ["휠 줌과 자유 시점을 쓰지 않습니다."] = "Uses no wheel zoom or Free Camera.",
         ["창을 가져오지 않습니다."] = "Leaves the window where it is.",
         ["휠로 확대·축소하고 드래그로 시점을 옮깁니다.\n턴 바의 '자유 시점 카메라 종료'로\n기본 시점에 돌아갑니다."] = "Zoom with the wheel and drag to move.\nExit Free Camera on the turn bar\nreturns to the default view.",
         ["자유 시점 카메라 종료"] = "Exit Free Camera",
@@ -384,11 +386,11 @@ internal static class ModText
         ["공격·놓아주기, 방어·회피와\n쓸 만한 카드를 추천합니다."] = "Recommends Attack/Let Go,\nDefend/Dodge and useful cards.",
         ["추천에 마우스를 올리면\n피해·전투불능 확률을 봅니다."] = "Hover over advice to see\ndamage and KO chances.",
         ["카드·칩 핑 말풍선을 클릭하면\n원본 이미지와 설명이 열립니다."] = "Clicking a card or chip ping\nopens its image and description.",
-        ["양쪽의 손패 장수·공개 효과와\n반격 가능 여부를 보여줍니다.\n아이콘에 마우스를 올리면 설명이 나옵니다."] = "Shows both sides' hand counts,\npublic effects and counter status.\nHover an icon for its description.",
-        ["슈슈 쉴드 효과"] = "Shushu Shield Effect",
+        ["양쪽의 손패 장수·공개 효과와\n반격 가능 여부를 보여줍니다.\n아이콘에 마우스를 올리면 설명이 나옵니다."] = "Shows both sides' hand counts, public effects\nand whether they can counterattack.\nHover an icon for its description.",
+        ["슈슈 쉴드 효과"] = "Shiyu-Shiyu Shield Effect",
         ["플레이어 이름·HP와 공개 효과를 보여줍니다.\n효과 아이콘을 클릭하면 설명이 열립니다."] = "Shows player names, HP and public effects.\nClick an effect icon for details.",
         ["본명 또는 이명으로 표시합니다."] = "Displays character names or titles.",
-        ["공개 전투 계산까지 자세히 기록합니다.\n내 PC에만 저장됩니다."] = "Records details down to public\ncombat calculations, on this PC only.",
+        ["공개 전투 계산까지 자세히 기록합니다.\n내 PC에만 저장됩니다."] = "Records detailed logs, including public\ncombat calculations. Saved on this PC only.",
         ["게임 소리를 끄고\n돌아오면 다시 켭니다."] = "Mutes the game and\nrestores sound when you return.",
         ["75%부터 150%까지 조절합니다."] = "Adjusts from 75% to 150%.",
         ["0%에서도 글자·아이콘·테두리는\n그대로 보입니다."] = "Text, icons and borders\nstay visible even at 0%.",
@@ -397,7 +399,7 @@ internal static class ModText
         ["모드 안내 언어를 선택합니다.\n자동은 게임 메뉴 언어를 따릅니다."] = "Selects the language for mod text.\nAuto follows the game menu language.",
         ["기능별 표시 설정을 변경합니다."] = "Configure mod features.",
         ["언어·음소거·알림·진단을 설정합니다."] = "Configure language, audio,\nalerts and diagnostics.",
-        ["공개 손패 장수"] = "Public hand size",
+        ["공개 손패 장수"] = "Public hand count",
         ["마우스 휠로 효과 페이지 넘기기"] = "Scroll to browse effects",
         ["생존 주사위 조건"] = "Survival Dice Target",
         ["KO 불가"] = "KO impossible",
@@ -405,6 +407,7 @@ internal static class ModText
         ["공격자"] = "Attacker",
         ["방어자"] = "Defender",
         ["계산 정보 부족"] = "Insufficient data",
+        ["보장 조건 없음"] = "No guaranteed roll",
         ["카드 사용 후"] = "After card",
         ["현재 상태"] = "Current",
         ["미반영 효과"] = "Effects not counted",
@@ -420,18 +423,18 @@ internal static class ModText
         ["카드 추천"] = "Card Advice",
         ["쓸 만한 카드 위에\n효과를 표시합니다."] = "Marks useful cards\nwith their effect.",
         ["카드를 추천하지 않습니다."] = "No card advice.",
-        ["전투 손패 카드"] = "Battle hand cards",
+        ["전투 손패 카드"] = "Hand cards in battle",
         ["슈팅 스타 표시"] = "Shooting Star",
         ["놓아줄 때 몬스터에게 주는 피해와\n얻는 스타라이트를 보여줍니다."] = "Shows the damage dealt to the monster\nand the Starlight gained when you let it go.",
         ["놓아주기 버튼에 표시하지 않습니다."] = "Nothing is shown on the Let Go button.",
         ["인카운트 놓아주기 버튼"] = "Encounter Let Go button",
         ["카드 호버 조건"] = "Card Hover Target",
-        ["카드에 마우스를 올리면\n카드 사용 후 조건으로 보여줍니다."] = "Hovering a card shows\nthe target after using it.",
+        ["카드에 마우스를 올리면\n카드 사용 후 조건으로 보여줍니다."] = "Hovering a card shows\nthe target after playing it.",
         ["카드에 마우스를 올려도\n지금 조건을 그대로 보여줍니다."] = "Hovering a card keeps\nthe current target.",
-        ["관전 전투 표시"] = "Spectated Fights",
-        ["다른 사람 전투에서도\n조건을 보여줍니다."] = "Also shows the target\nin fights you watch.",
-        ["내 전투에서만 보여줍니다."] = "Shown only in your own fights.",
-        ["다른 사람 전투"] = "Fights you watch",
+        ["관전 전투 표시"] = "Spectated Battles",
+        ["다른 사람 전투에서도\n조건을 보여줍니다."] = "Also shows the target\nin battles you spectate.",
+        ["내 전투에서만 보여줍니다."] = "Shown only in your own battles.",
+        ["다른 사람 전투"] = "Battles you spectate",
         ["손패 장수"] = "Hand Count",
         ["양쪽의 공개 손패 장수를\n보여줍니다."] = "Shows the public hand counts\nof both sides.",
         ["손패 장수를 보여주지 않습니다."] = "Hand counts are hidden.",
@@ -441,9 +444,9 @@ internal static class ModText
         ["반격 아이콘"] = "Counter Icons",
         ["인카운트·전투에서 반격 가능 여부를\n아이콘으로 보여줍니다."] = "Shows whether a counterattack is possible\nin encounters and combat.",
         ["반격 아이콘을 보여주지 않습니다."] = "Counter icons are hidden.",
-        ["슈슈 쉴드"] = "Shushu Shield",
-        ["슈슈 쉴드 효과와 방어 잠금을\n사용합니다."] = "Uses the Shushu Shield effect\nand Defend Lock.",
-        ["슈슈 쉴드 효과와 방어 잠금을\n모두 쓰지 않습니다."] = "Neither the Shushu Shield effect\nnor Defend Lock is used.",
+        ["슈슈 쉴드"] = "Shiyu-Shiyu Shield",
+        ["슈슈 쉴드 효과와 방어 잠금을\n사용합니다."] = "Uses the Shiyu-Shiyu Shield effect\nand Defend Lock.",
+        ["슈슈 쉴드 효과와 방어 잠금을\n모두 쓰지 않습니다."] = "Neither the Shiyu-Shiyu Shield effect\nnor Defend Lock is used.",
         ["몬스터 피해"] = "Monster damage",
         ["스타라이트"] = "Starlight",
         ["피해"] = "DMG",
@@ -455,7 +458,7 @@ internal static class ModText
         ["추천"] = "Recommended",
         ["놓아주기"] = "Let Go",
         ["이번 전투 피해 없음"] = "No damage this battle",
-        ["효과 없음 · 보존"] = "No benefit · Save",
+        ["효과 없음 · 보존"] = "No benefit · Keep",
         ["효과 있음"] = "Beneficial",
         ["조건부 이득"] = "Conditional benefit",
         ["더 싼 카드 우선"] = "Use cheaper card",
@@ -463,7 +466,7 @@ internal static class ModText
         ["사용 불가"] = "Unavailable",
         ["이득"] = "Benefit",
         ["조건부"] = "Conditional",
-        ["보존"] = "Save",
+        ["보존"] = "Keep",
         ["저비용 우선"] = "Cheaper first",
         ["방어자 기준 · "] = "Defender · ",
         ["방어 추천"] = "Defend advised",
@@ -472,8 +475,8 @@ internal static class ModText
         ["방어"] = "Defend",
         ["회피"] = "Dodge",
         ["예상 피해"] = "Damage",
-        ["평균 피해"] = "Mean damage",
-        ["평균 체력 손실"] = "Mean HP loss",
+        ["평균 피해"] = "Average damage",
+        ["평균 체력 손실"] = "Average HP loss",
         ["전투불능"] = "KO",
         ["추가 피해"] = "Extra damage",
         ["피해 감소"] = "Damage reduction",
@@ -499,7 +502,7 @@ internal static class ModText
     }
 
     internal static string AutomaticStatus(AutomaticUpdateStatus status, bool transitionWaiting) => transitionWaiting && status == AutomaticUpdateStatus.TransitionRequired
-        ? Korean ? "채널 전환 대기" : "Channel Switch Waiting" : AutomaticStatus(status);
+        ? Korean ? "채널 전환 대기" : "Waiting for Channel Switch" : AutomaticStatus(status);
     internal static string AutomaticStatus(AutomaticUpdateStatus status) => Korean ? status switch
     {
         AutomaticUpdateStatus.NotConfigured => "업데이트 미설정", AutomaticUpdateStatus.Idle => "대기",
@@ -516,12 +519,12 @@ internal static class ModText
         AutomaticUpdateStatus.NotConfigured => "Not Configured", AutomaticUpdateStatus.Idle => "Idle",
         AutomaticUpdateStatus.MissingAssets => "Manual Download Required", AutomaticUpdateStatus.Downloading => "Downloading",
         AutomaticUpdateStatus.Preparing => "Verifying", AutomaticUpdateStatus.Ready => "Ready", AutomaticUpdateStatus.Queued => "Applying",
-        AutomaticUpdateStatus.Cancelling => "Recording Cancellation", AutomaticUpdateStatus.CancelFailed => "Cancellation Record Failed",
+        AutomaticUpdateStatus.Cancelling => "Recording Cancellation", AutomaticUpdateStatus.CancelFailed => "Cancellation Not Confirmed",
         AutomaticUpdateStatus.CheckingInstallation => "Checking Installation", AutomaticUpdateStatus.RecoveryRequired => "Recovery Required",
-        AutomaticUpdateStatus.FilesBusy => "Update Files In Use", AutomaticUpdateStatus.AlreadyClaimed => "Request Already Claimed",
+        AutomaticUpdateStatus.FilesBusy => "Update Files In Use", AutomaticUpdateStatus.AlreadyClaimed => "Already Being Processed",
         AutomaticUpdateStatus.Cancelled => "Cancelled", AutomaticUpdateStatus.ManualUpgradeRequired => "Manual Upgrade Required",
-        AutomaticUpdateStatus.RetryWaiting => "Retry Waiting", AutomaticUpdateStatus.FaultDisabled => "Disabled After Failure", AutomaticUpdateStatus.FaultStorageFailed => "Failure/Settings Storage Needs Attention", AutomaticUpdateStatus.Reactivating => "Re-enabling Updates",
-        AutomaticUpdateStatus.TransitionRequired => "Confirm Channel Transition", AutomaticUpdateStatus.Committed => "Applied", _ => "Update Failed"
+        AutomaticUpdateStatus.RetryWaiting => "Waiting to Retry", AutomaticUpdateStatus.FaultDisabled => "Disabled After Failure", AutomaticUpdateStatus.FaultStorageFailed => "Could Not Save Failure State", AutomaticUpdateStatus.Reactivating => "Re-enabling Updates",
+        AutomaticUpdateStatus.TransitionRequired => "Confirm Channel Switch", AutomaticUpdateStatus.Committed => "Applied", _ => "Update Failed"
     };
     internal static string AutomaticDetails(AutomaticUpdateStatus status, string? recoveryStage = null, Updating.UpdateFault? fault = null, ReleaseChannel? channel = null, bool transitionWaiting = false) => AutomaticStatus(status, transitionWaiting) + "\n" + (transitionWaiting && status == AutomaticUpdateStatus.TransitionRequired
         ? Korean ? "선택한 채널에는 설치된 버전보다 새 버전이 아직 없습니다. 새 버전이 나오면 이곳에서 전환을 확인할 수 있습니다." : "The selected channel has no version newer than the installed one yet. When one is released, you can confirm the switch here."
@@ -531,13 +534,13 @@ internal static class ModText
             : Korean ? "업데이트 설정과 설치 상태를 확인하세요. 비공개 베타는 토큰 인증이 필요합니다." : "Check update settings and installation. Private Beta requires a token."
         : status == AutomaticUpdateStatus.TransitionRequired ? Korean ? "대상 채널과 버전을 확인한 뒤 전환을 승인하세요. 업데이트 채널을 설치된 채널로 되돌리면 그 채널의 업데이트를 계속 받습니다." : "Review the target channel and version, then confirm the switch. Select the installed channel again to keep receiving its updates."
         : status == AutomaticUpdateStatus.RecoveryRequired ? Korean ? "미완료 업데이트를 확인했습니다. 게임을 다시 시작하면 자동으로 복구합니다. 계속 이 상태이면 게임을 닫고 Install.cmd를 다시 실행하세요. 백업은 보존됩니다." : "An unfinished update needs recovery. Restarting the game recovers it automatically. If this stays, close the game and run Install.cmd again. Backups are preserved."
-        : status == AutomaticUpdateStatus.FaultStorageFailed ? Korean ? "실패 기록이나 설정을 저장하지 못했습니다. 자동 실행을 차단했습니다. 저장 위치와 복구 상태를 확인한 뒤 상태를 다시 확인하세요." : "Failure evidence or settings could not be saved. Automatic execution is blocked. Check storage and recovery, then recheck installation."
-        : status == AutomaticUpdateStatus.CancelFailed ? Korean ? "취소 완료를 확인하지 못했습니다. 업데이트를 다시 실행하지 말고 복구 안내를 확인하세요." : "Cancellation completion could not be confirmed. Check recovery guidance before retrying."
+        : status == AutomaticUpdateStatus.FaultStorageFailed ? Korean ? "실패 기록이나 설정을 저장하지 못했습니다. 자동 실행을 차단했습니다. 저장 위치와 복구 상태를 확인한 뒤 상태를 다시 확인하세요." : "The failure record or settings could not be saved, so automatic updates are blocked. Check the storage location and recovery state, then use Recheck Installation."
+        : status == AutomaticUpdateStatus.CancelFailed ? Korean ? "취소 완료를 확인하지 못했습니다. 업데이트를 다시 실행하지 말고 복구 안내를 확인하세요." : "The cancellation could not be confirmed. Check the recovery guidance before trying again."
         : status == AutomaticUpdateStatus.Cancelling ? Korean ? "취소를 기록하고 있습니다." : "Recording the cancellation."
         : status == AutomaticUpdateStatus.ManualUpgradeRequired ? Korean ? "설치를 자동으로 변경할 수 없습니다. 수동 업그레이드가 필요합니다." : "This installation requires a manual upgrade."
         : Korean ? "다운로드·적용 상태를 표시합니다." : "Shows download and apply status.")
-        + (fault == null ? "" : "\n" + (Korean ? "자동 다운로드와 자동 적용을 OFF로 저장합니다. 원인을 해결하고 ‘다시 사용’을 선택하면 두 옵션을 ON으로 복원합니다.\n실패 단계/원인: " : "Both options are saved OFF. Resolve the cause, then select Re-enable Updates to restore both ON.\nFailure phase/reason: ") + FaultPhaseText(fault.Phase) + "/" + FaultReasonText(fault.Reason)
-            + (fault.PreferencesSaveFailed ? Korean ? "\n설정 저장에 실패했습니다. 실패 표지가 자동 실행을 계속 차단합니다." : "\nSettings could not be saved. Persistent failure evidence still blocks automatic execution." : ""))
+        + (fault == null ? "" : "\n" + (Korean ? "자동 다운로드와 자동 적용을 OFF로 저장합니다. 원인을 해결하고 ‘다시 사용’을 선택하면 두 옵션을 ON으로 복원합니다.\n실패 단계/원인: " : "Automatic download and apply are saved as OFF. Fix the cause, then select Re-enable Updates to turn both back ON.\nFailed step/reason: ") + FaultPhaseText(fault.Phase) + "/" + FaultReasonText(fault.Reason)
+            + (fault.PreferencesSaveFailed ? Korean ? "\n설정 저장에 실패했습니다. 실패 표지가 자동 실행을 계속 차단합니다." : "\nSettings could not be saved. The saved failure record keeps automatic updates blocked." : ""))
         + (status == AutomaticUpdateStatus.RetryWaiting ? Korean ? "\n최대 두 번 시도합니다. 대기 중에는 네트워크 요청을 보내지 않습니다." : "\nAt most two attempts. No network requests while waiting." : "")
         + (status == AutomaticUpdateStatus.Committed ? Korean ? "\n게임을 다시 시작하면 새 버전을 사용합니다." : "\nRestart the game to use the new version." : "");
 
@@ -548,7 +551,11 @@ internal static class ModText
         Updating.FaultReason.Network => "네트워크 오류", Updating.FaultReason.Timeout => "시간 초과", Updating.FaultReason.Authentication => "인증 오류", Updating.FaultReason.Access => "접근 오류", Updating.FaultReason.RateLimited => "요청 제한",
         Updating.FaultReason.Integrity => "검증 실패", Updating.FaultReason.Preparation => "준비 실패", Updating.FaultReason.Apply => "적용 실패", Updating.FaultReason.Recovery => "복구 실패", Updating.FaultReason.Interrupted => "작업 중단",
         Updating.FaultReason.Storage => "저장 실패", _ => "수동 업그레이드 필요"
-    } : reason.ToString();
+    } : reason switch {
+        Updating.FaultReason.Network => "Network error", Updating.FaultReason.Timeout => "Timed out", Updating.FaultReason.Authentication => "Sign-in error", Updating.FaultReason.Access => "Access error", Updating.FaultReason.RateLimited => "Rate limited",
+        Updating.FaultReason.Integrity => "Verification failed", Updating.FaultReason.Preparation => "Preparation failed", Updating.FaultReason.Apply => "Apply failed", Updating.FaultReason.Recovery => "Recovery failed", Updating.FaultReason.Interrupted => "Interrupted",
+        Updating.FaultReason.Storage => "Could not save", _ => "Manual upgrade required"
+    };
 
     internal static string UpdateStatus(ReleaseUpdateStatus status) => Text(status switch
     {
@@ -575,7 +582,7 @@ internal static class ModText
         {
             AutomaticUpdateStatus.Downloading or AutomaticUpdateStatus.Preparing or AutomaticUpdateStatus.RetryWaiting =>
                 Korean ? "준비가 끝나면 자동 적용 설정에 따라 바로 적용합니다." : "When ready, it applies right away if automatic apply is on.",
-            AutomaticUpdateStatus.TransitionRequired => Korean ? "채널 전환은 업데이트 설정에서 별도로 확인하고 승인해야 합니다." : "Review and confirm a channel transition separately in Update Settings.",
+            AutomaticUpdateStatus.TransitionRequired => Korean ? "채널 전환은 업데이트 설정에서 별도로 확인하고 승인해야 합니다." : "Review and confirm a channel switch separately in Update Settings.",
             AutomaticUpdateStatus.Ready => Korean ? "다운로드가 준비되었습니다. 업데이트 설정을 확인하세요." : "The download is ready. Check Update Settings.",
             AutomaticUpdateStatus.Queued => Korean ? "업데이트를 적용하고 있습니다. 다음 실행부터 새 버전을 사용합니다." : "Applying the update. The new version runs from the next launch.",
             AutomaticUpdateStatus.Cancelled or AutomaticUpdateStatus.Cancelling => Korean ? "취소 상태는 업데이트 설정에서 확인할 수 있습니다." : "Check the cancellation status in Update Settings.",

@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "configuration": "Release",
-  "sourceManifestSha256": "A05EEDE8431E86C44FC7DCBFB70CE9A27A2EF8299D04508A74C4F4ECE78E4E11",
+  "sourceManifestSha256": "2207DF429A1BDACD1B57E1C340A59E659F87949E5BCDA980A89AF49A19657358",
   "checks": [
     "sdk-path-safety",
     "source-mode",
@@ -116,17 +116,17 @@
     "--release-updates-only",
     "--settings-only"
   ],
-  "versionOverride": "1.6.2",
+  "versionOverride": "1.6.3",
   "generatedPlugin": {
     "path": "version-override/Plugin.cs",
-    "bytes": 43740,
-    "sha256": "0F6130139E89D4D77E5CFAC6E2B3B13871D2482351CE9C1E08313A7DD9EC1F3E"
+    "bytes": 44236,
+    "sha256": "1603AA8E123CEFB7D2C0244188EBA349E4C1518DCA8ACDF26BF1CCB5B5F66317"
   },
   "files": [
     {
       "path": "plugin/BetterAstralParty.dll",
-      "bytes": 1099776,
-      "sha256": "35360848E8E458D2ECE21AC91D97D2B996D29616B7ADC90C9FC6CB6D8B93C23C"
+      "bytes": 1103360,
+      "sha256": "AF84240D8C80462CDDFB93BE7BA4402BE1177C95AA7595F3580C81A2E491FB13"
     },
     {
       "path": "setup/BetterAstralParty-Setup.exe",

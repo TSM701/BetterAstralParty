@@ -610,10 +610,10 @@ foreach (var row in new[] { 0, 1 })
 }
 if (CardDiceLayout.Status(null, null, 9) != "계산 정보 부족"
     || CardDiceLayout.Status(new(3, 0), (4, 8), 9) != "KO 불가"
-    || CardDiceLayout.Status(new(3, 0), (4, 9), 9) != "계산 정보 부족"
+    || CardDiceLayout.Status(new(3, 0), (4, 9), 9) != "보장 조건 없음"
     || CardDiceLayout.Status(new(3, 0), (0, 0), 9) != "KO 불가"
     || CardDiceLayout.Status(new(3, 0), (9, 12), 9, true) != "확정 KO"
-    || CardDiceLayout.Status(new(3, 0), (8, 12), 9, true) != "계산 정보 부족"
+    || CardDiceLayout.Status(new(3, 0), (8, 12), 9, true) != "보장 조건 없음"
     || CardDiceLayout.Status(new(3, 0), null, 9) != "계산 정보 부족"
     || CardDiceLayout.Status(new(3, 1), null, 9) != ""
     || CardDiceLayout.Title() != "KO 주사위 조건")

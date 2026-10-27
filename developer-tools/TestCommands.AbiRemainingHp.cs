@@ -49,7 +49,7 @@ internal static partial class TestCommands
         foreach (var text in new[] { view, dice }) Contains(text, new[] { "CombatAdvisor.IsDodge(defense.Field(\"changeState\")", "defense.Field(\"showResult\")" }, "Public announced dodge after native icon reset");
         Contains(dice, new[] { "pair == null ? null : CardKoMinimum.OutcomeRange(input, card, thresholdDie)", "var unconditional = status is \"KO 불가\" or \"확정 KO\";",
             "CardDiceLayout.Content(pair, thresholdDie, index, survival, unconditional, input.Modifiers.DefenseDice, fixedDefense)", "CardDiceLayout.Title(survival)", "var survival = role == 1 || role == 2 && input.DefenderPlayer;", "var thresholdDie = fixedDie;",
-            "ModText.Revision, role, finalDamage)", "CardKoMinimum.Survival(input, card, thresholdDie, possible: true)", "CardKoMinimum.Calculate(input, card, thresholdDie, possible: true)",
+            "ModText.Revision, role, finalDamage)", "CardKoMinimum.Survival(input, card, thresholdDie, possible: false)", "CardKoMinimum.Calculate(input, card, thresholdDie, possible: false)",
             "CardDiceLayout.Status(pair, damage, input.Hp, survival)", "koMinimum.content", "supported={pair != null}", "status={status}; metadataOnly=True",
             "reason={(unsupported ? \"card-effect\" : pair == null ? \"public-input\" : \"none\")}",
             "if (finalDamage is >= 0) damage = ((long)finalDamage.Value, (long)finalDamage.Value);", "_resolvedUi?.Pointer != ui.Pointer",

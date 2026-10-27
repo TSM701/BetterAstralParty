@@ -23,7 +23,9 @@ internal static class ModUi
     private static readonly List<(RuntimeObject Button, RuntimeObject Background, RuntimeObject[] Parts)> ChildPills = new();
     private static readonly Dictionary<IntPtr, (bool Visible, float Alpha, Color Fill)> ChildPillStates = new();
     private static readonly Color ChildOn = new(1f, 0.855f, 0.361f), ChildOff = new(0.827f, 0.816f, 0.776f), ChildRing = new(0.604f, 0.604f, 0.604f);
-    private static IntPtr _barDragSlider;
+    private static IntPtr _dragSlider;
+    private static float _dragX;
+    private static double _dragStart;
     private static readonly List<(RuntimeObject[] Parts, string Parent)> Trays = new();
     private static (float Height, float Y, bool Visible)? _scrollMarker;
     // Category dots on the scroll track; hovering the track shows every category's bubble beside it, and the bubbles stay
@@ -404,13 +406,33 @@ internal static class ModUi
         if (_savedText != saved) { _savedText = saved; Labels["Saved"].Set("text", saved); }
     }
 
-    // Stored settings in whole percent; the slider shows them from the range minimum.
-    private static int SliderValue(string action) => (int)Math.Round(100 * action switch
+    private static BepInEx.Configuration.ConfigEntry<float> SliderEntry(string action) => action switch
     {
-        "FieldMarker" => Plugin.FieldIndicatorHeight.Value, "IndicatorFadeStrength" => Plugin.IndicatorFadeStrength.Value,
-        "FoldedHandOpacity" => Plugin.FoldedHandOpacity.Value, "Scale" => Plugin.UiScale.Value,
-        "ZoomSensitivity" => Plugin.ZoomSensitivity.Value, "IndicatorHideDistance" => Plugin.IndicatorHideDistance.Value, _ => Plugin.Opacity.Value
-    });
+        "FieldMarker" => Plugin.FieldIndicatorHeight, "IndicatorFadeStrength" => Plugin.IndicatorFadeStrength,
+        "FoldedHandOpacity" => Plugin.FoldedHandOpacity, "Scale" => Plugin.UiScale,
+        "ZoomSensitivity" => Plugin.ZoomSensitivity, "ZoomOutLimit" => Plugin.ZoomOutLimit, "IndicatorHideDistance" => Plugin.IndicatorHideDistance, _ => Plugin.Opacity
+    };
+
+    // Stored settings in whole percent; the slider shows them from the range minimum.
+    private static int SliderValue(string action) => (int)Math.Round(100 * SliderEntry(action).Value);
+
+    // Default marker (user-chosen 2026-10-27, replacing a dark line that clashed with the pink bar): a translucent copy of
+    // the native star grip (Setting_Com_Slider_grip, the star only; the pink tail belongs to the bar) at the default value,
+    // under the real grip so they coincide there. The grip follows the bar end, so the copy keeps the grip's y and sits
+    // where the grip would be at the default share. Call after the slider shows its value, so bar and grip agree.
+    private const float DefaultMarkAlpha = 0.4f;
+    private static void AddDefaultMark(RuntimeObject slider, string action, int min, int max)
+    {
+        var bar = slider.Field("_barObjectH"); var grip = slider.Field("_gripObject");
+        if (bar == null || grip == null || max <= min) return;
+        var ratio = Math.Clamp(((float)Math.Round(100 * (float)SliderEntry(action).DefaultValue) - min) / (max - min), 0f, 1f);
+        var mark = NativeUi.Create("Setting", "Setting_Com_Slider_grip");
+        if (mark == null) return;
+        mark.Set("touchable", false);
+        mark.Set("alpha", DefaultMarkAlpha);
+        mark.Call("SetXY", grip.Get<float>("x") - bar.Get<float>("width") + ratio * slider.Field<float>("_barMaxWidth"), grip.Get<float>("y"));
+        slider.Call("AddChildAt", mark, slider.Call("GetChildIndex", grip)!.Value<int>());
+    }
 
     // A slider drag would rewrite the whole settings file at every 1 % step; the file is saved once when the drag ends.
     private static bool? _sliderSave;
@@ -435,17 +457,7 @@ internal static class ModUi
 
     private static void SetSliderValue(string action, int percent)
     {
-        var value = percent * 0.01f;
-        switch (action)
-        {
-            case "FieldMarker": Plugin.FieldIndicatorHeight.Value = value; break;
-            case "IndicatorFadeStrength": Plugin.IndicatorFadeStrength.Value = value; break;
-            case "FoldedHandOpacity": Plugin.FoldedHandOpacity.Value = value; break;
-            case "Scale": Plugin.UiScale.Value = value; break;
-            case "ZoomSensitivity": Plugin.ZoomSensitivity.Value = value; break;
-            case "IndicatorHideDistance": Plugin.IndicatorHideDistance.Value = value; break;
-            default: Plugin.Opacity.Value = value; break;
-        }
+        SliderEntry(action).Value = percent * 0.01f;
     }
 
     private static IntPtr _sliderPackage;
@@ -480,6 +492,7 @@ internal static class ModUi
             // still at -1 would save the minimum (1.5.3-dev.15 to dev.17 reset every slider that way).
             slider.Set("value", -1d);
             slider.Set("value", (double)(SliderValue(action) - min));
+            AddDefaultMark(slider, action, min, max);
             Sliders[action] = slider;
             Controls[slider.Pointer] = (slider, action);
             _sliderPackage = SettingPackage();
@@ -489,8 +502,9 @@ internal static class ModUi
                 Plugin.Diagnostics.State("settingsSliders.ms", FormattableString.Invariant($"total={_sliderMs:F1}; count={_sliderCount}"));
             return; // Read user input back only from the next frame, after Refresh has applied visibility and state.
         }
-        if (!slider.Get<bool>("visible")) { if (_barDragSlider == slider.Pointer) _barDragSlider = IntPtr.Zero; return; }
-        FollowSliderBar(slider);
+        if (!slider.Get<bool>("visible")) { if (_dragSlider == slider.Pointer) _dragSlider = IntPtr.Zero; return; }
+        DragSlider(slider, action, min, max - min);
+        NudgeSlider(slider, max - min);
         var value = min + (int)Math.Round(Math.Clamp(slider.Get<double>("value"), 0, max - min)); // 1% steps
         if (value == SliderValue(action)) return;
         DeferSliderSave();
@@ -499,28 +513,52 @@ internal static class ModUi
         _changedAt = Time.unscaledTime;
     }
 
-    // Native GSlider jumps on a bar press but only its grip drags; keep following the pointer until release.
-    private static void FollowSliderBar(RuntimeObject slider)
+    // Native GSlider drags only its grip; every press on the slider is followed here instead, keeping the grip under
+    // the pointer and snapping to the default within a few pixels of the star marker. The native press still runs
+    // (a bar press jumps there first); the native grip drag is switched off while the press lasts. A wide range packs
+    // about 2 % into a pixel, so single steps come from the arrow keys (NudgeSlider); one step per pixel was tried and
+    // left the grip behind the pointer (2026-10-27).
+    private const float DefaultSnapPixels = 3f;
+    private static void DragSlider(RuntimeObject slider, string action, int min, int range)
     {
-        var grip = slider.Field("_gripObject");
         if (Input.GetMouseButtonDown(0))
         {
-            var path = GameUi.PointerPath(hitTest: true);
-            if (grip != null && slider.Get<bool>("touchable")
-                && path.Any(item => item.Pointer == slider.Pointer) && path.All(item => item.Pointer != grip.Pointer))
-                _barDragSlider = slider.Pointer;
+            if (slider.Get<bool>("touchable") && GameUi.PointerPath(hitTest: true).Any(item => item.Pointer == slider.Pointer))
+            {
+                // FairyGUI handles the press in its LateUpdate, after this; read the start value next frame.
+                _dragSlider = slider.Pointer; _dragX = TouchX(); _dragStart = double.NaN;
+            }
+            return;
         }
-        if (!Input.GetMouseButton(0)) _barDragSlider = IntPtr.Zero;
-        if (_barDragSlider != slider.Pointer || grip == null) return;
-        var width = slider.Field<float>("_barMaxWidth");
-        if (width <= 0) return;
-        // Same delta as native __barTouchBegin: grip-local pointer x from the grip centre over the bar width.
-        var touch = RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "Stage"), "get_inst")!.Get<Vector2>("touchPosition");
-        var point = grip.Call("GlobalToLocal", touch)!.Value<Vector2>();
-        var max = slider.Get<double>("max");
-        var next = Math.Clamp(slider.Get<double>("value") + (point.x - grip.Get<float>("width") / 2) / width * max, 0, max);
-        if (Math.Abs(next - slider.Get<double>("value")) > 0.01) slider.Set("value", next);
+        if (!Input.GetMouseButton(0)) _dragSlider = IntPtr.Zero;
+        if (_dragSlider != slider.Pointer) return;
+        slider.SetField("canDrag", false); // Every native grip press sets it again.
+        if (double.IsNaN(_dragStart)) _dragStart = slider.Get<double>("value");
+        var bar = slider.Field<float>("_barMaxWidth");
+        var pixels = slider.Call("LocalToGlobal", new Vector2(bar, 0))!.Value<Vector2>().x - slider.Call("LocalToGlobal", Vector2.zero)!.Value<Vector2>().x;
+        if (pixels <= 0) return;
+        var step = range / pixels;
+        var next = _dragStart + (TouchX() - _dragX) * step;
+        var fallback = Math.Round(100 * (float)SliderEntry(action).DefaultValue) - min;
+        next = Math.Clamp(Math.Abs(next - fallback) <= DefaultSnapPixels * step ? fallback : Math.Round(next), 0, range);
+        if (next != slider.Get<double>("value")) slider.Set("value", next);
     }
+
+    // Left/right arrows move the hovered slider one step, repeating while held.
+    private static float _nudgeAt;
+    private static void NudgeSlider(RuntimeObject slider, int range)
+    {
+        var left = Input.GetKey(KeyCode.LeftArrow);
+        if (left == Input.GetKey(KeyCode.RightArrow) || _dragSlider != IntPtr.Zero || !slider.Get<bool>("touchable")) return;
+        var pressed = Input.GetKeyDown(left ? KeyCode.LeftArrow : KeyCode.RightArrow);
+        if (!pressed && Time.unscaledTime < _nudgeAt) return;
+        if (GameUi.PointerPath(hitTest: true).All(item => item.Pointer != slider.Pointer)) return;
+        _nudgeAt = Time.unscaledTime + (pressed ? 0.4f : 0.05f);
+        var next = Math.Clamp(Math.Round(slider.Get<double>("value")) + (left ? -1 : 1), 0, range);
+        if (next != slider.Get<double>("value")) slider.Set("value", next);
+    }
+
+    private static float TouchX() => RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "Stage"), "get_inst")!.Get<Vector2>("touchPosition").x;
 
     private static RuntimeObject Button(string action, string item, string title, float x, float y, float width)
     {
@@ -660,7 +698,7 @@ internal static class ModUi
         _trackHit.Set("opaque", true); _trackHit.Set("touchable", true);
         _trackHit.Call("SetXY", MenuLayout.SettingsX + MenuLayout.TrackX - MenuLayout.TrackPad, MenuLayout.SettingsY);
         TraceSettingsOpen(DiagnosticPhase.SettingsSteppers);
-        Sliders.Clear(); SliderBlocked.Clear(); SliderBacks.Clear(); _barDragSlider = IntPtr.Zero;
+        Sliders.Clear(); SliderBlocked.Clear(); SliderBacks.Clear(); _dragSlider = IntPtr.Zero;
         foreach (var action in MenuLayout.Sliders)
         {
             Labels[action] = NativeUi.Label(_sheet!, ModText.Text(MenuLayout.SliderLabel(action)), MenuLayout.SettingsX + MenuLayout.SliderLabelX(action), 0, 98, 35, 22);

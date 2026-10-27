@@ -189,6 +189,12 @@ internal static class CombatEffectsCheck
         var mixedPair = CardKoMinimum.Calculate(mixed, null, possible: true);
         Check(mixedPair == new KoPair(1, 6) && CardDiceLayout.Status(mixedPair, CardKoMinimum.OutcomeRange(mixed, null), mixed.Hp) == "",
             "unconditional defense must not promote best-case KO to guaranteed KO");
+        // 2026-10-25 log: a +1~20 attack card (ATK 2..21) met the best-case target (die 1, defense <= 6) and dealt 1.
+        // The display now uses guaranteed thresholds, so a lucky-roll-only KO reads "no guaranteed roll", never a target.
+        var lucky = new PreRollCombat(9, 6, 2, 21, 0, 0);
+        var luckyPair = CardKoMinimum.Calculate(lucky, null, 1, possible: false);
+        Check(luckyPair == new KoPair(1, 0) && CardDiceLayout.Status(luckyPair, CardKoMinimum.OutcomeRange(lucky, null, 1), lucky.Hp) == "보장 조건 없음"
+            && CardDiceLayout.Content(luckyPair, 1, 1) == (0, "", "—"), "guaranteed target: a lucky card roll is not a threshold");
         foreach (var survival in new[] { false, true })
         {
             Check(CardDiceLayout.Status(null, (10, 12), 10, survival) == "확정 KO"

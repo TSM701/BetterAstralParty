@@ -18,8 +18,10 @@ internal static class FieldFreeCamera
     // (btn_Head -> SwitchCamera -> MoveCameraToPlayer; the whole button only for watchers, OnClickPlayer -> ControlFreeCamera),
     // a monster target item (UIButton_MonsterItem -> BattleMonsterWindow.SwitchCamera) and the minimap (OnClickMiniMap).
     // The player label (btn_Label -> ShowBattlePlayerInfo) only opens details. Turn, move and skill camera switches never do.
-    private const string PlayerInfo = "UIBattleInfo_Button_PlayerInfo", PlayerHead = "btn_Head";
-    private static readonly string[] FocusTypes = { PlayerInfo, "UIButton_MonsterItem", "UIBattleInfo_Com_Minimap" };
+    // A teammate's land/monster ping in the chat list has a show-location button (btn_ShowSignal -> BattleMessage.
+    // ShowAddressInfo -> CameraManager.ControlFreeCamera), which the free view used to hide (issue #16, 2026-10-26).
+    private const string PlayerInfo = "UIBattleInfo_Button_PlayerInfo", PlayerHead = "btn_Head", ShowSignal = "btn_ShowSignal";
+    private static readonly string[] FocusTypes = { PlayerInfo, "UIButton_MonsterItem", "UIBattleInfo_Com_Minimap", ShowSignal };
     private static string? _focusTarget;
     private static Vector2 _focusPress;
     private static int _focusDrag = -1;
@@ -97,7 +99,8 @@ internal static class FieldFreeCamera
             var draggable = false;
             foreach (var item in GameUi.PointerPath(hitTest: true))
             {
-                types.Add(item.Field("name")?.String() == PlayerHead ? PlayerHead : item.TypeName); // GObject.name is a field, not a property.
+                var name = item.Field("name")?.String(); // GObject.name is a field, not a property.
+                types.Add(name is PlayerHead or ShowSignal ? name : item.TypeName);
                 draggable |= item.Get<bool>("draggable");
             }
             _focusTarget = FocusTarget(types, types.Contains(PlayerInfo) && RuntimeObject.StaticField(RuntimeObject.FindClass("GameLogic", "GameLogicManager"), "_inst")

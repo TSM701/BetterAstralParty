@@ -428,6 +428,7 @@ public static class Check {
         Assert(FieldFreeCamera.FocusTarget(new[]{"btn_Head","UIBattleInfo_Button_PlayerInfo","UIBattleInfo_Com_Player","GRoot"})=="UIBattleInfo_Button_PlayerInfo" && FieldFreeCamera.FocusTarget(new[]{"UIButton_MonsterItem"})=="UIButton_MonsterItem" && FieldFreeCamera.FocusTarget(new[]{"UIBattleInfo_Com_Minimap"})!=null);
         Assert(FieldFreeCamera.FocusTarget(new[]{"GGraph","UIBattleInfo_Button_PlayerInfo","UIBattleInfo_Com_Player","GRoot"})==null
             && FieldFreeCamera.FocusTarget(new[]{"GGraph","UIBattleInfo_Button_PlayerInfo"},watcher:true)=="UIBattleInfo_Button_PlayerInfo");
+        Assert(FieldFreeCamera.FocusTarget(new[]{"btn_ShowSignal","UIExpression_Com_ChatItem","GRoot"})=="btn_ShowSignal" && FieldFreeCamera.FocusTarget(new[]{"UIExpression_Com_ChatItem","GRoot"})==null); // chat ping show-location button only
         Assert(FieldFreeCamera.FocusTarget(new[]{"GRoot","UIButton_ThrowDice","UICom_AttrInfo"})==null && FieldFreeCamera.FocusTarget(System.Array.Empty<string>())==null);
         // Native: 50 pixels per axis, or a draggable target's clickDragSensitivity.
         Assert(FieldFreeCamera.ClickGesture(new(100,100),new(106,97),-1) && FieldFreeCamera.ClickGesture(new(100,100),new(150,50),-1)

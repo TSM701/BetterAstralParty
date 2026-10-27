@@ -65,6 +65,20 @@ internal static partial class TestCommands
             && !slider.Methods.Any(method => method.Name == "set_changeOnClick"), "Native slider changeOnClick is a public field");
         Check(slider.Fields.Single(field => field.Name == "_barMaxWidth") is { IsStatic: false } barWidth && barWidth.FieldType.FullName == "System.Single", "Native slider bar width field");
         Check(slider.Fields.Single(field => field.Name == "_gripObject") is { IsStatic: false } gripField && gripField.FieldType.FullName == "FairyGUI.GObject", "Native slider grip field");
+        // Default markers are translucent copies of the star grip where the grip would sit at the default, under the real grip.
+        Check(slider.Fields.Single(field => field.Name == "_barObjectH").FieldType.FullName == "FairyGUI.GObject", "Native slider bar field");
+        var markSource = ReadSource(context, "src/ModUi.cs");
+        Contains(markSource, new[] { "NativeUi.Create(\"Setting\", \"Setting_Com_Slider_grip\")", "SliderEntry(action).DefaultValue", "mark.Set(\"alpha\", DefaultMarkAlpha);",
+            "grip.Get<float>(\"x\") - bar.Get<float>(\"width\") + ratio * slider.Field<float>(\"_barMaxWidth\"), grip.Get<float>(\"y\")",
+            "slider.Call(\"AddChildAt\", mark, slider.Call(\"GetChildIndex\", grip)!.Value<int>());" }, "Settings sliders mark their default with a ghost grip");
+        Check(markSource.IndexOf("slider.Set(\"value\", (double)(SliderValue(action) - min));", StringComparison.Ordinal)
+            < markSource.IndexOf("AddDefaultMark(slider, action, min, max);", StringComparison.Ordinal), "Default marker is placed after the slider shows its value");
+        // Drags follow the pointer 1:1 and snap to the default nearby; the native grip drag stays off meanwhile.
+        Check(slider.Fields.Single(field => field.Name == "canDrag").FieldType.FullName == "System.Boolean", "Native slider canDrag field");
+        Pattern(Il("FairyGUI.GSlider", "__gripTouchBegin", 1), @"ldc.i4.1\nIL_[0-9a-f]+: stfld System.Boolean FairyGUI.GSlider::canDrag", "Native grip press re-enables its drag");
+        Pattern(Il("FairyGUI.GSlider", "__gripTouchMove", 1), @"^IL_[0-9a-f]+: ldarg.0\nIL_[0-9a-f]+: ldfld System.Boolean FairyGUI.GSlider::canDrag\nIL_[0-9a-f]+: brtrue", "Native grip drag stops while canDrag is off");
+        Contains(markSource, new[] { "slider.SetField(\"canDrag\", false);", "var step = range / pixels;", "var next = _dragStart + (TouchX() - _dragX) * step;", "Math.Abs(next - fallback) <= DefaultSnapPixels * step ? fallback : Math.Round(next)" }, "Slider drags keep the grip under the pointer and snap to the default");
+        Contains(markSource, new[] { "NudgeSlider(slider, max - min);", "Input.GetKeyDown(left ? KeyCode.LeftArrow : KeyCode.RightArrow)", "GameUi.PointerPath(hitTest: true).All(item => item.Pointer != slider.Pointer)" }, "Arrow keys move the hovered slider one step");
         Pattern(Il("FairyGUI.GSlider", "__barTouchBegin", 1), @"::_gripObject[\s\S]*::GlobalToLocal[\s\S]*::_barMaxWidth", "Native bar press measures from the grip over the bar width");
         // A new slider must hold the saved value before anything reads it back, or the setting is overwritten with the minimum.
         var sliderSource = ReadSource(context, "src/ModUi.cs");

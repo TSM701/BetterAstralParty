@@ -164,7 +164,7 @@ internal static partial class TestCommands
         var surfaceCalls = plugin.MainModule.GetType("BetterAstralParty.AdviceBadge").Methods.Single(method => method.Name == ".ctor").Body.Instructions.Count(instruction => instruction.Operand is MethodReference method && method.Name == ".ctor" && method.DeclaringType.FullName == "BetterAstralParty.NativeUi/Surface");
         Check(cardCalls == 1 && surfaceCalls == 1, "Compiled CardUi -> AdviceBadge -> owned Surface chain");
         Contains(ReadSource(context, "src/Plugin.cs"), new[] { "\"배경 불투명도\", 1f", "AcceptableValueRange<float>(0f, 1f)" }, "Default 100 percent opacity and bounds");
-        Contains(ReadSource(context, "src/ModUi.cs"), new[] { "default: Plugin.Opacity.Value = value; break;" }, "Opacity slider writes the setting");
+        Contains(ReadSource(context, "src/ModUi.cs"), new[] { "\"ZoomOutLimit\" => Plugin.ZoomOutLimit, \"IndicatorHideDistance\" => Plugin.IndicatorHideDistance, _ => Plugin.Opacity", "SliderEntry(action).Value = percent * 0.01f;" }, "Opacity slider writes the setting");
         Contains(ReadSource(context, "src/MenuLayout.cs"), new[] { "\"Opacity\" }", "_ => (0, 100)" }, "Opacity slider range includes zero");
         static double Luminance(string text) { var values = new[] { 0, 2, 4 }.Select(index => Convert.ToInt32(text.Substring(index, 2), 16) / 255d).Select(value => value <= .04045 ? value / 12.92 : Math.Pow((value + .055) / 1.055, 2.4)).ToArray(); return .2126 * values[0] + .7152 * values[1] + .0722 * values[2]; }
         Check((Luminance("FFFFFF") + .05) / (Luminance("000000") + .05) >= 7, "White text and black outline contrast");

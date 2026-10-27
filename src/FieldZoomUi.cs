@@ -178,10 +178,13 @@ internal static class FieldZoomUi
             FieldZoomGeometry.Point Project(Vector3 v) => new(Vector3.Dot(v, right), Vector3.Dot(v, up), Vector3.Dot(v, forward));
             BoardCorners(position, right, up, forward, target.y);
             if (_target.sqrMagnitude != 0 && FieldZoomGeometry.TryStep(Corners, Project(_target), Project(target - position), camera.fieldOfView,
-                camera.aspect, camera.nearClipPlane, camera.farClipPlane, _original.magnitude / _target.magnitude, wheel * Math.Clamp(Plugin.ZoomSensitivity.Value, .5f, 2f), out var scale, out var maximum))
+                camera.aspect, camera.nearClipPlane, camera.farClipPlane, _original.magnitude / _target.magnitude, wheel * Math.Clamp(Plugin.ZoomSensitivity.Value, .1f, 3f), out var scale, out var maximum))
             {
-                _zoomOutLimit = maximum > 0 ? _target.magnitude * maximum : 0;
+                // Max Zoom-Out keeps a share of the travel to the field-fit stop; indicators normalize against it too.
+                _zoomOutLimit = FieldZoomGeometry.CappedLimit(_original.magnitude, maximum > 0 ? _target.magnitude * maximum : 0, Plugin.ZoomOutLimit.Value);
                 var zoomTarget = _target * scale;
+                if (scale > 1 && _zoomOutLimit > 0 && zoomTarget.magnitude > _zoomOutLimit)
+                    zoomTarget = _target * (_zoomOutLimit / _target.magnitude);
                 if (!FieldFreeCamera.Holding)
                 {
                     if (FieldCameraReturnUi.Visible)

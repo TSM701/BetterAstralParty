@@ -74,6 +74,7 @@ internal static class LanguageCheck
             && ModText.Text("KO 불가") == "KO 불가", "Condition status in Korean");
         ModText.Select("English");
         Check(ModText.Text("계산 정보 부족") == "Insufficient data", "Unknown data label");
+        Check(ModText.Text("보장 조건 없음") == "No guaranteed roll", "No guaranteed threshold label");
         foreach (var action in new[] { "", "Enabled", "Details", "KoMinimum", "CardPopups", "BattleStatus", "ShushuShield", "FieldBuffs",
             "Names", "Diagnostics", "MuteUnfocused", "FieldZoom", "MatchFocus", "Scale", "Opacity", "IndicatorFadeStrength", "FoldedHandOpacity", "Close", "Language", "General", "Features",
             "UpdateChannel", "UpdateCheck", "UpdateDownload" })
@@ -89,7 +90,7 @@ internal static class LanguageCheck
             && !MenuLayout.FixedControl("MatchFocus") && !MenuLayout.FixedControl("FieldZoom"), "Focus is General; wheel zoom is Features");
         foreach (var (action, korean, english) in new[] {
             ("MatchFocus", "매칭 시 게임 창 띄우기", "Bring Game Forward on Match"),
-            ("FieldZoom", "휠 줌·자유 시점", "Wheel Zoom and Free View"),
+            ("FieldZoom", "휠 줌·자유 시점", "Wheel Zoom and Free Camera"),
             ("FieldBuffs", "플레이어 인디케이터", "Player Indicators") })
         {
             Check(MenuLayout.Options(action).Length == 0, "New preference remains binary: " + action);

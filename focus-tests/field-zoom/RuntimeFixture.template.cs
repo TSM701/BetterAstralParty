@@ -166,7 +166,7 @@ static class FieldFreeCamera {
     public static void Clear(){ClearAttempts++;if(ClearFailures>0){ClearFailures--;throw new CleanupFailure();}Holding=false;Camera=null;}
 }
 static class VisibleCombatAdvisor { public static bool IsPve(int map)=>map==2; }
-static class Plugin { public static Setting FieldZoom=new(); public static readonly FloatSetting ZoomSensitivity=new(); public static readonly Diagnostics Diagnostics=new(); public sealed class Setting {public bool Value=true;} public sealed class FloatSetting {public float Value=1f;} }
+static class Plugin { public static Setting FieldZoom=new(); public static readonly FloatSetting ZoomSensitivity=new(), ZoomOutLimit=new(); public static readonly Diagnostics Diagnostics=new(); public sealed class Setting {public bool Value=true;} public sealed class FloatSetting {public float Value=1f;} }
 sealed class Diagnostics {
     public readonly List<string> States=new();
     public bool IsRecording; public readonly List<string> Geometry=new();
@@ -266,6 +266,8 @@ public static class Check {
         var points=new[]{P(-40,-20,10),P(40,20,10)};
         bool Step(float wheel,float native,out float s)=>FieldZoomGeometry.TryStep(points,P(0,0,-10),P(0,0,10),90,16f/9,.1f,1000,native,wheel,out s,out _);
         Assert(Step(-1,1,out var s)&&s>1&&s<4.5);
+        // Max Zoom-Out: a share of the travel from the native distance to the field-fit stop.
+        Assert(FieldZoomGeometry.CappedLimit(10,50,1)==50&&FieldZoomGeometry.CappedLimit(10,50,.5f)==30&&FieldZoomGeometry.CappedLimit(10,50,.2f)==18&&FieldZoomGeometry.CappedLimit(10,50,0)==10&&FieldZoomGeometry.CappedLimit(10,0,.5f)==0&&FieldZoomGeometry.CappedLimit(10,8,.5f)==8);
         Assert(Step(-100,1,out s)&&Math.Abs(s-4.5)<.00001);
         Assert(Step(100,1,out s)&&s==.5f);
         Assert(!Step(-100,float.NaN,out _));

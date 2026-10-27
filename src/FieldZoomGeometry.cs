@@ -88,6 +88,11 @@ internal static class FieldZoomGeometry
         return true;
     }
 
+    // Max Zoom-Out (0-100 %): that share of the travel from the native distance to the field-fit stop (0 % = no zoom-out).
+    // Zero fit = unknown.
+    internal static float CappedLimit(float native, float fit, float share) =>
+        fit > native && native > 0 ? native + (fit - native) * Math.Clamp(share, 0f, 1f) : fit;
+
     private static float CeilingFloat(double value)
     {
         var result = (float)value;

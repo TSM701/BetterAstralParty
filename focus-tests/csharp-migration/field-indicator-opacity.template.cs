@@ -108,6 +108,10 @@ public static class OpacityCheck {
         FieldIndicatorOpacity.Tick(.55f);Assert(!FieldIndicatorOpacity.Hidden&&s.Monster.Display.Visible);
         FieldIndicatorOpacity.Tick(1f);FieldIndicatorOpacity.Tick(2f);Equal(s.Monster.Alpha,.3f);Assert(FieldIndicatorOpacity.Hidden);
         FieldIndicatorOpacity.Clear();Assert(!FieldIndicatorOpacity.Hidden&&s.Monster.Display.Visible&&s.Player.Display.Visible);Equal(s.Monster.Alpha,1);
+        // Hide distance 0-100 % (issue #16): 0 % hides at any zoom-out, 100 % only at the stop.
+        Plugin.IndicatorHideDistance.Value=0;FieldIndicatorOpacity.Tick(.01f);Assert(FieldIndicatorOpacity.Hidden);FieldIndicatorOpacity.Clear();
+        Plugin.IndicatorHideDistance.Value=1;FieldIndicatorOpacity.Tick(.99f);Assert(!FieldIndicatorOpacity.Hidden);FieldIndicatorOpacity.Tick(1f);Assert(FieldIndicatorOpacity.Hidden);FieldIndicatorOpacity.Clear();
+        Plugin.IndicatorHideDistance.Value=.6f;
         // Native logical visibility or group changes during our hidden overlay remain authoritative on reveal.
         foreach(bool group in new[]{false,true}) {
             s=new Scene();FieldIndicatorOpacity.Tick(1);if(group)s.Monster.NativeGroup(false);else s.Monster.NativeVisible(false);

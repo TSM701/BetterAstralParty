@@ -17,8 +17,9 @@ internal static class FieldIndicatorOpacity
         if (ancestor == null) { Clear(); return; }
         zoomOut = Math.Min(1f, zoomOut);
         // Reappear 10% closer than the hide point so the boundary never flickers.
-        var hideAt = Math.Clamp(Plugin.IndicatorHideDistance.Value, .3f, .9f);
-        Hidden = Plugin.IndicatorHide.Value && (Hidden ? zoomOut > hideAt - .1f : zoomOut >= hideAt);
+        // Hide distance 0-100 %; at 0 % any zoom-out hides and the native view always shows them.
+        var hideAt = Math.Clamp(Plugin.IndicatorHideDistance.Value, 0f, 1f);
+        Hidden = Plugin.IndicatorHide.Value && zoomOut > 0 && (Hidden ? zoomOut > hideAt - .1f : zoomOut >= hideAt);
         // Strength 100% keeps the original curve; lower values blend it back toward fully opaque.
         var alpha = Plugin.IndicatorFade.Value ? 1f - Math.Clamp(Plugin.IndicatorFadeStrength.Value, 0f, 1f) * (1f - .6f * (1f - zoomOut * .5f)) : 1f;
         Monsters.Tick(field!.Field("com_AttrInfos"), alpha, Hidden);

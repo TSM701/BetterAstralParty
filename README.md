@@ -82,7 +82,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 전투 추천
 - 행동 추천: 기본 ON. 공개 정보를 바탕으로 공격·놓아주기, 방어·회피, 카드 사용을 추천합니다. 선택을 자동 입력하지 않으며, 모드 전체를 끄는 스위치가 아닙니다. 슈팅 스타 칩이 있으면 놓아주기 버튼에 놓아줄 때 몬스터에게 주는 피해와 얻는 스타라이트를 표시합니다.
 - 추천 상세 수치: 기본 ON. 행동 추천에 마우스를 올리면 피해와 전투불능 확률을 표시합니다. OFF는 수치만 숨기고 추천 아이콘은 유지합니다.
-- KO 주사위 조건: 기본 ON. 공격하거나 다른 사람 전투에서 몬스터가 방어할 때는 KO 주사위 조건, 내가 방어하거나 다른 사람 전투에서 플레이어가 방어할 때는 생존 주사위 조건을 가장 유리한 결과 기준으로 표시합니다. 카드 호버 조건도 포함합니다. 계산에 반영되지 않은 효과가 전투에 있으면 아래에 그 효과 아이콘과 "미반영 효과"를 표시하고, 물음표에 마우스를 올리면 설명이 뜹니다.
+- KO 주사위 조건: 기본 ON. 공격하거나 다른 사람 전투에서 몬스터가 방어할 때는 KO 주사위 조건, 내가 방어하거나 다른 사람 전투에서 플레이어가 방어할 때는 생존 주사위 조건을 표시합니다. 조건은 카드 보너스가 가장 낮게 나와도 결과가 확정되는 주사위입니다. 카드 호버 조건도 포함합니다. 계산에 반영되지 않은 효과가 전투에 있으면 아래에 그 효과 아이콘과 "미반영 효과"를 표시하고, 물음표에 마우스를 올리면 설명이 뜹니다.
 - 최종 피해: 기본 ON. 공개된 최종 수치로 계산한 피해를 표시합니다. 계산에 반영되지 않은 효과가 있으면 피해량 아래에 그 효과 아이콘과 "미반영 효과"를 함께 표시합니다.
 
 전투 표시
@@ -97,8 +97,9 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 - 휠 줌·자유 시점: 기본 ON. PvE 필드에서 휠 줌과 자유 시점을 사용하며 턴이 바뀌어도 유지합니다. 턴 바의 핀 오른쪽 자유 시점 카메라 종료 버튼으로 기본 시점에 복귀합니다. 플레이어 칸의 얼굴을 누르면 그 플레이어로 시점이 옮겨지고, 이름·칩 부분을 누르면 줌을 유지한 채 상세정보만 열립니다. 줌 중에도 몬스터 인디케이터는 몬스터 옆 같은 자리에 표시됩니다. 주사위 화면 고정(기본 ON)을 켜 두면 굴린 주사위가 줌과 자유 시점에서도 기본 시점과 같은 화면 위치·크기로 보이고, 끄면 게임 기본처럼 필드 위에 남아 줌에 따라 크기가 바뀝니다.
 - 줌 아웃 시 반투명·멀면 숨기기: 각각 기본 ON. 휠 줌을 사용할 때 인디케이터에 적용합니다.
 - 반투명 정도: 기본 100%, 0~100%. 줌 아웃했을 때 인디케이터가 흐려지는 정도를 슬라이더로 조절합니다.
-- 줌 감도: 기본 100%, 50~200%. 휠 한 칸에 확대·축소되는 양입니다.
-- 숨김 거리: 기본 60%, 30~90%. 멀면 숨기기에서 인디케이터가 숨는 줌 아웃 거리이며, 10% 더 가까워지면 다시 나타납니다.
+- 줌 감도: 기본 100%, 10~300%. 휠 한 칸에 확대·축소되는 양입니다.
+- 최대 줌 아웃: 기본 100%, 0~100%. 휠로 멀어질 수 있는 최대 거리이며, 100%는 필드 전체가 보이는 거리이고 0%는 기본 시점보다 멀어지지 않습니다.
+- 숨김 거리: 기본 60%, 0~100%. 멀면 숨기기에서 인디케이터가 숨는 줌 아웃 거리이며, 10% 더 가까워지면 다시 나타납니다.
 
 손패·카드
 - 손패 묶기: 기본·클릭 펼치기·호버 펼치기 중 선택하며 처음에는 기본입니다. 내 PvE 필드 손패를 기능별로 묶고 클릭은 가로로, 호버는 위로 펼칩니다. 클릭은 카드 위쪽, 호버는 오른쪽의 강조된 제출 영역으로 드래그하세요.
@@ -235,8 +236,8 @@ BetterAstralParty 자체 코드는 [MIT 라이선스](LICENSE)로 제공합니�
 | --- | --- | --- |
 | Combat recommendations and card evaluation from public information | Player/monster field indicators | In-game settings with Korean/English UI |
 | KO/survival dice targets | Public buff and counter markers | Mute when unfocused, input alerts |
-| Combat probabilities and final damage | Field wheel zoom and free view | Focus the game when a PvE match is found |
-| Shushu shield display and defense restriction | Hand grouping by function | Automatic Thanks for native recommendations |
+| Combat probabilities and final damage | Field wheel zoom and Free Camera | Focus the game when a PvE match is found |
+| Shiyu-Shiyu Shield display and defense restriction | Hand grouping by function | Automatic Thanks for the game's suggestions |
 | Card/chip ping detail popups | Character roles and preparation details | Automatic updates applied in game |
 
 > [!NOTE]
@@ -283,25 +284,26 @@ Open Mod Settings in the lobby using its button or F8, or from the Mod Settings 
 <summary>Mod Features tab</summary>
 
 Battle Advice
-- Action Advice: ON by default. Recommends Attack/Let Go, Defend/Dodge and cards from public information without selecting actions. It is not a master switch for the whole mod. With a Shooting Star relic, the Let Go button shows the damage dealt to the monster and the Starlight gained when you let it go.
+- Action Advice: ON by default. Recommends Attack/Let Go, Defend/Dodge and cards from public information without selecting actions. It is not a master switch for the whole mod. With a Shooting Star chip, the Let Go button shows the damage dealt to the monster and the Starlight gained when you let it go.
 - Advice Details: ON by default. Hover over action advice to see damage and KO probabilities. OFF hides the numbers but keeps recommendation icons.
-- KO Dice Target: ON by default. Shows the KO dice target when you attack or a monster defends in another player's combat, and the survival dice target when you defend or a player defends in another player's combat, using best-case outcomes. Includes card-hover conditions. When the combat has effects the calculation does not count, their icons appear below with "Effects not counted"; hover the question mark for an explanation.
-- Final Damage: ON by default. Shows damage calculated from final public numbers. When effects the calculation does not count are involved, their icons appear under the damage with "Effects not counted".
+- KO Dice Target: ON by default. Shows the KO dice target when you attack or a monster defends in another player's combat, and the survival dice target when you defend or a player defends in another player's combat. A target is the roll that decides the outcome even at the lowest card bonus. Includes card-hover conditions. When the combat has effects the calculation does not count, their icons appear below with "Effects not counted"; hover the question mark for an explanation.
+- Final Damage: ON by default. Shows damage calculated from the revealed final totals. When effects the calculation does not count are involved, their icons appear under the damage with "Effects not counted".
 
 Battle Display
-- Combat Status: ON by default. Shows public hand counts/effects and player/monster counter status below combat HP. Effect icons the calculation does not count carry a question mark, and their description shows "Not in calculations".
-- Shushu Shield Effect: ON by default. Shows active shield effects on combat characters.
-- Shushu Shield Defend Lock: ON by default. Locks Defend and defense cards for the shielded local defender. Does not change Dodge availability or choose it automatically.
+- Combat Status: ON by default. Shows public hand counts and effects below combat HP, and whether each player or monster can counterattack. Effect icons the calculation does not count carry a question mark, and their description shows "Not in calculations".
+- Shiyu-Shiyu Shield Effect: ON by default. Shows active Shiyu-Shiyu Shield effects on combat characters.
+- Shiyu-Shiyu Shield Defend Lock: ON by default. Locks Defend and defense cards for the shielded local defender. Does not change Dodge availability or choose it automatically.
 - Counter Icon Animation / Sound: both ON by default. Animation OFF keeps a static counter icon.
 
 Field / Camera
 - Player Indicators: ON by default. Shows field player names, HP, public effects and added counter icons. A short click on an effect opens its native description. It stays beside the character when you zoom with wheel zoom.
 - Indicator Height: 100% by default. Places the player indicator marker between the character's base (0%) and its original height (100%), adjusted with a slider.
-- Wheel Zoom and Free View: ON by default. Enables PvE field wheel zoom and free view that persist across turns. Select Exit Free Camera to the right of the turn-bar pin to restore the default view. Clicking a player's portrait moves the view to that player; clicking the name and chip area opens the details and keeps the zoom. Monster indicators stay in the same place beside the monster while zoomed. With Pin Dice to Screen (ON by default), thrown dice keep the default view's screen position and size while zoomed or in free view; turn it off to leave them on the field as in the base game, so zoom changes their size.
+- Wheel Zoom and Free Camera: ON by default. Enables PvE field wheel zoom and a Free Camera that persist across turns. Select Exit Free Camera to the right of the turn-bar pin to restore the default view. Clicking a player's portrait moves the view to that player; clicking the name and chip area opens the details and keeps the zoom. Monster indicators stay in the same place beside the monster while zoomed. With Pin Dice to Screen (ON by default), rolled dice keep the default view's screen position and size while zoomed or in Free Camera; turn it off to leave them on the field as in the base game, so zoom changes their size.
 - Fade When Zoomed Out / Hide When Far: both ON by default. Apply to field indicators while wheel zoom is in use.
 - Fade Strength: 100% by default, 0–100%. A slider for how much indicators fade when zoomed out.
-- Zoom Sensitivity: 100% by default, 50–200%. How far one wheel tick zooms.
-- Hide Distance: 60% by default, 30–90%. The zoom-out distance at which Hide When Far hides indicators; they return 10% closer.
+- Zoom Sensitivity: 100% by default, 10–300%. How far one wheel tick zooms.
+- Max Zoom-Out: 100% by default, 0–100%. How far the wheel can zoom out; 100% shows the whole field and 0% stays at the default view.
+- Hide Distance: 60% by default, 0–100%. The zoom-out distance at which Hide When Far hides indicators; they return 10% closer.
 
 Hand and Cards
 - Group Hand: Native, Click or Hover; the default is Native. Groups your PvE field hand by function; Click expands horizontally and Hover upward. Drag cards to the submission area above the cards with Click, or to the highlighted area on the right with Hover.
@@ -311,11 +313,11 @@ Hand and Cards
 
 Characters
 - Name Style: Name or Title; the default is Name.
-- Role Labels / Skill Info in Preparation: both ON by default. Preparation portrait hover shows public skills, cooldowns and potentials.
+- Role Labels / Skill Info in Preparation: both ON by default. Preparation portrait hover shows public skills, cooldowns and Potential.
 - Player List Tab: ON by default. A tab under each coin/star bar of the field player list shows the public hand count and the role. Hand Count and Role can each be turned off.
 
 Convenience
-- Auto Thanks: ON by default. Sends each available native Thanks recommendation once. Never sends in PvP, spectating or replays.
+- Auto Thanks: ON by default. Sends the game's Thanks suggestion once each time it appears. Never sends in PvP, spectating or replays.
 - Clear Ping Mode on Alt+Tab: ON by default. Cancels lingering ping selection after Alt+Tab without sending a ping.
 
 </details>
@@ -338,10 +340,10 @@ Diagnostics
 - Diagnostic Log: OFF by default. Records detailed errors, performance and public combat calculations, keeping the five most recent logs.
 
 Settings Backup
-- Keep Automatically: ON by default. Keeps a copy in `%LOCALAPPDATA%\BetterAstralParty\Settings` whenever settings change. It is restored at the next launch only when the settings file is missing, such as after removal, reinstallation or a fresh game folder; existing settings are never overwritten.
-- Save Now / Load Saved Settings: keep the settings of a chosen moment and return to them with two presses. Automatic keeping never overwrites this copy.
+- Automatic Backup: ON by default. Backs up settings to `%LOCALAPPDATA%\BetterAstralParty\Settings` whenever settings change. It is restored at the next launch only when the settings file is missing, such as after removal, reinstallation or a fresh game folder; existing settings are never overwritten.
+- Back Up Now / Load Backup: keep the settings of a chosen moment and return to them with two presses. Automatic backups never overwrite this copy.
 - Open Backup Folder: use it to move the backup files to another PC.
-- Reset All Settings: two presses return every setting to its first-install value. Use Save Now first to be able to restore them with Load Saved Settings.
+- Reset All Settings: two presses return every setting to its first-install value. Use Back Up Now first to be able to restore them with Load Backup.
 
 Updates
 - Update: one button showing the action available now. Depending on the state it checks for, downloads, applies or cancels an update, or confirms a channel switch.

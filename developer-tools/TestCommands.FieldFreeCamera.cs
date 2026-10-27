@@ -83,7 +83,13 @@ internal static class DragStateCheck
             Check(NativeMethod(native, type, method).Body.Instructions.Any(instruction => instruction.Operand is MethodReference reference && reference.Name == call), "Focus click handler moves the camera: " + type + "." + method + "→" + call);
         Check(native.MainModule.GetType("UI.BattleMonsterWindow").NestedTypes.SelectMany(nested => nested.Methods).Any(method => method.HasBody && method.Body.Instructions.Any(instruction => instruction.Operand is MethodReference reference && reference.Name == "SwitchCamera"))
             && native.MainModule.GetType("UI.UIButton_MonsterItem") != null && native.MainModule.GetType("UI.UIBattleInfo_Com_Minimap") != null, "Monster target item click switches the camera; focus UI types exist");
-        Contains(ReadSource(context, "src/FieldFreeCamera.cs"), new[] { "{ PlayerInfo, \"UIButton_MonsterItem\", \"UIBattleInfo_Com_Minimap\" }", "PlayerInfo = \"UIBattleInfo_Button_PlayerInfo\", PlayerHead = \"btn_Head\"" }, "Free view releases only for audited focus UI");
+        // A chat ping's show-location button moves the native camera the same way (issue #16).
+        var chatItem = native.MainModule.GetType("UI.UIExpression_Com_ChatItem");
+        Check(chatItem.Fields.Single(field => field.Name == "btn_ShowSignal").FieldType.FullName == "FairyGUI.GButton"
+            && chatItem.NestedTypes.SelectMany(nested => nested.Methods).Any(method => method.HasBody && method.Body.Instructions.Any(instruction => instruction.Operand is MethodReference reference && reference.Name == "ShowAddressInfo")), "Chat ping show-location button");
+        foreach (var message in new[] { "GameLogic.BattleLandMessage", "GameLogic.BattlePlayerMarkMessage" })
+            Check(NativeMethod(native, message, "ShowAddressInfo").Body.Instructions.Any(instruction => instruction.Operand is MethodReference reference && reference.Name == "ControlFreeCamera"), "Ping show-location moves the camera: " + message);
+        Contains(ReadSource(context, "src/FieldFreeCamera.cs"), new[] { "{ PlayerInfo, \"UIButton_MonsterItem\", \"UIBattleInfo_Com_Minimap\", ShowSignal }", "PlayerInfo = \"UIBattleInfo_Button_PlayerInfo\", PlayerHead = \"btn_Head\", ShowSignal = \"btn_ShowSignal\"", "types.Add(name is PlayerHead or ShowSignal ? name : item.TypeName);" }, "Free view releases only for audited focus UI");
         var host = NativeMethod(native, "Core.FreeCameraObject", "SetHostCamera").Body.Instructions;
         Check(host.Any(instruction => instruction.OpCode.Name == "ldc.i4.2") && host.Any(instruction => instruction.Operand is MethodReference reference && reference.Name == "UpdateStatus"), "FIELD effects set System host status");
         var manual = NativeMethod(cine, "Cinemachine.CinemachineBrain", "ManualUpdate").Body.Instructions.Select(instruction => instruction.Operand).OfType<MethodReference>().Select(reference => reference.Name).ToArray();
