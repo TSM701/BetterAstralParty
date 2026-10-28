@@ -118,7 +118,12 @@ internal static class UpdateNotificationUi
         } catch (Exception error) { TransitionFailure(error, pending.Operation, pending.Release); }
     }
 
-    internal static void Observe() => State.Observe(Plugin.Updates.Result, Plugin.Updates.Channel, Plugin.Updates.Generation);
+    internal static void Observe()
+    {
+        State.Observe(Plugin.Updates.Result, Plugin.Updates.Channel, Plugin.Updates.Generation);
+        // A release found or read in Update Settings waited behind them; it is already seen when they close.
+        if (ModUi.ShowsUpdates) State.Seen();
+    }
 
     internal static void Tick()
     {

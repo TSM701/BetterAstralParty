@@ -45,6 +45,12 @@ internal sealed class UpdateNotificationState
         Active = target; _pending = null; return true;
     }
     internal void Close() => Active = null;
+    // Update Settings showed this release: closing them must not announce it again.
+    internal void Seen()
+    {
+        if (Next is not { } target) return;
+        _shown.Add(target.Key); _pending = null;
+    }
     private void ClearContext()
     {
         if (Active != null || _pending != null) ContextGeneration++;

@@ -279,7 +279,7 @@ namespace BetterAstralParty
         internal static float FitScale(float width,float height,float windowHeight = Height) => MathF.Min(width / Width,height / windowHeight);
     }
     internal static class AdviceText { internal static float Reveal(float elapsed,float duration=.22f) => Math.Clamp(elapsed / duration,0,1); }
-    internal static class ModUi { internal static int Opens; internal static void OpenUpdateSettings() => Opens++;
+    internal static class ModUi { internal static int Opens; internal static bool ShowsUpdates; internal static void OpenUpdateSettings() => Opens++;
         internal static void RetryUpdateFromNotice() { Opens++; if (Plugin.Automatic.CanReactivate) Plugin.Automatic.Reactivate(); else if (Plugin.Automatic.CanRecheck) Plugin.Automatic.Recheck(); } }
     internal static class Compatibility
     {

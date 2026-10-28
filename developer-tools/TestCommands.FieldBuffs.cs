@@ -41,6 +41,8 @@ internal static partial class TestCommands
             && native.MainModule.GetType("UI.UIATM_Button_RoleHeadshot").Fields.Single(field => field.Name == "com_playerInfo").FieldType.FullName == "FairyGUI.GButton", "Coin transfer player list");
         Pattern(Body(NativeAsyncMoveNext(native, "UI.ATMWindow", "RendererTargetPlayers")), @"UIATM_Button_RoleHeadshot::com_playerInfo\nIL_[0-9a-f]+: castclass UI.UICom_PlayerInfo[\s\S]*UICom_PlayerInfo::RefreshData", "Coin transfer fills its player bars");
         Contains(ReadSource(context, "src/PlayerTabUi.cs"), new[] { "\"ATMWindow\"", "?.Field(\"list_Players\")", "?.Field(\"com_playerInfo\")" }, "Player list tabs follow the coin transfer copies");
+        // Issue #17: a two-digit count wrapped in its narrow label and showed only "1".
+        Contains(ReadSource(context, "src/PlayerTabUi.cs"), new[] { "foreach (var label in new[] { tab.Hand, tab.Role }) { label.Set(\"singleLine\", true); label.Set(\"autoSize\", 3); }" }, "Player list tab count and role stay on one line and shrink");
         // Picking a player moves the selectable buttons out of com_Container into com_Empty.
         Pattern(Il("UI.UIBattleInfo_Com_Player", "AdjustPlayerParent", 2), @"UIBattleInfo_Com_Player::com_Empty\nIL_[0-9a-f]+: ldarg.1\nIL_[0-9a-f]+: callvirt [^\n]*GComponent::AddChild", "Player selection moves bars into com_Empty");
         Contains(ReadSource(context, "src/PlayerTabUi.cs"), new[] { "if (container != null)", "?.Field(\"com_LaunchPK\")", "launch!.Field(\"com_P\" + slot)", "owner?.Field(\"_playerData\")" }, "Player list tabs follow the encounter screen copies");

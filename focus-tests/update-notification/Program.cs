@@ -75,6 +75,12 @@ Case("new target defers without replacing active click target",()=>{
     s.Observe(Available("3.0.0"),ReleaseChannel.Stable); Check(s.Active?.Key=="2.0.0" && s.Next==null,"stable target");
     s.Close(); Check(s.Next?.Key=="3.0.0","next target");
 });
+Case("a release seen in Update Settings is not announced again",()=>{
+    var s=new UpdateNotificationState(); s.Seen(); Check(s.Next==null,"nothing to mark");
+    s.Observe(Available("2.0.0"),ReleaseChannel.Stable); s.Seen(); Check(s.Next==null && s.Active==null,"seen in settings");
+    s.Observe(Available("v2.0.0"),ReleaseChannel.Stable); Check(s.Next==null,"later scans of the same release");
+    s.Observe(Available("3.0.0"),ReleaseChannel.Stable); Check(s.Next?.Key=="3.0.0","a newer release still notifies");
+});
 Case("home safety independent blockers all room phases and stale team disposal",()=>{
     var good=new UpdateNotificationHome(true,true,true,true,false,0,0,0); Check(good.Eligible,"home");
     foreach(var bad in new[]{good with{Known=false},good with{HomeVisible=false},good with{CurrentHome=false},good with{ControlsReady=false},
@@ -244,6 +250,13 @@ Case("native blocker deferred then F8 settings dispatch once",()=>{
     GameUi.Home=GameUi.Home with{Blocked=false}; Frame(); Frame(); Check(Live()==1,"eligible");
     Frame(()=>UInput.Settings=true); UpdateNotificationUi.Tick();
     Check(Live()==0 && ModUi.Opens==1 && UpdateNotificationUi.ConsumedInput,"dispatch once");
+});
+Case("a release read in Update Settings does not open the notice when they close",()=>{
+    GameUi.Home=GameUi.Home with{Blocked=true}; ModUi.ShowsUpdates=true; Inject(Available("2.2.5")); Frame(); Check(Live()==0,"settings open");
+    ModUi.ShowsUpdates=false; GameUi.Home=GameUi.Home with{Blocked=false}; Frame(); Frame(); Check(Live()==0,"seen in settings");
+    GameUi.Home=GameUi.Home with{Blocked=true}; Inject(Available("2.2.6")); Frame();
+    GameUi.Home=GameUi.Home with{Blocked=false}; Frame(); Frame(); Check(Live()==1,"settings on another tab keep the notice");
+    Frame(()=>UInput.Escape=true); Check(Live()==0 && ModUi.Opens==1,"Escape");
 });
 Case("matching play suppress and Return only dismisses notice",()=>{
     GameUi.Home=GameUi.Home with{TeamId=4}; Inject(Available("2.3.0")); Frame(); Check(Live()==0,"match");

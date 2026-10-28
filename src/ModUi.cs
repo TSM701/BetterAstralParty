@@ -170,6 +170,8 @@ internal static class ModUi
         TogglePanel();
     }
     internal static bool IsOpen => Compatibility.Allowed("SettingsUi") && _modal != null && !_modal.Get<bool>("isDisposed") && _modal.Get<bool>("visible");
+    // The general tab holds the update rows, which act on the home screen; opening on a new release also shows its details in the help box.
+    internal static bool ShowsUpdates => IsOpen && _general && GameUi.HomeAvailable;
 
     internal static void Tick()
     {

@@ -135,8 +135,8 @@ internal static class PlayerTabUi
                 label.Set("align", 1); label.Set("verticalAlign", 1);
                 label.Set("touchable", false);
             }
-            tab.Role.Set("singleLine", true);
-            tab.Role.Set("autoSize", 3); // Shrink: a long role ("카드 특화") fits its part instead of being cut.
+            // Shrink: a long role ("카드 특화") or a two-digit count (issue #17: "10" wrapped and showed "1") fits its part instead of being cut.
+            foreach (var label in new[] { tab.Hand, tab.Role }) { label.Set("singleLine", true); label.Set("autoSize", 3); }
             tab.Card = NativeUi.Icon(tab.Panel, "Com_Icon_Card", 5, 7, Height - 14);
             tab.Panel.Set("mask", tab.Mask.Get("displayObject")!);
             return tab;

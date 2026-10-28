@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "version": "1.6.3",
-  "buildSourceManifestSha256": "2207DF429A1BDACD1B57E1C340A59E659F87949E5BCDA980A89AF49A19657358",
+  "version": "1.6.4",
+  "buildSourceManifestSha256": "E4F7AE2CA82DBD62B68DA91BEAD8E909202BC0C856202693F7227C2B707B4254",
   "files": [
     {
       "path": "Create-Diagnostics.cmd",
@@ -325,8 +325,8 @@
     },
     {
       "path": "developer-tools/TestCommands.FieldBuffs.cs",
-      "bytes": 21234,
-      "sha256": "2B211F60507B726308D919CDE636D075508D4F49CD36D1A6472DA2852C2014B9"
+      "bytes": 21578,
+      "sha256": "1FF1BAA10FA09623448E92D64943DFBEF2DC5C01AF372DFCB6D810CF6AE207AF"
     },
     {
       "path": "developer-tools/TestCommands.FieldFreeCamera.cs",
@@ -1135,8 +1135,8 @@
     },
     {
       "path": "focus-tests/update-notification/NativeFixture.cs",
-      "bytes": 21318,
-      "sha256": "EDC482D036F9AC176F360F5A6192CFDA7F8CDF752C2F127D8EC1DBB5504AFCE4"
+      "bytes": 21353,
+      "sha256": "69829C7B93469DDAB7C686EF844E051D8D05FD6B57FFEA2CB11A504BF109D20C"
     },
     {
       "path": "focus-tests/update-notification/PopupFixtures.csproj",
@@ -1145,8 +1145,8 @@
     },
     {
       "path": "focus-tests/update-notification/Program.cs",
-      "bytes": 43724,
-      "sha256": "E069392BF613C89156BC1F4199BDC959AB14BFC6444FA82FEACF06FC0313B864"
+      "bytes": 44903,
+      "sha256": "EE459DBB3DFBEC70E8EDBCB7E3520122C1600F64B6A02F0333AA05D3AD868D5A"
     },
     {
       "path": "focus-tests/update-notification/offline-nuget.config",
@@ -1560,8 +1560,8 @@
     },
     {
       "path": "src/ModUi.cs",
-      "bytes": 115480,
-      "sha256": "EB188E1B9CB1EED6D8BF7C4A89783486466E22E3F06CD2AEDB6D248770264160"
+      "bytes": 115706,
+      "sha256": "3BA8BE67857A5E19BE1F62461880784FE9956EBDC07D7E4DE905B960A31D81CD"
     },
     {
       "path": "src/NativeCrashReport.cs",
@@ -1625,13 +1625,13 @@
     },
     {
       "path": "src/PlayerTabUi.cs",
-      "bytes": 10652,
-      "sha256": "A4BA498A2C26AF5A005A4855B38678D60A0F8544368BDC878F05EEFBC2EA7DE6"
+      "bytes": 10764,
+      "sha256": "9D1B676B8D503EFD5ED40FB66C8ABE7E87A7A60FA287496F3B7B675939259C16"
     },
     {
       "path": "src/Plugin.cs",
       "bytes": 44242,
-      "sha256": "5DD682058DE99A90C5122A56DB512E3C326EC8FC3DB678F285974D2696BF4DDE"
+      "sha256": "35C6333EE9E4F65EF29E3F432887229618DAD4F4B51860DEE26D4DF4A28D0553"
     },
     {
       "path": "src/PrivateReleaseSession.cs",
@@ -1730,13 +1730,13 @@
     },
     {
       "path": "src/UpdateNotificationState.cs",
-      "bytes": 4075,
-      "sha256": "DAC7DD29394D7F141E0A065A971DBAB2C020A82FC5D02643AA0C8495155305D4"
+      "bytes": 4296,
+      "sha256": "3E045D605105177C4B02AE65F852971F8E6A27080913D0C461B5F8F577939828"
     },
     {
       "path": "src/UpdateNotificationUi.cs",
-      "bytes": 27642,
-      "sha256": "1413F83B1F02751AB5ADB7D44D350140133FC3B0A44EC1E3119AF3ADDEB3D218"
+      "bytes": 27815,
+      "sha256": "FBEC0A48949C248C30A05F62F0C8BDF17903A1AD1B064A8D232DDE8D9A953072"
     },
     {
       "path": "src/UpdatePreferencesBridge.cs",
