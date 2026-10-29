@@ -256,8 +256,8 @@ internal static partial class NativeMaintenanceIntegrationFixture
             }
             } finally { _heldBackupLock = null; }
         }
-        // A guard an apply left after committing is finished work and leaves without a latch; a guard alone from an
-        // update cut off before any file move becomes the interruption latch. Both guards are removed.
+        // A guard an apply left after committing is finished work and leaves without a latch, and so does a download-phase
+        // guard from an update cut off before any file changed; only an interrupted apply becomes the latch. All guards are removed.
         using (var fence = new WindowsFileFence(Game))
         {
             string installed; using (var plugin = fence.OpenFile(UpdateTrust.PluginPath)) installed = InstalledPluginMetadata.Read(UpdateTicket.Read(plugin, UpdateTrust.MaxFileBytes)).Version;
@@ -266,8 +266,11 @@ internal static partial class NativeMaintenanceIntegrationFixture
             Check(SetupHost.HasPendingUpdate(Game) && SetupHost.RecoverPendingUpdate(Game) == "Committed" && UpdateFaults.ReadFile(fence, UpdateFaults.OperationPath) == null
                 && UpdateFaults.ReadFile(fence, UpdateFaults.FailurePath) == null, "a committed apply's leftover guard is removed without an interruption latch");
             UpdateFaults.Begin(fence, context, FaultPhase.Download);
+            Check(SetupHost.RecoverPendingUpdate(Game) == "Abandoned" && UpdateFaults.ReadFile(fence, UpdateFaults.OperationPath) == null
+                && UpdateFaults.ReadFile(fence, UpdateFaults.FailurePath) == null, "a download cut off before any file changed is cleared without a latch");
+            UpdateFaults.Begin(fence, new UpdateContext(ReleaseFeedPolicy.StableRepository, "Stable", installed, "99.0.0", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId), FaultPhase.Apply);
             Check(SetupHost.RecoverPendingUpdate(Game) == "Interrupted" && UpdateFaults.ReadFile(fence, UpdateFaults.OperationPath) == null
-                && UpdateFaults.ReadFile(fence, UpdateFaults.FailurePath) != null, "a guard-only interruption becomes the failure latch and the guard is removed");
+                && UpdateFaults.ReadFile(fence, UpdateFaults.FailurePath) != null, "an apply guard that never committed becomes the failure latch and the guard is removed");
             UpdateFaults.Acknowledge(fence);
             Check(UpdateFaults.Read(fence) == null && !SetupHost.HasPendingUpdate(Game), "the fixture latch is acknowledged before the next mode");
         }

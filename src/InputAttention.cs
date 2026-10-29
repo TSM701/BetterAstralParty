@@ -103,7 +103,7 @@ internal static class InputAttention
         return pid == (uint)Environment.ProcessId;
     }
 
-    private static IntPtr FindWindow()
+    internal static IntPtr FindWindow()
     {
         var found = IntPtr.Zero;
         // Avoid flashing BepInEx's console, another Unity game, or another user's window.

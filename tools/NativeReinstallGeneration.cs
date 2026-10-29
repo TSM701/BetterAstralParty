@@ -29,7 +29,8 @@ namespace BetterAstralParty.Installation
         private static readonly string[] Exclusive = {
             "BepInEx/config/kr.betterastralparty.mod.cfg", "BepInEx/BetterAstralParty-Diagnostics/current.log",
             "BepInEx/BetterAstralParty-Diagnostics/previous.log", "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch.log",
-            "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log", "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log", ChannelTransitionIntent.AdoptionPath
+            "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log", "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log", ChannelTransitionIntent.AdoptionPath,
+            UpdateFaults.FailurePath, UpdateFaults.SaveFailurePath // Uninstall takes the verified OFF latch with it (2026-10-29).
         };
         private static ApplySafetyException Bad(string reason)
         {
@@ -50,7 +51,8 @@ namespace BetterAstralParty.Installation
                 if (File.Exists(WindowsPath.ForIo(path)) || Directory.Exists(WindowsPath.ForIo(path))) throw Bad("ReinstallOwnedFilesRemain");
                 using (Maybe(game, name)) { }
             }
-            foreach (var name in new[] { "BetterAstralParty.reinstall-v5.pending", UpdateFaults.OperationPath, "BetterAstralParty.update-v5.failed" })
+            // A retired OFF latch (update-v5.failure) is not pending work: older uninstallers left it, and it may stay.
+            foreach (var name in new[] { "BetterAstralParty.reinstall-v5.pending", UpdateFaults.OperationPath })
             {
                 using (var file = Maybe(game, name)) if (file != null) throw Bad("ReinstallOperationPending");
                 if (Directory.Exists(WindowsPath.ForIo(game.Full(name)))) throw Bad("ReinstallOperationPending");

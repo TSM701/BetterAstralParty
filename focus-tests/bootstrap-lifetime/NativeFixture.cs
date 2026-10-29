@@ -154,20 +154,30 @@ internal static class NativeBootstrapFixture
     private static void MainRestoration(string boundary)
     {
         var original = Environment.GetEnvironmentVariable("DOTNET_ADD_GLOBAL_TOOLS_TO_PATH"); var path = Environment.GetEnvironmentVariable("PATH"); var persistent = PersistentPaths();
+        string Synthetic(string name, bool fail)
+        {
+            var root = Path.Combine(boundary, name); Directory.CreateDirectory(root);
+            foreach (var folder in new[] { "developer-tools", "updater", "src/Observability", ".dotnet" }) Directory.CreateDirectory(Path.Combine(root, folder));
+            NewText(Path.Combine(root, "developer-tools/BetterAstralParty.Developer.csproj"), "inert project only"); NewText(Path.Combine(root, "src/Plugin.cs"), "inert source only");
+            foreach (var source in (string[])Invoke("Sources", root)!) if (!File.Exists(source)) NewText(source, "inert compile input only");
+            File.Copy(Image, Path.Combine(root, ".dotnet/dotnet.exe")); if (fail) NewText(Path.Combine(root, "sdk-fail"), "fail first SDK phase");
+            return root;
+        }
+        int Hosts(string root) => Directory.GetDirectories(Path.Combine(root, "artifacts"), "developer-host-*").Length;
         try {
             foreach (var initial in new string?[] { null, "true", "false", "caller-value" }) foreach (var fail in new[] { false, true }) {
-                var root = Path.Combine(boundary, "main-" + _checks); Directory.CreateDirectory(root);
-                foreach (var folder in new[] { "developer-tools", "updater", "src/Observability", ".dotnet" }) Directory.CreateDirectory(Path.Combine(root, folder));
-                NewText(Path.Combine(root, "developer-tools/BetterAstralParty.Developer.csproj"), "inert project only"); NewText(Path.Combine(root, "src/Plugin.cs"), "inert source only");
-                foreach (var source in (string[])Invoke("Sources", root)!) if (!File.Exists(source)) NewText(source, "inert compile input only");
-                File.Copy(Image, Path.Combine(root, ".dotnet/dotnet.exe")); if (fail) NewText(Path.Combine(root, "sdk-fail"), "fail first SDK phase");
+                var root = Synthetic("main-" + _checks, fail);
                 Environment.SetEnvironmentVariable("DOTNET_ADD_GLOBAL_TOOLS_TO_PATH", initial);
                 var code = (int)Invoke("Main", new object[] { new[] { root, "test", "inert-only" } })!;
                 Check(code == (fail ? 23 : 0), "Actual bootstrap Main preserves inert SDK success/failure status");
                 Check(File.ReadAllLines(Path.Combine(root, "sdk-observed")).SequenceEqual(fail ? new[] { "restore" } : new[] { "restore", "build", "host" }), "Only the expected inert SDK phases executed");
                 Check(Environment.GetEnvironmentVariable("DOTNET_ADD_GLOBAL_TOOLS_TO_PATH") == initial && Environment.GetEnvironmentVariable("PATH") == path && PersistentPaths() == persistent,
                     "Actual bootstrap Main restores caller setting and leaves process/persistent PATH unchanged on success/failure");
+                Check(Hosts(root) == (fail ? 1 : 0), "A successful run removes its developer host; a failed run keeps it");
             }
+            var pinned = Synthetic("main-pinned", false);
+            Check((int)Invoke("Main", new object[] { new[] { pinned, "prepare-signing-inputs" } })! == 0 && Hosts(pinned) == 1,
+                "The host prepare-signing-inputs pins for the signing steps stays after success");
         } finally { Environment.SetEnvironmentVariable("DOTNET_ADD_GLOBAL_TOOLS_TO_PATH", original); }
     }
     private static int Main(string[] args)

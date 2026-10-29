@@ -47,6 +47,7 @@ internal static partial class TestCommands
         string[] Inventory() => folders.SelectMany(folder => SourceFiles(Path.Combine(context.Root, folder))).Order(StringComparer.Ordinal).ToArray();
         var sourceInventory = Inventory();
         foreach (var path in sourceInventory) Pin(path);
+        var passed = false;
         try {
             if (context.NativeAssemblyExplicit || File.Exists(context.NativeAssemblyPath)) {
                 Pin(context.NativeAssemblyPath);
@@ -101,11 +102,38 @@ internal static partial class TestCommands
                 powerShellExecuted = false, realInstallationPerformed = false, publicationPerformed = false,
                 historicalPowerShellParityExecuted = false
             });
+            passed = true;
             return 0;
         } catch (Exception error) {
             context.WriteJsonCreateNew(Path.Combine(stage, "csharp-check-failed.json"), new { schema = 1, name, passed = false, error = error.ToString(), sources = pins, nativeInput });
             throw;
-        } finally { foreach (var lease in leases) lease.Dispose(); }
+        } finally {
+            foreach (var lease in leases) lease.Dispose();
+            // A passing check's scratch is spent; a failing check keeps it for inspection.
+            if (passed) DeleteScratch(scratch);
+        }
+    }
+
+    internal static void DeleteScratch(string scratch)
+    {
+        try {
+            if (Directory.Exists(scratch) && (File.GetAttributes(scratch) & FileAttributes.ReparsePoint) == 0) DeleteTree(new DirectoryInfo(scratch));
+        } catch (Exception error) when (error is IOException or UnauthorizedAccessException) {
+            Console.Error.WriteLine("Check scratch kept: " + scratch + " (" + error.Message + ")");
+        }
+    }
+
+    // Not Directory.Delete(recursive): it unmounts junctions with DeleteVolumeMountPoint, which is denied without elevation.
+    // A link is removed as a link and never followed; read-only flags are cleared only on real entries.
+    private static void DeleteTree(DirectoryInfo directory)
+    {
+        foreach (var entry in directory.EnumerateFileSystemInfos()) {
+            var linked = (entry.Attributes & FileAttributes.ReparsePoint) != 0;
+            if (!linked && (entry.Attributes & FileAttributes.ReadOnly) != 0) entry.Attributes &= ~FileAttributes.ReadOnly;
+            if (!linked && entry is DirectoryInfo child) DeleteTree(child);
+            else entry.Delete();
+        }
+        directory.Delete();
     }
 
     private static Dictionary<string, string> Options(string[] args)

@@ -157,6 +157,14 @@ namespace BetterAstralParty.Updating
             } } catch (Exception error) when (error is ApplySafetyException || error is UpdateValidationException || error is ArgumentException || error is IOException || error is UnauthorizedAccessException) { }
             return count;
         }
+        // A guard left without a transaction. A finished apply, or an update cut off before any file changed (its guard is
+        // still in the Download phase: download, verification, preparation), leaves nothing to recover; only an interrupted
+        // apply becomes the OFF latch. The guard is removed either way. The game must already be closed.
+        internal static string SettleGuard(WindowsFileFence fence, UpdateFault guard) {
+            var outcome = Committed(fence, guard) ? "Committed" : guard.Phase == FaultPhase.Download ? "Abandoned" : "Interrupted";
+            if (outcome == "Interrupted") LatchInterrupted(fence, guard);
+            Complete(fence, guard); return outcome;
+        }
         // A committed apply whose guard could not be removed leaves only that guard; the installed plugin then carries its target.
         internal static bool Committed(WindowsFileFence fence, UpdateFault guard) {
             if (guard.Phase != FaultPhase.Apply) return false;

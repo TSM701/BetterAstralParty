@@ -225,13 +225,15 @@ namespace BetterAstralParty.Installation
         { try { return Record(error, false); } catch { return null; } }
         internal static string? RecoveryAction(Exception error)
         {
-            var at = error; var depth = 0;
+            var at = error; var depth = 0; var updateRecords = false;
             while (at != null && depth++ < 8) {
                 if (at.Data["BapRecoveryReason"] as string == "LegacyFlatWorkPending")
                     return "이전 설치 패키지로 복구 또는 제거를 완료한 뒤 다시 시도하세요. 남은 작업 자료를 임의로 이동하거나 삭제하지 마세요. / Complete recovery or removal with the matching previous package, then retry. Do not manually move or delete retained work.";
+                updateRecords |= at is ApplySafetyException { Failure: ApplyFailure.RecoveryRequired or ApplyFailure.InvalidState };
                 at = at.InnerException;
             }
-            return null;
+            // Unverifiable update records (an empty record after a power cut, say) stop every run until they are cleared.
+            return updateRecords ? "자동 업데이트 기록을 확인할 수 없어 멈췄습니다. 게임을 닫고 다시 실행해도 같으면 Force-Uninstall.cmd로 정리한 뒤 다시 설치하세요. 남은 업데이트 파일을 직접 옮기거나 지우지 마세요. / Automatic update records could not be verified. If it stops again with the game closed, run Force-Uninstall.cmd, then install again. Do not move or delete leftover update files by hand." : null;
         }
         private static string? Record(Exception error, bool waiting)
         {

@@ -95,6 +95,9 @@ internal sealed class ReleaseUpdates : IDisposable
     private bool _channelRefresh;
     private readonly HashSet<string> _notifiedVersions = new(StringComparer.Ordinal);
     internal ReleaseChannel Channel { get; private set; }
+    // Safe mode never leaves its first screen, so the home-entry trigger fires once; it asks again on this interval
+    // (after a failure, or once the six-hour freshness of a success has passed). Null keeps the home-entry trigger only.
+    internal TimeSpan? RepeatEvery { get; set; }
     internal ReleaseUpdateResult Result { get; private set; } = new(ReleaseUpdateStatus.NotConfigured);
     internal string? NotificationVersion { get; private set; }
     internal int Revision { get; private set; }
@@ -242,6 +245,7 @@ internal sealed class ReleaseUpdates : IDisposable
         Poll();
         if (menuAvailable && !_menuWasAvailable) _autoDue = true;
         _menuWasAvailable = menuAvailable;
+        if (RepeatEvery is { } every && menuAvailable && _pending == null && now >= _lastStarted.GetValueOrDefault(Channel, DateTimeOffset.MinValue) + every) _autoDue = true;
         if (!menuAvailable || !_autoDue || !Configured || _pending != null) return;
         // A queued manual check must not be lost to the six-hour freshness cache.
         var deferred = Result.RetryAt != null;

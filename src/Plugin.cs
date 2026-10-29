@@ -11,7 +11,7 @@ public sealed class Plugin : BasePlugin
 {
     public const string Guid = "kr.betterastralparty.mod";
     public const string Name = "BetterAstralParty";
-    public const string Version = "1.6.4-dev.2";
+    public const string Version = "1.6.5-dev.3";
     public const int InstallBundleProtocol = 1;
     public const string UpdateProtocol = "5";
     public const string SettingsSchema = "1";
@@ -131,7 +131,7 @@ public sealed class Plugin : BasePlugin
             : Environment.GetCommandLineArgs().Contains("--bap-compatibility-checked", StringComparer.Ordinal) ? "arguments" : "environment";
         StartupGuard.RecordLaunchDecision(true, route);
         Log.LogInfo("BAP ON for this launch (" + route + ").");
-        StartupGuard.Begin(Version, Path.GetDirectoryName(Paths.BepInExRootPath)!);
+        StartupGuard.Begin(Version, Path.GetDirectoryName(Paths.BepInExRootPath)!, previousSafe => SafeModeNotice.Ask(previousSafe, global::BetterAstralParty.InputAttention.FindWindow()));
         try
         {
             MinimalDiagnostics = DiagnosticOwner.Start(

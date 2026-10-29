@@ -1192,7 +1192,8 @@ internal static class ModUi
     {
         OpenUpdateSettings();
         if (!Compatibility.Allowed("SettingsUi") || !IsOpen) return;
-        if (Plugin.Automatic.CanReactivate) Plugin.Automatic.Reactivate(); else if (Plugin.Automatic.CanRecheck) Plugin.Automatic.Recheck();
+        // A download stopped for this session (network) has no latch to lift; it simply downloads again.
+        if (Plugin.Automatic.CanReactivate) Plugin.Automatic.Reactivate(); else if (Plugin.Automatic.CanRecheck) Plugin.Automatic.Recheck(); else Plugin.Automatic.Download(DateTimeOffset.UtcNow);
         Refresh();
     }
 

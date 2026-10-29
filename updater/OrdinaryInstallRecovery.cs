@@ -60,7 +60,8 @@ namespace BetterAstralParty.Updating {
                     "BepInEx/BetterAstralParty-Diagnostics/previous.log",
                     "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch.log",
                     "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log",
-                    "BetterAstralParty-Compatibility.log","BetterAstralParty-LaunchError.log",ChannelTransitionIntent.AdoptionPath})
+                    "BetterAstralParty-Compatibility.log","BetterAstralParty-LaunchError.log",ChannelTransitionIntent.AdoptionPath,
+                    UpdateFaults.FailurePath,UpdateFaults.SaveFailurePath}) // Uninstall's verified OFF latch records.
                     if(name==relative)return true;
                 return loader && relative=="doorstop_config.ini";
             }

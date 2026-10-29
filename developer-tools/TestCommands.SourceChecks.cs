@@ -35,6 +35,7 @@ internal static partial class TestCommands
             && BuildCommands.IsPublicSourcePath("docs/claude-notes.md") && BuildCommands.IsPublicSourcePath("diagnostics/Collector.cs") && BuildCommands.IsPublicSourcePath("docs/usage.md"), "Direct source export excludes nested agent instructions without excluding ordinary source or documentation");
         Check(!BuildCommands.IsPublicSourcePath("tools/REVIEW-CANDIDATES/SignRc3Review.cs"), "Direct source export rejects historical review candidates too");
         BootstrapAllocation(context, stage);
+        ScratchCleanup(stage);
         NativeInputSelection(context, stage, pin);
         var lifetime = Path.Combine(stage, "bootstrap-lifetime"); Directory.CreateDirectory(lifetime);
         using (var marker = new FileStream(Path.Combine(lifetime, ".bap-bootstrap-fixture"), FileMode.CreateNew, FileAccess.Write, FileShare.None)) {
@@ -106,6 +107,18 @@ internal static partial class TestCommands
         Check(context.Run(command, new[] { "/d", "/c", "allocate.cmd" }, cwd: directory, env: environment) == 1
             && Directory.GetDirectories(artifacts).Length == 32, "Bootstrap allocation fails boundedly without replacing existing directories");
         Check(Environment.GetEnvironmentVariable("BAP_DEVELOPER_BOOTSTRAP") == caller, "Bootstrap allocator preserves caller process environment");
+    }
+
+    private static void ScratchCleanup(string stage)
+    {
+        var fixture = Path.Combine(stage, "scratch-cleanup"); var scratch = Path.Combine(fixture, "ct-scratch"); var outside = Path.Combine(fixture, "outside");
+        Directory.CreateDirectory(Path.Combine(scratch, "nested")); Directory.CreateDirectory(outside);
+        File.WriteAllText(Path.Combine(outside, "kept.txt"), "outside");
+        var readOnly = Path.Combine(scratch, "nested", "read-only.txt"); File.WriteAllText(readOnly, "scratch"); File.SetAttributes(readOnly, FileAttributes.ReadOnly);
+        CompatibilitySnapshot.FixtureJunction(fixture, Path.Combine(scratch, "linked"), outside);
+        DeleteScratch(scratch);
+        Check(!Directory.Exists(scratch) && File.ReadAllText(Path.Combine(outside, "kept.txt")) == "outside",
+            "Passing-check scratch is removed with its read-only files, and a junction inside it is removed without touching its target");
     }
 
     private static void SettingsInput(DevContext context)

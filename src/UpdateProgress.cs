@@ -69,7 +69,8 @@ internal sealed class UpdateProgress
     // Stops that record no fault still get their guidance from the status.
     internal static string StatusReason(AutomaticUpdateStatus status) => status switch
     {
-        AutomaticUpdateStatus.ManualUpgradeRequired => "manualupgrade", AutomaticUpdateStatus.FilesBusy => "storage", _ => ""
+        AutomaticUpdateStatus.ManualUpgradeRequired => "manualupgrade", AutomaticUpdateStatus.FilesBusy => "storage",
+        AutomaticUpdateStatus.Failed => "network", _ => "" // Failed: a download stopped for this session on the network side
     };
 
     // Stable code from the recorded failure phase and reason, e.g. BAP-UPD-DOWNLOAD-TIMEOUT.

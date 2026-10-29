@@ -106,11 +106,9 @@ internal static class SetupHost
         using(var fence=new WindowsFileFence(root)) {
             var pending=UpdateRecovery.PendingWork(fence);
             if(pending==null) {
-                // Interrupted before any file replacement (download/prepare): only the guard remains. The game is
-                // already confirmed closed, so latch and close it exactly as the plugin does at start-up.
+                // Only the guard remains. The game is already confirmed closed, so settle it exactly as the plugin does at start-up.
                 var guard=UpdateFaults.ReadFile(fence,UpdateFaults.OperationPath); if(guard==null) return "none";
-                if(UpdateFaults.Committed(fence,guard)) {UpdateFaults.Complete(fence,guard); return "Committed";}
-                UpdateFaults.LatchInterrupted(fence,guard); UpdateFaults.Complete(fence,guard); return "Interrupted";
+                return UpdateFaults.SettleGuard(fence,guard);
             }
             var context=UpdateRecovery.RecoveryContext(fence,pending,trust);
             var result=UpdateTransaction.Recover(fence,pending.Work,trust,context);

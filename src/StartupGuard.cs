@@ -4,9 +4,12 @@ namespace BetterAstralParty;
 
 // Durable start-to-home stage ladder and crash-loop safe mode.
 // A start that neither reached the home menu, ran HealthySeconds of frames, nor exited normally counts as a failed start.
+// ProcessExit does not run when the game exits (no SessionEnd in normal sessions, 2026-10-29), so closing the game
+// before the home menu counts too; the user kept it that way.
 // The frame-time marker keeps a renamed home panel (game hotfix) from pushing a working mod into safe mode.
-// Two failed starts in a row switch to safe mode: no game hooks, only update check/download/apply,
-// so a fixed release can still arrive. A new BAP version or game build retries normal mode.
+// After a failed start the player chooses safe mode (no game hooks, only update check/download/apply, so a fixed
+// release can still arrive) or another normal try. Without an answer, two failed starts in a row switch to safe mode.
+// A new BAP version or game build retries normal mode.
 // The collector reads these files by fixed name and keeps only fixed tokens.
 internal static class StartupGuard
 {
@@ -16,6 +19,7 @@ internal static class StartupGuard
     private static readonly object Gate = new();
     private static string _directory = "", _session = "", _version = "";
     private static bool _homeReached, _enabled;
+    private static long _decided; // Environment.TickCount64 once the start is decided
     internal static bool SafeMode { get; private set; }
     internal static int Failures { get; private set; }
 
@@ -58,19 +62,22 @@ internal static class StartupGuard
     }
 
     // Called first in Load; never throws. Storage failure leaves normal mode on.
-    internal static void Begin(string version, string gameRoot)
+    // choose asks the player after a failed start (argument: the last start ran in safe mode) and returns true for safe
+    // mode, false for another normal try, or null without an answer. directory replaces the per-user folder in tests.
+    internal static void Begin(string version, string gameRoot, Func<bool, bool?> choose, string? directory = null)
     {
         try
         {
-            _directory = Directory; _version = version; _session = Guid.NewGuid().ToString("N");
+            _directory = directory ?? Directory; _version = version; _session = Guid.NewGuid().ToString("N"); _homeReached = false;
             System.IO.Directory.CreateDirectory(_directory);
             var current = Path.Combine(_directory, "stages-current.log");
-            var unfinished = false;
+            bool unfinished = false, previousSafe = false;
             if (File.Exists(current))
             {
                 var text = Ladder(current);
                 unfinished = text != null && !text.Contains(" stage=HomeMenu ", StringComparison.Ordinal) && !text.Contains(" stage=Healthy ", StringComparison.Ordinal)
                     && !text.Contains(" stage=SessionEnd ", StringComparison.Ordinal) && !text.Contains(" stage=Stopped ", StringComparison.Ordinal);
+                previousSafe = unfinished && text!.Contains(" stage=SafeMode ", StringComparison.Ordinal);
                 File.Copy(current, Path.Combine(_directory, "stages-previous.log"), true);
                 File.Delete(current);
             }
@@ -87,6 +94,20 @@ internal static class StartupGuard
             WriteState(failures, SafeMode ? "safe" : "normal", version, game, safeRuns);
             _enabled = true;
             Stage("PluginLoad", "Begin");
+            // The player decides after a failed start of this build; the rule above decides only without an answer.
+            // The ladder already runs, so a start closed at the question still counts as unfinished.
+            bool? answer = null;
+            if (sameBuild && (unfinished || SafeMode)) try { answer = choose(previousSafe); } catch { }
+            if (answer is bool safe)
+            {
+                Stage("SafeModeChoice", safe ? "Safe" : "Retry");
+                if (safe != SafeMode)
+                {
+                    SafeMode = safe;
+                    try { WriteState(failures, safe ? "safe" : "normal", version, game, safe ? 1 : 0); } catch { }
+                }
+            }
+            _decided = Environment.TickCount64;
             if (SafeMode) Stage("SafeMode", "Begin", failures);
         }
         catch { _enabled = false; SafeMode = false; }
@@ -110,7 +131,8 @@ internal static class StartupGuard
     }
     // The first home menu, or HealthySeconds of mod frames, clears the failure count for this build.
     internal static void HomeReached() => MarkHealthy("HomeMenu");
-    internal static void Healthy() => MarkHealthy("Healthy");
+    // The caller counts from game start; time spent at the start question is not running time.
+    internal static void Healthy() { if (Environment.TickCount64 - _decided >= (long)(HealthySeconds * 1000)) MarkHealthy("Healthy"); }
     private static void MarkHealthy(string stage)
     {
         if (!_enabled || _homeReached) return;

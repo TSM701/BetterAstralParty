@@ -70,6 +70,8 @@ internal static class ReleaseUpdateCheck
         FeedIdentityCheck.Run();
         HttpTransportCheck.Run();
         VersionsAndText();
+        SafeModeNotices();
+        StartupChoice();
         UpdateGenerationCheck.Run();
         UpdateSafetyCheck.Run();
         AsyncChecks().GetAwaiter().GetResult();
@@ -231,6 +233,7 @@ internal static class ReleaseUpdateCheck
         await CancellationCallbackFailures();
         await CompletedWorkerFailures();
         await AutomaticChecks();
+        await RepeatedChecks();
     }
     private static async Task RepositoryPages()
     {
@@ -704,6 +707,87 @@ internal static class ReleaseUpdateCheck
             var label = ModText.Text("모드 설정") + " · " + ModText.Text("새 버전");
             Check(language != "English" || !label.Any(c => c is >= '\uac00' and <= '\ud7a3'), "automatic home title localized");
         }
+    }
+    // Safe mode stays on one screen, so the home-entry trigger fires once. With RepeatEvery it asks again after a failure
+    // on that interval, and after a success only once the six-hour freshness has passed.
+    private static async Task RepeatedChecks()
+    {
+        var fail = true;
+        var handler = new Handler { Reply = (_, _) => Task.FromResult(fail ? Response("", HttpStatusCode.InternalServerError) : Releases(Item("1.0.0"))) };
+        using var client = new HttpClient(handler);
+        using (var updates = new ReleaseUpdates("1.0.0", Repository, client, new Authentication()) { RepeatEvery = TimeSpan.FromMinutes(10) })
+        {
+            updates.Tick(Now, true); await Complete(updates);
+            Check(handler.Requests.Count == 1 && updates.Result.Status == ReleaseUpdateStatus.Failed, "safe-mode first check fails");
+            updates.Tick(Now.AddMinutes(9), true);
+            Check(handler.Requests.Count == 1, "a failed check is not repeated before the interval");
+            fail = false; updates.Tick(Now.AddMinutes(10), true); await Complete(updates);
+            Check(handler.Requests.Count == 2 && updates.Result.Status == ReleaseUpdateStatus.UpToDate, "a failed check repeats after the interval");
+            for (var minute = 20; minute < 370; minute += 10) updates.Tick(Now.AddMinutes(minute), true);
+            Check(handler.Requests.Count == 2, "a success holds for six hours");
+            updates.Tick(Now.AddMinutes(371), true); await Complete(updates);
+            Check(handler.Requests.Count == 3, "after six hours the interval asks again");
+        }
+        using var plain = new ReleaseUpdates("1.0.0", Repository, client, new Authentication());
+        var before = handler.Requests.Count; fail = true;
+        plain.Tick(Now, true); await Complete(plain);
+        for (var minute = 10; minute <= 120; minute += 10) plain.Tick(Now.AddMinutes(minute), true);
+        Check(handler.Requests.Count == before + 1, "without an interval a failed check waits for the next home entry");
+    }
+    private static void SafeModeNotices()
+    {
+        Check(SafeModeNotice.Message(AutomaticUpdateStatus.Idle, "", true, false) == null, "safe-mode notice needs a target version");
+        var committed = SafeModeNotice.Message(AutomaticUpdateStatus.Committed, "1.6.5", false, true);
+        Check(committed?.Key == "committed:1.6.5" && committed.Value.Text.Contains("\ub2e4\uc2dc \uc2dc\uc791") && committed.Value.Text.Contains("Restart the game"),
+            "a safe-mode commit asks for a restart, in Korean and English");
+        foreach (var status in new[] { AutomaticUpdateStatus.Idle, AutomaticUpdateStatus.FaultDisabled, AutomaticUpdateStatus.Ready })
+            Check(SafeModeNotice.Message(status, "1.6.5", true, false)?.Key == "blocked:1.6.5", "an update that cannot apply by itself points to the installation ZIP: " + status);
+        var blocked = SafeModeNotice.Message(AutomaticUpdateStatus.Idle, "1.6.5-beta.12", true, false)!.Value.Text;
+        Check(blocked.Contains("\uc124\uce58 ZIP") && blocked.Contains("installation ZIP") && blocked.Contains("Install.cmd") && blocked.Contains("1.6.5-beta.12"),
+            "the manual-install box names the version, the ZIP and Install.cmd in Korean and English");
+        // Only what the player must act on gets a box: a cut download leaves no latch and the next start downloads again.
+        foreach (var status in new[] { AutomaticUpdateStatus.Downloading, AutomaticUpdateStatus.Preparing, AutomaticUpdateStatus.Ready, AutomaticUpdateStatus.Queued,
+            AutomaticUpdateStatus.RetryWaiting, AutomaticUpdateStatus.Failed, AutomaticUpdateStatus.Idle })
+            Check(SafeModeNotice.Message(status, "1.6.5", true, true) == null, "no box while an automatic update downloads, applies or stops for the session: " + status);
+        Check(SafeModeNotice.Message(AutomaticUpdateStatus.Idle, "1.6.5", false, false) == null, "no box while nothing newer exists");
+    }
+    // A failed start asks before the game goes on; the automatic rule decides only without an answer.
+    private static void StartupChoice()
+    {
+        foreach (var previousSafe in new[] { false, true })
+        {
+            var text = SafeModeNotice.Choice(previousSafe);
+            Check(text.Contains("안전 모드로 실행할까요?") && text.Contains("\r\n예: ") && text.Contains("\r\n아니요: ")
+                && text.Contains("in safe mode") && text.Contains("\r\nYes: ") && text.Contains("\r\nNo: "), "the start question names both answers in Korean and English");
+        }
+        Check(SafeModeNotice.Choice(true) != SafeModeNotice.Choice(false), "the start question says when the last start already ran in safe mode");
+        var root = Path.Combine(Path.GetTempPath(), "bap-startup-" + Guid.NewGuid().ToString("N"));
+        var asked = new List<bool>();
+        Func<bool, bool?> answer = _ => throw new InvalidOperationException("asked without a failed start");
+        void Start(string version = "1.6.5") => StartupGuard.Begin(version, root, previousSafe => { asked.Add(previousSafe); return answer(previousSafe); }, root);
+        try
+        {
+            Start(); StartupGuard.HomeReached(); Start();
+            Check(!StartupGuard.SafeMode && asked.Count == 0, "starts after a start that reached the home menu ask nothing");
+            answer = _ => true; Start();
+            Check(StartupGuard.SafeMode && asked.SequenceEqual(new[] { false }), "one failed start is enough to ask, and Yes starts safe mode");
+            answer = _ => false; Start();
+            Check(!StartupGuard.SafeMode && asked.SequenceEqual(new[] { false, true }), "the start after a safe run asks again, and No tries normally");
+            Check(File.ReadAllText(Path.Combine(root, "stages-previous.log")).Contains(" stage=SafeModeChoice outcome=Safe", StringComparison.Ordinal), "the answer stays in the stage ladder");
+            answer = _ => throw new InvalidOperationException("no dialog"); Start();
+            Check(StartupGuard.SafeMode, "a question that cannot be shown leaves the automatic rule: repeated failed starts enter safe mode");
+            answer = _ => null; Start(); Start();
+            Check(StartupGuard.SafeMode, "without answers safe mode lasts three runs");
+            Start();
+            Check(!StartupGuard.SafeMode, "without answers three safe runs end in one more normal try");
+            var count = asked.Count; answer = _ => true; Start("1.6.6");
+            Check(!StartupGuard.SafeMode && asked.Count == count, "a new version starts normally without asking");
+            StartupGuard.HomeReached(); Start("1.6.6");
+            Check(!StartupGuard.SafeMode && asked.Count == count, "the home menu clears the failed starts");
+            StartupGuard.Healthy(); answer = _ => false; Start("1.6.6");
+            Check(asked.Count == count + 1, "the running-time marker counts from the start decision, not from game start");
+        }
+        finally { try { Directory.Delete(root, true); } catch { } }
     }
     private sealed class WaitingStream : Stream
     {

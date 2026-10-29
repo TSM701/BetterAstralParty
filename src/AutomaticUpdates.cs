@@ -290,6 +290,9 @@ internal sealed class AutomaticUpdates : IDisposable {
                 // GitHub's anonymous quota resets within the hour; waiting for it is the server's request, not a fault.
                 if (result.Status == UpdateDownloadStatus.RateLimited && result.RetryAt != null) { _retryAt = due; Set(AutomaticUpdateStatus.RetryWaiting); }
                 else if (transient && _attempts < 2 && due <= now.AddMinutes(15)) { _retryAt = due; Set(AutomaticUpdateStatus.RetryWaiting); }
+                // A network-side failure changed nothing on disk: stop for this session only, without a latch or saved OFF
+                // preferences, so the next launch (safe mode included, which has no Try Again) asks again.
+                else if (transient || result.Status == UpdateDownloadStatus.RateLimited) { CompleteOperation(); Set(AutomaticUpdateStatus.Failed); }
                 else Disable(result.Status is UpdateDownloadStatus.VerificationFailed or UpdateDownloadStatus.TooLarge ? FaultPhase.Verification : FaultPhase.Download,
                     result.Status == UpdateDownloadStatus.TimedOut ? FaultReason.Timeout : result.Status is UpdateDownloadStatus.VerificationFailed or UpdateDownloadStatus.TooLarge ? FaultReason.Integrity : FaultReason.Network);
             }

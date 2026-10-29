@@ -423,12 +423,12 @@ internal static class DownloadFixture
     // AutomaticUpdates over a real verified download with inert handoff and safety stubs.
     private sealed class Safety : IUpdateSafety
     {
-        internal int Probes, Fails;
+        internal int Probes, Fails, Completes, Saves;
         public Task<UpdateSafetySnapshot> Probe() { Interlocked.Increment(ref Probes); return Task.FromResult(new UpdateSafetySnapshot()); }
         public Task<UpdateFault> Begin(UpdateContext context) => Task.FromResult(Fault(context, FaultPhase.Download));
-        public Task Complete(UpdateFault? operation) => Task.CompletedTask;
+        public Task Complete(UpdateFault? operation) { if (operation != null) Interlocked.Increment(ref Completes); return Task.CompletedTask; }
         public Task<UpdateFault> Fail(UpdateContext context, FaultPhase phase, FaultReason reason, string? stage) { Interlocked.Increment(ref Fails); return Task.FromResult(Fault(context, phase)); }
-        public Task SavePreferences(bool download, bool apply) => Task.CompletedTask;
+        public Task SavePreferences(bool download, bool apply) { Interlocked.Increment(ref Saves); return Task.CompletedTask; }
         public Task SaveFailed(UpdateFault fault) => Task.CompletedTask;
         public Task Acknowledge() => Task.CompletedTask;
         private static UpdateFault Fault(UpdateContext context, FaultPhase phase) => new() { Root = "00000000:0000000000000000", Operation = Guid.NewGuid().ToString("N"), Context = context, Phase = phase, Reason = FaultReason.Interrupted };
@@ -498,6 +498,20 @@ internal static class DownloadFixture
             using var updates = await Ready(new AutomaticUpdates(new UpdateDownloads(fixture.Trust, auth, rate), new Handoff(), safety), auth);
             await Drive(updates, () => updates.Status == AutomaticUpdateStatus.RetryWaiting, "rate-limited download waits");
             Check(updates.Fault == null && safety.Fails == 0 && updates.AutoDownload, "a rate limit keeps automatic updates on without a fault");
+        }
+        // A download that fails only on the network stops for this session: no latch, no saved OFF preferences, its guard is
+        // closed, and nothing downloads again by itself until the next launch; the player can still retry by hand.
+        {
+            var offline = new Handler { Reply = (_, _) => throw new HttpRequestException("fixture offline, private URL omitted") };
+            var safety = new Safety(); var auth = new Auth();
+            using var updates = await Ready(new AutomaticUpdates(new UpdateDownloads(fixture.Trust, auth, offline), new Handoff(), safety), auth);
+            await Drive(updates, () => updates.Status == AutomaticUpdateStatus.RetryWaiting, "first network failure waits");
+            clock = clock.AddSeconds(61);
+            await Drive(updates, () => updates.Status == AutomaticUpdateStatus.Failed, "second network failure stops the session");
+            var requests = offline.Count; clock = clock.AddMinutes(30); await Settle(updates);
+            Check(updates.Fault == null && safety.Fails == 0 && safety.Saves == 0 && updates.AutoDownload && updates.ApplyAfterExit && safety.Completes == 1,
+                "a network-only failure stops this session without a latch or saved OFF preferences and closes its guard");
+            Check(offline.Count == requests && updates.Status == AutomaticUpdateStatus.Failed && updates.CanDownload, "no automatic retry in the same session, but a manual retry is offered");
         }
     }
     internal static async Task Run()

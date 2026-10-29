@@ -251,7 +251,7 @@ internal static class DeveloperBootstrap
     private static int Main(string[] args)
     {
         if (args.Length != 0 && args[0] == WorkerMode) return Worker(args);
-        string before = null, processPath = null, previous = null; Exception failure = null; var result = 1;
+        string before = null, processPath = null, previous = null, stage = null; Exception failure = null; var result = 1;
         var sources = new List<FileStream>();
         try {
             Console.OutputEncoding = new UTF8Encoding(false);
@@ -261,7 +261,7 @@ internal static class DeveloperBootstrap
             var dotnet = Path.Combine(root, ".dotnet", "dotnet.exe");
             if (!File.Exists(project) || !File.Exists(Path.Combine(root, "src", "Plugin.cs")) || !File.Exists(dotnet))
                 throw new FileNotFoundException("Developer source and the existing project SDK are required; nothing is downloaded.");
-            var stage = Path.Combine(root, "artifacts", "developer-host-" + Guid.NewGuid().ToString("N"));
+            stage = Path.Combine(root, "artifacts", "developer-host-" + Guid.NewGuid().ToString("N"));
             if (Directory.Exists(stage) || File.Exists(stage)) throw new IOException("Fresh developer output is required.");
             var artifacts = Path.Combine(root, "artifacts");
             if ((Directory.Exists(artifacts) && (File.GetAttributes(artifacts) & FileAttributes.ReparsePoint) != 0)
@@ -297,6 +297,11 @@ internal static class DeveloperBootstrap
                     if (failure == null) result = 1;
                 }
             }
+        }
+        // A successful run leaves nothing to inspect, except the host prepare-signing-inputs pins for the signing steps that follow.
+        if (result == 0 && stage != null && !(args.Length > 1 && args[1] == "prepare-signing-inputs")) {
+            try { Directory.Delete(stage, true); }
+            catch (Exception error) { Console.Error.WriteLine("Developer host kept: " + stage + " (" + error.Message + ")"); }
         }
         return result;
     }

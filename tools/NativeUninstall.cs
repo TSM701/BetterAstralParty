@@ -15,7 +15,9 @@ namespace BetterAstralParty.Installation
             "BetterAstralParty-Mod.cmd", "AstralParty-Vanilla.cmd", OrdinaryInstallRecovery.LegacyLauncher };
         private static readonly string[] Exclusive = { "BepInEx/config/kr.betterastralparty.mod.cfg", "BepInEx/BetterAstralParty-Diagnostics/current.log",
             "BepInEx/BetterAstralParty-Diagnostics/previous.log", "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch.log",
-            "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log", "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log", ChannelTransitionIntent.AdoptionPath };
+            "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log", "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log", ChannelTransitionIntent.AdoptionPath,
+            // The automatic-update OFF latch is BAP-owned state; the update gate has already verified it before removal.
+            UpdateFaults.FailurePath, UpdateFaults.SaveFailurePath };
         private static string Full(string root, string relative) { return WindowsPath.Absolute(root + "\\" + relative.Replace('/', '\\')); }
 
         internal sealed class Plan

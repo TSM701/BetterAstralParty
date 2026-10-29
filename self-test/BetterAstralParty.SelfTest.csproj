@@ -30,6 +30,8 @@
     <Compile Include="..\src\FocusAudio.cs" Link="FocusAudio.cs" />
     <Compile Include="..\src\InputAttentionState.cs" Link="InputAttentionState.cs" />
     <Compile Include="..\src\WindowsInputNotification.cs" Link="WindowsInputNotification.cs" />
+    <Compile Include="..\src\SafeModeNotice.cs" Link="SafeModeNotice.cs" />
+    <Compile Include="..\src\StartupGuard.cs" Link="StartupGuard.cs" />
     <Compile Include="..\src\DiagnosticLog.cs" Link="DiagnosticLog.cs" />
     <Compile Include="..\src\CombatAdvisor.cs" Link="CombatAdvisor.cs" />
     <Compile Include="..\src\PublicCombatEffects.cs" Link="PublicCombatEffects.cs" />

@@ -54,9 +54,10 @@ namespace BetterAstralParty
         internal int Revision;
         internal bool AutoDownload = true, ApplyAfterExit = true, SnapshotMismatch;
         internal bool CanReviewTransition, ProposalCurrent = true;
-        internal bool CanReactivate, CanRecheck = false; internal int ReactivateCalls, RecheckCalls;
+        internal bool CanReactivate, CanRecheck = false; internal int ReactivateCalls, RecheckCalls, DownloadCalls;
         internal void Reactivate() => ReactivateCalls++;
         internal void Recheck() => RecheckCalls++;
+        internal void Download(DateTimeOffset now) => DownloadCalls++;
         internal int ConfirmCalls;
         internal bool ApplyOnce;
         internal TaskCompletionSource<ChannelTransitionProposal>? ProposalWorker;
@@ -280,7 +281,7 @@ namespace BetterAstralParty
     }
     internal static class AdviceText { internal static float Reveal(float elapsed,float duration=.22f) => Math.Clamp(elapsed / duration,0,1); }
     internal static class ModUi { internal static int Opens; internal static bool ShowsUpdates; internal static void OpenUpdateSettings() => Opens++;
-        internal static void RetryUpdateFromNotice() { Opens++; if (Plugin.Automatic.CanReactivate) Plugin.Automatic.Reactivate(); else if (Plugin.Automatic.CanRecheck) Plugin.Automatic.Recheck(); } }
+        internal static void RetryUpdateFromNotice() { Opens++; if (Plugin.Automatic.CanReactivate) Plugin.Automatic.Reactivate(); else if (Plugin.Automatic.CanRecheck) Plugin.Automatic.Recheck(); else Plugin.Automatic.Download(DateTimeOffset.UtcNow); } }
     internal static class Compatibility
     {
         internal static readonly HashSet<string> Blocked = new();

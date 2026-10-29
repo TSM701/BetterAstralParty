@@ -101,7 +101,14 @@ internal static class NativeUninstallFixture
                 "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch.log", "BepInEx/BetterAstralParty-Diagnostics/combat-mismatch-previous.log", "BetterAstralParty-Compatibility.log", "BetterAstralParty-LaunchError.log", ChannelTransitionIntent.AdoptionPath };
             foreach (var relative in exclusive) Write(bundle.GameRoot, relative, "mod settings or log: " + relative);
             Write(bundle.GameRoot, "BepInEx/BetterAstralParty-Diagnostics/unrecognized.log", "preserved unrelated diagnostics");
+            using (var fence = new WindowsFileFence(bundle.GameRoot))
+            {
+                var latch = UpdateFaults.Fail(fence, new UpdateContext(ReleaseFeedPolicy.StableRepository, "Stable", "1.4.0", "1.4.1", 1, 2, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId), FaultPhase.Recovery, FaultReason.Interrupted);
+                UpdateFaults.SaveFailed(fence, latch);
+            }
             Check(Run(bundle) == 0 && NativeMaintenance.Starts == 1 && NativeMaintenance.Completes == 1, "native held-object removal and ordinary completion");
+            Check(!File.Exists(Path.Combine(bundle.GameRoot, UpdateFaults.FailurePath)) && !File.Exists(Path.Combine(bundle.GameRoot, UpdateFaults.SaveFailurePath)),
+                "the verified automatic-update OFF latch is BAP-owned state and leaves with the uninstall");
             Check(InstallReceipt.Owned.All(name => !File.Exists(Path.Combine(bundle.GameRoot, name))) && !File.Exists(Path.Combine(bundle.GameRoot, InstallReceipt.Path)), "verified owned8 and receipt removed");
             Check(File.ReadAllText(Path.Combine(bundle.GameRoot, "doorstop_config.ini")) == "enabled=false\r\nunrelated=x" && File.ReadAllText(Path.Combine(bundle.GameRoot, "BepInEx/plugins/OtherMod/Other.dll")) == "unrelated mod", "shared loader and unrelated mod preserved");
             foreach (var relative in exclusive) Check(!File.Exists(Path.Combine(bundle.GameRoot, relative)), "fixed exclusive removal allowlist: " + relative);

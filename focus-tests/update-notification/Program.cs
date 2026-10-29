@@ -431,6 +431,10 @@ Case("update progress percent follows received bytes and a stop keeps its code",
     Check(ModText.UpdateStopDetails("2.0.0",q.Percent,q.Reason,q.Code).Contains("BAP-UPD-DOWNLOAD-TIMEOUT"),"window text carries the code");
     var r=new UpdateProgress();r.Observe(AutomaticUpdateStatus.Downloading,"2.0.0",false);r.Observe(AutomaticUpdateStatus.RecoveryRequired,"",false);
     Check(r.Code=="BAP-UPD-RECOVERYREQUIRED","a stop without a fault record still has a code");
+    var s=new UpdateProgress();s.Observe(AutomaticUpdateStatus.Downloading,"2.0.0",false);
+    s.Observe(AutomaticUpdateStatus.Failed,"",false,0,0,"",UpdateProgress.StatusReason(AutomaticUpdateStatus.Failed));
+    Check(s.Stopped&&s.Code=="BAP-UPD-FAILED"&&s.Reason=="network"&&ModText.UpdateStopDetails("2.0.0",s.Percent,s.Reason,s.Code).Contains(ModText.UpdateStopAdvice("network")),
+        "a download stopped for this session shows the network reason and advice");
 });
 Case("a stopped switch shows the reason and Try Again re-enables updates",()=>{
     Plugin.Automatic.ProposalWorker=null; ReviewSwitch();
@@ -443,6 +447,19 @@ Case("a stopped switch shows the reason and Try Again re-enables updates",()=>{
     Click("Button_ConfirmRounded",true);Click("Button_ConfirmRounded",false);
     Check(Plugin.Automatic.ReactivateCalls==calls+1&&Live()==0,"Try Again re-enables updates once and closes the window");
     Plugin.Automatic.CanReactivate=false;Plugin.Automatic.Status=AutomaticUpdateStatus.Idle;Plugin.Automatic.Revision++;
+    UpdateProgress.Shared.Observe(AutomaticUpdateStatus.Preparing,"",false);UpdateProgress.Shared.Observe(AutomaticUpdateStatus.Cancelled,"",false);
+});
+Case("Try Again downloads again after a download stopped for this session",()=>{
+    Plugin.Automatic.ProposalWorker=null; ReviewSwitch();
+    Click("Button_ConfirmRounded",true);Click("Button_ConfirmRounded",false);
+    UpdateProgress.Shared.Observe(AutomaticUpdateStatus.Downloading,"2.0.0",true,100,400);
+    UpdateProgress.Shared.Observe(AutomaticUpdateStatus.Failed,"",false,0,0,"",UpdateProgress.StatusReason(AutomaticUpdateStatus.Failed));
+    Plugin.Automatic.Status=AutomaticUpdateStatus.Failed;Plugin.Automatic.Revision++;Frame();
+    Check(Button("Button_ConfirmRounded").Get<string>("title")==ModText.UpdateRetry&&Body().Get<string>("text").Contains("BAP-UPD-FAILED"),"a session-only stop shows its code and Try Again");
+    var downloads=Plugin.Automatic.DownloadCalls;var reactivations=Plugin.Automatic.ReactivateCalls;
+    Click("Button_ConfirmRounded",true);Click("Button_ConfirmRounded",false);
+    Check(Plugin.Automatic.DownloadCalls==downloads+1&&Plugin.Automatic.ReactivateCalls==reactivations&&Live()==0,"with no latch to lift, Try Again downloads again and closes the window");
+    Plugin.Automatic.Status=AutomaticUpdateStatus.Idle;Plugin.Automatic.Revision++;
     UpdateProgress.Shared.Observe(AutomaticUpdateStatus.Preparing,"",false);UpdateProgress.Shared.Observe(AutomaticUpdateStatus.Cancelled,"",false);
 });
 Case("a newer scan finding the same release keeps the review",()=>{

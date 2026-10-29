@@ -60,7 +60,7 @@ internal static class NativeReinstallGenerationFixture
     {
         internal readonly string Game, Backups, Id, Completed;
         internal readonly List<Dictionary<string, object?>> Rows = new();
-        internal Removal(string name, Package stable, Package? upgrade = null)
+        internal Removal(string name, Package stable, Package? upgrade = null, bool latch = false)
         {
             Game = Path.Combine(Scratch, name); Directory.CreateDirectory(Game);
             Write(Path.Combine(Game, "AstralParty_INT.exe"), Encoding.ASCII.GetBytes("inert fixture, never executed"));
@@ -69,9 +69,12 @@ internal static class NativeReinstallGenerationFixture
             using (var game = new WindowsFileFence(Game))
                 Write(game.Full(UpdateTransaction.HighWaterPath), Encoding.ASCII.GetBytes("BetterAstralParty.HighWater/v1\nroot=" + game.RootIdentity.Text + "\nversion=" + stable.Version + "\ndescriptor=" + stable.Descriptor.DescriptorSha256 + "\n"));
             if (upgrade != null) Install(Game, upgrade);
+            // An uninstall takes a verified automatic-update OFF latch with it, through the same held-handle removal.
+            if (latch) using (var game = new WindowsFileFence(Game))
+                UpdateFaults.SaveFailed(game, UpdateFaults.Fail(game, new UpdateContext(ReleaseFeedPolicy.StableRepository, "Stable", stable.Version, "9.9.9", 1, 2, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId), FaultPhase.Recovery, FaultReason.Interrupted));
             Backups = Path.Combine(Local, "BetterAstralParty", "Backups", "v5", Hash(Encoding.UTF8.GetBytes(Game.ToLowerInvariant())));
             Id = Guid.NewGuid().ToString("N"); Directory.CreateDirectory(Path.Combine(Backups, Id));
-            var names = InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path }).ToArray();
+            var names = InstallReceipt.Owned.Concat(new[] { InstallReceipt.Path }).Concat(latch ? new[] { UpdateFaults.FailurePath, UpdateFaults.SaveFailurePath } : Array.Empty<string>()).ToArray();
             for (var i = 0; i < names.Length; i++)
             {
                 var target = Path.Combine(Game, names[i].Replace('/', '\\')); var backup = Path.Combine(Backups, Id, i + ".bin"); var bytes = Read(target);
@@ -134,8 +137,15 @@ internal static class NativeReinstallGenerationFixture
         Write(removed.Completed, Encoding.UTF8.GetBytes(raw.Insert(1, "\"gameroot\":\"duplicate\",")));
         Reject(() => removed.Review(beta), "case-insensitive duplicate journal keys rejected");
         removed = new Removal("pending-operation", stable);
-        Write(Path.Combine(removed.Game, "BetterAstralParty.update-v5.failed"), Encoding.ASCII.GetBytes("inert pending fixture"));
-        Reject(() => removed.Review(beta), "remaining failed operation marker blocks clean reinstall");
+        Write(Path.Combine(removed.Game, UpdateFaults.OperationPath), Encoding.ASCII.GetBytes("inert pending fixture"));
+        Reject(() => removed.Review(beta), "a remaining update operation guard blocks clean reinstall");
+        removed = new Removal("retired-latch", stable);
+        using (var fence = new WindowsFileFence(removed.Game))
+            UpdateFaults.Fail(fence, new UpdateContext(ReleaseFeedPolicy.StableRepository, "Stable", "1.4.0", "1.4.1", 1, 2, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId), FaultPhase.Recovery, FaultReason.Interrupted);
+        removed.Review(beta); Check(File.Exists(Path.Combine(removed.Game, UpdateFaults.FailurePath)), "a retired update latch an older uninstaller left does not block a clean reinstall and stays");
+        removed = new Removal("latch-removed", stable, latch: true);
+        Check(!File.Exists(Path.Combine(removed.Game, UpdateFaults.FailurePath)) && !File.Exists(Path.Combine(removed.Game, UpdateFaults.SaveFailurePath)), "held-handle removal accepts and removes the verified OFF latch");
+        removed.Review(beta); Check(removed.Rows.Count == InstallReceipt.Owned.Length + 3, "a removal journal that took the OFF latch with it still validates for a clean reinstall");
         removed = new Removal("owned-file-remains", stable); Write(Path.Combine(removed.Game, InstallReceipt.Owned[0]), Encoding.ASCII.GetBytes("remaining fixture"));
         Reject(() => removed.Review(beta), "partial installation cannot retire high-water");
         removed = new Removal("ordinary-pending-not-presence-guard", stable);

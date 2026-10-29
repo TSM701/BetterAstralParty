@@ -136,6 +136,9 @@ internal static partial class NativeMaintenanceDiagnosticsFixture
         Check(collected.Text.Contains("LegacyFlatWorkPending")&&collected.Text.Contains("matching previous package")&&collected.Text.Contains("\"code\":\"Prerequisite\"")&&!collected.Text.Contains("FAKE_PRIVATE")&&!collected.Text.Contains(basis),"actual work guard to maintenance recorder and minimal writer to ZIP retains actionable reason and prerequisite code");
         var unknown=new InvalidOperationException("inert");unknown.Data["BapRecoveryReason"]="FAKE_PRIVATE_UNTRUSTED_REASON";unknown.Data["BapRecoveryAction"]="FAKE_PRIVATE_UNTRUSTED_ACTION";
         Check(NativeMaintenanceEntry.RecoveryAction(unknown)==null,"unknown reasons cannot select or inject recovery actions");
+        var unverifiable=NativeMaintenanceEntry.RecoveryAction(new InvalidOperationException("inert wrapper",new ApplySafetyException(ApplyFailure.InvalidState)));
+        Check(unverifiable!=null&&unverifiable.Contains("Force-Uninstall.cmd")&&unverifiable.Contains("자동 업데이트 기록")&&unverifiable.Contains("could not be verified"),"unverifiable update records name the clean-up path in both languages");
+        Check(NativeMaintenanceEntry.RecoveryAction(new ApplySafetyException(ApplyFailure.FileBusy))==null,"other update-safety failures add no recovery action");
     }
     private static void ContextCorrelation(string basis)
     {

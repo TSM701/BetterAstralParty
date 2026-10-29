@@ -155,7 +155,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 
 - 자동 업데이트는 1.4.0 설치부터 지원합니다. 자동 업데이트를 자동 적용으로 두면 검증된 업데이트를 게임 실행 중에 적용하고 다음 실행부터 새 버전을 사용합니다. 게임을 종료할 필요가 없고 별도 창도 열리지 않습니다.
 - 수동 업데이트는 게임을 종료한 뒤 상위 버전 전체 패키지의 `Install.cmd`를 실행하세요. 설정은 유지합니다.
-- 안전 모드: 두 번 연속 홈 화면까지 시작하지 못하면 다음 실행은 모드 기능을 끄고 업데이트만 동작합니다. 홈 화면에 도달하면 해제됩니다.
+- 안전 모드: 지난번 실행이 홈 화면까지 가지 못했으면 게임 화면이 나오기 전에 안전 모드로 실행할지 묻습니다. `예`를 누르면 모드 기능을 끄고 업데이트만 동작하고, `아니요`를 누르면 평소처럼 다시 시도합니다. 안전 모드에서 새 버전을 적용하면 확인 창으로 알려 주고, 다음 실행부터 원래대로 동작합니다.
 
 <details>
 <summary>채널 전환과 세부 동작</summary>
@@ -164,13 +164,14 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 - 채널 전환은 선택한 채널의 지원되는 최신 릴리스를 확인합니다. 설치된 버전보다 낮아도 전환할 수 있습니다. 업데이트 버튼을 누르면 대상 버전을 보여주고, `전환 시작`을 눌러야 받기 시작합니다. 받기와 적용은 게임 안에서 진행되니 끝날 때까지 게임을 끄지 마세요. 끝나면 `종료 및 전환` 버튼이 켜지고, 누르면 게임이 종료되며 다음 실행부터 새 버전을 사용합니다. 같은 버전만 있으면 `채널 전환 대기`로 표시합니다. 업데이트 채널을 다시 바꾸면 승인이 취소됩니다. 같은 채널의 일반 업데이트는 버전 역행을 허용하지 않습니다.
 - 업데이트나 채널 전환을 받고 적용하는 동안 홈 화면의 모드 설정 버튼 아래에 진행 캡슐이 나타납니다. 받은 용량에 따라 채워지는 막대와 퍼센트를 보여주고, 누르면 진행 창이 다시 열립니다. 진행 창에도 같은 막대와 받은 용량이 표시됩니다.
 - 업데이트 중 오류가 나면 캡슐에 "오류"와 함께 이유와 오류 코드(예: `BAP-UPD-DOWNLOAD-TIMEOUT`)가 표시되고, 진행 창에서 할 일 안내와 `다시 시도` 버튼을 볼 수 있습니다. 문의할 때는 오류 코드와 진단 ZIP을 함께 보내 주세요.
+- 받는 도중 게임을 끄거나 인터넷 연결 문제로 받지 못해도 자동 업데이트는 꺼지지 않고 다음 실행 때 다시 받습니다. 파일을 바꾸는 적용 도중에 끊긴 경우에만 자동 업데이트가 꺼지고, 업데이트 설정에서 `다시 사용`을 눌러야 합니다.
 - 같은 공개 버전이 프리 릴리즈↔릴리즈로 바뀌어도 설치된 파일과 저장한 채널은 그대로 둡니다.
 - 수동 업데이트는 버전 역행과 같은 버전의 다른 파일 덮어쓰기를 차단합니다.
 - Mod 실행 시 공용 로더가 OFF라면 안내창 없이 ON으로 전환하며, 변경 전 원본은 `BepInEx/config/BetterAstralParty.loader-before-*.bak`에 보관합니다.
 - 이전에 받은 패키지의 설치·제거 도구는 자동 업데이트로 바뀌지 않으므로 최신 전체 패키지를 사용하세요.
 - 자동 업데이트 파일과 임시 작업 파일은 게임 폴더의 `BetterAstralParty.Update/`에 모입니다.
 - 게임 핫픽스로 파일 해시나 카탈로그가 달라진 것만으로 설치·실행을 막지 않습니다. 실제로 맞지 않는 선택 기능만 중단합니다.
-- 안전 모드로 세 번 실행하면 전체 모드를 한 번 다시 시도합니다. 새 BetterAstralParty 버전이나 바뀐 게임 빌드는 횟수를 초기화합니다.
+- 안전 모드로 실행한 다음 실행에서도 다시 묻습니다. 새 BetterAstralParty 버전이나 바뀐 게임 빌드에서는 묻지 않고 평소처럼 시작합니다. 안전 모드에서 새 버전을 자동으로 적용할 수 없으면(자동 적용이 꺼져 있거나 자동 업데이트가 꺼진 상태) 확인 창이 설치 ZIP으로 설치하라고 안내합니다.
 - 모드를 켠 상태로 게임 자체가 시작되지 않으면 순정 Steam 클라이언트로 실행하거나 `Create-Diagnostics.cmd`로 진단 ZIP을 만들고 최신 전체 패키지를 설치하세요.
 
 </details>
@@ -359,7 +360,7 @@ Updates
 
 - Automatic updates are supported from the 1.4.0 installation. With Automatic Updates set to Apply Automatically, a verified update is applied while the game runs and used from the next launch. You do not need to close the game, and no separate window opens.
 - For manual updates, close the game and run `Install.cmd` from a newer complete package. Settings are kept.
-- Safe mode: if two starts in a row do not reach the home screen, the next start turns mod features off and keeps only updates working. Reaching the home screen clears it.
+- Safe mode: if the last start did not reach the home screen, a window asks before the game shows its first screen whether to start in safe mode. `Yes` turns mod features off and keeps only updates working; `No` tries again as usual. When safe mode applies a new version, a message box says so, and the next start runs normally.
 
 <details>
 <summary>Channel switching and details</summary>
@@ -368,13 +369,14 @@ Updates
 - Channel switching checks the latest supported release in the selected channel. It can be lower than the installed version. The Update button shows the target, and the download starts only after `Start Switch`. Downloading and applying happen inside the game, so keep it open until they finish. Then `Exit and Switch` turns on; it closes the game, and the new version is used from the next launch. If only the same version exists, the status shows `Channel Switch Waiting`. Changing the update channel again cancels the approval. Ordinary updates within the same channel reject downgrades.
 - While an update or channel switch downloads and applies, a progress capsule appears under the Mod Settings button on the home screen. Its bar and percentage follow the downloaded size; clicking it reopens the progress window, which shows the same bar with the downloaded size.
 - If an update hits an error, the capsule shows "Error" with the reason and an error code (for example `BAP-UPD-DOWNLOAD-TIMEOUT`); the progress window also explains what to do and offers `Try Again`. When asking for help, include the error code and a diagnostics ZIP.
+- Closing the game during a download, or a download that fails on the network, does not turn automatic updates off; the next start downloads again. Only an apply cut off while it replaces files turns them off, and then `Re-enable Updates` in Update Settings is needed.
 - Reclassifying the same public version between Pre-release and Release leaves installed files and your saved channel unchanged.
 - Manual updates block downgrades and replacing a version with different files at the same version.
 - A Mod launch turns an OFF shared loader ON without a prompt and keeps the original configuration at `BepInEx/config/BetterAstralParty.loader-before-*.bak`.
 - Automatic updates do not replace the installation/removal tools in previously downloaded packages; use the latest complete package.
 - Automatic-update downloads and temporary working files are kept in `BetterAstralParty.Update/` inside the game folder.
 - Changed game hashes or catalogs after a hotfix alone do not block installation or launch. Only an incompatible optional feature stops.
-- After three safe-mode runs, the full mod is retried once. A new BetterAstralParty version or a changed game build resets the count.
+- The start after a safe-mode run asks again. A new BetterAstralParty version or a changed game build starts normally without asking. If safe mode cannot apply a new version by itself (Apply Automatically is off, or automatic updates are turned off), a message box asks you to install the complete ZIP.
 - If the game itself cannot start with the mod, launch through the Steam client or create a diagnostics ZIP with `Create-Diagnostics.cmd`, and install the latest complete package.
 
 </details>

@@ -229,7 +229,7 @@ internal static class CompatibilitySnapshot
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool CreateHardLinkW(string path, string existing, IntPtr security);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern SafeFileHandle CreateFileW(string path, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool DeviceIoControl(SafeFileHandle file, uint code, byte[] input, uint length, IntPtr output, uint outputLength, out uint written, IntPtr overlapped);
-    private static void FixtureJunction(string fixture, string path, string target)
+    internal static void FixtureJunction(string fixture, string path, string target)
     {
         if (!Within(Path.GetFullPath(path), fixture) || !Within(Path.GetFullPath(target), fixture) || Directory.Exists(path) || File.Exists(path)) throw new InvalidDataException("Fresh synthetic junction paths required.");
         Directory.CreateDirectory(path);
