@@ -219,6 +219,8 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 
 BetterAstralParty 자체 코드는 [MIT 라이선스](LICENSE)로 제공합니다. 외부 구성 요소의 고지와 대응 소스 안내는 `THIRD-PARTY-NOTICES/`, 소스 빌드 방법은 공개 소스의 `docs/BUILD.md`에 있습니다.
 
+포크와 수정 배포는 [MIT 라이선스](LICENSE)에 따라 자유롭게 할 수 있습니다. 공식 버전과 헷갈리지 않도록 비공식 버전임을 밝히고 다른 이름을 써 주세요. 공식 배포처는 이 저장소의 [다운로드](https://github.com/TSM701/BetterAstralParty/releases)뿐이고, 게임 안 자동 업데이트는 이 저장소에서 서명한 버전만 받습니다.
+
 ---
 
 ## English
@@ -423,3 +425,5 @@ Crash dumps are not included, only their size. Tokens, private paths, Steam IDs,
 ### Source and licenses
 
 BetterAstralParty-owned code is provided under the [MIT license](LICENSE). See `THIRD-PARTY-NOTICES/` for third-party notices and corresponding-source information, and `docs/BUILD.md` in the public source for build instructions.
+
+Forks and modified builds are welcome under the [MIT license](LICENSE). To avoid confusion with official releases, please state that yours is unofficial and use a different name. Official builds come only from [Download](https://github.com/TSM701/BetterAstralParty/releases), and in-game automatic updates accept only versions signed for this repository.
