@@ -77,7 +77,9 @@ namespace __NAMESPACE__ {
 namespace UnityEngine {
     public struct Color {} public struct Vector2 {} public struct Vector3 {}
     public struct Quaternion { public float x, y, z, w; }
+    public struct Rect { public float x, y, width, height; }
 }
+public struct NullableRect { public bool HasValue; public UnityEngine.Rect Value; }
 public unsafe class RuntimeObject {
     private static readonly Dictionary<IntPtr, Type> Types = new();
     public IntPtr Class { get; }
@@ -88,6 +90,10 @@ public unsafe class RuntimeObject {
     private static IntPtr MethodInfo(IntPtr klass, string name, int count) => klass;
     private static UnityEngine.Quaternion Captured;
     private static double CapturedDouble;
+    private static long CapturedLong;
+    private static bool CapturedFlag;
+    private static UnityEngine.Rect CapturedRect;
+    private static (int Flag, int Value, int Size) _nullableRect, GridLayout = (0, 4, 20);
     private static Type ParamType = typeof(UnityEngine.Quaternion);
     private static IntPtr Id(Type type) {
         foreach (var entry in Types) if (entry.Value == type) return entry.Key;
@@ -96,6 +102,10 @@ public unsafe class RuntimeObject {
     private static IntPtr FindClass(string ns, string name) => Id(Type.GetType(ns + "." + name, true)!);
     private static void CheckValue<T>(IntPtr klass) where T : unmanaged {
         if (Types[klass] != typeof(T)) throw new InvalidCastException();
+    }
+    private static void CheckNullableRect(IntPtr klass) {
+        if (Types[klass] != typeof(NullableRect)) throw new InvalidCastException();
+        _nullableRect = GridLayout;
     }
     private static class IL2CPP {
         internal static bool il2cpp_type_is_byref(IntPtr type) => Types[type].IsByRef;
@@ -106,7 +116,16 @@ public unsafe class RuntimeObject {
         internal static IntPtr ManagedStringToIl2Cpp(string text) => Id(typeof(string));
         internal static IntPtr il2cpp_method_get_param(IntPtr method, uint index) => Id(ParamType);
         internal static IntPtr il2cpp_runtime_invoke(IntPtr method, IntPtr instance, void** args, ref IntPtr exception) {
-            if (ParamType == typeof(double)) CapturedDouble = *(double*)args[0]; else Captured = *(UnityEngine.Quaternion*)args[0]; return IntPtr.Zero;
+            if (ParamType == typeof(double)) CapturedDouble = *(double*)args[0];
+            else if (ParamType == typeof(long)) CapturedLong = *(long*)args[0];
+            else if (ParamType == typeof(UnityEngine.Rect)) CapturedRect = *(UnityEngine.Rect*)args[0];
+            else if (ParamType == typeof(NullableRect)) {
+                var raw = (byte*)args[0];
+                CapturedFlag = raw[GridLayout.Flag] == 1;
+                CapturedRect = *(UnityEngine.Rect*)(raw + GridLayout.Value);
+            }
+            else Captured = *(UnityEngine.Quaternion*)args[0];
+            return IntPtr.Zero;
         }
     }
 __CHECK_ARGUMENT__
@@ -134,6 +153,42 @@ __INVOKE__
         finally { ParamType = typeof(UnityEngine.Quaternion); }
         return CapturedDouble == 62.5d;
     }
+    // BattleLogic.RequestGetHeroInfoC2S and GetPlayerDataById take System.Int64 player IDs; all 64 bits must arrive.
+    public static bool AcceptsLong() => Accepts(typeof(long), 0x7FFF_FFFF_0000_0001L);
+    public static bool InvokesLong() {
+        ParamType = typeof(long);
+        try { Invoke((IntPtr)1, IntPtr.Zero, "LongProbe", new object?[] { 0x7FFF_FFFF_0000_0001L }); }
+        catch (ArgumentException) { return false; }
+        catch (InvalidCastException) { return false; }
+        finally { ParamType = typeof(UnityEngine.Quaternion); }
+        return CapturedLong == 0x7FFF_FFFF_0000_0001L;
+    }
+    // FairyGUI.NTexture(NTexture, Rect, bool) takes the atlas region as a plain UnityEngine.Rect: all four floats must arrive.
+    public static bool AcceptsRect() => Accepts(typeof(UnityEngine.Rect), new UnityEngine.Rect { x = 4, y = 6, width = 58, height = 60 });
+    public static bool InvokesRect() {
+        ParamType = typeof(UnityEngine.Rect); CapturedRect = default;
+        try { Invoke((IntPtr)1, IntPtr.Zero, "RegionProbe", new object?[] { new UnityEngine.Rect { x = 4, y = 6, width = 58, height = 60 } }); }
+        catch (ArgumentException) { return false; }
+        catch (InvalidCastException) { return false; }
+        finally { ParamType = typeof(UnityEngine.Quaternion); }
+        return CapturedRect.x == 4 && CapturedRect.y == 6 && CapturedRect.width == 58 && CapturedRect.height == 60;
+    }
+    // FairyGUI.Image.scale9Grid takes System.Nullable<UnityEngine.Rect>: the flag and all four floats must arrive.
+    public static bool AcceptsNullableRect() => Accepts(typeof(NullableRect), new NullableRect { HasValue = true, Value = new UnityEngine.Rect { x = 25, y = 25, width = 2, height = 2 } });
+    // Written where the runtime's fields sit: the in-game order (flag first) and the reverse.
+    public static bool InvokesNullableRect() {
+        foreach (var layout in new[] { (0, 4, 20), (16, 0, 20) }) {
+            GridLayout = layout; CapturedFlag = false; CapturedRect = default;
+            ParamType = typeof(NullableRect);
+            var grid = new NullableRect { HasValue = true, Value = new UnityEngine.Rect { x = 25, y = 27, width = 2, height = 3 } };
+            try { Invoke((IntPtr)1, IntPtr.Zero, "GridProbe", new object?[] { grid }); }
+            catch (ArgumentException) { return false; }
+            catch (InvalidCastException) { return false; }
+            finally { ParamType = typeof(UnityEngine.Quaternion); GridLayout = (0, 4, 20); }
+            if (!CapturedFlag || CapturedRect.x != 25 || CapturedRect.y != 27 || CapturedRect.width != 2 || CapturedRect.height != 3) return false;
+        }
+        return true;
+    }
     public static void Run() {
         foreach (var target in new[] { typeof(string), typeof(object), typeof(IComparable), typeof(IEnumerable<char>) })
             foreach (var text in new[] { "", "중첩·진행 3 · 남은 턴 2" })
@@ -151,6 +206,81 @@ __INVOKE__
             if (Accepts(target, new UnityEngine.Quaternion())) throw new Exception("Invalid Quaternion target accepted");
         if (!AcceptsDouble() || !InvokesDouble()) throw new Exception("Double check/marshaling failed");
         if (Accepts(typeof(float), .5d) || Accepts(typeof(double), .5f) || Accepts(typeof(double), 1)) throw new Exception("Double guard is not exact");
+        if (!AcceptsLong() || !InvokesLong()) throw new Exception("Int64 check/marshaling failed");
+        if (Accepts(typeof(int), 5L) || Accepts(typeof(long), 5) || Accepts(typeof(double), 5L) || Accepts(typeof(long), null)) throw new Exception("Int64 guard is not exact");
+        if (!AcceptsNullableRect() || !InvokesNullableRect()) throw new Exception("Nullable<Rect> check/marshaling failed");
+        if (!AcceptsRect() || !InvokesRect()) throw new Exception("Rect check/marshaling failed");
+        if (Accepts(typeof(NullableRect), new UnityEngine.Rect()) || Accepts(typeof(UnityEngine.Quaternion), new UnityEngine.Rect()) || Accepts(typeof(UnityEngine.Rect), null)) throw new Exception("Rect guard is not exact");
+        if (Accepts(typeof(UnityEngine.Rect), new NullableRect()) || Accepts(typeof(object), new NullableRect()) || Accepts(typeof(NullableRect), null)) throw new Exception("Nullable<Rect> guard is not exact");
+    }
+}
+}
+""""""";
+
+    // RuntimeObject.CheckNullableRect against metadata shaped like the runtime's System.Nullable<UnityEngine.Rect>.
+    private const string GeneralNullableRectLayout0 = """""""
+#nullable enable
+using System;
+using System.Collections.Generic;
+namespace BapNullableRect {
+namespace UnityEngine { public struct Rect { public float x, y, width, height; } }
+public struct NullableRect { public bool HasValue; public UnityEngine.Rect Value; }
+public unsafe class RuntimeObject {
+    private static readonly HashSet<(IntPtr, Type)> CheckedValues = new();
+    private static string Noted = "";
+    private static void Note(string entry) => Noted = entry;
+    private static (int Flag, int Value, int Size) _nullableRect = (-1, -1, 0);
+    private static string ClassName(IntPtr klass) => Namespace + "." + Name;
+    private static string Namespace = "", Name = "", FlagType = "", ValueType = "";
+    private static bool IsValueType, HasFlag, HasValueField;
+    private static int Size;
+    private static uint FlagOffset, ValueOffset;
+    private static class IL2CPP {
+        internal static bool il2cpp_class_is_valuetype(IntPtr klass) => IsValueType;
+        internal static string il2cpp_class_get_namespace_(IntPtr klass) => Namespace;
+        internal static string il2cpp_class_get_name_(IntPtr klass) => Name;
+        internal static IntPtr il2cpp_class_get_field_from_name(IntPtr klass, string name) =>
+            name == "hasValue" && HasFlag ? (IntPtr)1 : name == "value" && HasValueField ? (IntPtr)2 : IntPtr.Zero;
+        internal static IntPtr il2cpp_field_get_type(IntPtr field) => field;
+        internal static string il2cpp_type_get_name_(IntPtr type) => type == (IntPtr)1 ? FlagType : ValueType;
+        internal static int il2cpp_class_value_size(IntPtr klass, ref uint alignment) => Size;
+        internal static uint il2cpp_field_get_offset(IntPtr field) => field == (IntPtr)1 ? FlagOffset : ValueOffset;
+    }
+__CHECK__
+    private static string Refusal = "";
+    private static bool Accepts(IntPtr klass) {
+        CheckedValues.Clear(); _nullableRect = (-1, -1, 0); Refusal = "";
+        try { CheckNullableRect(klass); return true; }
+        catch (InvalidCastException ex) { Refusal = ex.Message; return false; }
+    }
+    // The runtime's own layout: hasValue at 0 and value at 4 after the boxed header, 20 bytes.
+    private static void Runtime() {
+        Namespace = "System"; Name = "Nullable`1"; FlagType = "System.Boolean"; ValueType = "UnityEngine.Rect";
+        IsValueType = HasFlag = HasValueField = true; Size = 20;
+        FlagOffset = (uint)(2 * IntPtr.Size); ValueOffset = FlagOffset + 4;
+    }
+    public static void Run() {
+        var header = (uint)(2 * IntPtr.Size);
+        // Accepted layouts and where the flag and the Rect are written.
+        foreach (var (flagAt, valueAt, size, expected) in new[] {
+            (header, header + 4, 20, (0, 4, 20)), (0u, 4u, 20, (0, 4, 20)), (header + 16, header, 20, (16, 0, 20)), (header, header + 8, 24, (0, 8, 24)) })
+        {
+            Runtime(); FlagOffset = flagAt; ValueOffset = valueAt; Size = size;
+            if (!Accepts((IntPtr)7) || _nullableRect != expected || !Noted.Contains("hasValue System.Boolean", StringComparison.Ordinal))
+                throw new Exception("Runtime Nullable<Rect> layout rejected or misread: " + flagAt + "/" + valueAt + " " + Refusal);
+        }
+        if (Accepts(IntPtr.Zero)) throw new Exception("Missing class accepted");
+        foreach (var change in new Action[] {
+            () => Namespace = "Il2CppSystem", () => Name = "Nullable", () => FlagType = "System.Int32", () => ValueType = "UnityEngine.Vector4",
+            () => IsValueType = false, () => Size = 40, () => Size = 18, () => HasFlag = false, () => HasValueField = false,
+            () => FlagOffset = ValueOffset + 4 })
+        {
+            Runtime(); change();
+            if (Accepts((IntPtr)7)) throw new Exception("Mismatched Nullable<Rect> layout accepted");
+        }
+        // A refusal names what it saw, so a runtime log shows which part differs.
+        Runtime(); ValueType = "UnityEngine.Vector4";
+        if (Accepts((IntPtr)7) || !Refusal.Contains("value UnityEngine.Vector4 at", StringComparison.Ordinal)) throw new Exception("Refusal does not name the layout: " + Refusal);
     }
 }
 }
@@ -499,6 +629,13 @@ struct Color {
     public static Color black => new(0,0,0);
 }
 static class Plugin { internal static Setting Opacity = new(); internal class Setting { public float Value = 1; } }
+static class SmoothShape {
+    public static RuntimeObject Create(RuntimeObject parent,float x,float y,float width,float height,Color fill,float topLeft,float topRight,float bottomLeft,float bottomRight,float line=0,Color? lineColor=null) {
+        if(line!=3||topLeft!=topRight||bottomLeft!=bottomRight||topLeft!=bottomLeft) throw new Exception("Unexpected surface shape");
+        return new RuntimeObject { Fill=fill, Border=lineColor ?? Color.black };
+    }
+    public static void Fill(RuntimeObject shape,Color fill) { shape.Fill=fill; shape.Writes++; }
+}
 class RuntimeObject {
     public Color Fill, Border;
     public int Writes;

@@ -97,8 +97,9 @@ internal static class ModFont
                 {
                     entry.NativeFormat = RuntimeObject.New(RuntimeObject.FindClass("FairyGUI", "TextFormat"));
                     NativeUi.CopyFormat(entry.NativeFormat, format);
-                    // DynamicFont uses pixel strokes, not TMP's normalized SDF material values.
-                    format.SetField("outline", format.Field("outline")!.Value<float>() > 0 ? 1f : 0f);
+                    // DynamicFont uses pixel strokes, not TMP's normalized SDF material values; a dynamic native font's stroke already is one.
+                    var outline = format.Field("outline")!.Value<float>();
+                    format.SetField("outline", isTmp ? (outline > 0 ? 1f : 0f) : outline);
                     format.SetField("faceDilate", 0f);
                     format.SetField("outlineSoftness", 0f);
                     format.SetField("underlaySoftness", 0f);

@@ -35,7 +35,7 @@ internal static partial class FixtureEntry
         var facts = (object[])observation["processes"]; var fact = (System.Collections.Generic.Dictionary<string, object>)facts[0];
         Check(facts.Length == 1 && Convert.ToUInt32(fact["pid"]) == item.Pid && (string)fact["kind"] == kind && (string)fact["querySource"] == (item.Available ? "Native" : "Unavailable") && (int)fact["nativeError"] == item.NativeError && (bool)fact["exitAvailable"] == item.Available && (bool)fact["confirmedExit"] == item.Exited, "safe-stop observation preserves process kind and exact native query failure");
     }
-    private static OrderedDictionary Item(string exe, string name = "Astral Party - Mod", string args = "")
+    private static OrderedDictionary Item(string exe, string name = "Astral Party - BetterAstralParty", string args = "")
     {
         var item = new OrderedDictionary(StringComparer.OrdinalIgnoreCase); item.Add("appid", 0x80000001U); item.Add("AppName", name); item.Add("exe", exe); item.Add("LaunchOptions", args); item.Add("custom", "preserve me"); return item;
     }
@@ -138,6 +138,9 @@ internal static partial class FixtureEntry
         Check(NativeSteamMaintenance.OwnedShortcutKeys(empty, game, out legacy).SequenceEqual(new[] { "0" }) && legacy, "exact 1.3.x launcher shortcut is recognised as the owned legacy entry");
         items.Remove("0"); items.Add("0", Item(exe));
         Check(NativeSteamMaintenance.OwnedShortcutKeys(empty, game, out legacy).Count == 1 && !legacy, "current Mod.cmd shortcut is not legacy");
+        items.Remove("0"); items.Add("0", Item(exe, "Astral Party - Mod"));
+        Check(NativeSteamMaintenance.OwnedShortcutKeys(empty, game, out legacy).SequenceEqual(new[] { "0" }) && legacy, "the former Astral Party - Mod name is owned and marked for renaming");
+        items.Remove("0"); items.Add("0", Item(exe));
         Reject(() => NativeSteamMaintenance.ReadShortcuts(bytes.Concat(new byte[] { 8 }).ToArray()), "trailing binary bytes rejected");
         Reject(() => NativeSteamMaintenance.ReadShortcuts(bytes.Take(bytes.Length - 1).ToArray()), "truncated binary rejected");
         Reject(() => NativeSteamMaintenance.ReadShortcuts(new byte[] { 3, 0, 8 }), "unsupported field type rejected");
@@ -157,6 +160,11 @@ internal static partial class FixtureEntry
             var kept = new List<Exception>();
             Check(!NativeSteamMaintenance.PlanRegister(steam, 11, game, kept.Add) && kept.Count == 0 && !NativeSteamMaintenance.PlanRemove(steam, 11, game, kept.Add)
                 && kept.Count == 1 && kept[0] is SteamProfileUnavailableException { Reason: "SteamShortcutCustomized", Guidance: not null }, "removal keeps a customized Mod entry and reports why");
+            var formerCustom = NativeSteamMaintenance.EmptyShortcuts();
+            ((OrderedDictionary)formerCustom["shortcuts"]!).Add("3", Item("\"" + Path.Combine(game, "BetterAstralParty-Mod.cmd") + "\"", "Astral Party - Mod", "custom"));
+            var formerCustomBytes = NativeSteamMaintenance.WriteShortcuts(formerCustom); File.WriteAllBytes(path, formerCustomBytes);
+            Check(!NativeSteamMaintenance.PlanRegister(steam, 11, game) && NativeSteamMaintenance.Register(steam, 11, game) == null && File.ReadAllBytes(path).SequenceEqual(formerCustomBytes),
+                "a former-name entry with user launch options stays the user's and is neither renamed nor registered twice");
             File.WriteAllBytes(path, original); var backup = path + ".BetterAstralParty-" + new string('a', 32) + ".bak"; File.Move(path, backup);
             Check(NativeSteamMaintenance.PlanRegister(steam, 11, game), "a backup a finished swap kept is not an interruption");
             var temp = path + "." + new string('b', 32) + ".tmp"; File.WriteAllBytes(temp, original); var skipped = new List<Exception>();
@@ -211,6 +219,18 @@ internal static partial class FixtureEntry
         Check(convertedKey.SequenceEqual(new[] { "6" }) && !wasLegacy && (uint)convertedItem["appid"]! == 0x80000001U && (string)convertedItem["custom"]! == (string)Item("x")["custom"]!
             && ((OrderedDictionary)convertedRoot["shortcuts"]!).Count == 2, "legacy shortcut converted in place: same key, app ID and unrelated fields; no duplicate entry");
         Check(!NativeSteamMaintenance.PlanRegister(steam, 11, game) && converted.Backup != null, "converted shortcut is current and the original VDF is backed up");
+        var formerRoot = NativeSteamMaintenance.EmptyShortcuts(); var formerItems = (OrderedDictionary)formerRoot["shortcuts"]!; formerItems.Add("5", Item("unrelated", "Other shortcut"));
+        formerItems.Add("6", Item("\"" + Path.Combine(game, "BetterAstralParty-Mod.cmd") + "\"", "Astral Party - Mod")); var formerBytes = NativeSteamMaintenance.WriteShortcuts(formerRoot); File.WriteAllBytes(path, formerBytes);
+        Check(NativeSteamMaintenance.PlanRemove(steam, 11, game), "removal finds the entry under its former name");
+        var formerShown = new List<string>(); var formerRemoved = NativeSteamMaintenance.Remove(steam, 11, game, formerShown.Add)!;
+        Check(formerShown.Count == 1 && formerShown[0].Contains("Astral Party - Mod") && !NativeSteamMaintenance.PlanRemove(steam, 11, game), "removal names the former-name entry it removed");
+        NativeSteamMaintenance.Rollback(formerRemoved);
+        Check(File.ReadAllBytes(path).SequenceEqual(formerBytes) && NativeSteamMaintenance.PlanRegister(steam, 11, game), "a former-name entry needs renaming");
+        var renamed = NativeSteamMaintenance.Register(steam, 11, game)!; var renamedRoot = NativeSteamMaintenance.ReadShortcuts(File.ReadAllBytes(path)); bool stillLegacy;
+        var renamedKey = NativeSteamMaintenance.OwnedShortcutKeys(renamedRoot, game, out stillLegacy); var renamedItem = (OrderedDictionary)((OrderedDictionary)renamedRoot["shortcuts"]!)[renamedKey[0]]!;
+        Check(renamedKey.SequenceEqual(new[] { "6" }) && !stillLegacy && (string)renamedItem["AppName"]! == "Astral Party - BetterAstralParty" && (uint)renamedItem["appid"]! == 0x80000001U
+            && (string)renamedItem["custom"]! == "preserve me" && ((OrderedDictionary)renamedRoot["shortcuts"]!).Count == 2 && renamed.Backup != null && !NativeSteamMaintenance.PlanRegister(steam, 11, game),
+            "the former-name entry is renamed in place: same key, app ID and fields; no duplicate entry");
         File.WriteAllBytes(path, original);
         var alias = Path.Combine(steam, "inert-linked-shortcuts.vdf");
         if (!CreateHardLinkW(alias, path, IntPtr.Zero)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
@@ -265,7 +285,7 @@ internal static partial class FixtureEntry
         try {
 
             NativeSteamMaintenance.RemainingGrace = TimeSpan.FromMilliseconds(200); NativeSteamMaintenance.RemainingPoll = TimeSpan.FromMilliseconds(10);
-            foreach (var mode in new[] { "closed", "closed-lingering", "closed-remaining", "closed-remaining-recheck", "cancel", "blank", "unavailable" }) {
+            foreach (var mode in new[] { "closed", "closed-no-resume", "closed-lingering", "closed-remaining", "closed-remaining-recheck", "cancel", "blank", "unavailable" }) {
                 var prompts = 0; var closed = false; var shown = new List<string>(); var state = new SteamSessionState(); var lingering = 3; var cleared = false;
                 var helper = new[] { Process(92, "steamwebhelper", Path.Combine(steam, "bin", "steamwebhelper.exe"), session) };
                 NativeSteamMaintenance.SteamStatusObserver = () => new SteamProcessStatus { State = closed ? "Stopped" : "Running" };
@@ -279,6 +299,7 @@ internal static partial class FixtureEntry
                     return "";
                 };
                 if (mode == "closed") { NativeSteamMaintenance.StopSteam(steam, state, consent, shown.Add); Check(prompts == 1 && state.Restart && state.Root != null, "manual Steam exit plus recheck continues and Steam is restarted afterwards"); }
+                else if (mode == "closed-no-resume") { NativeSteamMaintenance.StopSteam(steam, state, consent, shown.Add, resume: false); Check(prompts == 1 && !state.Restart && shown.All(line => !line.Contains("started again")), "uninstall leaves Steam closed and promises no restart"); }
                 else if (mode == "closed-lingering") { NativeSteamMaintenance.StopSteam(steam, state, consent, shown.Add); Check(prompts == 1 && state.Restart, "helpers that exit shortly after Steam are waited for without another prompt"); }
                 else if (mode == "closed-remaining-recheck") { NativeSteamMaintenance.StopSteam(steam, state, consent, shown.Add); Check(prompts == 2 && state.Restart && shown.Any(line => line.Contains("steamwebhelper") && line.Contains("helper processes are still exiting")), "remaining processes are named and r rechecks without restarting the tool"); }
                 else if (mode == "closed-remaining") {

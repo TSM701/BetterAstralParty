@@ -104,6 +104,31 @@ internal static partial class TestCommands
             "if (BapArgumentFixture.RuntimeObject.AcceptsDouble()) throw new System.Exception(\"Missing Double guard accepted\")", pin, allowUnsafe: true);
         RunGeneralFixture(context, Path.Combine(stage, "absent-double-marshaling"), Code(check, absentDoubleInvoke),
             "if (BapArgumentFixture.RuntimeObject.InvokesDouble()) throw new System.Exception(\"Missing Double marshaling accepted\")", pin, allowUnsafe: true);
+        var absentLongCheck = Regex.Replace(check, @"case long:.*?return;", "", RegexOptions.Singleline);
+        var absentLongInvoke = Regex.Replace(invoke, @"case long id:.*?break;", "", RegexOptions.Singleline);
+        Check(absentLongCheck != check && absentLongInvoke != invoke, "Int64 guard and marshaling regression anchors exist");
+        RunGeneralFixture(context, Path.Combine(stage, "absent-long"), Code(absentLongCheck, invoke),
+            "if (BapArgumentFixture.RuntimeObject.AcceptsLong()) throw new System.Exception(\"Missing Int64 guard accepted\")", pin, allowUnsafe: true);
+        RunGeneralFixture(context, Path.Combine(stage, "absent-long-marshaling"), Code(check, absentLongInvoke),
+            "if (BapArgumentFixture.RuntimeObject.InvokesLong()) throw new System.Exception(\"Missing Int64 marshaling accepted\")", pin, allowUnsafe: true);
+        var absentRectCheck = Regex.Replace(check, @"case UnityEngine\.Rect:.*?return;[^\r\n]*", "", RegexOptions.Singleline);
+        var absentRectInvoke = Regex.Replace(invoke, @"case UnityEngine\.Rect region:.*?break;", "", RegexOptions.Singleline);
+        Check(absentRectCheck != check && absentRectInvoke != invoke, "Rect guard and marshaling regression anchors exist");
+        RunGeneralFixture(context, Path.Combine(stage, "absent-rect"), Code(absentRectCheck, invoke),
+            "if (BapArgumentFixture.RuntimeObject.AcceptsRect()) throw new System.Exception(\"Missing Rect guard accepted\")", pin, allowUnsafe: true);
+        RunGeneralFixture(context, Path.Combine(stage, "absent-rect-marshaling"), Code(check, absentRectInvoke),
+            "if (BapArgumentFixture.RuntimeObject.InvokesRect()) throw new System.Exception(\"Missing Rect marshaling accepted\")", pin, allowUnsafe: true);
+        var absentGridCheck = Regex.Replace(check, @"case NullableRect:.*?return;[^\r\n]*", "", RegexOptions.Singleline);
+        var absentGridInvoke = Regex.Replace(invoke, @"case NullableRect grid:.*?break;", "", RegexOptions.Singleline);
+        Check(absentGridCheck != check && absentGridInvoke != invoke, "Nullable<Rect> guard and marshaling regression anchors exist");
+        RunGeneralFixture(context, Path.Combine(stage, "absent-grid"), Code(absentGridCheck, invoke),
+            "if (BapArgumentFixture.RuntimeObject.AcceptsNullableRect()) throw new System.Exception(\"Missing Nullable<Rect> guard accepted\")", pin, allowUnsafe: true);
+        RunGeneralFixture(context, Path.Combine(stage, "absent-grid-marshaling"), Code(check, absentGridInvoke),
+            "if (BapArgumentFixture.RuntimeObject.InvokesNullableRect()) throw new System.Exception(\"Missing Nullable<Rect> marshaling accepted\")", pin, allowUnsafe: true);
+        // The real layout check, against metadata shaped like the runtime's own Nullable<Rect> and against mismatches.
+        var layout = Derive(source, @"(?s)    private static void CheckNullableRect\(.*?\r?\n    \}", "Production Nullable<Rect> layout check");
+        RunGeneralFixture(context, Path.Combine(stage, "nullable-rect-layout"), GeneralNullableRectLayout0.Replace("__CHECK__", layout, StringComparison.Ordinal),
+            "BapNullableRect.RuntimeObject.Run()", pin, allowUnsafe: true);
     }
 
     private static void RuntimeGetters(DevContext context, string stage, Action<string> pin)

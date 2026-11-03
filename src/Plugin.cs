@@ -11,7 +11,7 @@ public sealed class Plugin : BasePlugin
 {
     public const string Guid = "kr.betterastralparty.mod";
     public const string Name = "BetterAstralParty";
-    public const string Version = "1.6.5-dev.3";
+    public const string Version = "1.7.0-dev.27";
     public const int InstallBundleProtocol = 1;
     public const string UpdateProtocol = "5";
     public const string SettingsSchema = "1";
@@ -31,6 +31,7 @@ public sealed class Plugin : BasePlugin
     internal static ConfigEntry<bool> PlayerTab { get; private set; } = null!;
     internal static ConfigEntry<bool> PlayerTabHand { get; private set; } = null!;
     internal static ConfigEntry<bool> PlayerTabRole { get; private set; } = null!;
+    internal static ConfigEntry<bool> PlayerTabSkill { get; private set; } = null!;
     internal static ConfigEntry<bool> CharacterRoles { get; private set; } = null!;
     internal static ConfigEntry<bool> IndicatorFade { get; private set; } = null!;
     internal static ConfigEntry<bool> IndicatorHide { get; private set; } = null!;
@@ -50,6 +51,7 @@ public sealed class Plugin : BasePlugin
     internal static ConfigEntry<bool> CounterAnimation { get; private set; } = null!;
     internal static ConfigEntry<bool> SuppressNotices { get; private set; } = null!;
     internal static ConfigEntry<bool> PingFocus { get; private set; } = null!;
+    internal static ConfigEntry<bool> OldReplays { get; private set; } = null!;
     internal static ConfigEntry<bool> UpdateNotifications { get; private set; } = null!;
     internal static ConfigEntry<bool> AutomaticChecks { get; private set; } = null!;
     internal static ConfigEntry<bool> FinalDamage { get; private set; } = null!;
@@ -63,6 +65,7 @@ public sealed class Plugin : BasePlugin
     internal static ConfigEntry<float> ZoomSensitivity { get; private set; } = null!;
     internal static ConfigEntry<float> IndicatorHideDistance { get; private set; } = null!;
     internal static ConfigEntry<float> ZoomOutLimit { get; private set; } = null!;
+    internal static ConfigEntry<float> FreeCameraSpeed { get; private set; } = null!;
     internal static BepInEx.Configuration.ConfigFile Settings { get; private set; } = null!;
 
     // Every setting back to its first-install value. A few defaults were derived at bind time from older
@@ -198,9 +201,10 @@ public sealed class Plugin : BasePlugin
         ShushuShieldRestrictions = Config.Bind("화면", "슈슈 쉴드 방어 제한", ShushuShield.Value, "[설정 창: 슈슈 쉴드 방어 잠금 / Settings: Shiyu-Shiyu Shield Defend Lock] 쉴드가 있는 내가 방어자이면 방어 버튼·방어 카드를 잠급니다. / Locks Defend and defense cards when you are the shielded defender.");
         AutoThanks = Config.Bind("편의", "자동 감사합니다", true, "[설정 창: 감사합니다 자동 전송 / Settings: Auto Thanks] 게임 기본 감사합니다 추천을 추천마다 한 번 전송합니다. / Confirm each native Thanks recommendation at most once.");
         CharacterGuide = Config.Bind("화면", "캐릭터 준비 설명", true, "[설정 창: 준비 화면 스킬 설명 / Settings: Skill Info in Preparation] 준비 화면의 초상화 호버에 공개 스킬·잠재력 설명을 표시합니다. / Public character skill and potential descriptions on preparation portraits.");
-        PlayerTab = Config.Bind("화면", "플레이어 목록 탭", true, "[설정 창: 플레이어 목록 탭 / Settings: Player List Tab] 필드 플레이어 목록 바 아래 탭에 손패 장수와 역할을 표시합니다. / Shows hand counts and roles in a tab under the field player list bars.");
+        PlayerTab = Config.Bind("화면", "플레이어 목록 탭", true, "[설정 창: 플레이어 목록 탭 / Settings: Player List Tab] 필드 플레이어 목록 바 아래 탭에 손패 장수·역할·스킬 쿨타임을 표시합니다. / Shows hand counts, roles and skill cooldowns in a tab under the field player list bars.");
         PlayerTabHand = Config.Bind("화면", "플레이어 목록 탭 손패 장수", true, "[설정 창: 플레이어 목록 탭 > 손패 장수 / Settings: Player List Tab > Hand Count] 플레이어마다 공개 손패 장수를 표시합니다. / Shows each player's public hand count.");
         PlayerTabRole = Config.Bind("화면", "플레이어 목록 탭 역할", true, "[설정 창: 플레이어 목록 탭 > 역할 / Settings: Player List Tab > Role] 게임 내부 분류로 캐릭터 역할을 표시합니다. / Shows the character's internal role classification.");
+        PlayerTabSkill = Config.Bind("화면", "플레이어 목록 탭 스킬 쿨타임", true, "[설정 창: 플레이어 목록 탭 > 스킬 쿨타임 / Settings: Player List Tab > Skill Cooldown] 액티브 스킬의 남은 턴/전체 턴을 표시합니다. / Shows each active skill's turns left/total.");
         CharacterRoles = Config.Bind("화면", "캐릭터 역할 표시", true, "[설정 창: 역할 표시 / Settings: Role Labels] 게임 내부 분류로 캐릭터 역할을 표시합니다. / Shows characters' internal role classifications.");
         IndicatorFade = Config.Bind("화면", "줌 아웃 인디케이터 반투명", true, "[설정 창: 줌 아웃 시 반투명 / Settings: Fade When Zoomed Out] 필드 줌 아웃 시 플레이어·몬스터 인디케이터를 반투명하게 합니다. / Fade field player/monster indicators when zoomed out.");
         IndicatorHide = Config.Bind("화면", "원거리 인디케이터 숨김", true, "[설정 창: 멀면 숨기기 / Settings: Hide When Far] 멀리 줌 아웃하면 필드 인디케이터를 숨기고 확대하면 다시 표시합니다. / Hides far-zoom field indicators and restores them when zooming in.");
@@ -220,6 +224,7 @@ public sealed class Plugin : BasePlugin
         CounterAnimation = Config.Bind("화면", "반격 표시 애니메이션", true, "[설정 창: 반격 아이콘 > 애니메이션 / Settings: Counter Icons > Animation] 반격 아이콘을 애니메이션으로 표시합니다. OFF는 정적인 아이콘입니다. / Animates counter icons; OFF shows static icons.");
         SuppressNotices = Config.Bind("편의", "시작 공지 자동 열기 방지", true, "[설정 창: 시작 공지 끄기 / Settings: Skip Startup Notice] 로그인 공지가 자동으로 열리지 않게 합니다. / Prevents login notices from opening automatically.");
         PingFocus = Config.Bind("편의", "창 전환 후 핑 모드 해제", true, "[설정 창: Alt+Tab 핑 모드 해제 / Settings: Clear Ping Mode on Alt+Tab] Alt+Tab 후 남은 핑 선택 모드를 전송 없이 해제합니다. / Cancel lingering ping mode after task switching without sending a ping.");
+        OldReplays = Config.Bind("실험", "구버전 리플레이 재생", false, "[설정 창: 구버전 리플레이 재생 / Settings: Old Version Replays] 전적의 버전이 다른 리플레이도 재생 버튼을 켭니다. 규칙이 달라 도중에 멈추거나 화면이 틀릴 수 있습니다. / Enables the play button for replays from other game versions; they may stop midway or show wrong results.");
         UpdateNotifications = Config.Bind("업데이트", "업데이트 알림 팝업", true, "새 버전 알림과 변경 내역을 표시합니다. / Shows new-version alerts and release notes.");
         AutomaticChecks = Config.Bind("업데이트", "자동 업데이트 확인", true, "주기적으로 새 버전을 확인합니다. / Periodically checks for new versions.");
         FieldBuffs = Config.Bind("화면", "필드 버프 표시", true, "[설정 창: 플레이어 인디케이터 / Settings: Player Indicators] 필드 플레이어의 이름·HP·공개 효과를 표시합니다. 아이콘을 클릭하면 효과 설명을 엽니다. / Shows field player names, HP and public effects. Click an icon for effect details.");
@@ -285,6 +290,9 @@ public sealed class Plugin : BasePlugin
         ZoomOutLimit = Config.Bind("화면", "최대 줌 아웃", 1f, new ConfigDescription(
             "[설정 창: 최대 줌 아웃 / Settings: Max Zoom-Out] 휠로 멀어질 수 있는 최대 거리입니다. 100%는 필드 전체가 보이는 거리입니다. / How far the wheel can zoom out; 100% shows the whole field.",
             new AcceptableValueRange<float>(0f, 1f)));
+        FreeCameraSpeed = Config.Bind("화면", "자유 시점 WASD 속도", 1f, new ConfigDescription(
+            "[설정 창: WASD 속도 / Settings: WASD Speed] WASD로 자유 시점을 움직이는 속도입니다. 100%가 기본입니다. / How fast WASD moves the Free Camera; 100% is the default.",
+            new AcceptableValueRange<float>(0.1f, 3f)));
         SettingsAutoKeep = Config.Bind("일반", "설정 자동 보관", true,
             "[설정 창: 자동 보관 / Settings: Automatic Backup] 설정을 바꿀 때마다 사용자 폴더에 보관합니다. / Backs up settings to the user folder whenever they change.");
         MuteUnfocused = Config.Bind("환경", "비활성 창 음소거", true,
@@ -305,6 +313,7 @@ public sealed class Plugin : BasePlugin
                 $"mod={Version}; runtime={Environment.Version}; loader=ON; executable={Path.GetFileName(Environment.ProcessPath)}");
             MinimalDiagnostics?.SetDetailed(DiagnosticLogging.Value);
             RecordSettings();
+            if (Diagnostics.IsRecording) StallWatch.Start();
             if (Diagnostics.IsRecording && !crashScanStarted)
             {
                 crashScanStarted = true;
@@ -353,6 +362,7 @@ public sealed class Plugin : BasePlugin
         LoadStage(DiagnosticPhase.PatchRegistration);
         Diagnostics.Write("patches begin");
         PatchFeature("Notices", typeof(StartupNoticePatch), typeof(LauncherNoticePatch));
+        UnityLogTap.Register();
         Diagnostics.Write("patches complete");
         DiagnosticHub.Stage(DiagnosticFeature.Loader, DiagnosticPhase.PatchRegistration, Compatibility.Allowed("CoreUi") && Compatibility.Allowed("Notices") ? DiagnosticOutcome.Completed : DiagnosticOutcome.Partial);
         StartupGuard.Stage("Patches", Compatibility.Allowed("CoreUi") && Compatibility.Allowed("Notices") ? "Completed" : "Partial");
@@ -424,7 +434,7 @@ public sealed class Plugin : BasePlugin
          Diagnostics.State("settings",
         FormattableString.Invariant($"advice={Enabled.Value}; details={ShowDetails.Value}; koMinimum={KoMinimum.Value}; names={UseRealNames.Value}; cardPopups={CardPopups.Value}; battleStatus={BattleStatus.Value}; shushuShield={ShushuShield.Value}; fieldBuffs={FieldBuffs.Value}; fieldZoom={FieldZoom.Value}; matchFocus={MatchFocus.Value}; muteUnfocused={MuteUnfocused.Value}; inputAttention={InputAttention.Value}; scale={UiScale.Value:F2}; opacity={Opacity.Value:F2}"));
         Diagnostics.State("settings.features",
-            FormattableString.Invariant($"autoThanks={AutoThanks.Value}; characterGuide={CharacterGuide.Value}; characterRoles={CharacterRoles.Value}; indicatorFade={IndicatorFade.Value}; indicatorHide={IndicatorHide.Value}; diceLock={DiceLock.Value}; counterSound={CounterSound.Value}; counterAnimation={CounterAnimation.Value}; suppressNotices={SuppressNotices.Value}; pingFocus={PingFocus.Value}; updateNotifications={UpdateNotifications.Value}; automaticChecks={AutomaticChecks.Value}; shushuShieldRestrictions={ShushuShieldRestrictions.Value}; finalDamage={FinalDamage.Value}; encounterAdvice={EncounterAdvice.Value}; defenseAdvice={DefenseAdvice.Value}; cardAdvice={CardAdvice.Value}; shootingStar={ShootingStarShow.Value}; koCardPreview={KoCardPreview.Value}; koSpectator={KoSpectator.Value}; statusHand={StatusHand.Value}; statusEffects={StatusEffects.Value}; counterIcons={CounterIcons.Value}; shushuMaster={ShushuMaster.Value}; playerTab={PlayerTab.Value}; playerTabHand={PlayerTabHand.Value}; playerTabRole={PlayerTabRole.Value}"));
+            FormattableString.Invariant($"autoThanks={AutoThanks.Value}; characterGuide={CharacterGuide.Value}; characterRoles={CharacterRoles.Value}; indicatorFade={IndicatorFade.Value}; indicatorHide={IndicatorHide.Value}; diceLock={DiceLock.Value}; counterSound={CounterSound.Value}; counterAnimation={CounterAnimation.Value}; suppressNotices={SuppressNotices.Value}; pingFocus={PingFocus.Value}; oldReplays={OldReplays.Value}; updateNotifications={UpdateNotifications.Value}; automaticChecks={AutomaticChecks.Value}; shushuShieldRestrictions={ShushuShieldRestrictions.Value}; finalDamage={FinalDamage.Value}; encounterAdvice={EncounterAdvice.Value}; defenseAdvice={DefenseAdvice.Value}; cardAdvice={CardAdvice.Value}; shootingStar={ShootingStarShow.Value}; koCardPreview={KoCardPreview.Value}; koSpectator={KoSpectator.Value}; statusHand={StatusHand.Value}; statusEffects={StatusEffects.Value}; counterIcons={CounterIcons.Value}; shushuMaster={ShushuMaster.Value}; playerTab={PlayerTab.Value}; playerTabHand={PlayerTabHand.Value}; playerTabRole={PlayerTabRole.Value}; playerTabSkill={PlayerTabSkill.Value}"));
     }
 
     private static ReleaseUpdateResult? _diagnosticRelease;

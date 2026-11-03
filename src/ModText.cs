@@ -133,8 +133,7 @@ internal static class ModText
         Revision++;
     }
     internal static string NextMode => Mode switch { "Auto" => "한국어", "한국어" => "English", _ => "Auto" };
-    internal static string LanguageTitle => Text("언어") + ": " + (Mode == "Auto"
-        ? Text("자동") + (Korean ? " (한국어)" : " (EN)") : Mode);
+    internal static string LanguageState => Mode == "Auto" ? Text("자동") + (Korean ? " (한국어)" : " (EN)") : Mode;
     private static readonly Dictionary<string, string> English = new(StringComparer.Ordinal)
     {
         ["새 업데이트"] = "New Update",
@@ -201,7 +200,6 @@ internal static class ModText
         ["피해 숫자를 보여주지 않습니다."] = "Shows no damage number.",
         ["공지가 자동으로 열립니다."] = "Login notices open automatically.",
         ["업데이트 확인을 눌렀을 때만 찾습니다."] = "Checks only when you press Check Updates.",
-        ["팝업을 띄우지 않습니다."] = "Shows no pop-up.",
         ["자동으로 받지 않습니다."] = "Downloads nothing automatically.",
         ["자동으로 적용하지 않습니다."] = "Applies nothing automatically.",
         ["슈슈 쉴드 방어 잠금"] = "Shiyu-Shiyu Shield Defend Lock",
@@ -209,7 +207,11 @@ internal static class ModText
         ["역할 표시"] = "Role Labels",
         ["역할"] = "Role",
         ["플레이어 목록 탭"] = "Player List Tab",
-        ["필드 플레이어 목록 바 아래에\n손패 장수와 역할을 보여줍니다."] = "Shows hand counts and roles\nunder the field player list bars.",
+        ["필드 플레이어 목록 바 아래에\n손패 장수·역할·스킬 쿨타임을 보여줍니다."] = "Shows hand counts, roles and skill\ncooldowns under the field player list bars.",
+        ["스킬 쿨타임"] = "Skill Cooldown",
+        ["액티브 스킬의 남은 턴/전체 턴을\n보여줍니다."] = "Shows the active skill's\nturns left/total.",
+        ["스킬 쿨타임을 보여주지 않습니다."] = "Skill cooldowns are hidden.",
+        ["스킬 쿨타임: 남은 턴/전체 턴"] = "Skill cooldown: turns left/total",
         ["탭을 보여주지 않습니다."] = "The tab is hidden.",
         ["필드 플레이어 목록"] = "Field player list",
         ["플레이어마다 공개 손패 장수를\n보여줍니다."] = "Shows each player's public\nhand count.",
@@ -237,7 +239,9 @@ internal static class ModText
         ["공개된 최종 수치로\n계산한 피해를 보여줍니다."] = "Shows damage calculated\nfrom the revealed final totals.",
         ["공지가 자동으로 열리지 않습니다."] = "Login notices do not open automatically.",
         ["따로 누르지 않아도\n새 버전을 찾습니다."] = "Checks for new versions\nwithout pressing Check Updates.",
-        ["새 버전과 변경 내역을\n팝업으로 알려줍니다."] = "Shows new versions and\nrelease notes in a pop-up.",
+        ["새 버전이 나오면 홈 화면 위쪽에\n잠깐 알림을 띄웁니다.\n누르면 변경 내역이 열립니다."] = "Briefly shows a notice at the top of\nthe home screen for a new version.\nClick it to see the release notes.",
+        ["알림을 띄우지 않고\n모드 설정 버튼에만 표시합니다."] = "Shows no notice, only a mark\non the Mod Settings button.",
+        ["새 버전이 나왔습니다 · 눌러서 변경 내역 보기"] = "A new version is out · Click to see what's new",
         ["새 버전을 자동으로 받습니다.\n서명이 확인된 버전만 받습니다."] = "Downloads new versions automatically.\nOnly versions with a verified signature.",
         ["받은 업데이트를 바로 적용하고\n다음 실행부터 새 버전을 사용합니다."] = "Applies downloaded updates and\nruns the new version from the next launch.",
         ["선택한 채널의 검증된 업데이트를 받습니다.\n비공개 베타만 토큰 인증이 필요합니다."] = "Downloads verified updates for the selected channel.\nOnly Private Beta needs a token.",
@@ -280,6 +284,8 @@ internal static class ModText
         ["줌 감도"] = "Zoom Sensitivity",
         ["숨김 거리"] = "Hide Distance",
         ["최대 줌 아웃"] = "Max Zoom-Out",
+        ["WASD 속도"] = "WASD Speed",
+        ["WASD로 자유 시점을 움직이는 속도입니다."] = "How fast WASD moves the Free Camera.",
         ["휠 한 칸에 확대·축소되는 양입니다."] = "How far one wheel tick zooms.",
         ["휠로 멀어질 수 있는 최대 거리입니다.\n100%는 필드 전체가 보이는 거리입니다."] = "How far the wheel can zoom out.\n100% shows the whole field.",
         ["인디케이터가 숨는 줌 아웃 거리입니다.\n값이 작을수록 더 일찍 숨습니다."] = "Zoom-out distance at which indicators hide.\nLower values hide them sooner.",
@@ -339,9 +345,16 @@ internal static class ModText
         ["PvE 매칭·방 시작"] = "PvE match or room start",
         ["로그인 직후"] = "Right after login",
         ["모드 업데이트"] = "Mod updates",
+        ["홈 화면"] = "Home screen",
+        ["사용 불가 미리보기 · Ctrl+Shift+F10으로 복구"] = "Unavailable preview · Ctrl+Shift+F10 restores",
         ["내 PC"] = "This PC",
         ["캐릭터"] = "Characters",
         ["편의 기능"] = "Convenience",
+        ["실험 기능"] = "Experimental",
+        ["구버전 리플레이 재생"] = "Old Version Replays",
+        ["버전이 다른 리플레이도 재생합니다.\n지금 게임과 규칙이 달라 도중에\n멈추거나 화면이 틀릴 수 있습니다."] = "Plays replays from other game versions.\nThe rules have changed since, so they may\nstop midway or show the wrong outcome.",
+        ["버전이 다른 리플레이는\n게임 기본처럼 재생하지 않습니다."] = "Replays from other versions stay\nunplayable, as in the base game.",
+        ["전적 리플레이"] = "Match record replays",
         ["화면·언어"] = "Display / Language",
         ["알림·소리"] = "Alerts / Audio",
         ["업데이트"] = "Updates",
@@ -375,7 +388,7 @@ internal static class ModText
         ["진단 ZIP 생성 실패"] = "ZIP Failed",
         ["진단 폴더 열기 실패"] = "Could Not Open Folder",
         ["진단 ZIP이 저장된 폴더를 엽니다."] = "Opens the folder containing diagnostics ZIPs.",
-        ["진단 로그를 ZIP으로 모읍니다.\n공유 전 개인정보를 확인하세요."] = "Collects diagnostic logs into a ZIP.\nReview personal information before sharing.",
+        ["진단 로그를 ZIP으로 모읍니다."] = "Collects diagnostic logs into a ZIP.",
         ["백그라운드 음소거"] = "Mute in Background",
         ["입력 대기 알림"] = "Input Alert",
         ["작업표시줄"] = "Taskbar",
@@ -451,6 +464,12 @@ internal static class ModText
         ["스타라이트"] = "Starlight",
         ["피해"] = "DMG",
         ["스크롤바에 마우스를 올리면 카테고리 이름이 모두 보이고,\n점이나 이름을 누르면 그 카테고리로 이동합니다."] = "Hover the scroll bar to see every category;\nclick a dot or name to jump there.",
+        ["설정 검색"] = "Search Settings",
+        ["이름·설명·위치 태그에서 찾습니다.\n이름 밖에서 찾은 설정은\n이름 아래에 그 이유가 나옵니다."] = "Finds settings by name, description\nor location tag. A setting found outside\nits name shows why under it.",
+        ["검색 지우기"] = "Clear Search",
+        ["검색어를 지우고\n전체 목록으로 돌아갑니다."] = "Clears the search and\nreturns to the full list.",
+        ["이름·설명·위치로 찾기"] = "Search names, descriptions, places",
+        ["이름·설명·위치 글자로 찾습니다"] = "Searches names, descriptions and places",
         ["계산 미반영"] = "Not in calculations",
         ["이 효과는 아직 모드 계산에 들어가지 않습니다. 위 조건은 이 효과를 빼고 계산해서 실제 결과와 다를 수 있습니다."] = "These effects are not part of the mod's calculation yet. The conditions above leave them out, so the actual result can differ.",
         ["정보 부족"] = "Unknown",
@@ -494,6 +513,10 @@ internal static class ModText
     };
     private static readonly Regex Phrases = new(string.Join("|",
         English.Keys.OrderByDescending(k => k.Length).Select(Regex.Escape)), RegexOptions.CultureInvariant);
+    internal static string SearchCount(int count) =>
+        count.ToString(System.Globalization.CultureInfo.InvariantCulture) + (Korean ? "개" : " found");
+    internal static string SearchEmpty(string query) => Korean ? $"‘{query}’에 맞는 설정이 없습니다" : $"No settings match ‘{query}’";
+
     internal static string Text(string text)
     {
         if (Korean || text.Length == 0) return text;
@@ -603,6 +626,24 @@ internal static class ModText
         ? (Korean ? "전환 대상 " : "Switch target ") + target.Version : UpdateStatus(result.Status);
     // The player's own clock, minutes only: checks run hours apart.
     internal static string LocalTime(DateTimeOffset time) => time.ToLocalTime().ToString("MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+    // The settings update row's pills: the check result and when it ran (today: time only). After a failed check the last
+    // good result stays (Stale), so the first pill names the failure and the second the result it still shows.
+    internal static (string First, string? Second) CheckPills(ReleaseUpdateResult result, DateTimeOffset now)
+    {
+        if (result.CheckedAt is not { } time) return (CheckStatus(result), null);
+        var local = time.ToLocalTime();
+        var clock = local.Date == now.ToLocalTime().Date ? local.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture) : LocalTime(time);
+        if (result.Status == ReleaseUpdateStatus.Stale)
+        {
+            var earlier = UpdateStatus(result.Release == null ? ReleaseUpdateStatus.UpToDate : ReleaseUpdateStatus.Available);
+            return (UpdateStatus(result.Failure ?? ReleaseUpdateStatus.Failed), Korean ? clock + " 기준 " + earlier : earlier + " as of " + clock);
+        }
+        return (CheckStatus(result), Korean ? clock + " 확인" : "checked " + clock);
+    }
+    // The channel switch row's first pill: the installed channel and version.
+    internal static string InstalledPill(string channel, string version) => ChannelName(channel) + " " + version;
+    internal static string CapsuleLabel(bool check, bool confirmable, bool waiting) => check ? Korean ? "다시 확인" : "Check Again"
+        : confirmable ? Korean ? "전환" : "Switch" : waiting ? Korean ? "대기" : "Waiting" : Korean ? "확인 중" : "Checking";
     internal static string UpdateDetails(ReleaseUpdateResult result, string current)
     {
         var body = Text("현재 버전") + ": " + current + "\n" + CheckStatus(result);

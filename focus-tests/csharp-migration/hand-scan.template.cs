@@ -12,13 +12,13 @@ sealed class RuntimeObject {
     static int next;
     public IntPtr Pointer=(IntPtr)(++next);
     public bool Visible=true;
-    public static int Scans, Map=9;
+    public static int Scans, Map=9, Step=3;
     public static bool Watcher;
     public static IntPtr FindClass(string ns,string name)=>(IntPtr)1;
     public static RuntimeObject Shared=new();
     public static RuntimeObject StaticField(IntPtr type,string name){Scans++;return Shared;}
     public RuntimeObject Get(string name)=>this;
-    public T Get<T>(string name)=>(T)(name=="MapType"?(object)Map:0f);
+    public T Get<T>(string name)=>(T)(name=="MapType"?(object)Map:name=="selectedIndex"?(object)Step:0f);
     public RuntimeObject Field(string name)=>this;
     public RuntimeObject Call(string name)=>this;
     public T Value<T>()=>(T)(object)Watcher;
@@ -54,6 +54,14 @@ __PREFIX__
             Assert(Layouts==0 && RuntimeObject.Scans>=49 && RuntimeObject.Scans<=50);
             Console.WriteLine($"Hand search {reason}: {RuntimeObject.Scans} scans / 3000 frames (production prefix, substitute).");
         }
+        // The fight window's opening (step 0) and its encounter screen (1) keep the field hand; a fight step releases it.
+        foreach(var step in new[]{0,1}){
+            Clear(); Layouts=0; GameUi.Fight=true; RuntimeObject.Step=step; RuntimeObject.Watcher=false; RuntimeObject.Map=9; GameUi.Panel=new();
+            Time.unscaledTime+=1; Update(); Assert(_ui==GameUi.Panel && Layouts>0);
+            RuntimeObject.Step=2; Time.unscaledTime+=.21f; Update(); Assert(_ui==null);
+        }
+        Console.WriteLine("PASS: encounter screen and window opening keep the field hand; fight steps release it.");
+        RuntimeObject.Step=3;
         Clear(); GameUi.Fight=false; RuntimeObject.Watcher=false; RuntimeObject.Map=9; GameUi.Panel=null;
         Time.unscaledTime=20;Update(); GameUi.Panel=new();
         Time.unscaledTime=20.1f;Update(); Assert(_ui==null);

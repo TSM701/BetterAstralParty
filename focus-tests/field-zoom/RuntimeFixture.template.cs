@@ -109,7 +109,7 @@ sealed class RuntimeObject {
     public T Get<T>(string key)=>key is "Duration" or "TimeInBlend"?throw new Exception("Native blend times are fields, not getters"):key=="draggable"?(T)(object)(Data.GetValueOrDefault(key) is true):(T)Data[key];
     public RuntimeObject? Field(string key)=>key=="CamB"?Data.GetValueOrDefault(key) as RuntimeObject:Get(key);
     public T Field<T>(string key)=>key is "Duration" or "TimeInBlend"?(T)Data[key]:Get<T>(key); public T Value<T>()=>Get<T>("value");
-    public void SetField<T>(string key,T value) where T:unmanaged { if(key!="m_FollowOffset")throw new Exception("Forbidden field write"); if(Dead)throw new Exception("Disposed write"); Data[key]=value;Writes++; }
+    public void SetField<T>(string key,T value) where T:unmanaged { if(key!="m_FollowOffset"&&key!="CameraSpeed")throw new Exception("Forbidden field write"); if(Dead)throw new Exception("Disposed write"); Data[key]=value;Writes++; }
     static RuntimeObject Box(object value)=>new(){Data=new(){{"value",value}}};
     public static IntPtr FindClass(string ns,string name) { var key=ns+"."+name; if(!Classes.TryGetValue(key,out var p))Classes[key]=p=(IntPtr)(++next);return p; }
     public static RuntimeObject? StaticField(IntPtr type,string key){
@@ -166,7 +166,7 @@ static class FieldFreeCamera {
     public static void Clear(){ClearAttempts++;if(ClearFailures>0){ClearFailures--;throw new CleanupFailure();}Holding=false;Camera=null;}
 }
 static class VisibleCombatAdvisor { public static bool IsPve(int map)=>map==2; }
-static class Plugin { public static Setting FieldZoom=new(); public static readonly FloatSetting ZoomSensitivity=new(), ZoomOutLimit=new(); public static readonly Diagnostics Diagnostics=new(); public sealed class Setting {public bool Value=true;} public sealed class FloatSetting {public float Value=1f;} }
+static class Plugin { public static Setting FieldZoom=new(); public static readonly FloatSetting ZoomSensitivity=new(), ZoomOutLimit=new(), FreeCameraSpeed=new(); public static readonly Diagnostics Diagnostics=new(); public sealed class Setting {public bool Value=true;} public sealed class FloatSetting {public float Value=1f;} }
 sealed class Diagnostics {
     public readonly List<string> States=new();
     public bool IsRecording; public readonly List<string> Geometry=new();
@@ -231,11 +231,11 @@ public static class Check {
         public RuntimeObject Follow=Obj(("position",new Vector3()));
         public RuntimeObject Camera=Obj(("enabled",true),("orthographic",false),("usePhysicalProperties",false),("lensShift",new Vector2()),
             ("fieldOfView",90f),("aspect",16f/9),("nearClipPlane",.1f),("farClipPlane",1000f));
-        public RuntimeObject Active,Brain,Frames,Blend,Free=Obj(("status",Obj(("value",0)))),SceneObject,Land=new();
+        public RuntimeObject Active,Brain,Frames,Blend,Free=Obj(("status",Obj(("value",0))),("CameraSpeed",60f)),SceneObject,Land=new();
         public RuntimeObject WindowStack=Obj(("Count",0));
         public RuntimeObject Attributes=new(),PlayerAttributes=new(),BattleUi;
         public Scene(bool clear=true){
-            if(clear)FieldZoomUi.Clear(); Compatibility.Reset(); GameUi.FightWindowPresent=GameUi.EncounterHidden=false;GameUi.SettingsWindow=null; PvpSafety.Suspended=false; ModUi.IsOpen=false; Plugin.FieldZoom.Value=true;
+            if(clear)FieldZoomUi.Clear(); Compatibility.Reset(); GameUi.FightWindowPresent=GameUi.EncounterHidden=false;GameUi.SettingsWindow=null; PvpSafety.Suspended=false; ModUi.IsOpen=false; Plugin.FieldZoom.Value=true; Plugin.FreeCameraSpeed.Value=1f;
             Input.Buttons=new bool[3];Input.Down=new bool[3];Input.Up=new bool[3];Input.touchCount=0;Input.mouseScrollDelta=new();Application.isFocused=true;RuntimeObject.OnUi=false;RuntimeObject.Dragging=false;Time.unscaledTime=0;Time.unscaledDeltaTime=1f/60;
             GameUi.Path.Clear();GameUi.CachedPath.Clear();GameUi.FreshReads=GameUi.CachedReads=0;
             Plugin.Diagnostics.States.Clear();Plugin.Diagnostics.Geometry.Clear();Plugin.Diagnostics.IsRecording=false;
@@ -766,6 +766,20 @@ public static class Check {
         }
     }
     public static int OutwardRecoveryCases;
+    // WASD Speed scales the native free camera's CameraSpeed only while the feature runs; camera resets keep it.
+    static void WasdSpeed(){
+        float Speed(Scene scene)=>scene.Free.Field<float>("CameraSpeed");
+        var s=new Scene();FieldZoomUi.Tick();Assert(Speed(s)==60&&s.Free.Writes==0);
+        Plugin.FreeCameraSpeed.Value=2;FieldZoomUi.Tick();Assert(Speed(s)==120);
+        Plugin.FreeCameraSpeed.Value=.5f;FieldZoomUi.Tick();Assert(Speed(s)==30);
+        s.Active.TypeName="Other";FieldZoomUi.Tick();Assert(Speed(s)==30);s.Active.TypeName="CinemachineVirtualCamera";
+        Plugin.FieldZoom.Value=false;FieldZoomUi.Tick();Assert(Speed(s)==60);
+        Plugin.FieldZoom.Value=true;FieldZoomUi.Tick();Assert(Speed(s)==30);
+        PvpSafety.Suspended=true;FieldZoomUi.Tick();Assert(Speed(s)==60);PvpSafety.Suspended=false;
+        FieldZoomUi.Tick();Assert(Speed(s)==30);
+        s.Free.Dead=true;FieldZoomUi.Tick();Assert(Speed(s)==30);
+        Plugin.FreeCameraSpeed.Value=1f;
+    }
     static void AlreadyOutwardRecovery(){
         FieldCameraReturnUi.Available=true;
         foreach(var local in new[]{false,true})foreach(var interruption in new[]{"encounter","focus","both"}){
@@ -939,7 +953,7 @@ public static class Check {
         GameUi.Path.AddRange(new[]{new RuntimeObject{TypeName="UICom_AttrInfo"},s.Attributes});
         Input.Buttons[0]=Input.Down[0]=RuntimeObject.OnUi=true;FieldZoomUi.Tick();
         Assert(FieldFreeCamera.PanAllowed&&FieldFreeCamera.PanIndicator);
-        IndicatorWheel();WheelUi();HiddenEncounter();Assert(HiddenEncounterCases==2);PanUi();PresentationAndFrames();TurnTransitions();BlendLifetime();BranchGeometryAndOpacity();FocusAndEncounterRecovery();
+        IndicatorWheel();WheelUi();HiddenEncounter();Assert(HiddenEncounterCases==2);PanUi();PresentationAndFrames();TurnTransitions();BlendLifetime();BranchGeometryAndOpacity();FocusAndEncounterRecovery();WasdSpeed();
         foreach(var cancel in new Action<Scene>[]{a=>Application.isFocused=false,a=>ModUi.IsOpen=true,a=>a.Root.Data["modalWaiting"]=true,a=>RuntimeObject.Dragging=true,a=>Input.touchCount=1,a=>FieldCameraReturnUi.ConsumedInput=true}){
             s=new Scene();s.Wheel(1);Input.Buttons[0]=true;cancel(s);FieldZoomUi.Tick();
             Assert(!FieldFreeCamera.PanAllowed&&FieldFreeCamera.Holding&&FieldCameraReturnUi.Visible);

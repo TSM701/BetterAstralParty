@@ -704,8 +704,8 @@ internal static class ReleaseUpdateCheck
         foreach (var language in new[] { "한국어", "English" })
         {
             ModText.Select(language);
-            var label = ModText.Text("모드 설정") + " · " + ModText.Text("새 버전");
-            Check(language != "English" || !label.Any(c => c is >= '\uac00' and <= '\ud7a3'), "automatic home title localized");
+            var label = ModText.Text("새 버전이 나왔습니다 · 눌러서 변경 내역 보기") + ModText.Text("새 버전");
+            Check(language != "English" || !label.Any(c => c is >= '\uac00' and <= '\ud7a3'), "home new-version toast and tooltip localized");
         }
     }
     // Safe mode stays on one screen, so the home-entry trigger fires once. With RepeatEvery it asks again after a failure

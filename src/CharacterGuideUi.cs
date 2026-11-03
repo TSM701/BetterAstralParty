@@ -379,7 +379,7 @@ internal static class CharacterGuideUi
         _popup = NativeUi.Component(root, 620, 650); _popup.Set("sortingOrder", 29000);
         _popup.Set("opaque", true);
         var surface = new NativeUi.Surface(_popup, 620, 650, fixedOpacity: true);
-        surface.Graph.Set("color", new Color(0.16f, 0.18f, 0.22f));
+        SmoothShape.Fill(surface.Graph, new Color(0.16f, 0.18f, 0.22f));
         var view = NativeUi.Component(_popup, 588, 618); view.Call("SetXY", 16f, 16f); view.Call("SetupOverflow", 1);
         _content = NativeUi.Component(view, 588, 618);
         var y = 0f;

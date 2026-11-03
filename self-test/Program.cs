@@ -3,6 +3,7 @@ if (args.Contains("--settings-only"))
 {
     LanguageCheck.Run();
     ResolutionCheck.Run();
+    SettingsSearchCheck.Run();
     return;
 }
 if (args.Contains("--release-updates-only"))
@@ -232,7 +233,7 @@ Console.WriteLine("162개 입력에서 문자열 생략 경로의 피해·전투
 
 foreach (var action in new[] { "Enabled", "Details", "CardPopups", "BattleStatus", "FieldBuffs", "Names", "Diagnostics", "MuteUnfocused", "InputAttention" })
 {
-    // Top switches are 480 wide; child switches in a parent's tray are ChildWidth (draft A, 2026-10-22).
+    // Top rows are 480 wide; option rows in a parent's tray are ChildWidth (settings remake, 2026-11-01).
     if (MenuLayout.ToggleWidth(action) != (MenuLayout.Parent(action) == null ? 480 : MenuLayout.ChildWidth) || MenuLayout.ToggleHeight != 60)
         throw new Exception("토글 고정 크기 규칙 변경");
     var x = 440;
@@ -242,7 +243,8 @@ foreach (var action in new[] { "Enabled", "Details", "CardPopups", "BattleStatus
 for (var row = 0; row < 7; row++)
     if (MenuLayout.ToggleY(row) + MenuLayout.ToggleHeight > MenuLayout.ToggleY(row + 1))
         throw new Exception("기능 토글 간격 침범");
-if (MenuLayout.Height != 760 || MenuLayout.NativeFrameHeight != 620 || MenuLayout.SettingsY + MenuLayout.SettingsHeight >= MenuLayout.FooterY
+if (MenuLayout.Height != 810 || MenuLayout.SettingsY + MenuLayout.SettingsHeight >= MenuLayout.FooterY
+    || MenuLayout.SearchY + MenuLayout.SearchHeight + 8 > MenuLayout.SettingsY || MenuLayout.SearchY < MenuLayout.HelpY - 5
     || MenuLayout.FooterY + 80 > MenuLayout.Height - 20 || MenuLayout.ContentHeight(0) != MenuLayout.SettingsHeight)
     throw new Exception("Settings viewport/footer must fit the native frame");
 foreach (var content in new[] { 390f, 460f, 2000f })
@@ -283,7 +285,9 @@ if (MenuLayout.SliderRange("Scale") != (75, 150) || MenuLayout.SliderRange("Opac
     throw new Exception("슬라이더 범위·표기 불일치");
 Console.WriteLine("고정 토글 크기·행 간격·좌우 경계·전체 버튼 호버 설명 검증 통과");
 HandLayoutCheck.Run();
+ShapeRasterCheck.Run();
 ResolutionCheck.Run();
+SettingsSearchCheck.Run();
 FocusAudioCheck.Run();
 foreach (var (old, expected) in new[] { ("true", "Taskbar"), ("True", "Taskbar"), ("false", "Off"),
     ("False", "Off"), ("Taskbar", "Taskbar"), ("Windows", "Windows"), ("Off", "Off"), ("invalid", "Taskbar") })

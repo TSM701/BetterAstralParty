@@ -66,7 +66,7 @@ namespace BetterAstralParty.Installation
             return Shortcut;
         }
         internal static void WaitGameClosed(string game, Func<string, string?> consent, Action<string> output) { StopGames++; }
-        internal static void StopSteam(string root, SteamSessionState state, Func<string, string?> consent, Action<string> output) { StopSteams++; state.Restart = true; }
+        internal static void StopSteam(string root, SteamSessionState state, Func<string, string?> consent, Action<string> output, bool resume = true) { StopSteams++; state.Restart = resume; }
         internal static void AssertGameStopped(string game) { }
         internal static void AssertStopped(string root, string phase) { }
         internal static ShortcutRecovery? Remove(string root, uint account, string game, Action<string> output)

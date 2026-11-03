@@ -94,7 +94,7 @@ internal static class NativeUninstallFixture
             bundle = Seed(scratch, "cancel"); before = Snapshot(bundle.GameRoot); Check(Run(bundle, answer: "") == 0 && NativeMaintenance.Starts == 0 && SetupHost.Stages == 0, "blank removal confirmation cancels"); Unchanged(before);
             bundle = Seed(scratch, "shortcut-only", false); NativeSteamMaintenance.Shortcut = true;
             Check(Run(bundle) == 0 && NativeMaintenance.Starts == 0 && NativeMaintenance.Completes == 0 && NativeMaintenance.Locks == 0, "shortcut-only bypasses empty ordinary journal");
-            Check(NativeSteamMaintenance.StopSteams == 1 && NativeSteamMaintenance.Removes == 1 && NativeSteamMaintenance.Resumes == 1, "shortcut-only stops and resumes selected Steam through facade");
+            Check(NativeSteamMaintenance.StopSteams == 1 && NativeSteamMaintenance.Removes == 1 && NativeSteamMaintenance.Resumes == 0, "shortcut-only stops selected Steam through facade and leaves it closed");
             bundle = Seed(scratch, "remove"); Write(bundle.GameRoot, "doorstop_config.ini", "enabled=false\r\nunrelated=x");
             Write(bundle.GameRoot, "BepInEx/plugins/OtherMod/Other.dll", "unrelated mod");
             var exclusive = new[] { "BepInEx/config/kr.betterastralparty.mod.cfg", "BepInEx/BetterAstralParty-Diagnostics/current.log", "BepInEx/BetterAstralParty-Diagnostics/previous.log",
@@ -182,7 +182,7 @@ internal static class NativeUninstallFixture
                 Check(File.ReadAllText(row.GetProperty("Backup").GetString()!) == "enabled=false\r\nunrelated=x", "explicit loader write preserves exact original backup");
             }
             bundle = Seed(scratch, "rollback"); before = Snapshot(bundle.GameRoot); NativeSteamMaintenance.Shortcut = true; NativeSteamMaintenance.RemoveFailure = new IOException("inert shortcut failure");
-            Reject(() => Run(bundle), "shortcut failure propagates"); Check(NativeMaintenance.Restores == 1 && NativeSteamMaintenance.Resumes == 1, "file rollback runs and selected Steam resumes"); Unchanged(before);
+            Reject(() => Run(bundle), "shortcut failure propagates"); Check(NativeMaintenance.Restores == 1 && NativeSteamMaintenance.Resumes == 0, "file rollback runs and selected Steam stays closed"); Unchanged(before);
             bundle = Seed(scratch, "shortcut-rollback"); before = Snapshot(bundle.GameRoot); NativeSteamMaintenance.Shortcut = true; NativeMaintenance.CompletionFailure = new IOException("inert complete failure");
             Reject(() => Run(bundle), "completion failure propagates"); Check(NativeSteamMaintenance.Rollbacks == 1 && NativeMaintenance.Restores == 1, "shortcut fingerprint rollback precedes ordinary file rollback"); Unchanged(before);
             bundle = Seed(scratch, "rollback-failed"); NativeSteamMaintenance.Shortcut = true; var original = new IOException("inert removal failure"); NativeSteamMaintenance.RemoveFailure = original; var recovery = new IOException("inert rollback failure"); NativeMaintenance.RestoreFailure = recovery;

@@ -91,8 +91,9 @@ internal static partial class TestCommands
         var source = ReadSource(context, "src/HandLayoutUi.cs"); var methods = new Dictionary<string, string>();
         foreach (var name in new[] { "UpdateDropZone", "UpdateDropHint", "SetGuideDirection", "ClearDropHint" }) methods[name] = MethodFragment(source, "private static void " + name);
         var toLocal = Fragment(source, @"(?s)    private static Vector2 ToLocal\(.*?;", "Native root-to-local drop path"); var update = MethodFragment(source, "private static void Update");
-        Check(update.IndexOf("if (!clickMode) UpdateDropZone", StringComparison.Ordinal) <= update.IndexOf("if (CardPointerBusy(dragging))", StringComparison.Ordinal)
-            && update.Contains("if (clickMode) UpdateDropZone(root, width, height, unit, true, clickDropBottom);", StringComparison.Ordinal), "Hover resize before drag early return; Click row boundary");
+        var zone = update.IndexOf("if (_dropBottom is { } dropBottom) UpdateDropZone(root, width, unit, clickMode, dropBottom * height);", StringComparison.Ordinal);
+        Check(zone >= 0 && zone < update.IndexOf("if (CardPointerBusy(dragging))", StringComparison.Ordinal)
+            && update.Contains("_dropBottom = HandLayout.DropBottom(pileTop, open, unit) / height;", StringComparison.Ordinal), "Drop zone follows a resize through a drag; its bottom follows the resting cards");
         Contains(source, new[] { "SetGuideDirection(old, false)", "SetGuideDirection(Entries[key], false)", "SetGuideDirection(e, false)", "ClearDropHint();", "if (mode != _mode) { Clear(); _mode = mode; }", "PlayerIsWatcher", "FightWindow", "VisibleCombatAdvisor.IsPve", "_hotPosition", "_hotSize" }, "Submit cleanup/gates");
         foreach (var forbidden in new[] { "SetActive", "SetField(", "\"visible\"", "\"alpha\"", "\"touchable\"", "\"SetXY\"", "\"SetSize\"" }) Check(!methods["SetGuideDirection"].Contains(forbidden, StringComparison.Ordinal), "Guide direction does not mutate unrelated state: " + forbidden);
         NoPattern(methods["UpdateDropZone"], @"\.Set\(", "Drop geometry retains native state/controller");

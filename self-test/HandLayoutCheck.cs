@@ -17,13 +17,19 @@ static class HandLayoutCheck
             var w = h * 16 / 9;
             var unit = h / 1080f;
             var pileTop = HandLayout.Place(w, h, columns, 0, count, 0, aspect).Y;
+            // Drops end 12 px above every resting card: Click above its open row as before, Hover above the open column.
+            var clickBottom = HandLayout.DropBottom(pileTop, HandLayout.ClickRow(w, h, count, 0, aspect, pileTop), unit);
+            var hoverBottom = HandLayout.DropBottom(pileTop, HandLayout.Place(w, h, columns, 0, count, 0, aspect, true), unit);
+            Check(HandLayout.DropBottom(pileTop, null, unit) == pileTop - 12 * unit && hoverBottom > 0 && hoverBottom <= pileTop - 12 * unit
+                && Math.Abs(clickBottom - (HandLayout.Focus(HandLayout.ClickRow(w, h, count, 0, aspect, pileTop)).Y - 12 * unit)) < .01f);
             HandLayout.Slot? previous = null;
             for (var i = 0; i < count; i++)
             {
                 var slot = HandLayout.Focus(HandLayout.ClickRow(w, h, count, i, aspect, pileTop));
                 Check(slot.Width > 0 && slot.Height > 0 && slot.X >= w * .25f - .01f
                     && slot.X + slot.Width <= w * .75f + .01f);
-                Check(slot.Y - 12 * unit > h * .08f);
+                Check(slot.Y - 12 * unit > h * .08f && slot.Y - 12 * unit >= clickBottom - .01f
+                    && HandLayout.Focus(HandLayout.Place(w, h, columns, 0, count, i, aspect, true)).Y - 12 * unit >= hoverBottom - .01f);
                 Check(Math.Abs(pileTop - slot.Y - slot.Height - 16 * unit) < .01f);
                 if (previous is { } p) Check(slot.X > p.X + p.Width && Math.Abs(slot.Y - p.Y) < .01f);
                 previous = slot;

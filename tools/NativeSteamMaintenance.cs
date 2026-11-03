@@ -56,7 +56,11 @@ namespace BetterAstralParty.Installation
     // Native maintenance shares the selected-root and fresh-consent contract with steam-session.ps1.
     internal static class NativeSteamMaintenance
     {
-        private const string ShortcutName = "Astral Party - Mod";
+        private const string ShortcutName = "Astral Party - BetterAstralParty";
+        // The entry's name until 1.7.0-dev.8; ownership accepts it and installation renames it in place (user-decided 2026-11-01).
+        private const string FormerShortcutName = "Astral Party - Mod";
+        private static bool OwnedName(object? name) => name is string text
+            && (string.Equals(text, ShortcutName, StringComparison.OrdinalIgnoreCase) || string.Equals(text, FormerShortcutName, StringComparison.OrdinalIgnoreCase));
         internal const string SetupProcessName = "BetterAstralParty-Setup";
         internal static TimeSpan RemainingGrace = TimeSpan.FromSeconds(15), RemainingPoll = TimeSpan.FromMilliseconds(500);
         private static readonly string[] ClientNames ={ "steam", "steamwebhelper", "GameOverlayUI", "steamerrorreporter", "steamerrorreporter64" };
@@ -275,13 +279,14 @@ namespace BetterAstralParty.Installation
         internal static OrderedDictionary EmptyShortcuts() { var root = new OrderedDictionary(StringComparer.OrdinalIgnoreCase); root.Add("shortcuts", new OrderedDictionary(StringComparer.OrdinalIgnoreCase)); return root; }
         internal const string ModEntry = "BetterAstralParty-Mod.cmd", LegacyEntry = "BetterAstralParty-Launcher.exe";
         internal static List<string> OwnedShortcutKeys(OrderedDictionary root, string gameRoot) { bool legacy; return OwnedShortcutKeys(root, gameRoot, out legacy); }
+        // legacy: the owned entry needs rewriting, because it starts the 1.3.x launcher or still has the former name.
         internal static List<string> OwnedShortcutKeys(OrderedDictionary root, string gameRoot, out bool legacy)
         {
             var current = "\"" + Join(PathOf(gameRoot), ModEntry) + "\""; var old = "\"" + Join(PathOf(gameRoot), LegacyEntry) + "\""; var keys = new List<string>(); legacy = false;
             foreach (DictionaryEntry field in (OrderedDictionary)root["shortcuts"]!) if (field.Value is OrderedDictionary item &&
-                string.Equals(item["AppName"] as string, ShortcutName, StringComparison.OrdinalIgnoreCase) && item["LaunchOptions"] is string options && options.Length == 0) {
-                var exe = item["exe"] as string;
-                if (string.Equals(exe, current, StringComparison.OrdinalIgnoreCase)) keys.Add((string)field.Key);
+                OwnedName(item["AppName"]) && item["LaunchOptions"] is string options && options.Length == 0) {
+                var exe = item["exe"] as string; var renamed = !string.Equals(item["AppName"] as string, ShortcutName, StringComparison.OrdinalIgnoreCase);
+                if (string.Equals(exe, current, StringComparison.OrdinalIgnoreCase)) { keys.Add((string)field.Key); legacy |= renamed; }
                 else if (string.Equals(exe, old, StringComparison.OrdinalIgnoreCase)) { keys.Add((string)field.Key); legacy = true; }
             }
             if (keys.Count > 1) throw new InvalidOperationException("Duplicate mod shortcuts; refusing to choose one.");
@@ -292,7 +297,7 @@ namespace BetterAstralParty.Installation
         {
             var current = "\"" + Join(PathOf(gameRoot), ModEntry) + "\"";
             foreach (DictionaryEntry field in (OrderedDictionary)root["shortcuts"]!) if (field.Value is OrderedDictionary item
-                && string.Equals(item["AppName"] as string, ShortcutName, StringComparison.OrdinalIgnoreCase) && string.Equals(item["exe"] as string, current, StringComparison.OrdinalIgnoreCase)
+                && OwnedName(item["AppName"]) && string.Equals(item["exe"] as string, current, StringComparison.OrdinalIgnoreCase)
                 && item["LaunchOptions"] is string options && options.Length != 0) return true;
             return false;
         }
@@ -305,7 +310,7 @@ namespace BetterAstralParty.Installation
                 && Directory.EnumerateFiles(folder, "shortcuts.vdf.*.tmp").Any();
         }
         private const string InterruptedSwapGuidance = "이전 작업이 Steam 바로가기 파일을 바꾸다 멈춰 백업만 남아 있습니다. 바로가기는 건드리지 않습니다. 같은 폴더의 shortcuts.vdf.BetterAstralParty-*.bak을 shortcuts.vdf로 되돌려 주세요. / A previous shortcut update was interrupted and only its backup remains; shortcuts are left unchanged. Restore shortcuts.vdf from shortcuts.vdf.BetterAstralParty-*.bak in the same folder.";
-        private const string CustomizedGuidance = "실행 옵션을 넣은 Astral Party - Mod 항목은 사용자 설정이라 남겨 둡니다. 필요 없으면 Steam에서 직접 제거하세요. / The Astral Party - Mod entry with your launch options stays; remove it in Steam if you no longer need it.";
+        private const string CustomizedGuidance = "실행 옵션을 넣은 BetterAstralParty 항목은 사용자 설정이라 남겨 둡니다. 필요 없으면 Steam에서 직접 제거하세요. / The BetterAstralParty entry with your launch options stays; remove it in Steam if you no longer need it.";
         private static bool Skip(Action<Exception>? unavailable, string reason, string guidance)
         {
             if (unavailable != null) try { unavailable(new SteamProfileUnavailableException(reason, guidance)); } catch { }
@@ -359,13 +364,13 @@ namespace BetterAstralParty.Installation
             var root = original == null ? EmptyShortcuts() : ReadShortcuts(original); var items = (OrderedDictionary)root["shortcuts"]!; bool legacy; var owned = OwnedShortcutKeys(root, game, out legacy);
             if (remove && owned.Count == 0 || !remove && owned.Count == 1 && !legacy || !remove && owned.Count == 0 && Customized(root, game)) return null;
             AssertStopped(steam, "ShortcutPreflight");
-            uint appId;
-            if (remove) { var item = (OrderedDictionary)items[owned[0]]!; if (!(item["appid"] is uint id)) throw new InvalidDataException("Owned shortcut app ID is invalid."); appId = id; items.Remove(owned[0]); }
+            uint appId; var removedName = ShortcutName;
+            if (remove) { var item = (OrderedDictionary)items[owned[0]]!; if (!(item["appid"] is uint id)) throw new InvalidDataException("Owned shortcut app ID is invalid."); appId = id; removedName = (string)item["AppName"]!; items.Remove(owned[0]); }
             else if (owned.Count == 1) {
-                // Keep the 1.3.x entry's app ID so playtime, artwork and collections stay attached.
+                // Keep an older entry's app ID (1.3.x launcher or former name) so playtime, artwork and collections stay attached.
                 var entry = Join(game, ModEntry); if (!File.Exists(Io(entry))) throw new FileNotFoundException("Missing installed mod entry.");
                 var item = (OrderedDictionary)items[owned[0]]!; if (!(item["appid"] is uint id)) throw new InvalidDataException("Owned shortcut app ID is invalid."); appId = id;
-                item["exe"] = "\"" + entry + "\""; item["StartDir"] = "\"" + game + "\"";
+                item["AppName"] = ShortcutName; item["exe"] = "\"" + entry + "\""; item["StartDir"] = "\"" + game + "\"";
             }
             else {
                 var launcher = Join(game, ModEntry); if (!File.Exists(Io(launcher))) throw new FileNotFoundException("Missing installed mod entry.");
@@ -397,7 +402,9 @@ namespace BetterAstralParty.Installation
                 }
             }
             if (remove) recovery.Artwork.AddRange(RemoveHero(WindowsPath.Parent(path), appId, game, output));
-            try { output?.Invoke(remove ? "Removed Astral Party - Mod. / Steam 라이브러리에서 Astral Party - Mod를 제거했습니다." : "Registered Astral Party - Mod. Restart Steam to load it. / Steam 라이브러리에 Astral Party - Mod를 추가했습니다. Steam을 다시 실행하면 표시됩니다."); } catch { }
+            try { output?.Invoke(remove ? "Removed " + removedName + ". / Steam 라이브러리에서 " + removedName + "를 제거했습니다."
+                : owned.Count == 1 ? "Updated the Steam library entry to " + ShortcutName + ". / Steam 라이브러리 항목을 " + ShortcutName + "로 바꿨습니다."
+                : "Registered " + ShortcutName + ". Restart Steam to load it. / Steam 라이브러리에 " + ShortcutName + "를 추가했습니다. Steam을 다시 실행하면 표시됩니다."); } catch { }
             return recovery;
         }
         private static IEnumerable<SteamArtworkRecovery> RemoveHero(string config, uint id, string game, Action<string>? output)
@@ -643,7 +650,8 @@ namespace BetterAstralParty.Installation
             }
             return result;
         }
-        internal static void StopSteam(string steamRoot, SteamSessionState state, Func<string, string?> consent, Action<string> output)
+        // resume false (uninstall, user-decided 2026-11-01): Steam stays closed afterwards and the prompt promises no restart.
+        internal static void StopSteam(string steamRoot, SteamSessionState state, Func<string, string?> consent, Action<string> output, bool resume = true)
         {
             var root = PathOf(steamRoot); var shutdownAttempted = false;
             while (true) {
@@ -675,9 +683,11 @@ namespace BetterAstralParty.Installation
                 }
                 if (!File.Exists(Io(Join(root, "steam.exe")))) throw Failure("SteamExecutableMissing", "ShutdownObservation", status);
                 // Steam is never terminated; the player exits it so it saves its own state.
-                state.Root = root; state.Restart = true; shutdownAttempted = true;
+                state.Root = root; state.Restart = resume; shutdownAttempted = true;
                 Waiting(Failure("SteamRunning", "ShutdownConsent", status));
-                output("Steam 라이브러리의 Astral Party - Mod 항목을 바꾸려면 Steam을 종료해야 합니다. Steam 메뉴에서 나가기로 종료한 뒤 재확인하세요. 작업이 끝나면 Steam을 다시 실행합니다. / Steam must be closed to change the Astral Party - Mod library entry. Exit Steam from its menu, then recheck. Steam is started again afterwards.");
+                output(resume
+                    ? "Steam 라이브러리의 Astral Party - BetterAstralParty 항목을 바꾸려면 Steam을 종료해야 합니다. Steam 메뉴에서 나가기로 종료한 뒤 재확인하세요. 작업이 끝나면 Steam을 다시 실행합니다. / Steam must be closed to change the Astral Party - BetterAstralParty library entry. Exit Steam from its menu, then recheck. Steam is started again afterwards."
+                    : "Steam 라이브러리의 BetterAstralParty 항목을 지우려면 Steam을 종료해야 합니다. Steam 메뉴에서 나가기로 종료한 뒤 재확인하세요. / Steam must be closed to remove the BetterAstralParty library entry. Exit Steam from its menu, then recheck.");
                 string choice; try { choice = Choice(consent, "r: 종료 후 재확인 / recheck after exiting, Enter: 취소 / cancel"); } catch { state.Restart = false; throw; }
                 if (!string.Equals(choice, "r", StringComparison.OrdinalIgnoreCase)) { state.Restart = false; throw Failure("ConsentCancelled", "ShutdownConsent", status); }
             }

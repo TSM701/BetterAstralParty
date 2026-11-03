@@ -101,6 +101,8 @@ __IS_OPEN__
     static void TogglePanelCore() { Probe.Visit("settings.create"); _modal = new RuntimeObject(); if (Probe.ThrowCreate) throw new MissingMethodException("Settings frame"); Probe.NativeModal = true; }
     static void Refresh() { Probe.Visit("settings.refresh"); if (Probe.ThrowRefresh) throw new MissingMethodException("Settings toggle"); }
     static void SetHelp(string action) { Probe.Visit("settings.help"); }
+    static void EndSearch() { }
+    static void JumpToUpdates() { Probe.Visit("settings.jump"); }
 __FAIL_SETTINGS__
 __TOGGLE_PANEL__
 __OPEN_UPDATE_SETTINGS__
@@ -121,7 +123,7 @@ public static class Runner {
         Probe.Reset(); ModUi.TogglePanel(); Probe.ThrowRefresh = true; ModUi.OpenUpdateSettings(); ModUi.OpenUpdateSettings(); Frames(2); Continuing(2);
         Probe.Check(!Compatibility.Allowed("SettingsUi") && !ModUi.IsOpen && !Probe.NativeModal && Probe.Count("settings.refresh") == 1 && Probe.Count("updates.acknowledge") == 0, "Settings refresh failure is local and does not acknowledge an unavailable update screen"); cases++;
         Probe.Reset(); Probe.ThrowCreate = true; ModUi.OpenUpdateSettings(); Frames(1); Continuing(1);
-        Probe.Check(!Compatibility.Allowed("SettingsUi") && Probe.Count("scroll.ScrollTop") == 0 && Probe.Count("settings.refresh") == 0, "Failed panel creation stops only the remaining optional panel calls"); cases++;
+        Probe.Check(!Compatibility.Allowed("SettingsUi") && Probe.Count("settings.jump") == 0 && Probe.Count("settings.refresh") == 0, "Failed panel creation stops only the remaining optional panel calls"); cases++;
         Probe.Reset(); Probe.ThrowCreate = Probe.ThrowClose = Probe.ThrowRestore = Probe.ThrowTouch = Probe.ThrowVisible = Probe.ThrowDispose = true; ModUi.TogglePanel(); Frames(1); Continuing(1);
         Probe.Check(!Compatibility.Allowed("SettingsUi") && !ModUi.IsOpen && Probe.Count("settings.close") == 1 && Probe.Count("settings.restore") == 1 && Probe.Count("modal.touchable") == 1 && Probe.Count("modal.visible") == 1 && Probe.Count("modal.dispose") == 1, "Every owned cleanup is attempted independently; stale settings state cannot cascade"); cases++;
         Probe.Reset(); Probe.ThrowHome = Probe.ThrowWarning = Probe.ThrowError = true; Frames(2); Continuing(2);

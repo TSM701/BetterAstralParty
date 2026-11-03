@@ -81,7 +81,7 @@ internal static partial class TestCommands
         var runtime = ReadSource(context, "src/RuntimeObject.cs"); var gameUi = ReadSource(context, "src/GameUi.cs");
         var source = WithoutNamespace(ReadSource(context, "src/FieldZoomUi.cs")).Replace("using UnityEngine;", "", StringComparison.Ordinal);
         NoPattern(source, @"Set\(|ActiveCamera|EnableFreeCamera|GetAxis|Send|Dispatch|Register|\.position\s*=|\.rotation\s*=|fieldOfView\s*=", "Zoom changes no native movement/FOV/input/callbacks");
-        Check(Regex.Matches(source, "SetField\\(\"([^\"]+)\"").All(match => match.Groups[1].Value == "m_FollowOffset"), "Only follow offset field written");
+        Check(Regex.Matches(source, "SetField\\(\"([^\"]+)\"").All(match => match.Groups[1].Value is "m_FollowOffset" or "CameraSpeed"), "Only the follow offset and the restored WASD speed are written");
         var harness = Template(context, "focus-tests/field-zoom/RuntimeFixture.template.cs", pin)
             .Replace("__GEOMETRY__", WithoutNamespace(ReadSource(context, "src/FieldZoomGeometry.cs")), StringComparison.Ordinal)
             .Replace("__SOURCE__", source, StringComparison.Ordinal)

@@ -42,7 +42,42 @@ internal static partial class TestCommands
         Pattern(Body(NativeAsyncMoveNext(native, "UI.ATMWindow", "RendererTargetPlayers")), @"UIATM_Button_RoleHeadshot::com_playerInfo\nIL_[0-9a-f]+: castclass UI.UICom_PlayerInfo[\s\S]*UICom_PlayerInfo::RefreshData", "Coin transfer fills its player bars");
         Contains(ReadSource(context, "src/PlayerTabUi.cs"), new[] { "\"ATMWindow\"", "?.Field(\"list_Players\")", "?.Field(\"com_playerInfo\")" }, "Player list tabs follow the coin transfer copies");
         // Issue #17: a two-digit count wrapped in its narrow label and showed only "1".
-        Contains(ReadSource(context, "src/PlayerTabUi.cs"), new[] { "foreach (var label in new[] { tab.Hand, tab.Role }) { label.Set(\"singleLine\", true); label.Set(\"autoSize\", 3); }" }, "Player list tab count and role stay on one line and shrink");
+        Contains(ReadSource(context, "src/PlayerTabUi.cs"), new[] { "foreach (var label in new[] { tab.Hand, tab.Role, tab.Skill }) { label.Set(\"singleLine\", true); label.Set(\"autoSize\", 3); }" }, "Player list tab count, role and turns stay on one line and shrink");
+        // Skill cooldown (draft A5, 2026-10-31): the player info window's own values, its turn colour and its stopwatch.
+        Contains(Il("UI.BattlePlayerInfoWindow", "GetSkillInfo", 1), new[] { "RoomPlayer::GetBattleActiveSkillId()", "SkillInfoConfigure::get_Round()", "BattleProperty::activeSkillCD" }, "Native skill cooldown values");
+        Contains(Il("UI.UIHelper", "GetSkillConfigs", 3), new[] { "SkillConfigure::get_InfoDict()", "SkillInfoConfigure::get_IsShow()" }, "Native window lists shown skills only");
+        Pattern(Il("UI.BattlePlayerInfoWindow", "RefreshActiveSkillCD", 2), @"::SkillType\nIL_[0-9a-f]+: ldc.i4.1\n[\s\S]*""\[color=#7FFD37\]""[\s\S]*UIBattlePlayerInfo_Com_Skill::txt_CD", "Native active skill countdown colour");
+        Contains(ReadSource(context, "src/PlayerTabUi.cs"), new[] { "\"[color=#7FFD37]{0}[/color]/{1}\"", "Call(\"GetBattleActiveSkillId\")", "Field(\"activeSkillCD\")?.Get<int>(\"Value\")",
+            "!config.Get<bool>(\"IsShow\") || config.Get<int>(\"SkillType\") != 1", "NativeUi.Icon(tab.Panel, \"时间\"" }, "Player list tab turns follow the native window");
+        // Other players' turns (user-chosen 2026-11-01): every round start copies the receiver's own skill map onto all
+        // characters, so the PvE window asks the server and shows the reply's SkillCD; the tab asks the same way.
+        Contains(Body(NativeAsyncMoveNext(native, "GameLogic.BattleLogic", "OnRoundStartS2CServerCallBack")), new[] { "BattleLogic::PlayerDatas", "RoundStartS2C::get_SkillCds()", "Character::UpdateActiveSkillCD" }, "Round start copies one skill map onto every character");
+        Contains(Il("UI.BattlePlayerInfoWindow", "RefreshHeroInfo_PVE", 1), new[] { "BattlePlayerInfoWindow::IsVailGetInfo()", "BattleLogic::RequestGetHeroInfoC2S(System.Int64)", "RPCAsyncResult::OnFinishedOnly" }, "Native window asks the server for a player's turns");
+        Contains(Body(NativeAsyncMoveNext(native, "GameLogic.BattleLogic", "OnGetHeroInfoS2CServerCallBackAsync")), new[] { "GetHeroInfoS2C::get_Cd()", "BattlePlayerData::SkillCD" }, "Native reply stores SkillCD");
+        Pattern(Body(NativeAsyncMoveNext(native, "Core.Net.RPCMsgManager", "ProcessNextPushRPCMsg")), @"RPCMsgManager::DealServerCallback[\s\S]*RPCAsyncResult::Finish\(\)", "A reply's callback runs before it completes");
+        var rpc = native.MainModule.GetType("Core.Net.RPCAsyncResult"); string FieldType(TypeDefinition type, string name) => type.Fields.Single(field => field.Name == name).FieldType.FullName;
+        Check(FieldType(rpc, "isCompleted") == "System.Boolean" && FieldType(rpc, "isTimeOut") == "System.Boolean" && FieldType(rpc, "errId") == "System.Int32"
+            && FieldType(native.MainModule.GetType("GameLogic.BattlePlayerData"), "SkillCD") == "System.Int32"
+            && NativeMethod(native, "GameLogic.BattleLogic", "GetPlayerDataById", 1).Parameters[0].ParameterType.FullName == "System.Int64"
+            && native.MainModule.GetType("GameLogic.RoomInfo").Methods.Any(method => method.Name == "get_Round")
+            && native.MainModule.GetType("GameLogic.Replay.ReplaySession").Methods.Count(method => method.Name is "get_IsReplay" or "get_CanSendC2S") == 2, "Native reply state, stored turns, player lookup, round and send gate");
+        var tabSource = ReadSource(context, "src/PlayerTabUi.cs");
+        Contains(tabSource, new[] { "Call(\"RequestGetHeroInfoC2S\", id)", "Call(\"GetPlayerDataById\", id)?.Field<int>(\"SkillCD\")", "Get<bool>(\"CanSendC2S\")", "room.Get<int>(\"Round\")", "if (room!.Pointer != _asksRoom) { Asks.Clear(); _asksRoom = room.Pointer; }", "Compatibility.Block(SkillFeature, ex, Asks.Clear)" }, "Player list tab asks the server like the window");
+        var skillHarness = Template(context, "focus-tests/csharp-migration/player-tab-skill.template.cs", pin)
+            .Replace("__ASK__", Fragment(tabSource, @"(?s)    private sealed class Ask .*?    private readonly record struct Server\(RuntimeObject Battle, long Self, int Round\);", "Player tab server state"), StringComparison.Ordinal)
+            .Replace("__ASKED__", MethodFragment(tabSource, "private static int Asked"), StringComparison.Ordinal);
+        RunEmbedded(context, stage, "player-tab-skill", skillHarness, "PlayerTabSkillTest.Check.Run()", pin);
+        var spam = skillHarness.Replace("if (ask.Reply == null && (ask.Round", "if ((ask.Round", StringComparison.Ordinal); Check(spam != skillHarness, "One request at a time anchor exists");
+        RunEmbedded(context, stage, "player-tab-skill-spam-mutant", spam.Replace("PlayerTabSkillTest", "PlayerTabSkillSpam", StringComparison.Ordinal), "PlayerTabSkillSpam.Check.Run()", pin, expectedFailure: "no second request while one is pending");
+        // Option 1 narrows the role label beside the skill part: the label hands its new size to its shrinking text, which
+        // marks itself for a re-fit on its next redraw.
+        Pattern(Il("FairyGUI.GTextField", "HandleSizeChanged", 0), @"ldc.i4.2\nIL_[0-9a-f]+: bne.un.s (IL_[0-9a-f]+)\n[\s\S]*\n\1: ldarg.0\nIL_[0-9a-f]+: call FairyGUI.DisplayObject FairyGUI.GObject::get_displayObject\(\)\n(IL_[0-9a-f]+: [^\n]*\n){4}IL_[0-9a-f]+: callvirt System.Void FairyGUI.DisplayObject::SetSize\(System.Single,System.Single\)", "Shrinking label passes a new size to its text");
+        Pattern(Il("FairyGUI.TextField", "OnSizeChanged", 0), @"TextField::_autoSize\nIL_[0-9a-f]+: ldc.i4.3\nIL_[0-9a-f]+: beq.s (IL_[0-9a-f]+)\n[\s\S]*\n\1: ldarg.0\nIL_[0-9a-f]+: ldc.i4.1\nIL_[0-9a-f]+: stfld System.Boolean FairyGUI.TextField::_textChanged", "Shrinking text re-fits after a size change");
+        Contains(ReadSource(context, "src/PlayerTabUi.cs"), new[] { "tab.Role.Call(\"SetSize\", RolePart(skill) - Inset * 2, Height);" }, "Player list tab role label follows its part's width");
+        Contains(ReadSource(context, "src/PlayerTabUi.cs"), new[] { "Color.Lerp(roleFormat.Field<Color>(\"color\"), Color.white, RoleLighten)", "roleFormat.SetField(\"outlineColor\", Color.black);", "roleFormat.SetField(\"bold\", true);", "roleFormat.SetField(\"outline\", RoleStroke);", "RoleLighten = 0.6f, RoleStroke = 1.6f" },
+            "Player list tab role: player colour lightened 60 % with a black outline (option C)");
+        var common = Path.Combine(context.Root, ".research/ui-assets/Common_fui.bytes"); pin(common);
+        Check(System.Text.Encoding.UTF8.GetString(File.ReadAllBytes(common)).Contains("时间", StringComparison.Ordinal), "Native stopwatch art (Common/时间)");
         // Picking a player moves the selectable buttons out of com_Container into com_Empty.
         Pattern(Il("UI.UIBattleInfo_Com_Player", "AdjustPlayerParent", 2), @"UIBattleInfo_Com_Player::com_Empty\nIL_[0-9a-f]+: ldarg.1\nIL_[0-9a-f]+: callvirt [^\n]*GComponent::AddChild", "Player selection moves bars into com_Empty");
         Contains(ReadSource(context, "src/PlayerTabUi.cs"), new[] { "if (container != null)", "?.Field(\"com_LaunchPK\")", "launch!.Field(\"com_P\" + slot)", "owner?.Field(\"_playerData\")" }, "Player list tabs follow the encounter screen copies");
@@ -80,7 +115,7 @@ internal static partial class TestCommands
         Pattern(Il("FairyGUI.GSlider", "__gripTouchBegin", 1), @"ldc.i4.1\nIL_[0-9a-f]+: stfld System.Boolean FairyGUI.GSlider::canDrag", "Native grip press re-enables its drag");
         Pattern(Il("FairyGUI.GSlider", "__gripTouchMove", 1), @"^IL_[0-9a-f]+: ldarg.0\nIL_[0-9a-f]+: ldfld System.Boolean FairyGUI.GSlider::canDrag\nIL_[0-9a-f]+: brtrue", "Native grip drag stops while canDrag is off");
         Contains(markSource, new[] { "slider.SetField(\"canDrag\", false);", "var step = range / pixels;", "var next = _dragStart + (TouchX() - _dragX) * step;", "Math.Abs(next - fallback) <= DefaultSnapPixels * step ? fallback : Math.Round(next)" }, "Slider drags keep the grip under the pointer and snap to the default");
-        Contains(markSource, new[] { "NudgeSlider(slider, max - min);", "Input.GetKeyDown(left ? KeyCode.LeftArrow : KeyCode.RightArrow)", "GameUi.PointerPath(hitTest: true).All(item => item.Pointer != slider.Pointer)" }, "Arrow keys move the hovered slider one step");
+        Contains(markSource, new[] { "NudgeSlider(slider, max - min);", "Input.GetKeyDown(left ? KeyCode.LeftArrow : KeyCode.RightArrow)", "GameUi.PointerPath(hitTest: true).All(item => item.Pointer != slider.Pointer && item.Pointer != area)", "SliderAreas[action] = area;" }, "Arrow keys move the hovered slider one step, anywhere on its row");
         Pattern(Il("FairyGUI.GSlider", "__barTouchBegin", 1), @"::_gripObject[\s\S]*::GlobalToLocal[\s\S]*::_barMaxWidth", "Native bar press measures from the grip over the bar width");
         // A new slider must hold the saved value before anything reads it back, or the setting is overwritten with the minimum.
         var sliderSource = ReadSource(context, "src/ModUi.cs");

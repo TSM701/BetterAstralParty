@@ -35,6 +35,9 @@ sealed class RuntimeObject {
     }
 }
 static class ModText {public static bool Korean=true;}
+static class SmoothShape {
+    public static void Restyle(RuntimeObject shape,Color fill,float line,Color lineColor){var s=shape.Get("shape");s.Set("stroke",lineColor);s.Set("fill",fill);s.Set("line",line);}
+}
 static class GameUi {
     public static void StyleText(RuntimeObject label,int size)=>label.Set("fontSize",size);
     public static void Dispose(RuntimeObject? node){if(node!=null)node.Set("isDisposed",true);}
@@ -72,26 +75,28 @@ __TOLOCAL__
         foreach(var scale in new[]{1f,1.5f}) {
             parent.Data["localScale"]=scale;
             foreach(var height in new[]{720f,1080f,1440f,2160f}) {
-                var width=height*16/9;var unit=Math.Min(width/1920,height/1080);
-                UpdateDropZone(root,width,height,unit,false,0);
-                Check(Near(_hotZone.Get<float>("x"),width*.79f/scale));
-                Check(Near(_hotZone.Get<float>("y"),height*.12f/scale));
-                Check(Near(_hotZone.Get<float>("width"),width*(.96f-.79f)/scale));
-                Check(Near(_hotZone.Get<float>("height"),height*(.72f-.12f)/scale));
+                var width=height*16/9;var unit=Math.Min(width/1920,height/1080);var bottom=height*.6f;
+                UpdateDropZone(root,width,unit,false,bottom);
+                Check(Near(_hotZone.Get<float>("x"),width*.1f/scale));
+                Check(Near(_hotZone.Get<float>("y"),0));
+                Check(Near(_hotZone.Get<float>("width"),width*.8f/scale));
+                Check(Near(_hotZone.Get<float>("height"),bottom/scale));
                 Check(_dropHighlight!.Graph.Get<float>("width")==_hotZone.Get<float>("width"));
                 Check(_dropHighlight.Graph.Get<float>("height")==_hotZone.Get<float>("height"));
-                Check(!_dropHint!.Get<bool>("touchable")&&!_dropHighlight.Graph.Get<bool>("touchable"));
+                Check(Near(_dropHint!.Get<float>("y"),bottom/scale-90*unit)); // Above the cards, clear of the top bar.
+                Check(!_dropHint.Get<bool>("touchable")&&!_dropHighlight.Graph.Get<bool>("touchable"));
                 Check(ReferenceEquals(_dropHint.Get("parent"),_hotZone));
                 Check(ReferenceEquals(_dropHighlight.Graph.Get("parent"),_hotZone));
                 Check(!_hotZone.Get<bool>("visible")&&!_hotZone.Get<bool>("touchable")&&_hotZone.Get<float>("alpha")==.3f);
                 var writes=_hotZone.Writes+_dropHighlight.Graph.Writes+_dropHint.Writes;
-                for(int frame=0;frame<100;frame++)UpdateDropZone(root,width,height,unit,false,0);
+                for(int frame=0;frame<100;frame++)UpdateDropZone(root,width,unit,false,bottom);
                 Check(writes==_hotZone.Writes+_dropHighlight.Graph.Writes+_dropHint.Writes);
             }
         }
         Check(NativeUi.Created.Count==2);
         Check(((Color)_dropHighlight!.Graph.Get("shape").Data["stroke"]).a==1f);
         Check(((Color)_dropHighlight.Graph.Get("shape").Data["fill"]).a==.18f);
+        Check((float)_dropHighlight.Graph.Get("shape").Data["line"]==4f);
         var hint=_dropHint!;var highlight=_dropHighlight.Graph;
         ModText.Korean=false;UpdateDropHint(new(300,600),1);
         Check(hint.Get<string>("text")=="Drop card\nhere");
@@ -100,9 +105,9 @@ __TOLOCAL__
         ClearDropHint();Check(hint.Get<bool>("isDisposed")&&highlight.Get<bool>("isDisposed"));
         Check(_dropHint==null&&_dropHighlight==null&&_dropHintLayout==null);
         parent.Data["localScale"]=1f;
-        UpdateDropZone(root,1920,1080,1,true,500);
-        Check(_hotZone.Get<float>("x")==480&&Near(_hotZone.Get<float>("y"),86.4f));
-        Check(_hotZone.Get<float>("width")==960&&Near(_hotZone.Get<float>("height"),500-86.4f));
+        UpdateDropZone(root,1920,1,true,500);
+        Check(Near(_hotZone.Get<float>("x"),192)&&Near(_hotZone.Get<float>("y"),0));
+        Check(Near(_hotZone.Get<float>("width"),1536)&&Near(_hotZone.Get<float>("height"),500));
         Check(_dropHint==null&&_dropHighlight==null&&NativeUi.Created.Count==2);
         foreach(var original in new[]{0f,12f,-20f}) {
             var guide=new RuntimeObject {Data={["rotation"]=original,["alpha"]=.45f,["visible"]=false,["touchable"]=false}};
@@ -119,7 +124,7 @@ __TOLOCAL__
             SetGuideDirection(entry,true);entry.Card.Data["isDisposed"]=true;writes=guide.Writes;
             SetGuideDirection(entry,false);Check(guide.Writes==writes&&entry.GuideRotation==null);
         }
-        Console.WriteLine("PASS: production hover drop bounds and non-hit artwork agree at HD–4K/scaled parents; KR/EN, native fade/visibility/input preserved, idle no-write, click unchanged.");
+        Console.WriteLine("PASS: production drop bounds (10-90 % wide, screen top to the card line) and hover's non-hit artwork with its hint above the cards agree at HD–4K/scaled parents; KR/EN, native fade/visibility/input preserved, idle no-write, click without hint.");
         Console.WriteLine("PASS: production guide rotation ownership, Native/Click isolation, foreign-write/disposal cleanup and idle zero reads. Native late-load transfer verified by IL; in-game rendering unverified.");
     }
 }

@@ -48,8 +48,8 @@ namespace BetterAstralParty.Installation
                 unavailable = true; var known = error as SteamProfileUnavailableException;
                 var detail = "NativeInstallShortcut: action=Skipped; reason=" + (known?.Reason ?? "SteamShortcutPlanUnavailable") + "; exception=" + error.GetType().Name
                     + "; hresult=0x" + error.HResult.ToString("X8", System.Globalization.CultureInfo.InvariantCulture);
-                output(known?.Guidance != null ? known.Guidance + " Steam 라이브러리에 Astral Party - Mod가 추가되지 않습니다. / Astral Party - Mod is not added to the Steam library. " + detail
-                    : "Steam 라이브러리 항목 정보를 읽지 못해 기존 정보를 보존하고 파일만 설치합니다. Steam 라이브러리에 Astral Party - Mod가 추가되지 않습니다. / Steam shortcut planning unavailable; preserve profile data and install files only. " + detail);
+                output(known?.Guidance != null ? known.Guidance + " Steam 라이브러리에 Astral Party - BetterAstralParty가 추가되지 않습니다. / Astral Party - BetterAstralParty is not added to the Steam library. " + detail
+                    : "Steam 라이브러리 항목 정보를 읽지 못해 기존 정보를 보존하고 파일만 설치합니다. Steam 라이브러리에 Astral Party - BetterAstralParty가 추가되지 않습니다. / Steam shortcut planning unavailable; preserve profile data and install files only. " + detail);
                 try { observation?.Invoke(detail); } catch { }
             });
             skipped = unavailable; return plan;
@@ -57,7 +57,7 @@ namespace BetterAstralParty.Installation
         internal static void Run(NativeMaintenanceBundle bundle, bool updateOnly, string? steamRoot, uint account, Func<string, string?> consent, Action<string> output, bool restartSteam = false, bool checkOnly = false, Action<string>? observation = null)
         {
             if (updateOnly && (restartSteam || account != 0 || steamRoot != null)) throw new InvalidOperationException("UpdateOnly cannot register or restart Steam. / UpdateOnly는 Steam을 변경할 수 없습니다.");
-            if (!updateOnly && (steamRoot == null || account == 0)) output("Steam 라이브러리 항목을 바꾸지 않고 파일만 설치합니다. Steam에서 순정 게임 실행 후 설치기를 다시 실행하면 Steam 라이브러리에 Astral Party - Mod를 추가할 수 있습니다. / Install files without changing Steam shortcuts; run the original game through Steam and rerun installation to add the shortcut.");
+            if (!updateOnly && (steamRoot == null || account == 0)) output("Steam 라이브러리 항목을 바꾸지 않고 파일만 설치합니다. Steam에서 순정 게임 실행 후 설치기를 다시 실행하면 Steam 라이브러리에 Astral Party - BetterAstralParty를 추가할 수 있습니다. / Install files without changing Steam shortcuts; run the original game through Steam and rerun installation to add the shortcut.");
             if (checkOnly) { Preview(bundle, updateOnly, steamRoot, account, consent, output); return; }
             var session = new SteamSessionState(); NativeMaintenance.Transaction? transaction = null;
             NativeMaintenance.InstallLock? installLock = null;
@@ -151,7 +151,7 @@ namespace BetterAstralParty.Installation
                     LegacyWork.Remove(bundle.GameRoot, output);
                     UpdateFaults.RemoveArchived(bundle.GameRoot, output);
                 }
-                output(needsShortcut ? "적용 완료! Steam 라이브러리의 \"Astral Party - Mod\"로 실행하세요. / Installed; start \"Astral Party - Mod\" from Steam."
+                output(needsShortcut ? "적용 완료! Steam 라이브러리의 \"Astral Party - BetterAstralParty\"로 실행하세요. / Installed; start \"Astral Party - BetterAstralParty\" from Steam."
                     : shortcutSkipped ? "파일 설치 완료. Steam 라이브러리 항목은 바꾸지 않았습니다. 위 안내를 확인하세요. / Installed files; the Steam shortcut was left unchanged, see the notice above."
                     : "기존 설치본 업데이트 완료. / Updated existing installation.");
             } catch (Exception error) {

@@ -109,7 +109,9 @@ internal static partial class TestCommands
             var catching = startup.Body.ExceptionHandlers.Where(handler => handler.HandlerType == ExceptionHandlerType.Catch && handler.TryStart.Offset <= verify[0].Offset && handler.TryEnd.Offset > verify[0].Offset).ToArray();
             Check(catching.Length == 1 && catching[0].TryStart.Offset > registration!.Offset, "Catalog exception does not undo registered driver"); metadataCases++;
             Check(IlCalls(NativeMethod(assembly, "BetterAstralParty.EventSystemUpdatePatch", "Prepare").Body.Instructions, "BetterAstralParty.Plugin", "RequireHook").Length == 1 && IlCalls(NativeMethod(assembly, "BetterAstralParty.EventSystemUpdatePatch", "Postfix").Body.Instructions, "BetterAstralParty.ModUi", "Tick").Length == 1, "Compiled hook signature verification and frame driver"); metadataCases++;
-            var tick = NativeMethod(assembly, "BetterAstralParty.ModUi", "Tick").Body;
+            // ModUi.Tick wraps TickCore for the stall watch (2026-11-01); the frame body is TickCore.
+            Check(IlCalls(NativeMethod(assembly, "BetterAstralParty.ModUi", "Tick").Body.Instructions, "BetterAstralParty.ModUi", "TickCore").Length == 1, "Compiled tick wraps its frame body");
+            var tick = NativeMethod(assembly, "BetterAstralParty.ModUi", "TickCore").Body;
             var release = IlCalls(tick.Instructions, "BetterAstralParty.ReleaseUpdates", "Tick"); var automatic = IlCalls(tick.Instructions, "BetterAstralParty.AutomaticUpdates", "Tick"); var refresh = IlCalls(tick.Instructions, "BetterAstralParty.GameUi", "RefreshReleaseNotification");
             Check(release.Length == 1 && automatic.Length == 1 && refresh.Length == 1, "Compiled backend/native notice call counts");
             var backendCatch = tick.ExceptionHandlers.Where(handler => handler.HandlerType == ExceptionHandlerType.Catch && handler.TryStart.Offset <= release[0].Offset && handler.TryEnd.Offset > automatic[0].Offset).ToArray();

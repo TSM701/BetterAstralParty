@@ -84,8 +84,8 @@ internal static partial class TestCommands
     private static void AutoThanks(DevContext context, string stage, Action<string> pin)
     {
         var nativePath = context.NativeAssemblyPath; var corePath = Path.Combine(context.Root, ".research/extracted/mscorlib.dll.dll"); pin(nativePath); pin(corePath);
-        if (!context.NativeAssemblyExplicit) Check(context.Hash(nativePath) == "DDEFD944846C612CC8935BCEF33170BAA8F3EE3974CBF2EC0F8F001678CED341", "Audited historical native recommendation input");
-        Check(context.Hash(corePath) == "8238BC094BFF4D34FBA44BA09B306645FAD0E46945973CAE8D80F6787E96E66C", "Audited engine core recommendation metadata input");
+        if (!context.NativeAssemblyExplicit) Check(context.Hash(nativePath) == "C20623C300D088FEC7F145BA9E0E636362B6DFC3D5805100B0799C5125EB51F8", "Audited historical native recommendation input");
+        Check(context.Hash(corePath) == "D5B2944460EDCCD6D0266DD20BF922029FBA018124DD7B940B96812F4EF58BBD", "Audited engine core recommendation metadata input");
         using var native = Native(context); using var core = AssemblyDefinition.ReadAssembly(corePath);
         var scene = native.MainModule.GetType("Core.Scene.BaseSceneController"); var awake = scene.Methods.Single(method => method.Name == "Awake");
         var background = awake.Body.Instructions.Single(instruction => instruction.Operand is MethodReference method && method.FullName == "System.Void UnityEngine.Application::set_runInBackground(System.Boolean)");

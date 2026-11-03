@@ -49,6 +49,7 @@ internal static class HandLayoutUi
     private static RuntimeObject? _dropHint;
     private static (Vector2 Size, float Unit, bool Korean)? _dropHintLayout;
     private static Vector2 _hotPosition, _hotSize;
+    private static float? _dropBottom; // From the last layout frame, as a share of the root height.
     private static float _scanAt, _diagnosticAt;
     private static IntPtr _tween, _tweenManager, _logic, _pool, _cardClass;
     private static HandGroup? _expanded;
@@ -86,9 +87,12 @@ internal static class HandLayoutUi
             if (_logic == IntPtr.Zero) _logic = RuntimeObject.FindClass("GameLogic", "GameLogicManager");
             var manager = RuntimeObject.StaticField(_logic, "_inst");
             var room = manager?.Get("room")?.Get("curRoomInfo");
+            // The fight starts at step 2. The window's opening (0) and the encounter screen (1, also with its UI hidden)
+            // keep the field hand grouped (user-requested 2026-11-01).
+            var fightStep = GameUi.Find(root, "FightWindow")?.Get("contentPane")?.Field("step")?.Get<int>("selectedIndex") ?? 0;
             var eligible = VisibleCombatAdvisor.IsPve(room?.Field("info")?.Get<int>("MapType") ?? 0)
                 && manager?.Get("watch")?.Call("PlayerIsWatcher")?.Value<bool>() == false
-                && GameUi.Find(root, "FightWindow") == null;
+                && fightStep < 2;
             var ui = eligible ? GameUi.Find(root, "UIHandCardPanel") : null;
             if (ui?.Pointer != _ui?.Pointer)
             {
@@ -120,8 +124,8 @@ internal static class HandLayoutUi
         }
         var width = root.Get<float>("width"); var height = root.Get<float>("height");
         var unit = Math.Min(width / 1920f, height / 1080f);
-        // Hover's destination stays current during a native drag, including a resize.
-        if (!clickMode) UpdateDropZone(root, width, height, unit, false, 0);
+        // The destination stays current during a native drag, including a resize; the last layout frame sets its bottom.
+        if (_dropBottom is { } dropBottom) UpdateDropZone(root, width, unit, clickMode, dropBottom * height);
         var dragging = GameUi.LiveDrag();
         if (CardPointerBusy(dragging))
         {
@@ -269,16 +273,14 @@ internal static class HandLayoutUi
             var pile = piles[column];
             pileTop = Math.Min(pileTop, HandLayout.Place(width, height, groups.Count, column, pile.Count, 0, aspects[column]).Y);
         }
-        var clickDropBottom = height * .25f;
+        HandLayout.Slot? open = null;
         for (var column = 0; column < groups.Count; column++)
         {
             var group = groups[column];
             var pile = piles[column];
             var aspect = aspects[column];
-            if (clickMode && _expanded == group)
-            {
-                clickDropBottom = HandLayout.Focus(HandLayout.ClickRow(width, height, pile.Count, 0, aspect, pileTop)).Y - 12 * unit;
-            }
+            if (_expanded == group) open = clickMode ? HandLayout.ClickRow(width, height, pile.Count, 0, aspect, pileTop)
+                : HandLayout.Place(width, height, groups.Count, column, pile.Count, 0, aspect, true);
             if (_expanded == group)
             {
                 // Click keeps the group open, not the last card enlarged after pointer exit.
@@ -326,6 +328,7 @@ internal static class HandLayoutUi
             if (!caption.Get<bool>("visible")) caption.Set("visible", true);
             if (clickMode) UpdatePileTarget(group, captionSlot, root, height, unit, !inputLocked && pile.All(ready.Contains));
         }
+        _dropBottom = HandLayout.DropBottom(pileTop, open, unit) / height;
         if (Plugin.Diagnostics.IsRecording && Time.unscaledTime >= _diagnosticAt)
             Report($"layout; tracked={cards.Count}; ready={ready.Count}; hidden={hidden}; distributing={distributing}; foreign={foreign}; inputLocked={inputLocked}; pending={pending}; motions={motions.Values.Sum(v => v.Count)}; expanded={_expanded}; nativeZoom={RuntimeObject.StaticField(_pool, "ShowCardStatus")!.Value<int>()}");
         if (ready.Count == 0) return;
@@ -335,15 +338,16 @@ internal static class HandLayoutUi
             && !FieldCameraReturnUi.ConsumedInput && root.Get("touchTarget") == null)
             HandClickBinding.Arm(RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "Stage"), "get_inst")!,
                 ready.Select(e => e.Card));
-        if (clickMode) UpdateDropZone(root, width, height, unit, true, clickDropBottom);
     }
 
-    private static void UpdateDropZone(RuntimeObject root, float width, float height, float unit, bool clickMode, float clickDropBottom)
+    private static void UpdateDropZone(RuntimeObject root, float width, float unit, bool clickMode, float bottom)
     {
         // Native drop checks and artwork use this same object; leave its visibility alone.
         var parent = _hotZone!.Get("parent")!;
-        var start = ToLocal(parent, root, width * (clickMode ? .25f : .79f), height * (clickMode ? .08f : .12f));
-        var dropEnd = ToLocal(parent, root, width * (clickMode ? .75f : .96f), clickMode ? clickDropBottom : height * .72f);
+        // From the screen top down to the cards, 10-90 % wide: Click (user-requested 2026-10-31) and Hover (2026-11-01).
+        // The native zone shows only while a card is dragged, so it never covers the turn bar otherwise.
+        var start = ToLocal(parent, root, width * .1f, 0);
+        var dropEnd = ToLocal(parent, root, width * .9f, bottom);
         if (_hotZone.Get<float>("x") != start.x || _hotZone.Get<float>("y") != start.y)
             _hotZone.Call("SetXY", start.x, start.y);
         var dropSize = dropEnd - start;
@@ -359,15 +363,15 @@ internal static class HandLayoutUi
             // Children inherit the native drag controller's visibility/fade; they never own input.
             _dropHighlight = new NativeUi.Surface(_hotZone!, size.x, size.y, fixedOpacity: true,
                 fill: new Color(1f, .83f, .14f, .18f));
-            _dropHighlight.Graph.Get("shape")!.Call("DrawRoundRect", 4f,
-                new Color(1f, .83f, .14f, 1f), new Color(1f, .83f, .14f, .18f), 18f, 18f, 18f, 18f);
+            SmoothShape.Restyle(_dropHighlight.Graph, new Color(1f, .83f, .14f, .18f), 4f, new Color(1f, .83f, .14f, 1f));
             _dropHint = NativeUi.Label(_hotZone!, "", 0, 0, 1, 1, 26);
             _dropHint.Set("touchable", false);
         }
         var layout = (size, unit, ModText.Korean);
         if (_dropHintLayout == layout) return;
         _dropHighlight.Resize(size.x, size.y);
-        _dropHint!.Call("SetXY", 12 * unit, 18 * unit);
+        // The zone starts at the screen top, where the turn bar sits; the hint sits just above the cards instead.
+        _dropHint!.Call("SetXY", 12 * unit, Math.Max(0, size.y - 90 * unit));
         _dropHint.Call("SetSize", Math.Max(1, size.x - 24 * unit), 72 * unit);
         _dropHint.Set("text", HandLayout.DropHint(ModText.Korean));
         GameUi.StyleText(_dropHint, Math.Max(12, (int)(26 * unit)));
@@ -756,6 +760,7 @@ internal static class HandLayoutUi
         PileTargets.Clear(); _pressedPile = null; _outsidePress = false;
         CaptionLayout.Clear();
         ClearDropHint();
+        _dropBottom = null; // The native zone stays until the next layout frame.
         if (_hotZone != null && !_hotZone.Get<bool>("isDisposed"))
         {
             _hotZone.Call("SetXY", _hotPosition.x, _hotPosition.y);

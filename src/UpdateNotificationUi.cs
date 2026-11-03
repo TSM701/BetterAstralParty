@@ -31,12 +31,29 @@ internal static class UpdateNotificationUi
     private sealed record Switching(string Version, DiagnosticOperation Operation, bool Transition = true) { internal bool Committed; }
     // One continuous progress bar with its percentage above the buttons, shared with the home progress capsule.
     private static RuntimeObject? _barTrack, _barFill, _barText;
-    private const float BarX = 110, BarY = 426, BarWidth = 560, BarHeight = 18;
-    // The text uses the bar's space when no progress is shown; the buttons start at 484.
-    private const float ViewHeight = 300, WideViewHeight = 360;
+    // The window is as tall as the settings (MenuLayout.Height, 2026-11-03), 190 over the native frame, all of it text.
+    private const float BarX = 110, BarY = 616, BarWidth = 560, BarHeight = 18, ButtonY = 674;
+    // The text uses the bar's space when no progress is shown; the buttons start at ButtonY.
+    private const float ViewY = 110, ViewHeight = 490, WideViewHeight = 550, TrackX = 958;
     private static float _viewHeight;
     private static int _progressRevision = -1;
     private static Switching? _switching;
+    // An ordinary new version first shows as a toast left of the home Mod Settings button (draft 3, user-chosen 2026-11-03),
+    // drawn by GameUi: it stays ToastSeconds while the pointer is off it, and a click opens this window with the notes.
+    // Without the home button the window opens directly, as before.
+    internal const float ToastSeconds = 8f;
+    private static UpdateNotificationTarget? _toast;
+    private static int _toastFrame;
+    private static float _toastLeft, _toastTick;
+    internal static UpdateNotificationTarget? Toast => _toast;
+    internal static float ToastShownAt { get; private set; }
+    internal static float ToastRemaining => _toast == null ? 0f : Math.Clamp(_toastLeft / ToastSeconds, 0f, 1f);
+    // Development builds (X.Y.Z-dev.N) sort above every release, so they never get a real notice: Ctrl+Shift+F9 on the home
+    // screen previews the toast with a made-up release (the installed version) and the red point until the settings open.
+    // Presentation only, no update state or shown record; public builds never react to the key.
+    private static bool _developmentBuild = Plugin.Version.Contains("-dev.", StringComparison.Ordinal);
+    private static bool _preview;
+    internal static string? PreviewMark { get; private set; }
     internal static bool ConsumedInput => _consumedFrame == Time.frameCount;
     internal static bool CanConfirmTransition => _pendingTransition == null && _transition == null && Plugin.Automatic.CanReviewTransition
         && Plugin.Updates.Result.Release is { } release && Plugin.Updates.CurrentRelease(release) && release.ProposalRequest(Plugin.Automatic.Snapshot.InstalledVersion) != null;
@@ -134,13 +151,14 @@ internal static class UpdateNotificationUi
     private static void TickCore()
     {
         PollTransition();
-        if (!Plugin.UpdateNotifications.Value && _pendingTransition == null && _transition == null && _failedTransition == null && _switching == null) { Clear(); return; }
+        if (_developmentBuild && PreviewPressed() && _panel == null && _pendingTransition == null && GameUi.NotificationHome().Eligible) StartPreview();
+        if (!Plugin.UpdateNotifications.Value && !_preview && _pendingTransition == null && _transition == null && _failedTransition == null && _switching == null) { Clear(); return; }
         var home = GameUi.NotificationHome();
         if (!home.Eligible) { Clear(); return; }
         if (_pendingTransition != null) return; // Ordinary notices must not replace an in-flight explicit review.
         var root = GameUi.Root!;
         if (_panel != null && (_panel.Get<bool>("isDisposed") || _parent != root.Pointer
-            || _transition == null && _failedTransition == null && _switching == null && (_contextGeneration != State.ContextGeneration
+            || _transition == null && _failedTransition == null && _switching == null && !_preview && (_contextGeneration != State.ContextGeneration
             || _target == null || State.Active?.Key != _target.Key && State.Next?.Key != _target.Key)))
             Clear();
         if (_transition != null && !CurrentTransition(_transition)) {
@@ -149,10 +167,12 @@ internal static class UpdateNotificationUi
         }
         if (_panel == null)
         {
+            if (_toast != null) { TickToast(); return; }
             // Never take the click/key which just opened or left another native screen.
             if (!Application.isFocused || UnityEngine.Input.GetMouseButtonDown(0)
                 || UnityEngine.Input.GetMouseButtonUp(0) || UnityEngine.Input.anyKeyDown) return;
             if (_transition == null && _failedTransition == null && State.Next == null) return;
+            if (_transition == null && _failedTransition == null && GameUi.ToastAvailable) { StartToast(State.Next!); return; }
             var target = _transition != null ? new UpdateNotificationTarget(_transition.Release, "transition")
                 : _failedTransition != null ? new UpdateNotificationTarget(_failedTransition, "transition-failed") : State.Next!;
             Create(root, target);
@@ -173,13 +193,14 @@ internal static class UpdateNotificationUi
         _target = target; _parent = root.Pointer;
         _contextGeneration = State.ContextGeneration;
         _openedFrame = Time.frameCount; _openedAt = Time.unscaledTime;
-        _panel = NativeUi.Component(root, MenuLayout.Width, MenuLayout.NativeFrameHeight);
+        _panel = NativeUi.Component(root, MenuLayout.Width, MenuLayout.Height);
         _panel.Set("visible", false);
         _panel.Set("sortingOrder", 29900); // Below the existing mod settings.
         _panel.Set("opaque", true); // Only our frame bounds, no global dim/input layer.
         _frame = NativeUi.Create("Common", "Com_PopUpWindow_Bottom")
             ?? throw new InvalidOperationException("Native update notice frame unavailable");
         _panel.Call("AddChild", _frame);
+        ModUi.GrowFrame(_frame, MenuLayout.Height);
         foreach (var name in new[] { "btn_Sure", "btn_Sure_Only", "btn_Cancel" })
             _frame.Call("GetChild", name)!.Set("visible", false);
         var heading = _frame.Call("GetChild", "title")!;
@@ -198,8 +219,8 @@ internal static class UpdateNotificationUi
         }
         finally { GameUi.Dispose(scrollTemplate); }
         _view.Call("RemoveChildren", 0, -1, true);
-        _view.Call("SetXY", 110f, 110f);
-        _view.Call("SetSize", 840f, 300f);
+        _view.Call("SetXY", 110f, ViewY);
+        _view.Call("SetSize", 840f, ViewHeight);
         _view.Set("autoResizeItem", false);
         _view.Set("layout", 0);
         _view.SetField("selectionMode", 3);
@@ -213,19 +234,19 @@ internal static class UpdateNotificationUi
         var contentWidth = scroll.Get<float>("viewWidth");
         if (!float.IsFinite(contentWidth) || contentWidth <= 0)
             throw new InvalidOperationException("Native update notice scroll width unavailable");
-        _content = NativeUi.Component(_view, contentWidth, 300);
-        _body = NativeUi.Label(_content, "", 0, 0, contentWidth, 300, 30);
+        _content = NativeUi.Component(_view, contentWidth, ViewHeight);
+        _body = NativeUi.Label(_content, "", 0, 0, contentWidth, ViewHeight, 30);
         _body.Set("touchable", false);
         _body.Set("UBBEnabled", false);
         _body.Set("singleLine", false);
         _body.Set("autoSize", 2);
         GameUi.StyleText(_body, 30, align: 0);
         // This native list hides its scrollbar; reuse the settings position indicator.
-        _scrollTrack = new NativeUi.Surface(_panel, 12, 300, fixedOpacity: true,
+        _scrollTrack = new NativeUi.Surface(_panel, 12, ViewHeight, fixedOpacity: true,
             fill: new Color(0.75f, 0.75f, 0.75f)).Graph;
         _scrollThumb = new NativeUi.Surface(_panel, 12, 24, fixedOpacity: true,
             fill: new Color(1f, 0.8f, 0f)).Graph;
-        _scrollTrack.Call("SetXY", 958f, 110f);
+        _scrollTrack.Call("SetXY", TrackX, ViewY);
         _scrollMarker = null;
         CreateBar();
         AddButton(UpdateNoticeAction.Close, "Button_ReturnRounded", 168);
@@ -253,7 +274,7 @@ internal static class UpdateNotificationUi
         var button = NativeUi.Create("Common", item)
             ?? throw new InvalidOperationException("Native update notice button unavailable");
         var scale = 298 / button.Get<float>("width");
-        NativeUi.Position(button, x, 484, scale);
+        NativeUi.Position(button, x, ButtonY, scale);
         button.SetField("changeStateOnClick", false);
         _panel!.Call("AddChild", button);
         Controls.Add(button.Pointer, (button, action));
@@ -317,7 +338,7 @@ internal static class UpdateNotificationUi
         foreach (var part in new[] { _barTrack, _barFill, _barText }) part?.Set("visible", progress.Visible);
         if (!progress.Visible || _barFill == null || _barText == null) return;
         _barFill.Call("SetSize", Math.Max(BarHeight - 4, (BarWidth - 4) * progress.Percent / 100f), BarHeight - 4);
-        _barFill.Set("color", progress.Stopped ? new Color(0.88f, 0.29f, 0.29f) : progress.Done ? new Color(0.49f, 0.78f, 0.42f) : new Color(1f, 0.76f, 0.05f));
+        SmoothShape.Fill(_barFill, progress.Stopped ? new Color(0.88f, 0.29f, 0.29f) : progress.Done ? new Color(0.49f, 0.78f, 0.42f) : new Color(1f, 0.76f, 0.05f));
         _barText.Set("text", ModText.UpdatePercent(progress.Percent, progress.Read, progress.Total));
         ModFont.Track(_barText);
     }
@@ -330,11 +351,11 @@ internal static class UpdateNotificationUi
         var width = root.Get<float>("width"); var height = root.Get<float>("height");
         if (!float.IsFinite(width) || !float.IsFinite(height) || width <= 0 || height <= 0)
             throw new InvalidOperationException("Update notice root size unavailable");
-        var scale = MenuLayout.FitScale(width, height, MenuLayout.NativeFrameHeight);
+        var scale = MenuLayout.FitScale(width, height, MenuLayout.Height);
         _panel!.Call("SetScale", scale, scale);
         var reveal = AdviceText.Reveal(Time.unscaledTime - _openedAt, 0.22f);
         _panel.Call("SetXY", (width - MenuLayout.Width * scale) / 2,
-            (height - MenuLayout.NativeFrameHeight * scale) / 2 + (1 - reveal) * 24);
+            (height - MenuLayout.Height * scale) / 2 + (1 - reveal) * 24);
         _panel.Set("alpha", reveal);
     }
 
@@ -350,11 +371,31 @@ internal static class UpdateNotificationUi
         _scrollTrack!.Set("visible", visible);
         _scrollThumb!.Set("visible", visible);
         _scrollThumb.Call("SetSize", 12f, height);
-        _scrollThumb.Call("SetXY", 958f, 110f + y);
+        _scrollThumb.Call("SetXY", TrackX, ViewY + y);
+    }
+
+    private static bool _markerDragging;
+    private static float _markerGrab;
+
+    // The marker is drawn art like the settings' one: a press on its track drags the text, the thumb keeping its grip and
+    // the rest of the track centring it under the pointer (2026-11-03).
+    private static bool DragScrollMarker()
+    {
+        if (_scrollTrack == null || !_scrollTrack.Get<bool>("visible")) { _markerDragging = false; return false; }
+        var (x, y) = GameUi.PointerIn(_panel!);
+        float thumbY = _scrollThumb!.Get<float>("y"), thumbHeight = _scrollThumb.Get<float>("height");
+        if (UnityEngine.Input.GetMouseButtonDown(0) && x >= TrackX - 8 && x <= TrackX + 20 && y >= ViewY && y <= ViewY + _viewHeight)
+        { _markerDragging = true; _markerGrab = y >= thumbY && y <= thumbY + thumbHeight ? y - thumbY : thumbHeight / 2; }
+        if (!_markerDragging) return false;
+        if (!UnityEngine.Input.GetMouseButton(0)) { _markerDragging = false; return true; }
+        var scroll = _view!.Get("scrollPane")!;
+        scroll.Call("SetPosY", MenuLayout.ScrollFromMarker(y - _markerGrab, scroll.Get<float>("viewHeight"), scroll.Get<float>("contentHeight"), thumbHeight, ViewY), false);
+        return true;
     }
 
     private static void HandleInput()
     {
+        if (DragScrollMarker()) { InputState.Reset(); return; }
         var hit = GameUi.PointerPath().FirstOrDefault(item => Controls.ContainsKey(item.Pointer));
         var pointer = hit?.Pointer ?? IntPtr.Zero;
         if (_hovered != pointer)
@@ -403,13 +444,71 @@ internal static class UpdateNotificationUi
         if (dispatched == UpdateNoticeAction.Settings) ModUi.OpenUpdateSettings();
     }
 
-    internal static void CloseForSettings() { _consumedFrame = Time.frameCount; Clear(); }
+    private static void StartToast(UpdateNotificationTarget target)
+    {
+        _toast = target; _toastFrame = Time.frameCount; _toastLeft = ToastSeconds;
+        _toastTick = ToastShownAt = Time.unscaledTime;
+    }
+
+    private static bool PreviewPressed() => UnityEngine.Input.GetKeyDown(KeyCode.F9)
+        && (UnityEngine.Input.GetKey(KeyCode.LeftControl) || UnityEngine.Input.GetKey(KeyCode.RightControl))
+        && (UnityEngine.Input.GetKey(KeyCode.LeftShift) || UnityEngine.Input.GetKey(KeyCode.RightShift));
+
+    private static void StartPreview()
+    {
+        Clear();
+        var target = new UpdateNotificationTarget(new ReleaseUpdate(Plugin.Version, "Preview",
+            "미리보기 / Preview: Ctrl+Shift+F9 (개발 빌드 전용 / development builds only)", Plugin.Updates.RepositoryPage), "preview");
+        _preview = true; PreviewMark = Plugin.Version;
+        if (GameUi.ToastAvailable) StartToast(target); else Create(GameUi.Root!, target);
+    }
+
+    // The toast lives while its release is still the one to announce. Like the window, it counts as shown only once it has
+    // been on screen; the time runs only while the pointer is off it.
+    private static void TickToast()
+    {
+        var toast = _toast!;
+        if (!_preview)
+        {
+            if (_contextGeneration != State.ContextGeneration || State.Active?.Key != toast.Key && State.Next?.Key != toast.Key) { EndToast(false); return; }
+            if (State.Active == null && _toastFrame < Time.frameCount && GameUi.ToastShown) State.Shown(toast.Key);
+        }
+        var step = Math.Min(Time.unscaledTime - _toastTick, 0.1f);
+        _toastTick = Time.unscaledTime;
+        if (!GameUi.ToastHovered) _toastLeft -= step;
+        if (_toastLeft <= 0) EndToast(true);
+    }
+
+    // A toast that ran out or was closed is not announced again this session.
+    private static void EndToast(bool seen)
+    {
+        if (_toast is { } toast && seen && !_preview && State.Active == null) State.Shown(toast.Key);
+        _toast = null; _preview = false; State.Close();
+    }
+
+    internal static void CloseToast() => EndToast(true);
+
+    // A click on the toast (GameUi's home button input) opens this window with that release's notes.
+    internal static void OpenToast()
+    {
+        if (_toast is not { } toast) return;
+        try
+        {
+            if (!_preview && State.Active == null) State.Shown(toast.Key);
+            _toast = null; _consumedFrame = Time.frameCount;
+            if (GameUi.NotificationHome().Eligible) Create(GameUi.Root!, toast);
+            else { _preview = false; State.Close(); }
+        }
+        catch (Exception ex) { Compatibility.Block(Feature, ex, Clear); }
+    }
+
+    internal static void CloseForSettings() { _consumedFrame = Time.frameCount; PreviewMark = null; Clear(); }
 
     internal static void Clear() => Clear(true);
     private static void Clear(bool cancelled)
     {
         var pending = _pendingTransition; var transition = _transition;
-        _pendingTransition = null; _transition = null; _failedTransition = null; _switching = null; _failedReason = "";
+        _pendingTransition = null; _transition = null; _failedTransition = null; _switching = null; _failedReason = ""; _toast = null; _preview = false;
         if (pending != null) {
             try { pending.Cancellation.Cancel(); } catch { }
             pending.Cancellation.Dispose();
@@ -423,7 +522,7 @@ internal static class UpdateNotificationUi
         State.Close(); InputState.Reset();
         var panel = _panel;
         _frame = _view = _content = _body = _scrollTrack = _scrollThumb = _barTrack = _barFill = _barText = null; _target = null; _progressRevision = -1;
-        _scrollMarker = null; _viewHeight = 0;
+        _scrollMarker = null; _viewHeight = 0; _markerDragging = false;
         _parent = _hovered = IntPtr.Zero; Controls.Clear();
         if (panel == null) return;
         Exception? failure = null;

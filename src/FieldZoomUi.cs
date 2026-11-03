@@ -26,6 +26,10 @@ internal static class FieldZoomUi
     internal static float IndicatorScale => _owned && _fieldVisible && _applied.magnitude > 0
         ? Math.Clamp(_original.magnitude / _applied.magnitude, 0.2f, 5f) : 1f;
     private static IntPtr _wheelBrain, _wheelCamera, _wheelFrame;
+    // WASD moves the native free camera, and the owned view's pan, by FreeCameraObject.CameraSpeed per second; the game
+    // writes it only in its constructor. The WASD Speed slider scales it while this feature runs, and Clear puts it back.
+    private static RuntimeObject? _speedFree;
+    private static float _speedBase, _speedSet;
 
     internal static void Tick()
     {
@@ -56,6 +60,7 @@ internal static class FieldZoomUi
         var free = scene.Field("freeObject");
         var status = free?.Field("status")?.Value<int>() ?? -1;
         if (!Alive(brain) || !Alive(free)) { Clear(); return; }
+        ScaleSpeed(free!);
         var manager = RuntimeObject.StaticField(RuntimeObject.FindClass("Core.Camera", "CameraManager"), "_inst");
         var player = manager?.Call("GetCurPlayerCamera")?.Field("vCamera");
         var cameraObject = scene.Get("mainCamera");
@@ -71,7 +76,7 @@ internal static class FieldZoomUi
             || FieldInputAllowed(root) && !FieldCameraReturnUi.ConsumedInput
                 && !Input.GetMouseButton(0) && !Input.GetMouseButton(1) && !Input.GetMouseButton(2);
         if (!wheelAllowed) { _pendingWheel = 0; WheelState("input-owned"); }
-        if (owned && !Compatibility.Allowed("FieldCameraReturn")) { Clear(); return; }
+        if (owned && !Compatibility.Allowed("FieldCameraReturn")) { Reset(); return; }
         if (held && !FieldFreeCamera.Holding) { _pendingWheel = 0; return; }
         if (blocked || FieldFreeCamera.Holding && !owned)
         {
@@ -82,11 +87,11 @@ internal static class FieldZoomUi
         var active = owned ? FieldFreeCamera.Camera : brain!.Get("ActiveVirtualCamera");
         if (!Alive(active) || active!.TypeName != "CinemachineVirtualCamera"
             || !owned && active.Pointer != scene.Field("freeCamera")?.Pointer && active.Pointer != player?.Pointer)
-        { WheelState("camera-unsupported"); Clear(); return; }
+        { WheelState("camera-unsupported"); Reset(); return; }
         var body = active.Call("GetCinemachineComponent", 0); // Audited Cinemachine Stage.Body.
         if (!Alive(body) || body!.TypeName != "CinemachineTransposer" || !body.Get<bool>("IsValid")
             || body.Field("m_BindingMode")!.Value<int>() != 4 || active.Get("LookAt") != null
-            || active.Call("GetCinemachineComponent", 1) != null) { WheelState("camera-body"); Clear(); return; }
+            || active.Call("GetCinemachineComponent", 1) != null) { WheelState("camera-body"); Reset(); return; }
         var follow = active.Get("Follow");
         if (!Alive(follow)) { _pendingWheel = 0; WheelState("camera-follow"); return; }
         var camera = new Camera(cameraObject!.Pointer);
@@ -357,7 +362,35 @@ internal static class FieldZoomUi
         _body = null; _owned = false;
     }
 
+    private static void ScaleSpeed(RuntimeObject free)
+    {
+        var current = free.Field<float>("CameraSpeed");
+        if (free.Pointer != _speedFree?.Pointer || current != _speedSet)
+        {
+            if (!float.IsFinite(current) || current <= 0) return;
+            _speedFree = free; _speedBase = current;
+        }
+        _speedSet = _speedBase * Math.Clamp(Plugin.FreeCameraSpeed.Value, .1f, 3f);
+        if (current != _speedSet) free.SetField("CameraSpeed", _speedSet);
+    }
+
+    private static void RestoreSpeed()
+    {
+        if (_speedSet != _speedBase && Alive(_speedFree) && _speedFree!.Field<float>("CameraSpeed") == _speedSet)
+            _speedFree.SetField("CameraSpeed", _speedBase);
+        _speedFree = null;
+    }
+
+    // Feature off, PvP, scene exit and failures also put the WASD speed back; the zoom's own camera resets keep it.
     internal static void Clear()
+    {
+        Exception? failure = null;
+        try { RestoreSpeed(); } catch (Exception ex) { failure = ex; }
+        Reset();
+        if (failure != null) throw failure;
+    }
+
+    private static void Reset()
     {
         Exception? failure = null;
         void Attempt(Action action) { try { action(); } catch (Exception ex) { failure ??= ex; } }

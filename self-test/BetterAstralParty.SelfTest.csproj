@@ -39,6 +39,8 @@
     <Compile Include="..\src\ShootingStar.cs" Link="ShootingStar.cs" />
     <Compile Include="..\src\VisibleCombat.cs" Link="VisibleCombat.cs" />
     <Compile Include="..\src\MenuLayout.cs" Link="MenuLayout.cs" />
+    <Compile Include="..\src\SettingsSearch.cs" Link="SettingsSearch.cs" />
+    <Compile Include="..\src\ShapeRaster.cs" Link="ShapeRaster.cs" />
     <Compile Include="..\src\CardAdvisor.cs" Link="CardAdvisor.cs" />
     <Compile Include="..\src\CardKoMinimum.cs" Link="CardKoMinimum.cs" />
     <Compile Include="..\src\CardDiceLayout.cs" Link="CardDiceLayout.cs" />

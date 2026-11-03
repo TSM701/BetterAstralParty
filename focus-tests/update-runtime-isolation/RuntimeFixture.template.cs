@@ -24,6 +24,8 @@ public static class Probe {
 }
 static class Time { internal static int frameCount; internal static float realtimeSinceStartup = 0f; }
 static class Input { internal static bool GetMouseButton(int button) => false; }
+static class Application { internal static bool isFocused = true; }
+static class StallWatch { internal const int ModStart = -2; internal static void Focus(bool focused) { } internal static void Enter(int segment) { } }
 static class StartupGuard { internal const float HealthySeconds = 90f; internal static int HealthyCalls; internal static void Healthy() { HealthyCalls++; } }
 static class RuntimeObject { internal static int Flushes; internal static void FlushLedger(bool due = false) { Flushes++; } }
 enum AutomaticUpdateStatus { Idle, CheckingInstallation }

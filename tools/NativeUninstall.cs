@@ -198,7 +198,7 @@ namespace BetterAstralParty.Installation
                 foreach (var path in backupTargets) NativeMaintenance.AssertTarget(game, path);
                 output("제거 대상 / Files to remove (" + game + "):"); foreach (var path in plan.Targets) output("  " + path);
                 if (loaderUpdated != null) output("공용 로더 enabled 설정을 명시한 선택으로 복원합니다. / Restore shared loader enabled setting; other settings preserved.");
-                if (removeShortcut) output("Remove the matching Astral Party - Mod shortcut only; keep all other Steam entries.");
+                if (removeShortcut) output("Remove the matching BetterAstralParty shortcut only; keep all other Steam entries.");
                 if (shortcutSkipped != null) output((shortcutDiscoveryError as SteamProfileUnavailableException)?.Guidance
                     ?? "Steam 정보를 확정할 수 없어 Steam 라이브러리 항목은 남겨 둡니다. 확인된 모드 파일만 백업 후 제거합니다. / Steam discovery unavailable or ambiguous; keep shortcuts and back up/remove only verified mod files. Reason: " + shortcutSkipped);
                 output("전용 설정·로그도 백업 후 제거합니다. 공용 로더·다른 모드는 유지합니다. / Includes mod settings/logs; shared loader and other mods stay.");
@@ -220,7 +220,7 @@ namespace BetterAstralParty.Installation
                 }
                 if (removeShortcut)
                 {
-                    NativeSteamMaintenance.StopSteam(steamRoot!, steamSession, consent, output);
+                    NativeSteamMaintenance.StopSteam(steamRoot!, steamSession, consent, output, resume: false);
                     removeShortcut = NativeSteamMaintenance.PlanRemove(steamRoot!, account, game);
                 }
                 NativeSteamMaintenance.AssertGameStopped(game);
@@ -257,8 +257,8 @@ namespace BetterAstralParty.Installation
                 output(plan.Retained || receipt == null
                     ? "확인된 파일 제거를 마쳤습니다. 미확인·변경 파일과 기록은 남아 있습니다. / Verified files removed; unknown or modified files and evidence remain."
                     : shortcutSkipped != null
-                        ? "모드 파일 제거 완료. Steam 라이브러리 항목은 남겨 두었습니다. Astral Party - Mod가 남아 있으면 Steam에서 직접 제거하세요. 공용 로더·다른 모드는 유지합니다. / Removed verified mod files; Steam shortcut cleanup skipped. Shared loader and other mods preserved."
-                        : "제거 완료. 모드 파일과 Steam 라이브러리의 Astral Party - Mod를 정리했습니다. 공용 로더 설정과 다른 모드는 유지합니다. / Removed mod files and shortcut; shared loader settings and other mods preserved.");
+                        ? "모드 파일 제거 완료. Steam 라이브러리 항목은 남겨 두었습니다. BetterAstralParty 항목이 남아 있으면 Steam에서 직접 제거하세요. 공용 로더·다른 모드는 유지합니다. / Removed verified mod files; Steam shortcut cleanup skipped. Shared loader and other mods preserved."
+                        : "제거 완료. 모드 파일과 Steam 라이브러리의 BetterAstralParty 항목을 정리했습니다. 공용 로더 설정과 다른 모드는 유지합니다. / Removed mod files and shortcut; shared loader settings and other mods preserved.");
                 return 0;
             }
             catch (Exception error)
@@ -272,7 +272,8 @@ namespace BetterAstralParty.Installation
                     catch (Exception rollbackError) { RecordRollback(error, rollbackError); output("복구 미완료: 백업을 보관하세요. / Recovery incomplete; retain " + transaction.JournalPath); }
                 throw;
             }
-            finally { removal?.Dispose(); installLock?.Dispose(); maintenance?.Dispose(); NativeSteamMaintenance.ResumeSteam(steamSession, output); }
+            // Steam stays closed after removal (user-decided 2026-11-01): the player starts it when they want.
+            finally { removal?.Dispose(); installLock?.Dispose(); maintenance?.Dispose(); }
         }
         private static void RecordRollback(Exception original, Exception failure)
         {

@@ -77,6 +77,8 @@ internal sealed unsafe class RuntimeObject
             if (IL2CPP.il2cpp_class_get_method_from_name(c, name, count) != IntPtr.Zero) return true;
         return false;
     }
+    // A property probe that neither throws nor records a missing method.
+    internal bool HasGetter(string property) => HasMethod(Class, "get_" + property, 0);
 
     internal static void RequireClasses(string feature, params (string Namespace, string Name)[] classes)
     {
@@ -159,6 +161,16 @@ internal sealed unsafe class RuntimeObject
     }
     internal static IntPtr ClassOf(IntPtr pointer) => pointer == IntPtr.Zero ? IntPtr.Zero : IL2CPP.il2cpp_object_get_class(pointer);
     internal static RuntimeObject? StaticField(IntPtr klass, string name) => Wrap(IL2CPP.il2cpp_field_get_value_object(FieldInfo(klass, name), IntPtr.Zero));
+    // A static value field of klass, written after its class initializer ran. An instance field is refused: its offset
+    // does not point into the class's static data.
+    internal static void SetStaticField<T>(IntPtr klass, string name, T value) where T : unmanaged
+    {
+        var field = FieldInfo(klass, name);
+        if ((IL2CPP.il2cpp_field_get_flags(field) & 0x10) == 0) throw new InvalidOperationException("Expected static field " + name); // FIELD_ATTRIBUTE_STATIC
+        CheckValue<T>(IL2CPP.il2cpp_class_from_type(IL2CPP.il2cpp_field_get_type(field)));
+        IL2CPP.il2cpp_runtime_class_init(klass);
+        IL2CPP.il2cpp_field_static_set_value(field, &value);
+    }
     internal static int EnumValue(string ns, string name, string field) => StaticField(FindClass(ns, name), field)!.Value<int>();
     internal T Value<T>() where T : unmanaged
     {
@@ -281,6 +293,7 @@ internal sealed unsafe class RuntimeObject
                     pointers[i] = (void*)str.Pointer;
                     break;
                 case int n: *(int*)slot = n; break;
+                case long id: *(long*)slot = id; break;
                 case float f: *(float*)slot = f; break;
                 case double d: *(double*)slot = d; break;
                 case bool b: *slot = b ? (byte)1 : (byte)0; break;
@@ -288,6 +301,13 @@ internal sealed unsafe class RuntimeObject
                 case UnityEngine.Vector2 point: *(UnityEngine.Vector2*)slot = point; break;
                 case UnityEngine.Vector3 point: *(UnityEngine.Vector3*)slot = point; break;
                 case UnityEngine.Quaternion rotation: *(UnityEngine.Quaternion*)slot = rotation; break;
+                case UnityEngine.Rect region: *(UnityEngine.Rect*)slot = region; break;
+                case NullableRect grid:
+                    // Where the runtime's own fields sit (CheckNullableRect read them for this parameter above).
+                    new Span<byte>(slot, _nullableRect.Size).Clear();
+                    slot[_nullableRect.Flag] = grid.HasValue ? (byte)1 : (byte)0;
+                    *(UnityEngine.Rect*)(slot + _nullableRect.Value) = grid.Value;
+                    break;
                 default: throw new ArgumentException("Unsupported runtime argument");
             }
         }
@@ -314,6 +334,35 @@ internal sealed unsafe class RuntimeObject
         CheckedValues.Add((klass, typeof(T)));
     }
 
+    // System.Nullable<UnityEngine.Rect> (FairyGUI.Image.scale9Grid): Il2CppInterop passes Nullable values to
+    // il2cpp_runtime_invoke as the raw struct. Read where the runtime's own hasValue and value fields sit, once, and write
+    // there (1.7.0-dev.5 assumed hasValue at 0 and value at 4 after the header and was refused in game). Value-type field
+    // offsets may count from the boxed object, after its header; the first field shows which. A mismatch names what it saw.
+    private static (int Flag, int Value, int Size) _nullableRect = (-1, -1, 0);
+    private static void CheckNullableRect(IntPtr klass)
+    {
+        if (CheckedValues.Contains((klass, typeof(NullableRect)))) return;
+        if (klass == IntPtr.Zero || !IL2CPP.il2cpp_class_is_valuetype(klass)
+            || IL2CPP.il2cpp_class_get_namespace_(klass) != "System" || IL2CPP.il2cpp_class_get_name_(klass) != "Nullable`1")
+            throw new InvalidCastException("Expected System.Nullable<UnityEngine.Rect>: " + ClassName(klass));
+        var flag = IL2CPP.il2cpp_class_get_field_from_name(klass, "hasValue");
+        var value = IL2CPP.il2cpp_class_get_field_from_name(klass, "value");
+        uint alignment = 0;
+        var size = IL2CPP.il2cpp_class_value_size(klass, ref alignment);
+        string Type(IntPtr field) => field == IntPtr.Zero ? "-" : IL2CPP.il2cpp_type_get_name_(IL2CPP.il2cpp_field_get_type(field)) ?? "?";
+        long Offset(IntPtr field) => field == IntPtr.Zero ? -1 : IL2CPP.il2cpp_field_get_offset(field);
+        long flagAt = Offset(flag), valueAt = Offset(value);
+        var header = Math.Min(flagAt, valueAt) >= 2 * IntPtr.Size ? 2 * IntPtr.Size : 0;
+        flagAt -= header; valueAt -= header;
+        var seen = $"size {size}, hasValue {Type(flag)} at {flagAt}, value {Type(value)} at {valueAt}, header {header}";
+        if (Type(flag) != "System.Boolean" || Type(value) != "UnityEngine.Rect" || size > 32 || flagAt < 0 || valueAt < 0
+            || flagAt + 1 > size || valueAt + 16 > size || flagAt >= valueAt && flagAt < valueAt + 16)
+            throw new InvalidCastException("Runtime value mismatch: System.Nullable<UnityEngine.Rect>: " + seen);
+        _nullableRect = ((int)flagAt, (int)valueAt, size);
+        Note("layout System.Nullable<UnityEngine.Rect> " + seen);
+        CheckedValues.Add((klass, typeof(NullableRect)));
+    }
+
     private static void CheckArgument(IntPtr type, object? value)
     {
         if (type == IntPtr.Zero || IL2CPP.il2cpp_type_is_byref(type))
@@ -323,6 +372,7 @@ internal sealed unsafe class RuntimeObject
         switch (value)
         {
             case int: CheckValue<int>(klass); return;
+            case long: CheckValue<long>(klass); return; // Player IDs (BattleLogic.RequestGetHeroInfoC2S, GetPlayerDataById)
             case float: CheckValue<float>(klass); return;
             case double: CheckValue<double>(klass); return;
             case bool: CheckValue<bool>(klass); return;
@@ -330,6 +380,8 @@ internal sealed unsafe class RuntimeObject
             case UnityEngine.Vector2: CheckValue<UnityEngine.Vector2>(klass); return;
             case UnityEngine.Vector3: CheckValue<UnityEngine.Vector3>(klass); return;
             case UnityEngine.Quaternion: CheckValue<UnityEngine.Quaternion>(klass); return;
+            case UnityEngine.Rect: CheckValue<UnityEngine.Rect>(klass); return; // FairyGUI.NTexture(NTexture, Rect, bool) atlas sprites (SmoothShape)
+            case NullableRect: CheckNullableRect(klass); return; // FairyGUI.Image.scale9Grid (SmoothShape)
             // Managed strings are marshalled as native String references, also valid for Object/interfaces.
             case string when !IL2CPP.il2cpp_class_is_valuetype(klass)
                 && IL2CPP.il2cpp_class_is_assignable_from(klass, FindClass("System", "String")): return;
@@ -339,4 +391,13 @@ internal sealed unsafe class RuntimeObject
             default: throw new InvalidCastException("Runtime argument mismatch: " + IL2CPP.il2cpp_type_get_name_(type));
         }
     }
+}
+
+// A System.Nullable<UnityEngine.Rect> argument. Only its values matter: RuntimeObject writes them where the runtime's own
+// fields sit (CheckNullableRect), never this struct's managed layout.
+internal struct NullableRect
+{
+    internal bool HasValue;
+    internal UnityEngine.Rect Value;
+    internal NullableRect(UnityEngine.Rect value) { HasValue = true; Value = value; }
 }

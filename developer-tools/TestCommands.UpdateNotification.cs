@@ -37,11 +37,17 @@ internal static partial class TestCommands
         Check(literal.Length == 1 && literal[0].Next.OpCode.Code == Code.Ldc_I4_0, "Production help disables UBB");
         Check(NativeMethod(plugin, ui.FullName, "SetHelp").Body.Instructions.Any(row => row.Operand is MethodReference method && method.FullName.Contains("ModText::UpdateDetails", StringComparison.Ordinal)), "Update text presenter wired to help");
         foreach (var name in new[] { "Check", "Poll", "Tick" }) Check(!NativeMethod(plugin, "BetterAstralParty.ReleaseUpdates", name).Body.Instructions.Any(row => row.Operand is MethodReference method && method.Name is "Wait" or "SendAsync"), "No direct blocking/network in UI update entry: " + name);
-        var tick = NativeMethod(plugin, ui.FullName, "Tick").Body; var backend = IlCalls(tick.Instructions, "BetterAstralParty.ReleaseUpdates", "Tick");
+        // ModUi.Tick wraps TickCore for the stall watch; the frame body is TickCore.
+        var tick = NativeMethod(plugin, ui.FullName, "TickCore").Body; var backend = IlCalls(tick.Instructions, "BetterAstralParty.ReleaseUpdates", "Tick");
         Check(backend.Length == 1 && tick.ExceptionHandlers.Any(handler => handler.HandlerType == ExceptionHandlerType.Catch && handler.TryStart.Offset <= backend[0].Offset && handler.TryEnd.Offset > backend[0].Offset), "Final UI-frame automatic-update exception boundary");
         Check(tick.Instructions.Any(row => row.Operand is MethodReference method && method.FullName.Contains("GameUi::RefreshReleaseNotification", StringComparison.Ordinal)), "Availability presenter connected");
         var notice = NativeMethod(plugin, "BetterAstralParty.GameUi", "RefreshReleaseNotification").Body.Instructions;
-        Check(notice.Any(row => row.Operand is FieldReference field && field.Name == "_menu") && Strings(notice, "n8").Length != 0, "Home notice targets private menu clone native title");
+        Check(notice.Any(row => row.Operand is FieldReference field && field.Name == "_menuButton") && Strings(notice, "redPoint").Length != 0
+            && Strings(notice, "n8").Length == 0, "Home notice lights the private menu clone's native red point and leaves its title");
+        Check(native.MainModule.GetType("UI.UIHome_Button_Activity").Fields.Count(field => field.Name == "redPoint" && field.FieldType.FullName == "FairyGUI.Controller") == 1
+            && IlCalls(NativeMethod(native, "UI.HomePanel", "RefreshActivity").Body.Instructions, "FairyGUI.Controller", "set_selectedIndex").Length != 0, "Native activity red point controller the home switches");
+        Check(IlCalls(NativeMethod(plugin, "BetterAstralParty.GameUi", "HandleMenuInput").Body.Instructions, "BetterAstralParty.UpdateNotificationUi", "OpenToast").Length == 1
+            && IlCalls(NativeMethod(plugin, "BetterAstralParty.GameUi", "HandleMenuInput").Body.Instructions, "BetterAstralParty.UpdateNotificationUi", "CloseToast").Length == 1, "The home toast's click opens the notes and its close only closes");
         Check(!notice.Any(row => row.Operand is MethodReference method && method.Name == "TogglePanel"), "Notice opens no repeated popups");
         var toggle = NativeMethod(plugin, ui.FullName, "TogglePanel").Body.Instructions;
         var toggleCore = NativeMethod(plugin, ui.FullName, "TogglePanelCore").Body.Instructions;

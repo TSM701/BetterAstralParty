@@ -54,7 +54,7 @@ internal static class NativeUi
         format.SetField("shadowOffset", source.Field("shadowOffset")!.Value<Vector2>());
     }
 
-    // Same native rounded-rectangle renderer as game UI; no texture copies or global changes.
+    // Cream rounded panel with the black outline, antialiased (SmoothShape); no global changes.
     internal sealed class Surface
     {
         internal readonly RuntimeObject Graph;
@@ -63,15 +63,10 @@ internal static class NativeUi
         internal Surface(RuntimeObject parent, float width, float height, bool fixedOpacity = false, Color? fill = null)
         {
             _fill = fill ?? new Color(1f, 0.985f, 0.95f, 1f);
-            Graph = RuntimeObject.New(RuntimeObject.FindClass("FairyGUI", "GGraph"));
-            Graph.Set("touchable", false);
-            Graph.Call("SetSize", width, height);
             var radius = height <= 80 ? height / 2 : 18f;
             var opacity = fixedOpacity ? 1f : Plugin.Opacity.Value;
-            Graph.Get("shape")!.Call("DrawRoundRect", 3f, Color.black, Fill(opacity),
-                radius, radius, radius, radius);
+            Graph = SmoothShape.Create(parent, 0f, 0f, width, height, Fill(opacity), radius, radius, radius, radius, 3f, Color.black);
             _opacity = opacity;
-            parent.Call("AddChild", Graph);
         }
         private Color Fill(float alpha) => new(_fill.r, _fill.g, _fill.b, alpha * _fill.a);
         internal void Refresh()
@@ -79,8 +74,8 @@ internal static class NativeUi
             var opacity = Plugin.Opacity.Value;
             if (_opacity == opacity) return;
             _opacity = opacity;
-            // Shape color controls fill vertices only; border color and child alpha stay intact.
-            Graph.Set("color", Fill(opacity));
+            // Only the fill changes; the border and child alpha stay intact.
+            SmoothShape.Fill(Graph, Fill(opacity));
         }
         internal void Resize(float width, float height) => Graph.Call("SetSize", width, height);
     }

@@ -1,6 +1,6 @@
 @echo off
 setlocal DisableDelayedExpansion
-rem Steam's "Astral Party - Mod" shortcut. Steam itself starts the owned app 2622000, so the overlay and
+rem Steam's "Astral Party - BetterAstralParty" shortcut. Steam itself starts the owned app 2622000, so the overlay and
 rem in-game checkout bind to the real game. A short-lived request file activates BetterAstralParty for that launch.
 if not exist "%~dp0AstralParty_INT.exe" (
     echo Astral Party not found next to this file. Reinstall BetterAstralParty.
@@ -9,7 +9,7 @@ if not exist "%~dp0AstralParty_INT.exe" (
 )
 "%SystemRoot%\System32\tasklist.exe" /FI "IMAGENAME eq AstralParty_INT.exe" /NH | "%SystemRoot%\System32\find.exe" /I "AstralParty_INT.exe" >nul
 if not errorlevel 1 (
-    echo Astral Party is already running. Close it, then start "Astral Party - Mod" again.
+    echo Astral Party is already running. Close it, then start BetterAstralParty again.
     pause
     exit /b 1
 )

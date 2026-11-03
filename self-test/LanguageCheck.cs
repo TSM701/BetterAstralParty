@@ -23,14 +23,28 @@ internal static class LanguageCheck
             }) && !sides[0] && !sides[3] && sides[1] && sides.Count(left => left) >= 2, "Crowded category bubbles alternate sides and never overlap");
         Check(!MenuLayout.BubbleSides(new[] { 6f, 60f, 120f, 394f }).Any(left => left), "Spread category bubbles all sit right of the track");
         Check(MenuLayout.Parent("ShootingStarShow") == "Enabled" && MenuLayout.Parent("ShushuShield") == "ShushuMaster"
-            && MenuLayout.Parent("CounterSound") == "BattleStatus" && MenuLayout.Parent("ZoomSensitivity") == "FieldZoom", "Feature switches sit under their master switch");
+            && MenuLayout.Parent("CounterSound") == "BattleStatus" && MenuLayout.Parent("ZoomSensitivity") == "FieldZoom"
+            && MenuLayout.Parent("FreeCameraSpeed") == "FieldZoom", "Feature switches sit under their master switch");
         Check(MenuLayout.SubParent("CounterAnimation") == "CounterIcons" && MenuLayout.SubParent("CounterSound") == "CounterIcons"
-            && MenuLayout.ToggleWidth("CounterSound") == MenuLayout.SubWidth && MenuLayout.ToggleHeightFor("CounterSound") == MenuLayout.SubHeight
-            && MenuLayout.Indent("CounterSound") == (480 - MenuLayout.SubWidth) / 2 && MenuLayout.ToggleWidth("CounterIcons") == MenuLayout.ChildWidth,
-            "Counter animation and sound are sub-switches of Counter Icons in its capsule");
-        Check(MenuLayout.Parent("PlayerTabHand") == "PlayerTab" && MenuLayout.Parent("PlayerTabRole") == "PlayerTab" && MenuLayout.Parent("PlayerTab") == null,
+            && MenuLayout.Head("CounterIcons") && MenuLayout.ToggleHeightFor("CounterSound") == MenuLayout.ChipHeight
+            && MenuLayout.ChipColumn("CounterAnimation") == 0 && MenuLayout.ChipColumn("CounterSound") == 1
+            && MenuLayout.SettingY("CounterSound") == MenuLayout.SettingY("CounterAnimation")
+            && MenuLayout.SettingY("CounterAnimation") == MenuLayout.SettingY("CounterIcons") + MenuLayout.ChildHeight + MenuLayout.LinesTop
+            && MenuLayout.RowBox("CounterSound").X + MenuLayout.ToggleWidth("CounterSound") == MenuLayout.ChildX + MenuLayout.ChildWidth - 14
+            && MenuLayout.HeadHeight("CounterIcons") == MenuLayout.ChildHeight + MenuLayout.LinesTop + MenuLayout.LineHeight + MenuLayout.LinesBottom
+            && MenuLayout.HeadHeight("IndicatorFade") == MenuLayout.ChildHeight + MenuLayout.LinesTop + MenuLayout.LineHeight + MenuLayout.LinesBottom
+            && MenuLayout.SettingY("IndicatorHide") == MenuLayout.SettingY("IndicatorFade") + MenuLayout.HeadHeight("IndicatorFade") + MenuLayout.RowGap,
+            "Counter animation and sound are two chips on one line inside Counter Icons' row; a tuning slider is one line");
+        Check(MenuLayout.Parent("PlayerTabHand") == "PlayerTab" && MenuLayout.Parent("PlayerTabRole") == "PlayerTab" && MenuLayout.Parent("PlayerTabSkill") == "PlayerTab" && MenuLayout.Parent("PlayerTab") == null,
             "Player list tab parts sit under their master switch");
         Check(ModText.Text(MenuLayout.Help("Enabled").Title + ": OFF") == "Action Advice: OFF", "Toggle separator in English");
+        var checkedAt = new DateTimeOffset(2026, 11, 1, 8, 53, 0, TimeSpan.Zero);
+        var stalePills = ModText.CheckPills(new ReleaseUpdateResult(ReleaseUpdateStatus.Stale, null, checkedAt, ReleaseUpdateStatus.RateLimited), checkedAt.AddMinutes(2));
+        var freshPills = ModText.CheckPills(new ReleaseUpdateResult(ReleaseUpdateStatus.UpToDate, null, checkedAt), checkedAt.AddMinutes(2));
+        Check(stalePills.First.StartsWith("Rate", StringComparison.Ordinal) && stalePills.Second!.Contains(" as of ", StringComparison.Ordinal) && freshPills.Second!.StartsWith("checked ", StringComparison.Ordinal)
+            && ModText.CapsuleLabel(true, false, false) == "Check Again" && ModText.CapsuleLabel(false, true, false) == "Switch" && ModText.CapsuleLabel(false, false, true) == "Waiting"
+            && MenuLayout.SettingY("AutoUpdate") - MenuLayout.SettingY("Update") == MenuLayout.UpdateHeight + MenuLayout.RowGap,
+            "Update row names a failed recheck with the result it still shows, and the next row starts below its full height");
         ModText.Select("한국어");
         Check(ModText.Text(MenuLayout.Help("MuteUnfocused").Title + ": ON") == "백그라운드 음소거: ON", "Mute label and separator in Korean");
         ModText.Select("Auto", "Event");
@@ -76,7 +90,7 @@ internal static class LanguageCheck
         Check(ModText.Text("계산 정보 부족") == "Insufficient data", "Unknown data label");
         Check(ModText.Text("보장 조건 없음") == "No guaranteed roll", "No guaranteed threshold label");
         foreach (var action in new[] { "", "Enabled", "Details", "KoMinimum", "CardPopups", "BattleStatus", "ShushuShield", "FieldBuffs",
-            "Names", "Diagnostics", "MuteUnfocused", "FieldZoom", "MatchFocus", "Scale", "Opacity", "IndicatorFadeStrength", "FoldedHandOpacity", "Close", "Language", "General", "Features",
+            "Names", "Diagnostics", "MuteUnfocused", "FieldZoom", "MatchFocus", "Scale", "Opacity", "IndicatorFadeStrength", "FoldedHandOpacity", "FreeCameraSpeed", "Close", "Language", "General", "Features",
             "UpdateChannel", "UpdateCheck", "UpdateDownload" })
         {
             var (title, body) = MenuLayout.Help(action);
@@ -122,7 +136,7 @@ internal static class LanguageCheck
         ModText.Select("한국어"); // Existing calculation/presentation regression tests retain their baseline.
         var booleanActions = new[] { "Enabled", "Details", "KoMinimum", "CardPopups", "BattleStatus", "ShushuShield", "ShushuShieldRestrictions",
             "FieldBuffs", "FieldZoom", "MatchFocus", "Names", "Diagnostics", "MuteUnfocused", "AutoThanks", "CharacterRoles", "CharacterGuide",
-            "IndicatorFade", "IndicatorHide", "DiceLock", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "ShootingStarShow", "KoCardPreview", "KoSpectator", "StatusHand", "StatusEffects", "CounterIcons", "ShushuMaster", "PlayerTab", "PlayerTabHand", "PlayerTabRole" };
+            "IndicatorFade", "IndicatorHide", "DiceLock", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "ShootingStarShow", "KoCardPreview", "KoSpectator", "StatusHand", "StatusEffects", "CounterIcons", "ShushuMaster", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill", "OldReplays" };
         var padding = new[] { "이 기능을 끕니다", "다른 설정", "별도", "independent", "other settings" };
         foreach (var action in booleanActions)
         {
@@ -146,13 +160,16 @@ internal static class LanguageCheck
             && sections.Select(section => section.Title).Distinct().Count() == sections.Length, "Both settings tabs have distinct category titles");
         var categoryActions = sections.SelectMany(section => section.Actions).ToArray();
         Check(sections.Single(section => section.Title == "손패·카드").Actions.SequenceEqual(new[] { "HandLayout", "FoldedHandOpacity", "CardPopups" })
-            && sections.Single(section => section.Title == "캐릭터").Actions.SequenceEqual(new[] { "Names", "CharacterRoles", "CharacterGuide", "PlayerTab", "PlayerTabHand", "PlayerTabRole" })
+            && sections.Single(section => section.Title == "캐릭터").Actions.SequenceEqual(new[] { "Names", "CharacterRoles", "CharacterGuide", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill" })
             && !categoryActions.Contains("CardTargetButtons"), "Cards and characters are separate; target button priority is always applied");
         Check(MenuLayout.SectionBandX + MenuLayout.SectionBandWidth <= 490 && MenuLayout.SectionBandHeight < MenuLayout.SectionHeight, "Category band stays inside the switch column and header row");
         foreach (var action in categoryActions)
         {
             if (MenuLayout.Parent(action) is { } parent)
-                Check(categoryActions.Contains(parent) && MenuLayout.Parent(parent) == null && Math.Abs(2 * MenuLayout.Indent(action) + MenuLayout.ToggleWidth(action) - 480) < 0.01f, "Dependent option sits indented under a top-level parent: " + action);
+                Check(categoryActions.Contains(parent) && MenuLayout.Parent(parent) == null && MenuLayout.RowBox(action).X >= MenuLayout.ChildX
+                    && MenuLayout.RowBox(action).X + MenuLayout.ToggleWidth(action) <= MenuLayout.ChildX + MenuLayout.ChildWidth
+                    && MenuLayout.ChildX + MenuLayout.ChildWidth - MenuLayout.TrayX - MenuLayout.TrayWidth == MenuLayout.TrayX - MenuLayout.ChildX,
+                    "Dependent option sits indented under a top-level parent, inside the tray's even margins: " + action);
             if (MenuLayout.Subtitle(action) is not { } subtitle) continue;
             ModText.Select("English");
             var english = ModText.Text(subtitle);
@@ -191,7 +208,7 @@ internal static class LanguageCheck
         Check(MenuLayout.Options("Names").Length == 0 && MenuLayout.Options("Enabled").Length == 0, "Binary settings remain toggles");
         Check(MenuLayout.Options("HandLayout").SequenceEqual(new[] { "Native", "Click", "Hover" }), "Hand dropdown order");
         Check(MenuLayout.DropdownY(125, 60, 180) == 189, "Dropdown below");
-        Check(MenuLayout.DropdownY(460, 60, 180) == 276, "Dropdown above footer");
+        Check(MenuLayout.DropdownY(510, 60, 180) == 326, "Dropdown above footer");
         Check(MenuLayout.DropdownY(220, 60, 180, 450) == 36, "Dropdown follows actual footer boundary");
         foreach (var action in new[] { "Language", "HandLayout", "InputAttention" })
         foreach (var option in MenuLayout.Options(action))
@@ -215,7 +232,8 @@ internal static class LanguageCheck
             Check(MenuLayout.AutoUpdateMode(check, download, apply) == mode, "Automatic update step round-trips: " + mode);
         }
         Check(MenuLayout.AutoUpdateMode(false, true, true) == "Custom" && MenuLayout.OptionLabel("AutoUpdate", "Custom") == "사용자 지정", "Saved combinations outside the steps stay visible as Custom");
-        Check(MenuLayout.ScrollFromMarker(MenuLayout.SettingsY, 390, 1000, 100) == 0 && MenuLayout.ScrollFromMarker(MenuLayout.SettingsY + 290, 390, 1000, 100) == 610            && MenuLayout.ScrollFromMarker(MenuLayout.SettingsY + 999, 390, 1000, 100) == 610 && MenuLayout.ScrollFromMarker(MenuLayout.SettingsY + 50, 390, 300, 100) == 0, "Dragged scroll marker maps to the clamped list position");
+        Check(MenuLayout.ScrollFromMarker(MenuLayout.SettingsY, 390, 1000, 100) == 0 && MenuLayout.ScrollFromMarker(MenuLayout.SettingsY + 290, 390, 1000, 100) == 610            && MenuLayout.ScrollFromMarker(MenuLayout.SettingsY + 999, 390, 1000, 100) == 610 && MenuLayout.ScrollFromMarker(MenuLayout.SettingsY + 50, 390, 300, 100) == 0
+            && MenuLayout.ScrollFromMarker(110 + 290, 390, 1000, 100, 110) == 610, "Dragged scroll marker maps to the clamped list position, from its own track top");
         var backupRoot = Path.Combine(Path.GetTempPath(), "bap-settings-backup-" + Guid.NewGuid().ToString("N"));
         try
         {

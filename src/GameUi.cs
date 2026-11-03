@@ -19,6 +19,15 @@ internal static class GameUi
     private static float _progressTrackWidth;
     private static bool _progressStoppedLayout, _progressHover;
     private static (IntPtr Menu, int Progress, int Language)? _progressShown;
+    // The new-version toast left of the button (UpdateNotificationUi.Toast): it slides in, runs a timer bar and, like the
+    // progress capsule, is a click target; its own x closes it.
+    private static RuntimeObject? _menuButton, _toastView, _toastClose, _toastTimer;
+    private static string? _toastKey;
+    private static bool _toastHover;
+    private const float ToastWidth = 470f, ToastHeight = 78f;
+    internal static bool ToastAvailable => Compatibility.Allowed("HomeMenu") && Visible(_menu);
+    internal static bool ToastShown => Visible(_toastView) && _toastView!.Get<float>("alpha") > 0;
+    internal static bool ToastHovered => _toastHover;
     private static (float X, float Y, float Alpha, bool Visible, bool Touchable)? _menuState;
     private static RuntimeObject? _defButton, _dodgeButton;
     private static ChoiceVisual? _observerSummary;
@@ -297,6 +306,7 @@ internal static class GameUi
             var nativeButton = NativeUi.Create("Home", "Home_Button_Activity")
                 ?? throw new InvalidOperationException("원본 메뉴 버튼 준비 대기");
             _menu.Call("AddChild", nativeButton);
+            _menuButton = nativeButton;
             // Keep the native button controller, hover/down gears and sound.
             // No HomePanel event/shop callbacks are attached to this private instance.
             nativeButton.Field("redPoint")!.Set("selectedIndex", 0);
@@ -319,39 +329,10 @@ internal static class GameUi
             art.Call("GetChildAt", 0)!.Call("SetXY", 4f, 8f);
             AddRoundedRect(art, 343, 166, 0, new Color(0f, 0f, 0f, 0.24f));
             art.Call("GetChildAt", 1)!.Call("SetXY", 6f, 10f);
-            AddRoundedRect(art, 343, 166, 0, new Color(0.10f, 0.72f, 0.80f));
+            AddRoundedRect(art, 343, 166, 0, HomePortrait.Plate());
             art.Call("GetChildAt", 2)!.Call("SetXY", 2f, 6f);
-            var portrait = NativeUi.Component(art, 354, 194);
-            portrait.Call("SetXY", -10f, -22f);
-            // Overflow's screen-aligned clip rect cannot follow a rotated lower edge.
-            // A native stencil mask inherits the same transform as the portrait and plate.
-            var portraitMask = RuntimeObject.New(RuntimeObject.FindClass("FairyGUI", "GGraph"));
-            portraitMask.Call("SetSize", 370f, 234f);
-            portraitMask.Call("SetXY", -4f, -40f);
-            portraitMask.Get("shape")!.Call("DrawRect", 0f, Color.white, Color.white);
-            portraitMask.Set("touchable", false);
-            portrait.Call("AddChild", portraitMask);
-            portrait.Set("mask", portraitMask.Get("displayObject")!);
-            // Shadow first, portrait second: share the native cached texture/alpha silhouette.
-            // Both inherit the same mask and hover transform; tint only the private loader.
-            foreach (var shadow in new[] { true, false })
-            {
-                var skin = RuntimeObject.New(RuntimeObject.FindClass("UI", "TextureLoader"));
-                skin.Set("touchable", false);
-                // Native ScaleMatchWidth preserves the full source width and aspect ratio.
-                skin.Set("autoSize", false);
-                skin.Set("fill", 3); // FairyGUI.FillType.ScaleMatchWidth (not ScaleFree).
-                skin.Call("SetSize", 354f, 194f);
-                skin.Call("SetXY", shadow ? 8f : 0f, shadow ? -6f : -12f);
-                if (shadow)
-                {
-                    skin.Set("color", Color.black);
-                    skin.Set("alpha", 0.35f);
-                }
-                portrait.Call("AddChild", skin);
-                // Native async cache owns the shared texture and releases each loader's reference.
-                skin.Set("url", "UT_Hero_Card_101_01");
-            }
+            // The portrait inherits the plate's hover transform; its clip is baked once the art loads.
+            HomePortrait.Build(art);
             var title = nativeButton.Call("GetChild", "n8")!;
             title.Set("text", ModText.Text("모드 설정"));
             title.Set("autoSize", 3);
@@ -361,7 +342,7 @@ internal static class GameUi
             NativeUi.Position(nativeButton, 0f, 0f, 1f);
             var scale = Math.Min(activity.Get<float>("scaleX"), activity.Get<float>("scaleY"));
             _menu.Call("SetScale", scale, scale);
-            // Character art extends 17px left of its hit box; leave another 16px clear.
+            // The earlier art reached 17px left of the hit box plus 16px clear; the spacing stays.
             _menuOffsetX = _menu.Get<float>("width") * scale + 33f * scale;
             _menuState = null;
             Plugin.Logger.LogInfo("[게임 UI 연결] 메인메뉴에 모드 설정 버튼 추가됨");
@@ -369,20 +350,29 @@ internal static class GameUi
         }
     }
 
-    // Only the mod-owned Activity clone's known title/tooltip; no native controller indices or callbacks.
+    // Only the mod-owned Activity clone: its own native red point (the redPoint controller the home sets on live buttons)
+    // marks a new version until the settings show it, and the tooltip names it; no callbacks.
     internal static void RefreshReleaseNotification()
     {
         if (!Compatibility.Allowed("HomeMenu")) return;
         if (_menu == null || _menu.Get<bool>("isDisposed")) return;
-        var version = Plugin.Updates.NotificationVersion;
+        RefreshUpdateToast();
+        var version = Plugin.Updates.NotificationVersion ?? UpdateNotificationUi.PreviewMark;
         var state = (_menu.Pointer, ModText.Revision, version);
         if (_releaseNotice == state) return;
-        var title = ModText.Text("모드 설정") + (version == null ? "" : " · " + ModText.Text("새 버전"));
-        _menu.Call("GetChildAt", 0)!.Call("GetChild", "n8")!.Set("text", title);
+        _menuButton!.Field("redPoint")!.Set("selectedIndex", version == null ? 0 : 1);
         var tooltip = ModText.Text("BetterAstralParty · 모드 설정 (F8)");
         if (version != null) tooltip += "\n" + ModText.Text("새 버전") + ": " + version;
         _menu.Set("tooltips", tooltip);
         _releaseNotice = state;
+    }
+
+    // The pointer in a component's local coordinates (FairyGUI's touch position).
+    internal static (float X, float Y) PointerIn(RuntimeObject target)
+    {
+        var point = target.Call("GlobalToLocal", RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "Stage"), "get_inst")!
+            .Get<Vector2>("touchPosition"))!.Value<Vector2>();
+        return (point.x, point.y);
     }
 
     internal static void RefreshUpdateProgress()
@@ -409,8 +399,8 @@ internal static class GameUi
         _progressLabel!.Set("text", ModText.UpdateProgressCapsule(progress.Version, progress.Status, progress.Step, progress.Stopped, progress.Done));
         _progressPercent!.Set("text", progress.Percent + "%");
         _progressFill!.Call("SetSize", Math.Max(10f, _progressTrackWidth * progress.Percent / 100f), 10f);
-        _progressFill.Set("color", accent);
-        _progressDoor!.Set("color", accent);
+        SmoothShape.Fill(_progressFill, accent);
+        SmoothShape.Fill(_progressDoor!, accent);
         ModFont.Track(_progressLabel); ModFont.Track(_progressPercent);
         if (_progressReason != null)
         {
@@ -422,15 +412,7 @@ internal static class GameUi
 
     private static RuntimeObject ProgressShape(RuntimeObject parent, float x, float y, float width, float height, Color fill,
         float topLeft, float topRight, float bottomLeft, float bottomRight, float line = 0f)
-    {
-        var graph = RuntimeObject.New(RuntimeObject.FindClass("FairyGUI", "GGraph"));
-        graph.Set("touchable", false);
-        parent.Call("AddChild", graph);
-        graph.Call("SetSize", width, height);
-        graph.Call("SetXY", x, y);
-        graph.Get("shape")!.Call("DrawRoundRect", line, Color.black, fill, topLeft, topRight, bottomLeft, bottomRight);
-        return graph;
-    }
+        => SmoothShape.Create(parent, x, y, width, height, fill, topLeft, topRight, bottomLeft, bottomRight, line);
 
     // Cream capsule as wide as the button: title, one continuous bar, percent, and a coloured door section on the
     // right carrying an open-outward arrow. The whole capsule is the click target.
@@ -485,6 +467,75 @@ internal static class GameUi
         }
     }
 
+    // Follows UpdateNotificationUi.Toast: built per release (a language change rebuilds the whole menu), sliding in over
+    // 0.25 s and fading out over its last 0.25 s.
+    private static void RefreshUpdateToast()
+    {
+        var toast = UpdateNotificationUi.Toast;
+        if (toast == null)
+        {
+            if (_toastView != null && !_toastView.Get<bool>("isDisposed")) Dispose(_toastView);
+            _toastView = _toastClose = _toastTimer = null; _toastKey = null; _toastHover = false;
+            return;
+        }
+        if (_toastView == null || _toastView.Get<bool>("isDisposed") || _toastKey != toast.Key)
+        {
+            if (_toastView != null && !_toastView.Get<bool>("isDisposed")) Dispose(_toastView);
+            CreateUpdateToast(toast.Release.Version);
+            _toastKey = toast.Key; _toastHover = false;
+        }
+        var reveal = AdviceText.Reveal(Time.unscaledTime - UpdateNotificationUi.ToastShownAt, 0.25f);
+        var left = UpdateNotificationUi.ToastRemaining;
+        _toastView!.Call("SetXY", -ToastWidth - 24f, -12f - (1 - reveal) * 24f);
+        _toastView.Set("alpha", reveal * Math.Min(1f, left * UpdateNotificationUi.ToastSeconds / 0.25f));
+        _toastTimer!.Call("SetSize", Math.Max(4f, (ToastWidth - 44f) * left), 4f);
+    }
+
+    // Draft 3: a cream card with the capsule's outline, a yellow disc with an up arrow, the version, a hint, a dark close
+    // disc and a timer bar along the bottom.
+    private static void CreateUpdateToast(string version)
+    {
+        var ink = new Color(0.067f, 0.067f, 0.067f);
+        _toastView = NativeUi.Component(_menu!, ToastWidth, ToastHeight);
+        _toastView.Call("SetPivot", 0.5f, 0.5f, false);
+        _toastView.Set("opaque", true);
+        ProgressShape(_toastView, 0, 0, ToastWidth, ToastHeight, new Color(1f, 0.985f, 0.95f), 20, 20, 20, 20, 3f);
+        ProgressShape(_toastView, 14, 13, 52, 52, new Color(1f, 0.76f, 0.05f), 26, 26, 26, 26, 3f);
+        ProgressShape(_toastView, 37.75f, 28, 4.5f, 23, ink, 2.25f, 2.25f, 2.25f, 2.25f);
+        foreach (var side in new[] { -1f, 1f })
+        {
+            // Each head is 14 long at 45 degrees, its upper end on the arrow's tip.
+            var head = ProgressShape(_toastView, 0, 0, 14, 4.5f, ink, 2.25f, 2.25f, 2.25f, 2.25f);
+            head.Call("SetPivot", 0.5f, 0.5f, true);
+            head.Call("SetXY", 40f + side * 4.2f, 31.5f);
+            head.Set("rotation", side * 45f);
+        }
+        // The settings list's text: the default template's face without its outline is dark (the dark template's is white).
+        var title = NativeUi.Label(_toastView, "BetterAstralParty " + version, 80, 8, ToastWidth - 80 - 52, 36, 22);
+        var hint = NativeUi.Label(_toastView, "새 버전이 나왔습니다 · 눌러서 변경 내역 보기", 80, 40, ToastWidth - 80 - 24, 24, 15);
+        foreach (var (label, size, color) in new[] { (title, 22, (Color?)null), (hint, 15, new Color(0.478f, 0.431f, 0.361f)) })
+        {
+            StyleText(label, size, align: 0);
+            ModUi.Plain(label, color);
+            label.Set("singleLine", true);
+            label.Set("autoSize", 3); // Shrink a long version or English hint instead of cutting it off.
+            label.Set("verticalAlign", 1);
+        }
+        _toastClose = NativeUi.Component(_toastView, 24, 24);
+        _toastClose.Call("SetXY", ToastWidth - 40, 14f);
+        _toastClose.Set("opaque", true);
+        ProgressShape(_toastClose, 0, 0, 24, 24, new Color(0.275f, 0.243f, 0.204f), 12, 12, 12, 12);
+        foreach (var angle in new[] { 45f, -45f })
+        {
+            var bar = ProgressShape(_toastClose, 0, 0, 12, 2.4f, Color.white, 1.2f, 1.2f, 1.2f, 1.2f);
+            bar.Call("SetPivot", 0.5f, 0.5f, true);
+            bar.Call("SetXY", 12f, 12f);
+            bar.Set("rotation", angle);
+        }
+        ProgressShape(_toastView, 22, ToastHeight - 10, ToastWidth - 44, 4, new Color(0.914f, 0.875f, 0.769f), 2, 2, 2, 2);
+        _toastTimer = ProgressShape(_toastView, 22, ToastHeight - 10, ToastWidth - 44, 4, new Color(1f, 0.76f, 0.05f), 2, 2, 2, 2);
+    }
+
     internal static void RefreshLanguage()
     {
         // UpdateHome may already have created the menu in the new language this
@@ -516,20 +567,13 @@ internal static class GameUi
         }
     }
 
-    internal static void AddRoundedRect(RuntimeObject parent, float width, float height, float inset, Color color)
-    {
-        var graph = RuntimeObject.New(RuntimeObject.FindClass("FairyGUI", "GGraph"));
-        var radii = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray<float>(new[] { 12f, 12f, 12f, 12f });
-        graph.Call("DrawRoundRect", width, height, color, new RuntimeObject(radii.Pointer));
-        graph.Call("SetXY", inset, inset);
-        graph.Set("touchable", false);
-        parent.Call("AddChild", graph);
-        GC.KeepAlive(radii);
-    }
+    internal static void AddRoundedRect(RuntimeObject parent, float width, float height, float inset, Color color) =>
+        SmoothShape.Create(parent, inset, inset, width, height, color, 12f, 12f, 12f, 12f);
 
     private static void FollowHomeMenu()
     {
         if (_menu == null || _menu.Get<bool>("isDisposed")) return;
+        HomePortrait.Tick();
         var visible = Visible(_menuAnchor);
         if (!visible)
         {
@@ -573,15 +617,24 @@ internal static class GameUi
     {
         if (!HomeAvailable || !Visible(_menu) || _root == null || !_menu!.Get<bool>("touchable")
             || _menu.Get<float>("alpha") <= 0) { _pressed = null; return; }
-        // Hover feedback like native buttons: a slight lift. The pointer path is read only while the capsule shows.
-        if (_progressCap != null && Visible(_progressCap))
+        // Hover feedback like native buttons: a slight lift. The pointer path is read only while the capsule or the toast
+        // shows; the toast and its close disc are children of the menu, so they are hit-tested before it.
+        var capsule = _progressCap != null && Visible(_progressCap);
+        var toast = _toastView != null && Visible(_toastView);
+        if (capsule || toast)
         {
-            var over = PointerPath().Any(item => item.Pointer == _progressCap.Pointer);
-            if (over != _progressHover) { _progressHover = over; var lift = over ? 1.03f : 1f; _progressCap.Call("SetScale", lift, lift); }
+            var under = PointerPath().ToList();
+            var over = capsule && under.Any(item => item.Pointer == _progressCap!.Pointer);
+            if (capsule && over != _progressHover) { _progressHover = over; var lift = over ? 1.03f : 1f; _progressCap!.Call("SetScale", lift, lift); }
+            var onToast = toast && under.Any(item => item.Pointer == _toastView!.Pointer);
+            if (onToast != _toastHover && toast) { var lift = onToast ? 1.02f : 1f; _toastView!.Call("SetScale", lift, lift); }
+            _toastHover = onToast;
         }
+        else _toastHover = false;
         if (!Input.GetMouseButtonDown(0) && !Input.GetMouseButtonUp(0)) return;
         var path = PointerPath().ToList();
-        var hit = (_progressCap != null && Visible(_progressCap) ? path.FirstOrDefault(item => item.Pointer == _progressCap.Pointer) : null)
+        var hit = (capsule ? path.FirstOrDefault(item => item.Pointer == _progressCap!.Pointer) : null)
+            ?? (toast ? path.FirstOrDefault(item => item.Pointer == _toastClose!.Pointer) ?? path.FirstOrDefault(item => item.Pointer == _toastView!.Pointer) : null)
             ?? path.FirstOrDefault(item => item.Pointer == _menu.Pointer);
         if (Input.GetMouseButtonDown(0)) _pressed = hit;
         if (Input.GetMouseButtonUp(0))
@@ -589,6 +642,8 @@ internal static class GameUi
             if (hit != null && _pressed?.Pointer == hit.Pointer)
             {
                 if (hit.Pointer == _progressCap?.Pointer) UpdateNotificationUi.ShowProgress();
+                else if (hit.Pointer == _toastClose?.Pointer) UpdateNotificationUi.CloseToast();
+                else if (hit.Pointer == _toastView?.Pointer) UpdateNotificationUi.OpenToast();
                 else ModUi.TogglePanel();
             }
             _pressed = null;

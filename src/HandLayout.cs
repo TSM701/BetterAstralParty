@@ -22,6 +22,11 @@ internal static class HandLayout
         // Keep the enlarged card and its outline just above the highest folded pile.
         return new(start + index * (cell + gap) + (cell - w) / 2, pileTop - 16 * unit - h * 1.06f, w, h, cell + gap);
     }
+    // The drop zone ends 12 px above every resting card: the folded piles and the open row (Click) or column (Hover),
+    // whose focused card is enlarged. Native use tests the dropped card's centre (its anchored pivot), so a card has to
+    // travel over half its height before a drop counts.
+    internal static float DropBottom(float pileTop, Slot? open, float unit) =>
+        Math.Min(pileTop, open is { } slot ? Focus(slot).Y : pileTop) - 12 * unit;
 
     internal static HandGroup Classify(int id, int cardType) => cardType switch
     {

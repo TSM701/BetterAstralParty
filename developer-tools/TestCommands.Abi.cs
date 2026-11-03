@@ -151,7 +151,43 @@ internal static partial class TestCommands
         using var native = Native(context); var draw = native.MainModule.GetType("FairyGUI.Shape").Methods.Single(method => method.Name == "DrawRoundRect" && method.Parameters.Count == 7);
         Contains(Il(draw), new[] { "RoundedRectMesh::lineColor", "NGraphics::set_color" }, "Independent native border/fill colors");
         var source = ReadSource(context, "src/NativeUi.cs");
-        Contains(source, new[] { "\"DrawRoundRect\", 3f, Color.black, Fill(opacity)", "Graph.Set(\"color\", Fill(opacity))", "if (_opacity == opacity) return", "fixedOpacity ? 1f", "ModFont.Track(label)" }, "Common opacity caching and fixed settings surface");
+        Contains(source, new[] { "SmoothShape.Create(parent, 0f, 0f, width, height, Fill(opacity), radius, radius, radius, radius, 3f, Color.black)", "SmoothShape.Fill(Graph, Fill(opacity))", "if (_opacity == opacity) return", "fixedOpacity ? 1f", "ModFont.Track(label)" }, "Common opacity caching and fixed settings surface");
+        // Smooth shapes (2026-11-01): nine-slice images of a mod-rasterized texture instead of stepped Shape meshes.
+        var imageType = native.MainModule.GetType("FairyGUI.Image");
+        Check(imageType.Methods.Any(method => method.Name == "set_scale9Grid" && method.Parameters.Count == 1 && method.Parameters[0].ParameterType.FullName == "System.Nullable`1<UnityEngine.Rect>")
+            && imageType.Methods.Any(method => method.Name == "set_textureScale" && method.Parameters.Count == 1 && method.Parameters[0].ParameterType.FullName == "UnityEngine.Vector2"), "Native nine-slice image API");
+        Check(Il(imageType.Methods.Single(method => method.Name == "UpdateTexture")).Contains("Image::_textureScale", StringComparison.Ordinal)
+            && Il(imageType.Methods.Single(method => method.Name == "SliceFill")).Contains("Image::_textureScale", StringComparison.Ordinal), "A texture change resets textureScale, and nine-slice honours it");
+        // Atlas sprites (2026-11-02): one root texture wrapper per page, sprites as its regions, outlined shapes as a fill and a ring sized by a relation.
+        var ntexture = native.MainModule.GetType("FairyGUI.NTexture");
+        var wrappers = ntexture.Methods.Where(method => method.Name == ".ctor" && method.Parameters.Count == 4).ToArray();
+        var regions = ntexture.Methods.Where(method => method.Name == ".ctor" && method.Parameters.Count == 3).ToArray();
+        Check(wrappers.Length == 1 && wrappers[0].Parameters.Select(parameter => parameter.ParameterType.FullName).SequenceEqual(new[] { "UnityEngine.Texture", "UnityEngine.Texture", "System.Single", "System.Single" })
+            && regions.Length == 1 && regions[0].Parameters.Select(parameter => parameter.ParameterType.FullName).SequenceEqual(new[] { "FairyGUI.NTexture", "UnityEngine.Rect", "System.Boolean" }), "Native texture wrapper and atlas region constructors (one of each)");
+        Check(native.MainModule.GetType("FairyGUI.GImage").Methods.Any(method => method.Name == "set_texture" && method.Parameters.Count == 1 && method.Parameters[0].ParameterType.FullName == "FairyGUI.NTexture"), "Native image texture setter");
+        Check(native.MainModule.GetType("FairyGUI.GObject").Methods.Count(method => method.Name == "AddRelation" && method.Parameters.Count == 2
+                && method.Parameters[0].ParameterType.FullName == "FairyGUI.GObject" && method.Parameters[1].ParameterType.FullName == "FairyGUI.RelationType") == 1
+            && native.MainModule.GetType("FairyGUI.RelationType").Fields.Any(field => field.Name == "Size"), "Native size relation");
+        // Lost atlas materials (2026-11-02): the page's material cache that SmoothShape.Tick reads and prunes.
+        var materialRef = native.MainModule.GetType("FairyGUI.MaterialManager").NestedTypes.Single(type => type.Name == "MaterialRef");
+        Check(native.MainModule.GetType("FairyGUI.MaterialManager").Fields.Any(field => field.Name == "_materials"
+                && field.FieldType.FullName == "System.Collections.Generic.Dictionary`2<System.Int32,System.Collections.Generic.List`1<FairyGUI.MaterialManager/MaterialRef>>")
+            && materialRef.Fields.Any(field => field.Name == "material" && field.FieldType.FullName == "UnityEngine.Material")
+            && materialRef.Fields.Any(field => field.Name == "group" && field.FieldType.FullName == "System.UInt32")
+            && ntexture.Methods.Any(method => method.Name == "GetMaterialManager" && method.Parameters.Count == 1 && method.Parameters[0].ParameterType.FullName == "System.String")
+            && native.MainModule.GetType("FairyGUI.ShaderConfig").Fields.Any(field => field.Name == "imageShader" && field.IsStatic && field.FieldType.FullName == "System.String"), "Native atlas material cache");
+        var smooth = ReadSource(context, "src/SmoothShape.cs");
+        Contains(smooth, new[] { "if (pointer != IntPtr.Zero && new Material(pointer)) continue;", "refs.Call(\"RemoveAt\", i);", "Plugin.Diagnostics.State(\"smoothShape.materialLost\"",
+            "catch (Exception ex) { _tickFailed = true;" }, "Smooth shapes drop destroyed atlas materials");
+        Check(ReadSource(context, "src/ModUi.cs").Contains("SmoothShape.Tick();", StringComparison.Ordinal), "Destroyed atlas materials are checked from the UI tick");
+        Contains(ReadSource(context, "src/HomePortrait.cs"), new[] { "SmoothShape.Watch(native);", "if (_native != null) { SmoothShape.Unwatch(_native); _native = null; }" }, "The home portrait's baked texture is checked too and unwatched before it is destroyed");
+        Contains(smooth, new[] { "page.Root, new Rect(x + Padding, y + Padding, size, size), false);", "Set(\"textureScale\", new Vector2(ShapeRaster.Density, ShapeRaster.Density))",
+            "Set(\"scale9Grid\", new NullableRect(new Rect(margin, margin, 2, 2)))", "(1f, 1f, 1f, line > 0 ? 0f : 1f), (1f, 1f, 1f, 1f));", "part.Call(\"AddRelation\", shape, size);",
+            "state.FillImage!.Set(\"color\", state.Fill);", "catch (Exception ex) { _failed = true;", "hideFlags = HideFlags.HideAndDontSave" },
+            "Smooth shapes: white atlas sprites, tint-only colours, fill and ring parts, persistence and fallback");
+        NoPattern(smooth, @"Destroy\(|refCount|Release\(", "Smooth shapes never destroy or release textures during the session");
+        foreach (var file in new[] { "ModUi", "NativeUi", "GameUi", "HandLayoutUi", "UpdateNotificationUi" })
+            NoPattern(ReadSource(context, "src/" + file + ".cs"), "\"DrawRoundRect\"", "Mod rounded shapes are smooth (stencil masks keep GGraph): " + file);
         Check(!Regex.IsMatch(source, "SetField\\(\"outline(Color)?\","), "Native text outline preserved");
         foreach (var file in new[] { "AdviceBadge", "ChoiceVisual", "BattleStatusUi" }) {
             var text = ReadSource(context, "src/" + file + ".cs"); Check(text.Contains("new NativeUi.Surface", StringComparison.Ordinal) && !Regex.IsMatch(text, "AddRoundedRect|Plugin.Opacity.Value"), "Common battle surface " + file);

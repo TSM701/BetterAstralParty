@@ -23,7 +23,7 @@ internal static class SetupHost
     {
         if (args.Length != 0 && args[0] == "--diagnostics") return BetterAstralParty.Installation.NativeDiagnosticEntry.Run(args);
         if (args.Length != 0) return BetterAstralParty.Installation.NativeMaintenanceEntry.Run(args);
-        MessageBoxW(IntPtr.Zero, "Install.cmd로 설치하고 Steam의 \"Astral Party - Mod\"로 실행하세요.\r\nRun Install.cmd, then start \"Astral Party - Mod\" from Steam.", "BetterAstralParty", 0x40);
+        MessageBoxW(IntPtr.Zero, "Install.cmd로 설치하고 Steam의 \"Astral Party - BetterAstralParty\"로 실행하세요.\r\nRun Install.cmd, then start \"Astral Party - BetterAstralParty\" from Steam.", "BetterAstralParty", 0x40);
         return 2;
     }
 

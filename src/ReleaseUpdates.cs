@@ -311,7 +311,8 @@ internal sealed class ReleaseUpdates : IDisposable
             _pages = scan.Pages; _lastSuccess = result; _retryAt = DateTimeOffset.MinValue; SyncBackoff(); Set(result);
             if (result.Release?.TransitionCandidate != true) _channelCache[Channel] = (_identity, scan);
             else _channelCache.Remove(Channel);
-            if (result.Release is { } release)
+            // A channel-switch candidate is confirmed in the settings, never announced as a new version (no red point).
+            if (result.Release is { TransitionCandidate: false } release)
             {
                 var versionKey = (release.Version.StartsWith('v') ? release.Version[1..] : release.Version).Split('+')[0];
                 if (_notifiedVersions.Add(versionKey) || NotificationVersion != null) NotificationVersion = release.Version;

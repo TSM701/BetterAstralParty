@@ -4,16 +4,25 @@ namespace BetterAstralParty;
 internal static class Compatibility
 {
     private static readonly Dictionary<string, string> Blocked = new();
+    // Development builds only: settings the settings window's Ctrl+Shift+F10 shows as unavailable, to check that state's
+    // look. Like a tripped breaker it gates the feature, but no cleanup runs and the next press brings it back.
+    private static readonly HashSet<string> Previewed = new();
     internal static int Revision { get; private set; }
+    internal static void TogglePreview(string feature)
+    {
+        if (!Previewed.Remove(feature)) Previewed.Add(feature);
+        Revision++;
+    }
     internal static string? Reason(string feature)
     {
         if (Blocked.TryGetValue(feature, out var reason)) return ModText.Text(reason);
+        if (Previewed.Contains(feature)) return ModText.Text("사용 불가 미리보기 · Ctrl+Shift+F10으로 복구");
         // A part switch is unavailable whenever the breaker of the feature that draws it has tripped.
         if (feature is "Details" or "KoMinimum" or "EncounterAdvice" or "DefenseAdvice" or "CardAdvice" or "KoCardPreview" or "KoSpectator") return Reason("Enabled");
         if (feature is "ShootingStarShow") return Reason("ShootingStar") ?? Reason("Enabled");
         if (feature is "CounterSound" or "CounterAnimation" or "CounterIcons") return Reason("CounterIndicators");
         if (feature is "StatusHand" or "StatusEffects") return Reason("BattleStatus");
-        if (feature is "PlayerTabHand" or "PlayerTabRole") return Reason("PlayerTab");
+        if (feature is "PlayerTabHand" or "PlayerTabRole" or "PlayerTabSkill") return Reason("PlayerTab");
         if (feature is not ("MuteUnfocused" or "MatchFocus" or "Diagnostics" or "Notices")
             && Blocked.TryGetValue("CoreUi", out reason)) return reason;
         return null;

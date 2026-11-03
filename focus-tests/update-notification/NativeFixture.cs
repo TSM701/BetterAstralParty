@@ -4,15 +4,18 @@ namespace UnityEngine
     internal static class Time { internal static int frameCount; internal static float unscaledTime; }
     internal static class Application { internal static bool isFocused = true; internal static int QuitCalls; internal static void Quit() => QuitCalls++; }
     internal readonly record struct Color(float r,float g,float b,float a=1f);
-    internal enum KeyCode { Escape, Return, F8 }
+    internal enum KeyCode { Escape, Return, F8, F9, LeftControl, RightControl, LeftShift, RightShift }
     internal static class Input
     {
-        internal static bool Down, Up, Escape, Enter, Settings;
-        internal static bool anyKeyDown => Escape || Enter || Settings;
+        internal static bool Down, Up, Escape, Enter, Settings, Preview; // Preview: Ctrl+Shift+F9
+        internal static bool Held; // the left button stays down across frames
+        internal static bool GetMouseButton(int button) => button == 0 && (Down || Held);
+        internal static bool anyKeyDown => Escape || Enter || Settings || Preview;
         internal static bool GetMouseButtonDown(int button) => button == 0 && Down;
         internal static bool GetMouseButtonUp(int button) => button == 0 && Up;
-        internal static bool GetKeyDown(KeyCode key) => key switch { KeyCode.Escape => Escape, KeyCode.Return => Enter, _ => Settings };
-        internal static void Reset() { Down = Up = Escape = Enter = Settings = false; }
+        internal static bool GetKeyDown(KeyCode key) => key switch { KeyCode.Escape => Escape, KeyCode.Return => Enter, KeyCode.F9 => Preview, _ => Settings };
+        internal static bool GetKey(KeyCode key) => Preview && key is KeyCode.LeftControl or KeyCode.LeftShift;
+        internal static void Reset() { Down = Up = Escape = Enter = Settings = Preview = false; }
     }
 }
 namespace BetterAstralParty.Updating
@@ -181,6 +184,9 @@ namespace BetterAstralParty
                     BoundsCalls++;
                     ScrollPane.Values["contentHeight"]=Children.Values.Select(child=>child.Get<float>("height")).DefaultIfEmpty(0).Max();
                     ScrollPane.Values["viewHeight"]=Get<float>("height");return null;
+                case "SetPosY":
+                    if (Kind != "ScrollPane" || args is not [float y, bool tween] || tween) throw new InvalidOperationException("SetPosY signature");
+                    Values["posY"]=y;return null;
                 case "ScrollTop":
                     if (Kind != "ScrollPane" || args is not [bool animated] || animated) throw new InvalidOperationException("ScrollTop signature");
                     ScrollTopCalls++;Values["posY"]=0f;return null;
@@ -200,6 +206,10 @@ namespace BetterAstralParty
         internal static RuntimeObject? Root = new("Root");
         internal static UpdateNotificationHome Home = new(true, true, true, true, false, 0, 0, 0);
         internal static readonly List<RuntimeObject> Hit = new();
+        // Without the home button (the default here) an ordinary release opens the window directly; the toast cases turn it on.
+        internal static bool ToastAvailable, ToastShown = true, ToastHovered;
+        internal static (float X, float Y) Pointer; // the pointer in the notice panel's coordinates
+        internal static (float X, float Y) PointerIn(RuntimeObject target) => Pointer;
         internal static UpdateNotificationHome NotificationHome() => Home;
         internal static IEnumerable<RuntimeObject> PointerPath() => Hit;
         internal static bool Visible(RuntimeObject? obj) => obj != null && !obj.Get<bool>("isDisposed") && obj.Get<bool>("visible")
@@ -210,12 +220,16 @@ namespace BetterAstralParty
             obj.Values["fontSize"]=size;obj.Values["align"]=align;
         }
     }
+    internal static class SmoothShape
+    {
+        internal static void Fill(RuntimeObject shape, UnityEngine.Color fill) => shape.Values["fill"] = fill;
+    }
     internal static class NativeUi
     {
         internal sealed class Surface {
             internal readonly RuntimeObject Graph;
             internal Surface(RuntimeObject parent,float width,float height,bool fixedOpacity=false,UnityEngine.Color? fill=null) {
-                if(!fixedOpacity||fill==null||!(width==12&&height is 24 or 300||height==18&&width==560||height==14&&width==14)) throw new InvalidOperationException("Unexpected scroll or progress surface");
+                if(!fixedOpacity||fill==null||!(width==12&&height is 24 or 490||height==18&&width==560||height==14&&width==14)) throw new InvalidOperationException("Unexpected scroll or progress surface");
                 Graph=new RuntimeObject("GGraph");Graph.Values["fill"]=fill.Value;
                 Graph.Set("touchable",false);Graph.Call("SetSize",width,height);parent.Call("AddChild",Graph);
             }
@@ -271,16 +285,19 @@ namespace BetterAstralParty
     }
     internal static class MenuLayout
     {
-        internal const float Width = 1060, Height = 760, NativeFrameHeight = 620;
+        internal const float Width = 1060, Height = 810;
         internal static (float Height,float Y) ScrollMarker(float viewHeight,float contentHeight,float position) {
             if(contentHeight<=viewHeight)return(viewHeight,0);
             var height=Math.Clamp(viewHeight*viewHeight/contentHeight,24,viewHeight);
             return(height,Math.Clamp(position/(contentHeight-viewHeight),0,1)*(viewHeight-height));
         }
         internal static float FitScale(float width,float height,float windowHeight = Height) => MathF.Min(width / Width,height / windowHeight);
+        internal static float ScrollFromMarker(float thumbTop,float viewHeight,float contentHeight,float thumbHeight,float trackTop) =>
+            contentHeight <= viewHeight ? 0 : Math.Clamp((thumbTop - trackTop) / Math.Max(1f, viewHeight - thumbHeight), 0f, 1f) * (contentHeight - viewHeight);
     }
     internal static class AdviceText { internal static float Reveal(float elapsed,float duration=.22f) => Math.Clamp(elapsed / duration,0,1); }
     internal static class ModUi { internal static int Opens; internal static bool ShowsUpdates; internal static void OpenUpdateSettings() => Opens++;
+        internal static void GrowFrame(RuntimeObject frame, float height) => frame.Values["grownTo"] = height;
         internal static void RetryUpdateFromNotice() { Opens++; if (Plugin.Automatic.CanReactivate) Plugin.Automatic.Reactivate(); else if (Plugin.Automatic.CanRecheck) Plugin.Automatic.Recheck(); else Plugin.Automatic.Download(DateTimeOffset.UtcNow); } }
     internal static class Compatibility
     {

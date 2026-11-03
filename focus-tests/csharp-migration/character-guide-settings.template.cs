@@ -70,6 +70,7 @@ internal static class NativeUi {
     internal sealed class Surface { internal readonly RuntimeObject Graph=new();internal Surface(RuntimeObject parent,float width,float height,bool fixedOpacity){} }
 }
 internal static class ModUi { internal static bool IsOpen=false; }
+internal static class SmoothShape { internal static void Fill(RuntimeObject shape,Color fill){} }
 internal static class ModText { internal static int Revision=0;internal static bool Korean=>true; }
 internal static class CharacterRole { internal static string Label(int role,bool korean)=>""; }
 internal static class AdviceText { internal static float Reveal(float elapsed)=>1; }

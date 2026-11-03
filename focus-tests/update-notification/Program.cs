@@ -167,7 +167,8 @@ Case("long notes reuse native scroll list and preserve reading position on refre
     var track=Marker(false);var thumb=Marker(true);
     Check(NativeUi.ScrollTemplates.Last().Get<bool>("isDisposed")&&!view.Get<bool>("isDisposed")&&view.Parent==panel,"reparented native list survives template disposal");
     Check(view.Relations!.RelationClears==1&&view.RemoveChildrenCalls==1&&view.Children.Count==1,"native relations and pooled placeholder children cleared exactly once");
-    Check(view.Get<float>("x")==110&&view.Get<float>("y")==110&&view.Get<float>("width")==840&&view.Get<float>("height")==360,"body viewport reaches the buttons when no progress bar is shown");
+    Check(view.Get<float>("x")==110&&view.Get<float>("y")==110&&view.Get<float>("width")==840&&view.Get<float>("height")==550,"body viewport reaches the buttons when no progress bar is shown");
+    Check(panel.Get<float>("height")==810&&(float)panel.Children.Values.First(c=>c.Kind=="Com_PopUpWindow_Bottom").Values["grownTo"]==810,"the notice window is as tall as the settings");
     Check(view.Get<bool>("touchable")&&view.Get<bool>("opaque")&&!view.Get<bool>("autoResizeItem")&&view.Get<int>("layout")==0
         &&view.Get<int>("selectionMode")==3&&!view.Get<bool>("scrollItemToViewOnClick"),"native clipping/hit/selection contract");
     Check(scroll.Get<bool>("mouseWheelEnabled")&&!scroll.Get<bool>("bouncebackEffect")&&scroll.Get<float>("scrollStep")==48,"native wheel remains enabled");
@@ -178,15 +179,22 @@ Case("long notes reuse native scroll list and preserve reading position on refre
     Check(body.Get<string>("text").EndsWith(ReleaseUpdates.PlainText(notes,ReleaseUpdates.MaxNotes)),"full bounded notes present");
     Check(track.Get<bool>("visible")&&thumb.Get<bool>("visible")&&!track.Get<bool>("touchable")&&!thumb.Get<bool>("touchable"),"overflow marker visible but never takes native input");
     Check(track.Parent==panel&&thumb.Parent==panel&&track.Get<float>("x")==958&&track.Get<float>("y")==110
-        &&track.Get<float>("height")==360&&thumb.Get<float>("x")==958&&thumb.Get<float>("y")==110
-        &&thumb.Get<float>("height")>=24&&thumb.Get<float>("height")<360,"marker fits beside body, above action button area");
+        &&track.Get<float>("height")==550&&thumb.Get<float>("x")==958&&thumb.Get<float>("y")==110
+        &&thumb.Get<float>("height")>=24&&thumb.Get<float>("height")<550,"marker fits beside body, above action button area");
     foreach(var button in new[]{Button("Button_ReturnRounded"),Button("Button_ConfirmRounded")})
         Check(button.Parent==panel&&button.Get<float>("y")>=view.Get<float>("y")+view.Get<float>("height"),"action buttons remain outside scrolling clip");
     Check(scroll.ScrollTopCalls==1,"only initial Create resets scroll");scroll.Values["posY"]=240f;
     var markerY=thumb.Get<float>("y");Frame();
-    Check(thumb.Get<float>("y")>markerY&&thumb.Get<float>("y")+thumb.Get<float>("height")<=470,"native scroll position moves marker within body bounds");
+    Check(thumb.Get<float>("y")>markerY&&thumb.Get<float>("y")+thumb.Get<float>("height")<=660,"native scroll position moves marker within body bounds");
     var trackWrites=MarkerWrites(track);var thumbWrites=MarkerWrites(thumb);Frame();Frame();
     Check(MarkerWrites(track)==trackWrites&&MarkerWrites(thumb)==thumbWrites,"unchanged frames do not write marker visibility/size/position");
+    // The marker drags the text like the settings' one; a release ends the drag (2026-11-03).
+    GameUi.Pointer=(964f,thumb.Get<float>("y")+thumb.Get<float>("height")/2);Frame(()=>{UInput.Down=true;UInput.Held=true;});
+    Check(Math.Abs(scroll.Get<float>("posY")-240)<0.01f,"pressing the thumb keeps its grip");
+    GameUi.Pointer=(964f,600f);Frame();Check(scroll.Get<float>("posY")>240,"dragging the marker scrolls the text");
+    UInput.Held=false;Frame();var dragged=scroll.Get<float>("posY");
+    GameUi.Pointer=(964f,200f);Frame();Check(scroll.Get<float>("posY")==dragged&&Live()==1,"a release ends the drag and dispatches nothing");
+    GameUi.Pointer=(0f,0f);scroll.Values["posY"]=240f;Frame();trackWrites=MarkerWrites(track);thumbWrites=MarkerWrites(thumb);
     var count=NativeUi.Panels.Count;var bounds=view.BoundsCalls;var opens=ModUi.Opens;
     foreach(var status in new[]{AutomaticUpdateStatus.Preparing,AutomaticUpdateStatus.Queued,AutomaticUpdateStatus.Ready}) {
         Plugin.Automatic.Status=status;Plugin.Automatic.Revision++;Frame();
@@ -350,6 +358,57 @@ Case("partial creation failure isolates notification breaker and hit layer",()=>
     Check(Compatibility.Blocked.SetEquals(new[]{UpdateNotificationUi.Feature}),"only own breaker");
     Check(Live()==0 && ModUi.Opens==2,"partial cleanup");
 });
+// With the home button an ordinary release first shows as a toast (draft 3, 2026-11-03); its click opens the window.
+Case("a toast comes first, counts only once on screen, and its click opens the notes",()=>{
+    Compatibility.Blocked.Clear(); UpdateNotificationUi.Clear(); GameUi.ToastAvailable=true; GameUi.ToastShown=false;
+    Inject(Available("2.9.0")); Frame(()=>UInput.Down=true); Check(UpdateNotificationUi.Toast==null,"not on the frame of another click");
+    Frame(); Check(UpdateNotificationUi.Toast?.Key=="2.9.0" && Live()==0,"toast, no window");
+    GameUi.Home=GameUi.Home with{CurrentHome=false}; Frame(); Check(UpdateNotificationUi.Toast==null,"leaving home clears it");
+    GameUi.Home=GameUi.Home with{CurrentHome=true}; Frame(); Check(UpdateNotificationUi.Toast?.Key=="2.9.0","a toast never on screen comes back");
+    GameUi.ToastShown=true; Frame(); Frame();
+    UpdateNotificationUi.OpenToast(); Check(UpdateNotificationUi.ConsumedInput,"the click is taken"); Frame();
+    Check(UpdateNotificationUi.Toast==null && Live()==1 && Body().Get<string>("text").Contains("2.9.0"),"click opens the notes window");
+    Frame(()=>UInput.Escape=true); Frame(); Frame();
+    Check(Live()==0 && UpdateNotificationUi.Toast==null,"announced once");
+});
+Case("hovering holds the toast and its time runs out once",()=>{
+    Inject(Available("2.9.1")); Frame();
+    GameUi.ToastHovered=true; for(var i=0;i<400;i++) Frame();
+    Check(UpdateNotificationUi.Toast?.Key=="2.9.1" && UpdateNotificationUi.ToastRemaining==1,"hover holds it");
+    GameUi.ToastHovered=false; for(var i=0;i<100;i++) Frame();
+    Check(UpdateNotificationUi.Toast!=null && UpdateNotificationUi.ToastRemaining is > 0.3f and < 0.45f,"time runs while the pointer is off");
+    for(var i=0;i<100 && UpdateNotificationUi.Toast!=null;i++) Frame();
+    Check(UpdateNotificationUi.Toast==null && Live()==0,"runs out after its time");
+    Frame(); Frame(); Check(UpdateNotificationUi.Toast==null,"not announced again");
+});
+Case("the toast's close and OFF open no window",()=>{
+    var opens=ModUi.Opens;
+    Inject(Available("2.9.2")); Frame(); Frame(); UpdateNotificationUi.CloseToast(); Frame(); Frame();
+    Check(UpdateNotificationUi.Toast==null && Live()==0 && ModUi.Opens==opens,"close ends it without the window or settings");
+    Plugin.UpdateNotifications.Value=false; Inject(Available("2.9.3")); Frame(); Frame();
+    Check(UpdateNotificationUi.Toast==null && Live()==0,"OFF shows no toast");
+    Plugin.UpdateNotifications.Value=true; Frame(); Check(UpdateNotificationUi.Toast?.Key=="2.9.3","re-ON shows the unseen release");
+    UpdateNotificationUi.Clear(); GameUi.ToastAvailable=false; Frame(); Frame();
+    Check(UpdateNotificationUi.Toast==null && Live()==1,"without the home button the window opens directly");
+    Frame(()=>UInput.Escape=true);
+});
+Case("only a development build previews the toast and red point, without update state",()=>{
+    var dev=typeof(UpdateNotificationUi).GetField("_developmentBuild",BindingFlags.Static|BindingFlags.NonPublic)!;
+    Compatibility.Blocked.Clear(); UpdateNotificationUi.Clear(); GameUi.ToastAvailable=true; Inject(new(ReleaseUpdateStatus.UpToDate)); Frame();
+    Frame(()=>UInput.Preview=true); Check(UpdateNotificationUi.Toast==null && UpdateNotificationUi.PreviewMark==null,"a public build ignores the key");
+    dev.SetValue(null,true); Plugin.UpdateNotifications.Value=false;
+    Frame(()=>UInput.Preview=true);
+    Check(UpdateNotificationUi.Toast?.Release.Version==Plugin.Version && UpdateNotificationUi.PreviewMark==Plugin.Version,"preview toast and mark, even with notices OFF");
+    for(var i=0;i<20;i++) Frame(); Check(UpdateNotificationUi.Toast!=null,"no release state ends the preview");
+    UpdateNotificationUi.OpenToast(); Frame();
+    Check(Live()==1 && Body().Get<string>("text").Contains("Ctrl+Shift+F9"),"its click opens the window with the preview notes");
+    for(var i=0;i<5;i++) Frame(); Check(Live()==1,"the preview window stays without a real release");
+    Frame(()=>UInput.Escape=true); Check(Live()==0 && UpdateNotificationUi.PreviewMark!=null,"closing keeps the mark until the settings open");
+    UpdateNotificationUi.CloseForSettings(); Check(UpdateNotificationUi.PreviewMark==null,"opening the settings clears the mark");
+    Frame(()=>UInput.Preview=true); for(var i=0;i<200 && UpdateNotificationUi.Toast!=null;i++) Frame();
+    Check(UpdateNotificationUi.Toast==null && Live()==0,"a preview toast runs out like a real one");
+    UpdateNotificationUi.CloseForSettings(); dev.SetValue(null,false); Plugin.UpdateNotifications.Value=true; GameUi.ToastAvailable=false;
+});
 
 var entered=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 var finish=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -384,14 +443,14 @@ Case("explicit lower-channel native confirmation displays source target and one-
     var before=Plugin.Automatic.ConfirmCalls;
     Check(Body().Get<string>("text").Contains("3.0.0")&&Body().Get<string>("text").Contains("2.0.0"),"both versions are visible before approval");
     Check(Plugin.Automatic.ConfirmCalls==before,"showing review does not approve");
-    Check(ScrollView().Get<float>("height")==360,"review text reaches the buttons without a progress bar");
+    Check(ScrollView().Get<float>("height")==550,"review text reaches the buttons without a progress bar");
     Click("Button_ConfirmRounded",true);Click("Button_ConfirmRounded",false);
     Check(Plugin.Automatic.ConfirmCalls==before+1&&Plugin.Automatic.ApplyOnce&&Live()==1,"only exact confirm click approves once and keeps the window");
     Plugin.Automatic.Status=AutomaticUpdateStatus.Downloading;Plugin.Automatic.Revision++;Frame();
     var exit=Button("Button_ConfirmRounded");
     Check(exit.Get<string>("title")==ModText.ChannelTransitionExit&&exit.Get<bool>("grayed")&&Body().Get<string>("text").Contains("2.0.0"),"Exit and Switch stays gray while downloading");
     UpdateProgress.Shared.Observe(AutomaticUpdateStatus.Downloading,"2.0.0",true,100,400);Frame();
-    Check(ScrollView().Get<float>("height")==300,"progress bar shortens the text to keep its row clear");
+    Check(ScrollView().Get<float>("height")==490,"progress bar shortens the text to keep its row clear");
     var quits=UnityEngine.Application.QuitCalls;
     Click("Button_ConfirmRounded",true);Click("Button_ConfirmRounded",false);
     Check(UnityEngine.Application.QuitCalls==quits&&Live()==1,"gray Exit and Switch never closes the game");

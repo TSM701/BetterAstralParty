@@ -574,7 +574,7 @@ internal static partial class NativeMaintenanceIntegrationFixture
             && Encoding.UTF8.GetString(Read(Full(game, "doorstop_config.ini"))).Contains("unrelated=preserved"), "takeover keeps settings, shared loader and other mods");
         var shortcuts = NativeSteamMaintenance.ReadShortcuts(Read(Full(steam, "userdata/1/config/shortcuts.vdf"))); bool legacy;
         var owned = NativeSteamMaintenance.OwnedShortcutKeys(shortcuts, game, out legacy); var entry = (OrderedDictionary)((OrderedDictionary)shortcuts["shortcuts"]!)[owned[0]]!;
-        Check(owned.SequenceEqual(new[] { "7" }) && !legacy && (uint)entry["appid"]! == 0x80001234U && ((OrderedDictionary)shortcuts["shortcuts"]!).Contains("99"), "launcher shortcut converted in place to Mod.cmd with the same app ID; unrelated shortcut kept");
+        Check(owned.SequenceEqual(new[] { "7" }) && !legacy && (uint)entry["appid"]! == 0x80001234U && (string)entry["AppName"]! == "Astral Party - BetterAstralParty" && ((OrderedDictionary)shortcuts["shortcuts"]!).Contains("99"), "launcher shortcut converted in place to Mod.cmd and the current name with the same app ID; unrelated shortcut kept");
         // The shortcut write is the last step, after every legacy removal. Steam reported running only while the
         // journal is open fails that write inside the transaction and forces the real journal rollback.
         var failing = LegacySeed("takeover-rollback", out var failingSteam);
