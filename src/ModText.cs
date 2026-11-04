@@ -624,7 +624,7 @@ internal static class ModText
     // A lower or equal release on another channel is a switch target, not a new version.
     internal static string CheckStatus(ReleaseUpdateResult result) => result.Status == ReleaseUpdateStatus.Available && result.Release is { TransitionCandidate: true } target
         ? (Korean ? "전환 대상 " : "Switch target ") + target.Version : UpdateStatus(result.Status);
-    // The player's own clock, minutes only: checks run hours apart.
+    // The player's own clock, minutes only: checks run at least a minute apart.
     internal static string LocalTime(DateTimeOffset time) => time.ToLocalTime().ToString("MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
     // The settings update row's pills: the check result and when it ran (today: time only). After a failed check the last
     // good result stays (Stale), so the first pill names the failure and the second the result it still shows.

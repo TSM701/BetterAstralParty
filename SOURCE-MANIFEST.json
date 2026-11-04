@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "version": "1.7.0",
-  "buildSourceManifestSha256": "9FA04D95F985807F75A90FE64E1DD109D1B93390B44A4AE35F7BA9002F77AAD1",
+  "version": "1.7.1",
+  "buildSourceManifestSha256": "4B928E7E6E8D6E1A87D1C55199B078E2B35E35D621A856DF8950026351CDD0E6",
   "files": [
     {
       "path": "Create-Diagnostics.cmd",
@@ -560,8 +560,8 @@
     },
     {
       "path": "docs/development.md",
-      "bytes": 40403,
-      "sha256": "A634F7B72F2873D12CD3E58C5991FA48DF678C24D1D74D7D985FC8725451A17E"
+      "bytes": 40405,
+      "sha256": "AB6C38263380E6860A6CE46FD2113E98283146F64709A8EB8CF1759E4EC8C0B7"
     },
     {
       "path": "docs/ga-compatible-bundle-plan-2026-10-03.md",
@@ -1265,8 +1265,8 @@
     },
     {
       "path": "self-test/ReleaseUpdateCheck.cs",
-      "bytes": 62027,
-      "sha256": "545390F6E5946CABEF2726E180B536702D64CEABCD2C529515D140436C3131A8"
+      "bytes": 62074,
+      "sha256": "131608B417AA64E60D99B720C93A4B845890C63993CA14FAA2E092FD06192587"
     },
     {
       "path": "self-test/ResolutionCheck.cs",
@@ -1575,8 +1575,8 @@
     },
     {
       "path": "src/ModText.cs",
-      "bytes": 62763,
-      "sha256": "5962A0C7743A49C3C374E3BC9ACFCE9E3B46373B446F883B5FEB090811A730B9"
+      "bytes": 62775,
+      "sha256": "D058FF6941C0BBFA8C07B2A26F897F756CDAE0DB89A8F211F6B62B84ABAB0A49"
     },
     {
       "path": "src/ModUi.Search.cs",
@@ -1655,8 +1655,8 @@
     },
     {
       "path": "src/Plugin.cs",
-      "bytes": 45887,
-      "sha256": "42A55C4BA762BD04DCB2114BABBFE1D9FA3187A9741576D744BC7F9D8189A40D"
+      "bytes": 45886,
+      "sha256": "16230D22264FE43E2D2AE73E0A3D0B0F75070530DA68EA333C27FD53831FA2BC"
     },
     {
       "path": "src/PrivateReleaseSession.cs",
@@ -1685,8 +1685,8 @@
     },
     {
       "path": "src/ReleaseUpdates.cs",
-      "bytes": 37023,
-      "sha256": "96837D6245DB73C8E3D86F3CDE31AB909D6D0E18C40D4F0E225B069D0B7700DC"
+      "bytes": 37116,
+      "sha256": "01B53662B47D212E802FA1093E9CC2122AD4EE9B83FF8996DC3DCBD599C326A9"
     },
     {
       "path": "src/ReleaseWatch.cs",

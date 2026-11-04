@@ -96,7 +96,7 @@ internal sealed class ReleaseUpdates : IDisposable
     private readonly HashSet<string> _notifiedVersions = new(StringComparer.Ordinal);
     internal ReleaseChannel Channel { get; private set; }
     // Safe mode never leaves its first screen, so the home-entry trigger fires once; it asks again on this interval
-    // (after a failure, or once the six-hour freshness of a success has passed). Null keeps the home-entry trigger only.
+    // (after a failure, or once the ten-minute freshness of a success has passed). Null keeps the home-entry trigger only.
     internal TimeSpan? RepeatEvery { get; set; }
     internal ReleaseUpdateResult Result { get; private set; } = new(ReleaseUpdateStatus.NotConfigured);
     internal string? NotificationVersion { get; private set; }
@@ -247,7 +247,7 @@ internal sealed class ReleaseUpdates : IDisposable
         _menuWasAvailable = menuAvailable;
         if (RepeatEvery is { } every && menuAvailable && _pending == null && now >= _lastStarted.GetValueOrDefault(Channel, DateTimeOffset.MinValue) + every) _autoDue = true;
         if (!menuAvailable || !_autoDue || !Configured || _pending != null) return;
-        // A queued manual check must not be lost to the six-hour freshness cache.
+        // A queued manual check must not be lost to the home freshness cache.
         var deferred = Result.RetryAt != null;
         _autoDue = false;
         Check(now, manual: deferred || _channelRefresh); // Channel refresh must not be swallowed by home freshness.
@@ -269,7 +269,8 @@ internal sealed class ReleaseUpdates : IDisposable
         SyncBackoff();
         if (!Configured) { Set(new(ReleaseUpdateStatus.NotConfigured)); return; }
         if (_pending != null) return;
-        if (!manual && _lastSuccess?.CheckedAt is { } checkedAt && now < checkedAt.AddHours(6)) return;
+        // Ten minutes, so a return home after a match finds a release published meanwhile.
+        if (!manual && _lastSuccess?.CheckedAt is { } checkedAt && now < checkedAt.AddMinutes(10)) return;
         var cooldown = _lastStarted.GetValueOrDefault(Channel, DateTimeOffset.MinValue).AddSeconds(60);
         var due = _retryAt > cooldown ? _retryAt : cooldown;
         if (now < due)

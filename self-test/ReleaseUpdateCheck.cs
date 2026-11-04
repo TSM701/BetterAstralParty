@@ -196,8 +196,8 @@ internal static class ReleaseUpdateCheck
             Check(updates.Result.Status == ReleaseUpdateStatus.Available && updates.Result.Release?.Version == "2.0.0", "all release pages scanned");
             Check(updates.TryDownloadPage(out var page) && page!.Host == "github.com", "validated download page available");
             var count = handler.Requests.Count;
-            updates.Check(Now.AddMinutes(10), manual: false); updates.Poll();
-            Check(handler.Requests.Count == count, "six-hour cache freshness");
+            updates.Check(Now.AddMinutes(9), manual: false); updates.Poll();
+            Check(handler.Requests.Count == count, "ten-minute cache freshness");
             updates.Check(Now.AddMinutes(11)); await Complete(updates);
             Check(handler.Requests.Count == count + 2 && updates.Result.Release?.Version == "2.0.0", "304 preserves cached pagination when Link is absent");
             Check(handler.Requests.Skip(count).Select(x => x.ETag).SequenceEqual(new[] { "\"page-1\"", "\"page-2\"" }), "ETags belong to exact pages");
@@ -527,7 +527,7 @@ internal static class ReleaseUpdateCheck
         updates.Tick(Now.AddSeconds(59), true);
         Check(handler.Requests.Count == 2 && updates.Result.CheckedAt == checkedAt, "channel result remains cached before its own 60-second boundary");
         updates.Tick(Now.AddSeconds(60), true); await Complete(updates);
-        Check(handler.Requests.Count == 3 && updates.Result.CheckedAt == Now.AddSeconds(60), "queued channel refresh is not swallowed by six-hour home freshness");
+        Check(handler.Requests.Count == 3 && updates.Result.CheckedAt == Now.AddSeconds(60), "queued channel refresh is not swallowed by home freshness");
         Check(handler.Requests.Last().ETag == "\"verified-page\"", "channel roundtrip preserves the exact verified page ETag for the next refresh");
         updates.SetChannel(ReleaseChannel.Beta); updates.Tick(Now.AddSeconds(61), true); await Complete(updates);
         Check(handler.Requests.Count == 4, "other channel refresh has its own 60-second boundary");
@@ -681,22 +681,23 @@ internal static class ReleaseUpdateCheck
         updates.Check(Now.AddMinutes(2)); await Complete(updates);
         Check(updates.NotificationVersion == null, "leading v/build metadata cannot repeat acknowledged notice");
         updates.Tick(Now.AddMinutes(10), false); updates.Tick(Now.AddMinutes(10), true);
-        Check(handler.Requests.Count == 2, "menu reentry reuses six-hour freshness");
+        Check(handler.Requests.Count == 2, "menu reentry reuses ten-minute freshness");
         updates.SetChannel(ReleaseChannel.Beta); updates.Tick(Now.AddMinutes(11), true); await Complete(updates);
         Check(updates.NotificationVersion == null && handler.Requests.Count == 3, "new channel context auto-checks without repeating same version");
         handler.Reply = (_, _) => Task.FromResult(Releases(Item("3.0.0")));
-        updates.Tick(Now.AddHours(7), false); updates.Tick(Now.AddHours(7), true); await Complete(updates);
+        // A match later: leaving home and returning after the freshness finds the release published meanwhile.
+        updates.Tick(Now.AddMinutes(22), false); updates.Tick(Now.AddMinutes(22), true); await Complete(updates);
         Check(updates.NotificationVersion == "3.0.0" && handler.Requests.Count == 4, "later home reentry detects newer release after freshness expires");
         var count = handler.Requests.Count;
-        auth.Identity = ""; updates.Tick(Now.AddHours(7).AddSeconds(1), true);
+        auth.Identity = ""; updates.Tick(Now.AddMinutes(22).AddSeconds(1), true);
         Check(updates.Result.Status == ReleaseUpdateStatus.NotConfigured && updates.NotificationVersion == null && handler.Requests.Count == count, "signout clears private notice without HTTP");
         auth.Identity = "test-account-B";
-        updates.Tick(Now.AddHours(7).AddSeconds(2), true);
+        updates.Tick(Now.AddMinutes(22).AddSeconds(2), true);
         Check(handler.Requests.Count == count, "account switch waits for shared cooldown");
-        updates.Tick(Now.AddHours(7).AddMinutes(1), true); await Complete(updates);
+        updates.Tick(Now.AddMinutes(23), true); await Complete(updates);
         Check(updates.NotificationVersion == "3.0.0" && handler.Requests.Count == count + 1, "new account context checks automatically and owns its notice");
         handler.Reply = (_, _) => Task.FromResult(Response("[]"));
-        updates.Check(Now.AddHours(7).AddMinutes(3)); await Complete(updates);
+        updates.Check(Now.AddMinutes(25)); await Complete(updates);
         Check(updates.Result.Status == ReleaseUpdateStatus.UpToDate && updates.NotificationVersion == null, "release removal/up-to-date result clears unread marker");
         updates.Dispose(); count = handler.Requests.Count;
         updates.Tick(Now.AddHours(20), true);
@@ -709,7 +710,7 @@ internal static class ReleaseUpdateCheck
         }
     }
     // Safe mode stays on one screen, so the home-entry trigger fires once. With RepeatEvery it asks again after a failure
-    // on that interval, and after a success only once the six-hour freshness has passed.
+    // on that interval, and after a success only once the ten-minute freshness has passed.
     private static async Task RepeatedChecks()
     {
         var fail = true;
@@ -723,10 +724,10 @@ internal static class ReleaseUpdateCheck
             Check(handler.Requests.Count == 1, "a failed check is not repeated before the interval");
             fail = false; updates.Tick(Now.AddMinutes(10), true); await Complete(updates);
             Check(handler.Requests.Count == 2 && updates.Result.Status == ReleaseUpdateStatus.UpToDate, "a failed check repeats after the interval");
-            for (var minute = 20; minute < 370; minute += 10) updates.Tick(Now.AddMinutes(minute), true);
-            Check(handler.Requests.Count == 2, "a success holds for six hours");
-            updates.Tick(Now.AddMinutes(371), true); await Complete(updates);
-            Check(handler.Requests.Count == 3, "after six hours the interval asks again");
+            updates.Tick(Now.AddMinutes(19), true);
+            Check(handler.Requests.Count == 2, "a success holds for ten minutes");
+            updates.Tick(Now.AddMinutes(20), true); await Complete(updates);
+            Check(handler.Requests.Count == 3, "after ten minutes the interval asks again");
         }
         using var plain = new ReleaseUpdates("1.0.0", Repository, client, new Authentication());
         var before = handler.Requests.Count; fail = true;
