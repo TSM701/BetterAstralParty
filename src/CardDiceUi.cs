@@ -14,6 +14,9 @@ internal static class CardDiceUi
     private static float _x, _y, _scale = 1;
     private static RuntimeObject? _resolvedUi, _attacker, _defender;
     private static PreRollCombat _resolvedInput;
+    // The attack die seen at showPoint 1; the totals' PointChange has played; the final arithmetic owns the display.
+    private static int _rawDie;
+    private static bool _totals, _final;
     private const float Width = CardDiceLayout.Width, Height = CardDiceLayout.Height;
 
     internal static void Show(RuntimeObject ui, RuntimeObject attackPoint,
@@ -21,6 +24,7 @@ internal static class CardDiceUi
     {
         if (!Plugin.KoMinimum.Value) { Clear(); return; }
         if (fixedDie == 0) _resolvedUi = _attacker = _defender = null; // New card phase/hover owns the display.
+        if (fixedDie == 0) { _rawDie = 0; _totals = _final = false; }
         if (_key is { } old && old.Language != ModText.Revision) Clear(keepObservation: true);
         if (_panel == null || _panel.Get<bool>("isDisposed") || _panel.Get("parent")?.Pointer != ui.Pointer
             || Rows.Any(row => row.Disc.Get("texture") == null))
@@ -141,14 +145,18 @@ internal static class CardDiceUi
     internal static void BindResolved(RuntimeObject ui, RuntimeObject attacker, RuntimeObject defender, PreRollCombat input)
     {
         if (!Plugin.KoMinimum.Value) { Clear(); return; }
+        // A counterattack swaps the director's actors: its roll starts a new exchange.
+        if (_attacker?.Pointer != attacker.Pointer || _defender?.Pointer != defender.Pointer) { _rawDie = 0; _totals = _final = false; }
         _resolvedUi = ui; _attacker = attacker; _defender = defender; _resolvedInput = input;
     }
 
     internal static void ShowFinal(RuntimeObject ui, RuntimeObject point, int hp, int damage,
-        HitModifiers modifiers, int die)
+        HitModifiers modifiers, int die, int defenseDie = 0)
     {
         if (_resolvedUi?.Pointer != ui.Pointer || _key == null || die is < 1 or > 6) return;
-        Show(ui, point, _resolvedInput with { Hp = hp, Modifiers = modifiers }, null, false, false, die, damage);
+        _final = true;
+        Show(ui, point, _resolvedInput with { Hp = hp, Modifiers = modifiers }, null, false, false, die, damage,
+            defenseDie is >= 1 and <= 6 ? defenseDie : 0);
         _holdUntil = Time.unscaledTime + CardDiceLayout.ResolvedHold;
     }
 
@@ -160,7 +168,7 @@ internal static class CardDiceUi
         if (!Plugin.KoMinimum.Value || !GameUi.Visible(_resolvedUi))
         { Clear(); return; }
         if (!GameUi.Visible(_attacker) || !GameUi.Visible(_defender)
-            || _resolvedUi.Field("step")!.Get<int>("selectedIndex") != 5)
+            || _resolvedUi.Field("step")!.Get<int>("selectedIndex") != 5 || _final)
         { Hide(); return; }
         var attack = _attacker!.Field("com_Attack")!;
         var defense = _defender!.Field("com_Defend")!;
@@ -170,8 +178,16 @@ internal static class CardDiceUi
         if (CombatAdvisor.IsDodge(defense.Field("changeState")!.Get<int>("selectedIndex"),
             defense.Field("showResult")!.Get<int>("selectedIndex")))
         { Clear(); return; } // Defense-only conditions must not linger after choosing dodge.
-        if (!CardKoMinimum.RevealedDie(attack.Field("showPoint")!.Get<int>("selectedIndex"),
-            GameUi.Visible(number), die))
+        var attackState = attack.Field("showPoint")!.Get<int>("selectedIndex");
+        var defensePoint = defense.Field("com_Point")!;
+        if (CardKoMinimum.RevealedDie(attackState, GameUi.Visible(number), die)) _rawDie = die;
+        // Dice_Show turns both panels to showPoint 2, plays the defender's die and lists the card bonuses; the labels keep
+        // the raw dice until the totals' PointChange (RefreshPoint_*(2, total)), which ends this pre-total stage. Only the
+        // attacker's counts: the defender's also plays the moment its die settles on 1-5 (RefreshDice_Defender's onPlayEnd;
+        // a 6 plays MaxPoint), which ended the stage before any non-6 defense die was read (2026-11-06: only 6s were fixed).
+        _totals |= point.Call("GetTransition", "PointChange")!.Get<bool>("playing");
+        var preTotals = attackState == 2 && !_totals && _rawDie > 0 && die == _rawDie && GameUi.Visible(number);
+        if (!CardKoMinimum.RevealedDie(attackState, GameUi.Visible(number), die) && !preTotals)
         { Hide(); return; } // Retain the last revealed condition briefly; never read totals as dice.
         var input = _resolvedInput with {
             AttackMin = _attacker.Field("minATK")!.Value<int>(),
@@ -180,12 +196,27 @@ internal static class CardDiceUi
             DefenseMax = _defender.Field("maxDEF")!.Value<int>()
         };
         // The defender's raw die settles the outcome the moment it is public, before the totals are shown (2026-10-24).
-        var defenseNumber = defense.Field("com_Point")!.Field("txt_Point")!;
+        var defenseNumber = defensePoint.Field("txt_Point")!;
         int.TryParse(defenseNumber.Get("text")?.String(), out var defenseDie);
-        if (!CardKoMinimum.RevealedDefenseDie(defense.Field("showPoint")!.Get<int>("selectedIndex"), GameUi.Visible(defenseNumber), defenseDie)
-            || !input.Modifiers.DefenseDice.Contains(defenseDie)) defenseDie = 0;
+        var defenseState = defense.Field("showPoint")!.Get<int>("selectedIndex");
+        var defenseShown = CardKoMinimum.RevealedDefenseDie(defenseState, GameUi.Visible(defenseNumber), defenseDie)
+            || preTotals && defenseState == 2 && GameUi.Visible(defenseNumber) && defenseDie is >= 1 and <= 6;
+        if (!defenseShown || !input.Modifiers.DefenseDice.Contains(defenseDie)) defenseDie = 0;
         if (defenseDie > 0) input = input with { Modifiers = input.Modifiers with { DefenseDice = DiceFaces.Range(defenseDie, defenseDie) } };
-        Show(_resolvedUi, point, input, null, false, false, die, fixedDefense: defenseDie);
+        if (preTotals)
+        {
+            // Revealed card bonuses replace their public ranges (user-requested 2026-11-06). A sum outside the server's
+            // public range means an effect the panel split differently: keep the range rather than trust it.
+            var values = _resolvedUi.Field("com_value");
+            var attackValue = FightValues.Revealed(values, true);
+            var defenseValue = FightValues.Revealed(values, false);
+            if (attackValue is { } a && a >= input.AttackMin && a <= input.AttackMax) input = input with { AttackMin = a, AttackMax = a };
+            if (defenseValue is { } d && d >= input.DefenseMin && d <= input.DefenseMax) input = input with { DefenseMin = d, DefenseMax = d };
+            if (Plugin.Diagnostics.IsRecording)
+                Plugin.Diagnostics.State("koMinimum.values", $"attack={attackValue?.ToString() ?? "hidden"}; defense={defenseValue?.ToString() ?? "hidden"}; "
+                    + $"attackExact={input.AttackMin == input.AttackMax}; defenseExact={input.DefenseMin == input.DefenseMax}; defenseDie={defenseDie}");
+        }
+        Show(_resolvedUi, point, input, null, false, false, _rawDie, fixedDefense: defenseDie);
     }
 
     internal static void Animate()
@@ -209,7 +240,7 @@ internal static class CardDiceUi
     }
     internal static void Clear(bool keepObservation = false)
     {
-        if (!keepObservation) _resolvedUi = _attacker = _defender = null;
+        if (!keepObservation) { _resolvedUi = _attacker = _defender = null; _rawDie = 0; _totals = _final = false; }
         _hideAt = -1; _holdUntil = 0;
         GameUi.Dispose(_panel); _panel = _title = _state = _status = null; _unknownRow = null; _help = null; _key = null; Rows.Clear();
     }

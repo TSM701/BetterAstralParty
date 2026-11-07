@@ -192,10 +192,10 @@ internal static partial class TestCommands
         RunGeneralFixture(context, Path.Combine(stage, "current"), code, "BapProbability.PresentationCheck.Run()", pin);
         var mutants = new[] {
             ("attack-minimum", "Probability(afterKoMax)", "Probability(afterKoMin)", "attack card chooses favorable endpoint"),
-            ("defense-maximum", "Probability(defKoLow)", "Probability(defKoHigh)", "own defense shows minimum risk"),
-            ("dodge-maximum", "Probability(dodgeKoLow)", "Probability(dodgeKoHigh)", "all visible dodge endpoints"),
+            ("defense-last-outcome", "defKoLow = Math.Min(defKoLow, result.Defend.KnockoutChance);", "defKoLow = result.Defend.KnockoutChance;", "own defense shows minimum risk"),
+            ("dodge-last-outcome", "dodgeKoLow = Math.Min(dodgeKoLow, result.Dodge.KnockoutChance);", "dodgeKoLow = result.Dodge.KnockoutChance;", "all visible dodge endpoints"),
             ("encounter-self-maximum", "Probability(SelfKoMin)", "Probability(SelfKoMax)", "enemy maximum / own minimum encounter display"),
-            ("favorable-recommendation", "new(defHigh, defKoHigh, 0), new(dodgeHigh, dodgeKoHigh, 0)", "new(defLow, defKoLow, 0), new(dodgeLow, dodgeKoLow, 0)", "conservative recommendation remains dodge")
+            ("dodge-on-risk", "defend.KnockoutChance >= 1", "defend.KnockoutChance > 0", "dodge only when defense is a certain KO")
         };
         foreach (var (name, from, to, reason) in mutants) {
             Check(code.Contains(from, StringComparison.Ordinal), "Probability mutation anchor " + name);

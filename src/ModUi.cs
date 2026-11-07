@@ -166,7 +166,7 @@ internal static partial class ModUi
     private static readonly Action[] PvpCleanup = {
         UpdateNotificationUi.Clear,
         GameUi.Stop, CardPreviewUi.Reset, BattleStatusUi.Clear, EncounterCounterUi.Clear, ShushuShieldUi.Clear,
-        CharacterGuideUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, FieldZoomUi.Clear, () => FieldBuffUi.Clear("pvp-safety"), PlayerTabUi.Clear,
+        CharacterGuideUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, FieldZoomUi.Clear, () => FieldBuffUi.Clear("pvp-safety"), WalkDirectionUi.Clear, PlayerTabUi.Clear,
         CharacterNameUi.RestoreAll, InputAttention.Stop, PingFocusGuard.Reset, AutoThanksUi.Clear, BattleMenuUi.Clear, FieldDiceUi.Clear, ReplayUi.Clear,
         () => Plugin.Diagnostics.EndCombat(),
         () => { ClosePanel(true); GameUi.Dispose(_modal); _modal = null; }
@@ -311,7 +311,7 @@ internal static partial class ModUi
             BattleStatusUi.Tick(); Mark(14);
             EncounterCounterUi.Tick(); Mark(15);
             if (measure) fieldStart = System.Diagnostics.Stopwatch.GetTimestamp();
-            FieldBuffUi.Tick(); PlayerTabUi.Tick(); Mark(16);
+            FieldBuffUi.Tick(); WalkDirectionUi.Tick(); PlayerTabUi.Tick(); MonsterMoveProbe.Tick(); Mark(16);
             if (measure) fieldEnd = System.Diagnostics.Stopwatch.GetTimestamp();
             if (measure) statusEnd = System.Diagnostics.Stopwatch.GetTimestamp();
             try { TickSettings(); }
@@ -362,7 +362,7 @@ internal static partial class ModUi
         UpdateNotificationUi.Clear,
         GameUi.Stop, CardPreviewUi.Reset, BattleStatusUi.Clear, EncounterCounterUi.Clear, ShushuShieldUi.Clear,
         CharacterGuideUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, FieldZoomUi.Clear,
-        () => FieldBuffUi.Clear("compatibility"), PlayerTabUi.Clear, CharacterNameUi.RestoreAll, BattleMenuUi.Clear, FieldDiceUi.Clear, ReplayUi.Clear,
+        () => FieldBuffUi.Clear("compatibility"), WalkDirectionUi.Clear, PlayerTabUi.Clear, CharacterNameUi.RestoreAll, BattleMenuUi.Clear, FieldDiceUi.Clear, ReplayUi.Clear,
         () => { ClosePanel(true); GameUi.Dispose(_modal); _modal = null; });
 
     private static void FailSettings(Exception error) => Compatibility.Block("SettingsUi", error,
@@ -812,6 +812,7 @@ internal static partial class ModUi
         AddToggle("PlayerTabRole", 440, MenuLayout.ToggleY(33));
         AddToggle("PlayerTabSkill", 440, MenuLayout.ToggleY(34));
         AddToggle("OldReplays", 440, MenuLayout.ToggleY(35));
+        AddToggle("WalkDirection", 440, MenuLayout.ToggleY(36));
         TraceSettingsOpen(DiagnosticPhase.SettingsReparent);
         foreach (var (button, action) in Controls.Values)
             if (!MenuLayout.FixedControl(action)) MoveIntoSettings(button, MenuLayout.SettingY(action) + MenuLayout.ChildOffsetY(action));
@@ -1460,6 +1461,7 @@ internal static partial class ModUi
         "UpdateNotifications" => Plugin.UpdateNotifications.Value,
         "FinalDamage" => Plugin.FinalDamage.Value,
         "FieldBuffs" => Plugin.FieldBuffs.Value,
+        "WalkDirection" => MenuLayout.WalkDirectionMode(Plugin.WalkDirection.Value) != "Off",
         "FieldZoom" => Plugin.FieldZoom.Value,
         "Names" => Plugin.UseRealNames.Value,
         "Diagnostics" => Plugin.DiagnosticLogging.Value,
@@ -1481,6 +1483,7 @@ internal static partial class ModUi
         {
             "Language" => ModText.Mode,
             "HandLayout" => Plugin.HandExpandMode.Value,
+            "WalkDirection" => MenuLayout.WalkDirectionMode(Plugin.WalkDirection.Value),
             "InputAttention" => InputAttentionState.Normalize(Plugin.InputAttention.Value),
             "UpdateChannel" => Plugin.UpdateChannel.Value,
             "AutoUpdate" => AutoUpdateMode(),
@@ -1614,6 +1617,7 @@ internal static partial class ModUi
         {
             "Language" => ModText.Mode,
             "HandLayout" => !Plugin.GroupHand.Value ? "Native" : Plugin.HandExpandMode.Value,
+            "WalkDirection" => MenuLayout.WalkDirectionMode(Plugin.WalkDirection.Value),
             "UpdateChannel" => Plugin.UpdateChannel.Value,
             "AutoUpdate" => AutoUpdateMode(),
             _ => InputAttentionState.Normalize(Plugin.InputAttention.Value)
@@ -1689,6 +1693,7 @@ internal static partial class ModUi
                 Plugin.HandExpandMode.Value = value == "Click" ? "Click" : "Hover";
                 Plugin.GroupHand.Value = value != "Native";
                 break;
+            case "WalkDirection": Plugin.WalkDirection.Value = value; break; // WalkDirectionUi follows the mode on its next frame.
             case "InputAttention": Isolated("InputAttention", InputAttention.Stop); Plugin.InputAttention.Value = value; break;
             case "UpdateChannel": Plugin.UpdateChannel.Value = value; Plugin.Updates.CheckTransition(DateTimeOffset.UtcNow); break;
             case "AutoUpdate":
@@ -2140,6 +2145,7 @@ internal static partial class ModUi
                 var state = action == "Names" ? (enabled ? "본명" : "이명") : null;
                 if (action == "InputAttention") state = InputAttentionState.Label(Plugin.InputAttention.Value);
                 if (action == "HandLayout") state = HandLayout.ModeLabel(HandLayout.Mode(Plugin.GroupHand.Value, Plugin.HandExpandMode.Value));
+                if (action == "WalkDirection") state = MenuLayout.OptionLabel(action, MenuLayout.WalkDirectionMode(Plugin.WalkDirection.Value));
                 if (action == "AutoUpdate") state = MenuLayout.OptionLabel(action, AutoUpdateMode());
                 if (blocked) state = "사용 불가";
                 // Gray only the switch and bar: OFF remains fully clickable and hoverable.

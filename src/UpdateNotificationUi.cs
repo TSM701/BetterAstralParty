@@ -43,7 +43,6 @@ internal static class UpdateNotificationUi
     // Without the home button the window opens directly, as before.
     internal const float ToastSeconds = 8f;
     private static UpdateNotificationTarget? _toast;
-    private static int _toastFrame;
     private static float _toastLeft, _toastTick;
     internal static UpdateNotificationTarget? Toast => _toast;
     internal static float ToastShownAt { get; private set; }
@@ -446,7 +445,8 @@ internal static class UpdateNotificationUi
 
     private static void StartToast(UpdateNotificationTarget target)
     {
-        _toast = target; _toastFrame = Time.frameCount; _toastLeft = ToastSeconds;
+        // Only Create set this before, so a toast started without a window ended on its next frame and restarted, flickering.
+        _toast = target; _contextGeneration = State.ContextGeneration; _toastLeft = ToastSeconds;
         _toastTick = ToastShownAt = Time.unscaledTime;
     }
 
@@ -463,26 +463,26 @@ internal static class UpdateNotificationUi
         if (GameUi.ToastAvailable) StartToast(target); else Create(GameUi.Root!, target);
     }
 
-    // The toast lives while its release is still the one to announce. Like the window, it counts as shown only once it has
-    // been on screen; the time runs only while the pointer is off it.
+    // The toast lives while its release is still the one to announce. It counts as shown only once its whole time has run
+    // on screen, or when the player closes or clicks it (user-requested 2026-11-07): leaving home, a window or popup on
+    // top or the settings take it down, and it comes back for the full time on the next eligible home. The time runs only
+    // while it is drawn and the pointer is off it.
     private static void TickToast()
     {
         var toast = _toast!;
-        if (!_preview)
-        {
-            if (_contextGeneration != State.ContextGeneration || State.Active?.Key != toast.Key && State.Next?.Key != toast.Key) { EndToast(false); return; }
-            if (State.Active == null && _toastFrame < Time.frameCount && GameUi.ToastShown) State.Shown(toast.Key);
-        }
+        // Without the home button (HomeMenu failed) the window takes over on the next frame.
+        if (!GameUi.ToastAvailable) { _toast = null; _preview = false; return; }
+        if (!_preview && (_contextGeneration != State.ContextGeneration || !State.Holds(toast.Key))) { EndToast(false); return; }
         var step = Math.Min(Time.unscaledTime - _toastTick, 0.1f);
         _toastTick = Time.unscaledTime;
-        if (!GameUi.ToastHovered) _toastLeft -= step;
+        if (GameUi.ToastShown && !GameUi.ToastHovered) _toastLeft -= step;
         if (_toastLeft <= 0) EndToast(true);
     }
 
     // A toast that ran out or was closed is not announced again this session.
     private static void EndToast(bool seen)
     {
-        if (_toast is { } toast && seen && !_preview && State.Active == null) State.Shown(toast.Key);
+        if (_toast is { } toast && seen && !_preview) State.Done(toast.Key);
         _toast = null; _preview = false; State.Close();
     }
 

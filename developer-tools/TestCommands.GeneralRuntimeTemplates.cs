@@ -571,10 +571,14 @@ sealed class UnknownEffectsRow {
 }
 static class CardDiceUi {
     internal static int Calls,Damage;
-    internal static void ShowFinal(RuntimeObject parent,RuntimeObject attack,int hp,int damage,HitModifiers modifiers,int die) {
+    internal static void ShowFinal(RuntimeObject parent,RuntimeObject attack,int hp,int damage,HitModifiers modifiers,int die,int defenseDie=0) {
         if(!Plugin.KoMinimum.Value)return;
         Calls++;Damage=damage;
     }
+}
+static class FightValues {
+    internal static int? Attack,Defense;
+    internal static int? Revealed(RuntimeObject? values,bool attacker)=>attacker?Attack:Defense;
 }
 internal static class RemainingHpUi {
 __FIELDS__
@@ -592,7 +596,7 @@ __POLL__
             Clear(); _failed=false; Rendered=0;
             Plugin.Enabled.Value=Plugin.KoMinimum.Value=Plugin.FinalDamage.Value=true;
             Plugin.Diagnostics.Events=Plugin.Diagnostics.Results=0; Plugin.Diagnostics.LastResult=default;
-            CardDiceUi.Calls=CardDiceUi.Damage=GameUi.Disposed=0; AdviceText.Ready=true;
+            CardDiceUi.Calls=CardDiceUi.Damage=GameUi.Disposed=0; AdviceText.Ready=true; FightValues.Attack=FightValues.Defense=null;
             GameUi.Root=new();GameUi.HomeAvailable=false;
             Fight.Data["defenderData"]=Defender;Fight.Data["attackerData"]=Attacker;Defender.Data["Property"]=null;
             Attacker.Data["characterType"]=RuntimeObject.Box(1);
@@ -641,6 +645,20 @@ __POLL__
         Display();GameUi.HomeAvailable=true;Plugin.FinalDamage.Value=true;Animate();
         Check(_prediction==-1 && !_captured && _parent==null && _point==null,"scene exit still performs full cleanup");
         GameUi.HomeAvailable=false;Clear();Plugin.Enabled.Value=Plugin.KoMinimum.Value=Plugin.FinalDamage.Value=true;
+        // Before the totals the labels hold the raw dice (3 and 2) and the arithmetic panel the rest of each sum (5 and 1).
+        w=new World();w.Capture();w.Totals(3,2);AdviceText.Ready=false;Update(w.Fight,w.Parent,w.Attack,w.Defense,5,10);
+        Check(_prediction==-1 && _defenseDie==2 && Rendered==0,"no early figure before the panel shows both sides");
+        FightValues.Attack=5;FightValues.Defense=1;w.Totals(4,2);Update(w.Fight,w.Parent,w.Attack,w.Defense,5,10);
+        Check(_prediction==-1 && Rendered==0,"a label that is no longer the raw attack die is not summed");
+        w.Totals(3,2);PollFinalPoints();
+        Check(_prediction==5 && _early && CardDiceUi.Calls==1 && CardDiceUi.Damage==5 && Rendered==1 && Plugin.Diagnostics.Events==1,"revealed panel and raw dice predict before the totals");
+        PollFinalPoints();Check(_prediction==5 && Rendered==1 && Plugin.Diagnostics.Events==1,"early figure is frozen until the totals");
+        w.Totals(8,3);AdviceText.Ready=true;PollFinalPoints();
+        Check(_prediction==5 && !_early && CardDiceUi.Calls==1 && Rendered==1 && Plugin.Diagnostics.Events==3,"matching totals keep the early figure without redrawing");
+        w=new World();w.Capture();w.Totals(3,2);AdviceText.Ready=false;FightValues.Attack=5;FightValues.Defense=1;PollFinalPoints();
+        w.Totals(9,3);AdviceText.Ready=true;PollFinalPoints();
+        Check(_prediction==6 && !_early && CardDiceUi.Calls==2 && CardDiceUi.Damage==6 && Rendered==2,"differing totals replace the early figure");
+        Clear();
     }
 }
 """"""";

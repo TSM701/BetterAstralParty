@@ -19,6 +19,20 @@ internal static class CombatSimulationCheck
             if (effect.Cap > 0) adjusted = Math.Min(adjusted, effect.Cap);
             return effect.MinimumHp > 0 ? Math.Min(adjusted, Math.Max(0, hp - effect.MinimumHp)) : adjusted;
         }
+        // Draft A (2026-11-06): of every rectangle of dice lying wholly inside the guaranteed cells (KO: attack >= M,
+        // defense <= N; survival: attack <= M, defense >= N), the one with the most faces, the easier corner on a tie.
+        KoPair Widest(List<KoPair> cells, int fixedDie, bool survival)
+        {
+            var best = new KoPair(fixedDie, 0); var bestSize = 0;
+            foreach (var corner in cells.OrderBy(p => survival ? p.DefenseDie : p.AttackDie).ThenBy(p => survival ? -p.AttackDie : -p.DefenseDie))
+            {
+                var rows = Enumerable.Range(1, 6).Where(a => (fixedDie == 0 || a == fixedDie) && (survival ? a <= corner.AttackDie : a >= corner.AttackDie));
+                var faces = rows.SelectMany(a => Enumerable.Range(1, 6).Where(d => survival ? d >= corner.DefenseDie : d <= corner.DefenseDie)
+                    .Select(d => new KoPair(a, d))).ToList();
+                if (faces.Count > bestSize && faces.All(cells.Contains)) { best = corner; bestSize = faces.Count; }
+            }
+            return best;
+        }
         ChoiceStats Stats(int hp, int attack, int defense, int attackDie, bool dodge, HitModifiers effect)
         {
             var damage = 0; var ko = 0; var zero = 0;
@@ -36,8 +50,9 @@ internal static class CombatSimulationCheck
             {
                 var d = Stats(hp, attack, defense, die, false, effect);
                 var e = Stats(hp, attack, defense, die, true, effect);
-                var chooseDodge = dodge && (e.KnockoutChance < d.KnockoutChance - 1e-9
-                    || Math.Abs(e.KnockoutChance - d.KnockoutChance) < 1e-9 && e.ExpectedDamage < d.ExpectedDamage - 1e-9);
+                // The defender dodges only against a certain KO it can survive, or when the dodge takes nothing.
+                var chooseDodge = dodge && (d.KnockoutChance > 1 - 1e-9 && e.KnockoutChance < 1 - 1e-9
+                    || e.ExpectedDamage < 1e-9 && d.ExpectedDamage > 1e-9);
                 var choice = chooseDodge ? e : d;
                 damage += choice.ExpectedDamage; ko += choice.KnockoutChance; zero += choice.NoDamageChance;
             }
@@ -64,7 +79,7 @@ internal static class CombatSimulationCheck
                 new(-2, 5) { MinimumHp = 3, OnHitBonus = 1 } }))
         {
             scenarios++;
-            var firstAttack = 0; var defenseLimit = 0;
+            var certain = new List<KoPair>();
             for (var atkDie = 1; atkDie <= 6; atkDie++)
             {
                 var advice = CombatAdvisor.Calculate(new(hp, attack + atkDie, atkDie, defense) { Modifiers = effect });
@@ -80,10 +95,9 @@ internal static class CombatSimulationCheck
                     Equal(hit, CombatAdvisor.FinalDamage(hp, attack + atkDie, defense + defDie, false, atkDie, effect), "final defended hit");
                     Equal(Damage(hp, attack, defense, atkDie, defDie, true, effect),
                         CombatAdvisor.FinalDamage(hp, attack + atkDie, defDie, true, atkDie, effect), "final dodged hit");
-                    if (hit >= hp) limit = defDie;
+                    if (hit >= hp) { limit = defDie; certain.Add(new(atkDie, defDie)); }
                     rolls++;
                 }
-                if (firstAttack == 0 && limit > 0) { firstAttack = atkDie; defenseLimit = limit; }
                 var fixedInput = new PreRollCombat(9, hp, attack, attack, defense, defense) { Modifiers = effect };
                 Check(CardKoMinimum.Calculate(fixedInput, null, atkDie) == new KoPair(atkDie, limit), "revealed KO pair");
             }
@@ -107,14 +121,10 @@ internal static class CombatSimulationCheck
                         defense + 2 + (survivalCard is { Attack: false } ? survivalCard.Value.Max : 0), a, d, false, effect);
                     if (least >= hp) lethal.Add(new(a, d));
                 }
-                var expected = safe.Count == 0 ? new KoPair(fixedDie, 0)
-                    : safe.OrderBy(p => p.DefenseDie).ThenByDescending(p => p.AttackDie).First();
-                Check(CardKoMinimum.Survival(ranged, survivalCard, fixedDie) == expected,
-                    "survival minimum across ranges/cards/revealed rolls and HP equality");
-                var expectedKo = lethal.Count == 0 ? new KoPair(fixedDie, 0)
-                    : lethal.OrderBy(p => p.AttackDie).ThenByDescending(p => p.DefenseDie).First();
-                Check(CardKoMinimum.Calculate(ranged, survivalCard, fixedDie) == expectedKo,
-                    "KO minimum across all revealed rolls, stat/card bounds and effects");
+                Check(CardKoMinimum.Survival(ranged, survivalCard, fixedDie) == Widest(safe, fixedDie, true),
+                    "widest survival pair across ranges/cards/revealed rolls and HP equality");
+                Check(CardKoMinimum.Calculate(ranged, survivalCard, fixedDie) == Widest(lethal, fixedDie, false),
+                    "widest KO pair across all revealed rolls, stat/card bounds and effects");
             }
             foreach (var attackCard in new[] { false, true })
             {
@@ -127,20 +137,15 @@ internal static class CombatSimulationCheck
                 Check(CardKoMinimum.DamageRange(ranged, new(attackCard, 1, 3, 1), 6, 1)
                     == (hits.Min(), hits.Max()), "displayed damage range matches all public stat/card outcomes");
             }
-            Check(CardKoMinimum.Calculate(input, null) == new KoPair(firstAttack, defenseLimit), "pre-roll KO pair");
+            Check(CardKoMinimum.Calculate(input, null) == Widest(certain, 0, false), "pre-roll KO pair");
             foreach (var fixedDie in new[] { 0, 1, 6 })
             {
-                var expectedAttack = fixedDie; var expectedDefense = 0;
+                var strongest = new List<KoPair>();
                 for (var a = fixedDie == 0 ? 1 : fixedDie; a <= (fixedDie == 0 ? 6 : fixedDie); a++)
-                {
-                    var limit = 0;
                     for (var d = 1; d <= 6; d++)
-                        if (Damage(hp, attack, defense + 6, a, d, false, effect) >= hp) limit = d;
-                    if (limit == 0) continue;
-                    expectedAttack = a; expectedDefense = limit; break;
-                }
-                Check(CardKoMinimum.Calculate(input, new(false, 1, 6, 2), fixedDie)
-                    == new KoPair(expectedAttack, expectedDefense), "defense-card preview uses strongest DEF");
+                        if (Damage(hp, attack, defense + 6, a, d, false, effect) >= hp) strongest.Add(new(a, d));
+                Check(CardKoMinimum.Calculate(input, new(false, 1, 6, 2), fixedDie) == Widest(strongest, fixedDie, false),
+                    "defense-card preview uses strongest DEF");
             }
             foreach (var dodge in new[] { false, true })
                 Compare(Before(hp, attack, defense, dodge, effect), CardAdvisor.BeforeRoll(hp, attack, defense, dodge, effect));

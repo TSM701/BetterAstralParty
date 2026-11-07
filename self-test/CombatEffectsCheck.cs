@@ -65,6 +65,8 @@ internal static class CombatEffectsCheck
         var shield = CombatAdvisor.Calculate(basic with { Modifiers = new(-99) });
         Require(shield.Defend.NoDamageChance == 1 && shield.Defend.KnockoutChance == 0, "defense shield statistics");
         Require(shield.Dodge.NoDamageChance == 1 && shield.Recommendation == RecommendedAction.Defend, "shield tie prefers defense");
+        Require(CombatAdvisor.Calculate(basic with { Modifiers = new(-99) { ShushuShield = true } }).Recommendation == RecommendedAction.Dodge,
+            "card and encounter advice model a Shushu-shielded defender's reply as dodge");
         Require(CardAdvisor.BeforeRoll(2, 100, 0, false, new(0, 1)).KnockoutChance == 0, "pre-roll cap propagated");
         Require(VisibleCombatAdvisor.Calculate(visible with { Modifiers = new(-99) }) != null, "visible reduction accepted");
         Require(visible != visible with { Modifiers = new(Cap: 1) } && cardInput != cardInput with { Modifiers = new(Cap: 1) }, "cap invalidates caches");
@@ -167,8 +169,12 @@ internal static class CombatEffectsCheck
             var candidates = Enumerable.Range(1, 6).Select(die => survival
                 ? CardKoMinimum.Survival(input, null, die, true)!.Value
                 : CardKoMinimum.Calculate(input, null, die, true)!.Value).Where(p => p.DefenseDie > 0);
-            var expected = survival ? candidates.OrderBy(p => p.DefenseDie).ThenByDescending(p => p.AttackDie).FirstOrDefault()
-                : candidates.OrderBy(p => p.AttackDie).FirstOrDefault();
+            // Each revealed die's pair is one row of the rectangle; the pre-roll pair is the widest one (draft A, 2026-11-06):
+            // KO covers attack M..6 with defense 1..N, survival attack 1..M with defense N..6, the easier row on a tie.
+            var expected = survival ? candidates.OrderBy(p => p.DefenseDie).ThenByDescending(p => p.AttackDie)
+                    .Aggregate(default(KoPair), (best, p) => p.AttackDie * (7 - p.DefenseDie) > best.AttackDie * (7 - best.DefenseDie) ? p : best)
+                : candidates.OrderBy(p => p.AttackDie)
+                    .Aggregate(default(KoPair), (best, p) => (7 - p.AttackDie) * p.DefenseDie > (best.DefenseDie == 0 ? 0 : (7 - best.AttackDie) * best.DefenseDie) ? p : best);
             var actual = survival ? CardKoMinimum.Survival(input, null, possible: true)
                 : CardKoMinimum.Calculate(input, null, possible: true);
             Check(actual == expected, "pre-roll selects ideal pair; revealed roll remains fixed");

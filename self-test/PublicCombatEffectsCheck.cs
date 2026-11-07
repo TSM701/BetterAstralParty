@@ -123,7 +123,7 @@ internal static class PublicCombatEffectsCheck
             Check(capped.DefenseDistributionUnknown && ranged.AttackDistributionUnknown, "support does not invent uniform weights");
             Check(CardAdvisor.Calculate(new(9,10,5,5,2,2) { Modifiers = ranged }, new(true,1,1,1)) == null, "unknown attack weights do not fabricate card percentages");
             var bounded = VisibleCombatAdvisor.Calculate(new(9,10,3,3,3,0,0,true) { Modifiers = capped })!.Value;
-            Check(bounded.DefendQuick.Contains("3~5") && bounded.Recommendation == RecommendedAction.Dodge, "unknown defense weights bound damage and preserve single robust recommendation");
+            Check(bounded.DefendQuick.Contains("3~5") && bounded.Recommendation == RecommendedAction.Defend, "unknown defense weights bound damage; a survivable defense is recommended");
             Check(CardKoMinimum.Calculate(new(9,10,5,5,2,2) { Modifiers = ranged }, null, possible:true) != null, "known support keeps KO thresholds despite unknown weights");
             Check(PublicCombatEffects.Read(ordinary, "dice", Actor(Array.Empty<int>(), Buff(1250101)))!.Value.AttackDice == DiceFaces.Range(1,3), "source attack cap");
             var unknown = PublicCombatEffects.Read(ordinary, "dice", Actor(new[] {106311}, Buff(1250101)))!.Value;
@@ -286,7 +286,8 @@ internal static class PublicCombatEffectsCheck
             Check(CombatAdvisor.FinalDamage(9, 7, 3, false, 4, erosion) == 6, "two stacks add two damage");
             Check(CombatAdvisor.FinalDamage(9, 7, 6, true, 4, erosion) == 0, "successful dodge remains zero");
             var erosionInput = new PreRollCombat(9, 9, 4, 4, 0, 0) { Modifiers = erosion };
-            Check(CardKoMinimum.Calculate(erosionInput, null) == new KoPair(4, 1), "erosion reaches KO thresholds");
+            // KO needs attack - defense >= 3: attack 4+ with defense 1 covers 3 faces, attack 5+ with defense 2- covers 4.
+            Check(CardKoMinimum.Calculate(erosionInput, null) == new KoPair(5, 2), "erosion reaches KO thresholds (widest pair)");
             Check(CardKoMinimum.Survival(erosionInput, null, 6) == new KoPair(6, 4), "erosion reaches survival thresholds");
             Check(Read(Buff(1071101)) == new HitModifiers(-99) { ShushuShield = true }, "PvE Ren shield identity and reduction");
             Check(Read(Buff(1071101, 0, 1)) == new HitModifiers(), "delayed shield is inactive");
@@ -304,6 +305,8 @@ internal static class PublicCombatEffectsCheck
             Check(Read(Buff(10331101), Buff(4000401)) == new HitModifiers(2), "boss targeting lock does not zero a hit once the boss is attackable");
             Check(Read(Buff(10531201, 3, 1), Buff(10331101, 0, 1)) == new HitModifiers(), "delayed inactive effects");
             Check(Read(Buff(10531201, 3), Buff(10531201, 3)) == new HitModifiers(-3), "deduplicate IDs");
+            Check(Read(Buff(2000801), Buff(2000801)) == new HitModifiers(2) && Read(Buff(2000801), Buff(2000801, 0, 1)) == new HitModifiers(1),
+                "every active Berserk card adds its own +1");
             Check(Read(Buff(10531201, -1)) == null, "invalid stacks");
             Catalog("Skill", 105312, 10531201, 6, 1, -4);
             Check(Read(Buff(10531201, 3)) == new HitModifiers(-12), "read live numbers, no cached magnitude");

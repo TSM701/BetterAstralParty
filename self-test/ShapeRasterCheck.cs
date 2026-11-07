@@ -63,6 +63,39 @@ static class ShapeRasterCheck
             "an upward line keeps its right side");
         Check(ShapeRaster.HalfPlane(40, -20, 80, 20, 12, -16) == 1f && ShapeRaster.HalfPlane(20, 5, 80, 20, 12, -16) == 0f,
             "a line running up-left keeps what lies above it");
-        Console.WriteLine("Smooth shape raster: fill, outline, ring mask, atlas blit, antialiased corners, row order, per-corner radii and clip coverage passed.");
+        // Move direction masks (2026-11-06): a notched arrowhead pointing right, widened for its outline bands, and a ground
+        // ring whose front (lower) half is solid and whose back (upper) half is dashed, the dashes meeting the solid ends.
+        var head = ShapeRaster.Arrowhead(64, 40, 0);
+        var rim = ShapeRaster.Arrowhead(64, 40, 7.2f);
+        Check(head.Length == 64 * 64 * 4 && At(head, 32, 32, 64) == (255, 255, 255, 255) && At(head, 20, 32, 64).A == 0 && At(head, 55, 32, 64).A == 0,
+            "arrowhead: white inside, open notch, nothing past the tip");
+        Check(At(rim, 20, 32, 64).A == 255 && At(rim, 58, 32, 64).A == 255 && At(rim, 0, 0, 64).A == 0 && At(rim, 5, 32, 64).A == 0,
+            "widened arrowhead fills the notch and passes the tip, inside its mask");
+        Check(At(head, 30, 20, 64) == At(head, 30, 43, 64) && At(rim, 12, 8, 64) == At(rim, 12, 55, 64), "arrowhead is symmetric about its axis");
+        var groundRing = ShapeRaster.Ring(144, 64, 10.88f, 7.36f, 8);
+        var frontOnly = ShapeRaster.Ring(144, 64, 7.36f, 0, 8);
+        Check(At(groundRing, 72, 136, 144).A == 255 && At(groundRing, 72, 72, 144).A == 0 && At(groundRing, 136, 72, 144).A == 255 && At(groundRing, 8, 72, 144).A == 255,
+            "ring: solid front, clear centre, solid to both ends of the front half");
+        Check(At(groundRing, 135, 65, 144).A == 255 && At(groundRing, 132, 52, 144).A == 0 && At(groundRing, 8, 65, 144).A == 255 && At(groundRing, 11, 52, 144).A == 0,
+            "ring: back half dashed from both ends, mirror alike");
+        Check(At(frontOnly, 72, 136, 144).A == 255 && At(frontOnly, 135, 65, 144).A == 0, "ring without a back band leaves the back half clear");
+        // Ground fit: turn * scale * spin rebuilds the axes it was given, squashed, sheared or turned; a plain turn stays one.
+        foreach (var (ax, ay, bx, by) in new[] { (1f, 0f, 0f, .55f), (.8f, .35f, -.2f, .5f), (0f, -.55f, 1f, 0f), (-.6f, .2f, -.15f, -.5f) })
+        {
+            var (turn, sx, sy, spin) = ShapeRaster.Ground(ax, ay, bx, by);
+            (float X, float Y) Map(float x, float y)
+            {
+                float c = MathF.Cos(spin * MathF.PI / 180), s = MathF.Sin(spin * MathF.PI / 180), u = (c * x - s * y) * sx, v = (s * x + c * y) * sy;
+                c = MathF.Cos(turn * MathF.PI / 180); s = MathF.Sin(turn * MathF.PI / 180);
+                return (c * u - s * v, s * u + c * v);
+            }
+            var (mx, my) = Map(1, 0);
+            var (nx, ny) = Map(0, 1);
+            Check(sy > 0 && Math.Abs(mx - ax) + Math.Abs(my - ay) + Math.Abs(nx - bx) + Math.Abs(ny - by) < 1e-4f, $"ground fit rebuilds ({ax}, {ay}), ({bx}, {by})");
+        }
+        var turned = ShapeRaster.Ground(MathF.Cos(.5f), MathF.Sin(.5f), -MathF.Sin(.5f), MathF.Cos(.5f));
+        Check(Math.Abs(turned.ScaleX - 1) + Math.Abs(turned.ScaleY - 1) < 1e-5f && Math.Abs(turned.Turn + turned.Spin - .5f * 180 / MathF.PI) < 1e-3f, "ground fit of a plain turn");
+        Check(ShapeRaster.Ground(1, 0, 0, -.5f).ScaleY <= 0, "a mirrored view has no ground fit");
+        Console.WriteLine("Smooth shape raster: fill, outline, ring mask, atlas blit, antialiased corners, row order, per-corner radii, clip coverage and move direction masks passed.");
     }
 }

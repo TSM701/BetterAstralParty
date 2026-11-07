@@ -85,7 +85,7 @@ internal static class DownloadFixture
             if (PublicRepositoryRequest(request)) return PublicRepositoryIdentity();
             var path = request.RequestUri!.AbsolutePath;
             if (path.EndsWith("/releases/123", StringComparison.Ordinal)) return Body(Metadata(false));
-            return Body(path.EndsWith("/457", StringComparison.Ordinal) ? Descriptor : path.EndsWith("/458", StringComparison.Ordinal) ? Envelope : Zip);
+            return Body(IsDescriptor(request) ? Descriptor : IsEnvelope(request) ? Envelope : Zip);
         }
         internal Handler Handler() => new() { Reply = (r, _) => Task.FromResult(Valid(r)) };
         internal byte[] SignEnvelope(byte[] descriptor, string keyId = "download-fixture") => Encoding.ASCII.GetBytes(
@@ -93,6 +93,12 @@ internal static class DownloadFixture
         public void Dispose() => _signing.Dispose();
     }
     private static HttpResponseMessage Body(byte[] bytes) => new(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) };
+    // Private feeds read release files by asset ID, public feeds by the release-page link's file name.
+    private static bool IsDescriptor(HttpRequestMessage request) => request.RequestUri!.AbsolutePath.EndsWith("/457", StringComparison.Ordinal)
+        || request.RequestUri.AbsolutePath.EndsWith("/" + ReleaseFeedPolicy.UpdateManifestAsset, StringComparison.Ordinal);
+    private static bool IsEnvelope(HttpRequestMessage request) => request.RequestUri!.AbsolutePath.EndsWith("/458", StringComparison.Ordinal)
+        || request.RequestUri.AbsolutePath.EndsWith("/" + ReleaseFeedPolicy.UpdateSignatureAsset, StringComparison.Ordinal);
+    private static string PublicLink(string name) => "https://github.com/" + ReleaseFeedPolicy.StableRepository + "/releases/download/1.4.0/" + name;
     private static bool PublicRepositoryRequest(HttpRequestMessage request)
         => request.RequestUri == ReleaseFeedTransport.IdentityEndpoint(ReleaseFeedPolicy.PreRelease);
     private static HttpResponseMessage PublicRepositoryIdentity() => Body(Encoding.UTF8.GetBytes(
@@ -239,8 +245,8 @@ internal static class DownloadFixture
         var preDescriptor = Encoding.ASCII.GetBytes(Encoding.ASCII.GetString(fixture.Descriptor).Replace("channel=Stable\n", "channel=PreRelease\n").Replace("purpose=release/Stable\n", "purpose=release/PreRelease\n"));
         var preEnvelope = fixture.SignEnvelope(preDescriptor);
         var preRequest = new UpdateDownloadRequest(new UpdateContext(ReleaseFeedPolicy.StableRepository, "PreRelease", "1.4.0-dev", "1.4.0", 123, 456, UpdateTrust.PlatformId, repositoryId: ReleaseFeedPolicy.StableRepositoryId), 457, 458);
-        using var preHandler = new Handler { Reply = (r, _) => Task.FromResult(PublicRepositoryRequest(r) ? PublicRepositoryIdentity() : r.RequestUri!.AbsolutePath.EndsWith("/457", StringComparison.Ordinal) ? Body(preDescriptor)
-            : r.RequestUri.AbsolutePath.EndsWith("/458", StringComparison.Ordinal) ? Body(preEnvelope) : r.RequestUri.AbsolutePath.EndsWith("/releases/123", StringComparison.Ordinal) ? Body(Metadata(true)) : Body(fixture.Zip)) };
+        using var preHandler = new Handler { Reply = (r, _) => Task.FromResult(PublicRepositoryRequest(r) ? PublicRepositoryIdentity() : IsDescriptor(r) ? Body(preDescriptor)
+            : IsEnvelope(r) ? Body(preEnvelope) : r.RequestUri!.AbsolutePath.EndsWith("/releases/123", StringComparison.Ordinal) ? Body(Metadata(true)) : Body(fixture.Zip)) };
         var neverPrivate = new Auth { ThrowIdentity = true, ThrowAuthorize = true };
         using (var client = new UpdateDownloads(fixture.Trust, neverPrivate, preHandler, feed: ReleaseFeedPolicy.PreRelease)) {
             client.Start(preRequest, Now); var pre = await Complete(client);
@@ -248,7 +254,7 @@ internal static class DownloadFixture
             var preRequests = preHandler.Snapshot();
             var publicEndpoint = ReleaseFeedTransport.IdentityEndpoint(ReleaseFeedPolicy.PreRelease).AbsoluteUri;
             Check(neverPrivate.Calls == 0 && preHandler.Count == 5 && preRequests.All(sent => sent.Authorization == null && !sent.Cookie && !sent.ProviderHeader)
-                && preRequests.Select(sent => sent.Url).SequenceEqual(new[] { publicEndpoint, publicEndpoint + "/releases/assets/457", publicEndpoint + "/releases/assets/458", publicEndpoint + "/releases/assets/456", publicEndpoint + "/releases/123" }), "public prerelease identity, descriptor, signature and ZIP are followed by fresh identity/classification without private credentials");
+                && preRequests.Select(sent => sent.Url).SequenceEqual(new[] { publicEndpoint, PublicLink(ReleaseFeedPolicy.UpdateManifestAsset), PublicLink(ReleaseFeedPolicy.UpdateSignatureAsset), PublicLink("BetterAstralParty-1.4.0-update.zip"), publicEndpoint + "/releases/123" }), "public prerelease identity, descriptor, signature and ZIP (release-page links) are followed by fresh identity/classification without private credentials");
         }
         await Expect(fixture, (r, _) => Task.FromResult(r.RequestUri!.AbsolutePath.EndsWith("/457", StringComparison.Ordinal) ? Body(preDescriptor) : Body(preEnvelope)), UpdateDownloadStatus.VerificationFailed, "same public repository cannot promote a signed PreRelease descriptor to Stable", Request);
         using var wrongPreHandler = fixture.Handler();
@@ -256,7 +262,7 @@ internal static class DownloadFixture
             client.Start(preRequest, Now); var wrongPre = await Complete(client);
             var publicEndpoint = ReleaseFeedTransport.IdentityEndpoint(ReleaseFeedPolicy.PreRelease).AbsoluteUri;
             Check(wrongPre.Status == UpdateDownloadStatus.VerificationFailed && wrongPreHandler.Snapshot().Select(sent => sent.Url)
-                .SequenceEqual(new[] { publicEndpoint, publicEndpoint + "/releases/assets/457", publicEndpoint + "/releases/assets/458" }), "after accepted public identity, signed Stable descriptor cannot be relabeled PreRelease and ZIP is never requested");
+                .SequenceEqual(new[] { publicEndpoint, PublicLink(ReleaseFeedPolicy.UpdateManifestAsset), PublicLink(ReleaseFeedPolicy.UpdateSignatureAsset) }), "after accepted public identity, signed Stable descriptor cannot be relabeled PreRelease and ZIP is never requested");
             Check(neverPrivate.Calls == 0 && wrongPreHandler.Snapshot().All(sent => sent.Authorization == null && !sent.Cookie && !sent.ProviderHeader), "wrong-channel rejection also remains anonymous");
         }
     }
@@ -268,9 +274,9 @@ internal static class DownloadFixture
             var feed = ReleaseFeedPolicy.For(channel); var context = new UpdateContext(feed.Repository, channel, "1.4.0-dev", "1.4.0", 123, 456, UpdateTrust.PlatformId, repositoryId: feed.RepositoryId);
             var request = new UpdateDownloadRequest(context, 457, 458); var privateSpy = new Auth { ThrowIdentity = true, ThrowAuthorize = true };
             using var handler = new Handler { Reply = (r, _) => Task.FromResult(PublicRepositoryRequest(r) ? PublicRepositoryIdentity()
-                : r.RequestUri!.AbsolutePath.EndsWith("/457", StringComparison.Ordinal) ? Body(descriptor)
-                : r.RequestUri.AbsolutePath.EndsWith("/458", StringComparison.Ordinal) ? Body(envelope)
-                : r.RequestUri.AbsolutePath.EndsWith("/releases/123", StringComparison.Ordinal) ? Body(Metadata(prerelease)) : Body(fixture.Zip)) };
+                : IsDescriptor(r) ? Body(descriptor)
+                : IsEnvelope(r) ? Body(envelope)
+                : r.RequestUri!.AbsolutePath.EndsWith("/releases/123", StringComparison.Ordinal) ? Body(Metadata(prerelease)) : Body(fixture.Zip)) };
             using var client = new UpdateDownloads(fixture.Trust, privateSpy, handler, feed: feed); client.Start(request, Now); var result = await Complete(client);
             var accepted = channel == "PreRelease" || !prerelease; // Pre-release users also follow full releases.
             Check(result.Status == (accepted ? UpdateDownloadStatus.Ready : UpdateDownloadStatus.Cancelled), "same exact public signature follows live classification " + channel + " " + prerelease);
@@ -297,6 +303,23 @@ internal static class DownloadFixture
             using var client = new UpdateDownloads(fixture.Trust, null, handler, feed: ReleaseFeedPolicy.Stable); client.Start(Request, Now);
             // A network or redirect failure is retried like other download steps; only a malformed classification cancels quietly.
             Check((await Complete(client)).Status == (failure == "malformed" ? UpdateDownloadStatus.Cancelled : UpdateDownloadStatus.Failed) && client.Result.Update == null, "unavailable live public classification: retryable failure or quiet cancellation " + failure);
+        }
+        // Release-page links keep the one-hop CDN rule: GitHub's redirect to the repository's release assets is followed, any other host fails.
+        var publicCdn = "https://release-assets.githubusercontent.com/github-production-release-asset/" + ReleaseFeedPolicy.StableRepositoryId + "/12345678-abcd-1234-abcd-123456789abc?file=";
+        foreach (var trusted in new[] { true, false }) {
+            using var handler = new Handler { Reply = (r, _) => {
+                var uri = r.RequestUri!;
+                if (uri.Host == "github.com") return Task.FromResult(Redirect(new Uri((trusted ? publicCdn : "https://untrusted.invalid/?file=") + uri.Segments[^1])));
+                if (uri.Host != "release-assets.githubusercontent.com") return Task.FromResult(fixture.Valid(r));
+                var name = uri.Query["?file=".Length..];
+                return Task.FromResult(Body(name == ReleaseFeedPolicy.UpdateManifestAsset ? fixture.Descriptor : name == ReleaseFeedPolicy.UpdateSignatureAsset ? fixture.Envelope : fixture.Zip));
+            } };
+            using var client = new UpdateDownloads(fixture.Trust, null, handler, feed: ReleaseFeedPolicy.Stable); client.Start(Request, Now);
+            var result = await Complete(client); var sent = handler.Snapshot().Select(item => item.Url).ToArray();
+            Check(trusted ? result.Status == UpdateDownloadStatus.Ready && sent.Count(url => url.StartsWith("https://github.com/", StringComparison.Ordinal)) == 3
+                    && sent.Count(url => url.StartsWith(publicCdn, StringComparison.Ordinal)) == 3 && !sent.Any(url => url.Contains("/releases/assets/", StringComparison.Ordinal))
+                : result.Status == UpdateDownloadStatus.Failed && result.Update == null && !sent.Any(url => url.StartsWith("https://untrusted.invalid", StringComparison.Ordinal)),
+                "public release-page links follow only GitHub's release-asset redirect " + trusted);
         }
     }
     private static async Task Failures(Fixture fixture)

@@ -28,10 +28,9 @@ public static class VisibleCombatAdvisor
             || input.AttackMax - input.AttackMin > 100 || input.DefenseMax - input.DefenseMin > 100)
             return null;
 
-        var allDefend = true;
         var allDodge = true;
         double defLow = double.PositiveInfinity, defHigh = 0, dodgeLow = double.PositiveInfinity, dodgeHigh = 0;
-        double defKoLow = 1, defKoHigh = 0, dodgeKoLow = 1, dodgeKoHigh = 0;
+        double defKoLow = 1, dodgeKoLow = 1;
         // Bounds, not an invented probability distribution for random card bonuses.
         for (var atk = input.AttackMin; atk <= input.AttackMax; atk++)
         for (var def = input.DefenseMin; def <= input.DefenseMax; def++)
@@ -45,27 +44,18 @@ public static class VisibleCombatAdvisor
                 { DefenseDice = DiceFaces.Range(face, face), DefenseDistributionUnknown = false };
             var result = CombatAdvisor.Calculate(new(input.Hp, atk + input.AttackDie, input.AttackDie, def)
                 { Modifiers = modifiers }, false);
-            var comparison = CombatAdvisor.CompareChoices(result.Defend, result.Dodge);
-            allDefend &= comparison <= 0;
-            allDodge &= comparison >= 0;
+            allDodge &= result.Recommendation == RecommendedAction.Dodge;
             defLow = Math.Min(defLow, result.Defend.ExpectedDamage);
             defHigh = Math.Max(defHigh, result.Defend.ExpectedDamage);
             dodgeLow = Math.Min(dodgeLow, result.Dodge.ExpectedDamage);
             dodgeHigh = Math.Max(dodgeHigh, result.Dodge.ExpectedDamage);
             defKoLow = Math.Min(defKoLow, result.Defend.KnockoutChance);
-            defKoHigh = Math.Max(defKoHigh, result.Defend.KnockoutChance);
             dodgeKoLow = Math.Min(dodgeKoLow, result.Dodge.KnockoutChance);
-            dodgeKoHigh = Math.Max(dodgeKoHigh, result.Dodge.KnockoutChance);
         }
-        // Preserve unanimous choices. When bounds disagree, minimise worst-case KO,
-        // then worst-case HP loss; equal value resolves to defend, without inventing odds.
-        // Explicit user policy: active Shushu shield always recommends dodge,
-        // including native dodge-unavailable states. Probabilities remain unchanged.
-        var recommendation = input.Modifiers.ShushuShield ? RecommendedAction.Dodge
-            : !input.DodgeAvailable || allDefend ? RecommendedAction.Defend
-            : allDodge ? RecommendedAction.Dodge
-            : CombatAdvisor.CompareChoices(new(defHigh, defKoHigh, 0), new(dodgeHigh, dodgeKoHigh, 0)) <= 0
-                ? RecommendedAction.Defend : RecommendedAction.Dodge;
+        // Dodge only when CombatAdvisor's rule picks it in every public outcome. An active Shushu shield
+        // recommends dodge even where the native dodge is unavailable. Probabilities remain unchanged.
+        var recommendation = input.Modifiers.ShushuShield || input.DodgeAvailable && allDodge
+            ? RecommendedAction.Dodge : RecommendedAction.Defend;
         var defTitle = recommendation != RecommendedAction.Defend ? "방어*"
             : !input.DodgeAvailable ? "★ 방어 추천 · 회피 불가" : "★ 방어 추천*";
         var dodgeTitle = recommendation == RecommendedAction.Dodge ? "★ 회피 추천*"

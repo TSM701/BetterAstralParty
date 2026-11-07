@@ -112,12 +112,11 @@ public static class CombatAdvisor
 
         var defend = EnumerateDefend(input);
         var dodge = EnumerateDodge(input);
-        var recommendation = Choose(defend, dodge);
-        var action = recommendation == RecommendedAction.Defend ? "방어" : "회피";
-        var reason = !includeReason ? "" : Math.Abs(defend.KnockoutChance - dodge.KnockoutChance) > 0.000001
-            ? $"{action}: 전투불능 확률 우선"
-            : Math.Abs(defend.ExpectedDamage - dodge.ExpectedDamage) > 0.000001
-                ? $"{action}: 같은 전투불능 확률, 체력 손실 우선" : "동률";
+        // Explicit user policy: an active Shushu shield always recommends dodge.
+        var recommendation = input.Modifiers.ShushuShield ? RecommendedAction.Dodge : Choose(defend, dodge);
+        var reason = !includeReason ? "" : recommendation == RecommendedAction.Defend ? "방어"
+            : input.Modifiers.ShushuShield ? "회피: 슈슈 쉴드"
+            : dodge.ExpectedDamage == 0 ? "회피: 회피 시 피해 없음" : "회피: 방어 시 확정 전투불능";
 
         return new CombatAdvice(defend, dodge, recommendation, reason);
     }
@@ -178,19 +177,12 @@ public static class CombatAdvisor
         return modifiers.MinimumHp > 0 ? Math.Min(damage, Math.Max(0, hp - modifiers.MinimumHp)) : damage;
     }
 
+    // User policy (2026-11-06), shared by the Defend/Dodge advice and the defender's reply that card and
+    // encounter advice model: defend, unless defending is a certain KO while a dodge can survive, or a dodge
+    // takes nothing (a fixed dodge face) while defending can lose HP. Ties defend.
     private static RecommendedAction Choose(ChoiceStats defend, ChoiceStats dodge) =>
-        CompareChoices(defend, dodge) <= 0 ? RecommendedAction.Defend : RecommendedAction.Dodge;
-
-    // Negative: defend is better for the defender. Positive: dodge. Zero: equal value.
-    internal static int CompareChoices(ChoiceStats defend, ChoiceStats dodge)
-    {
-        const double epsilon = 0.000_001;
-        if (Math.Abs(defend.KnockoutChance - dodge.KnockoutChance) > epsilon)
-            return defend.KnockoutChance.CompareTo(dodge.KnockoutChance);
-
-        return Math.Abs(defend.ExpectedDamage - dodge.ExpectedDamage) <= epsilon
-            ? 0 : defend.ExpectedDamage.CompareTo(dodge.ExpectedDamage);
-    }
+        defend.KnockoutChance >= 1 && dodge.KnockoutChance < 1 || dodge.ExpectedDamage == 0 && defend.ExpectedDamage > 0
+            ? RecommendedAction.Dodge : RecommendedAction.Defend;
 
     // Callers select the endpoint favorable to the local side, not an average of
     // unknown scenarios. Tiny nonzero odds must not become guaranteed 0/100%.

@@ -186,10 +186,11 @@ internal static class LanguageCheck
                 : title != section.Title && !title.Any(c => c is >= '가' and <= '힣')), "Category title translation: " + language + "/" + section.Title);
         }
         ModText.Select("English");
-        foreach (var action in new[] { "Language", "InputAttention", "HandLayout", "UpdateChannel" })
+        foreach (var action in new[] { "Language", "InputAttention", "HandLayout", "UpdateChannel", "WalkDirection" })
         {
             var modes = action == "Language" ? new[] { "Auto", "한국어", "English" }
                 : action == "InputAttention" ? new[] { "Off", "Windows", "Taskbar" }
+                : action == "WalkDirection" ? new[] { "Off", "Arrows", "Circles" }
                 : action == "UpdateChannel" ? new[] { "Stable", "PreRelease", "Beta" } : new[] { "Native", "Click", "Hover" };
             var bodies = modes.Select(mode => MenuLayout.OptionHelp(action, mode)).ToArray();
             Check(bodies.Distinct().Count() == modes.Length, "Separate descriptions for every mode: " + action);
@@ -197,7 +198,7 @@ internal static class LanguageCheck
                 Check(!string.IsNullOrWhiteSpace(body) && !ModText.Text(body).Any(c => c is >= '가' and <= '힣')
                     && !padding.Any(phrase => ModText.Text(body).Contains(phrase, StringComparison.OrdinalIgnoreCase)), "Specific translated mode help: " + action);
         }
-        foreach (var action in new[] { "Language", "HandLayout", "InputAttention" })
+        foreach (var action in new[] { "Language", "HandLayout", "InputAttention", "WalkDirection" })
         {
             var options = MenuLayout.Options(action);
             Check(options.Length == 3 && options.Distinct().Count() == 3, "Three explicit choices: " + action);
@@ -210,7 +211,7 @@ internal static class LanguageCheck
         Check(MenuLayout.DropdownY(125, 60, 180) == 189, "Dropdown below");
         Check(MenuLayout.DropdownY(510, 60, 180) == 326, "Dropdown above footer");
         Check(MenuLayout.DropdownY(220, 60, 180, 450) == 36, "Dropdown follows actual footer boundary");
-        foreach (var action in new[] { "Language", "HandLayout", "InputAttention" })
+        foreach (var action in new[] { "Language", "HandLayout", "InputAttention", "WalkDirection" })
         foreach (var option in MenuLayout.Options(action))
         {
             Check(MenuLayout.OptionHelp(action, option) == MenuLayout.StateHelp(action,
@@ -220,6 +221,12 @@ internal static class LanguageCheck
         }
         Check(MenuLayout.OptionHelp("HandLayout", "Native").Contains("기본 배치"), "Native preview ignores active grouped mode");
         Check(MenuLayout.OptionHelp("InputAttention", "Off").Contains("알리지 않습니다"), "Off alert preview");
+        // Move Direction Highlight (2026-11-06): Off, Arrows Only, Circles and Arrows; an unknown saved value is Arrows.
+        Check(MenuLayout.Options("WalkDirection").SequenceEqual(new[] { "Off", "Arrows", "Circles" })
+            && MenuLayout.WalkDirectionMode("Circles") == "Circles" && MenuLayout.WalkDirectionMode("Off") == "Off" && MenuLayout.WalkDirectionMode("x") == "Arrows" && MenuLayout.WalkDirectionMode(null) == "Arrows"
+            && MenuLayout.OptionLabel("WalkDirection", "Arrows") == "화살표만" && MenuLayout.OptionLabel("WalkDirection", "Circles") == "원과 화살표"
+            && MenuLayout.OptionHelp("WalkDirection", "Circles").Contains("점선") && !MenuLayout.OptionHelp("WalkDirection", "Arrows").Contains("점선"),
+            "Move direction choices, labels and help");
         Check(!MenuLayout.StateHelp("Names", true, "").Contains("이명")
             && !MenuLayout.StateHelp("Names", false, "").Contains("본명"), "Names help must not describe the other state");
         Check(!MenuLayout.Help("Details").Body.Contains("KO·생존")

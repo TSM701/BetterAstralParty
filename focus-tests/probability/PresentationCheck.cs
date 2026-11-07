@@ -34,12 +34,12 @@ public static class PresentationCheck
         Check(VisibleCombatAdvisor.Calculate(new(9, 1, 0, 0, 3, 0, 0, true))!.Value.DodgeQuick
             == "예상 피해 0.5\n전투불능 50%", "revealed-roll HP1 dodge risk remains calculated");
 
-        // Favorable display must not change the existing worst-case defense policy.
+        // Favorable display must not change the recommendation policy.
         var uncertain = VisibleCombatAdvisor.Calculate(new(4, 2, 1, 10, 3, 0, 10, true))!.Value;
-        Check(uncertain.Recommendation == RecommendedAction.Dodge, "conservative recommendation remains dodge");
         Check(KoLine(uncertain.DefendQuick) == "전투불능 0%", "own defense shows minimum risk");
         Check(uncertain.DefendQuick.Split('\n')[0].Contains('~'), "damage range retained");
         Check(KoLine(uncertain.DodgeQuick) == "전투불능 50%", "own dodge shows minimum risk");
+        Check(uncertain.Recommendation == RecommendedAction.Defend, "dodge only when defense is a certain KO");
 
         foreach (var hp in new[] { 1, 2, 5 })
         foreach (var attack in new[] { 0, 2, 5 })
@@ -57,13 +57,10 @@ public static class PresentationCheck
             Check(available ? KoLine(advice.DodgeQuick)
                 == "전투불능 " + CombatAdvisor.Probability(outcomes.Min(x => x.Dodge.KnockoutChance)) + "%" : advice.DodgeQuick == "회피 불가",
                 "all visible dodge endpoints and availability");
-            var allDefend = outcomes.All(x => CombatAdvisor.CompareChoices(x.Defend, x.Dodge) <= 0);
-            var allDodge = outcomes.All(x => CombatAdvisor.CompareChoices(x.Defend, x.Dodge) >= 0);
-            var recommendation = !available || allDefend ? RecommendedAction.Defend : allDodge ? RecommendedAction.Dodge
-                : CombatAdvisor.CompareChoices(new(outcomes.Max(x => x.Defend.ExpectedDamage), outcomes.Max(x => x.Defend.KnockoutChance), 0),
-                    new(outcomes.Max(x => x.Dodge.ExpectedDamage), outcomes.Max(x => x.Dodge.KnockoutChance), 0)) <= 0
-                    ? RecommendedAction.Defend : RecommendedAction.Dodge;
-            Check(advice.Recommendation == recommendation, "worst-case ordering retained for every ranged input");
+            var dodgeEverywhere = outcomes.All(x => x.Defend.KnockoutChance == 1 && x.Dodge.KnockoutChance < 1
+                || x.Dodge.ExpectedDamage == 0 && x.Defend.ExpectedDamage > 0);
+            var recommendation = available && dodgeEverywhere ? RecommendedAction.Dodge : RecommendedAction.Defend;
+            Check(advice.Recommendation == recommendation, "dodge only when defense is a certain KO");
         }
 
         foreach (var hp in new[] { 1, 5, 10 })

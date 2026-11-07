@@ -329,10 +329,14 @@ internal sealed class UpdateDownloads : IDisposable
         if (response.RequestMessage?.RequestUri is { } actual && actual.AbsoluteUri != destination.AbsoluteUri) return;
         if (Limited(response)) RememberBackoff(Backoff(response, now));
     }
+    // Public feeds fetch a release file by its release-page link: GitHub's download count counts that link but not an
+    // anonymous API asset read (measured 2026-11-04). The same CDN redirect rule, signature and hashes still apply.
+    private static Uri? ReleaseLink(ReleaseFeed? feed, string tag, string name) => feed is { RequiresAuthentication: false }
+        ? new Uri("https://github.com/" + feed.Repository + "/releases/download/" + Uri.EscapeDataString(tag) + "/" + Uri.EscapeDataString(name)) : null;
     private async Task<byte[]> Asset(long assetId, long limit, long? expected, IReleaseAuthentication? authentication,
-        ReleaseFeed? feed, string identity, DateTimeOffset now, Operation operation, bool identityProof = false, Uri? metadataEndpoint = null, Action<long>? progress = null)
+        ReleaseFeed? feed, string identity, DateTimeOffset now, Operation operation, bool identityProof = false, Uri? metadataEndpoint = null, Action<long>? progress = null, Uri? link = null)
     {
-        var endpoint = metadataEndpoint ?? (identityProof ? ReleaseFeedTransport.IdentityEndpoint(feed!)
+        var endpoint = metadataEndpoint ?? link ?? (identityProof ? ReleaseFeedTransport.IdentityEndpoint(feed!)
             : new Uri("https://api.github.com/repos/" + (feed?.Repository ?? Repository) + "/releases/assets/" + assetId.ToString(CultureInfo.InvariantCulture)));
         var destination = endpoint;
         for (var hop = 0; hop <= 1; hop++)
@@ -450,16 +454,18 @@ internal sealed class UpdateDownloads : IDisposable
                 repository = proof;
             }
             Enter(DiagnosticPhase.DescriptorAsset);
-            var descriptor = await Asset(request.DescriptorAssetId, UpdateTrust.MaxDescriptorBytes, null, authentication, feed, identity, now, operation).ConfigureAwait(false);
+            var descriptor = await Asset(request.DescriptorAssetId, UpdateTrust.MaxDescriptorBytes, null, authentication, feed, identity, now, operation,
+                link: ReleaseLink(feed, request.Context.ReleaseTag, ReleaseFeedPolicy.UpdateManifestAsset)).ConfigureAwait(false);
             Enter(DiagnosticPhase.SignatureAsset);
-            var envelope = Envelope(await Asset(request.SignatureAssetId, MaxEnvelopeBytes, null, authentication, feed, identity, now, operation).ConfigureAwait(false));
+            var envelope = Envelope(await Asset(request.SignatureAssetId, MaxEnvelopeBytes, null, authentication, feed, identity, now, operation,
+                link: ReleaseLink(feed, request.Context.ReleaseTag, ReleaseFeedPolicy.UpdateSignatureAsset)).ConfigureAwait(false));
             Enter(DiagnosticPhase.DescriptorVerification);
             var verified = _trust.VerifyDescriptor(descriptor, envelope.KeyId, envelope.Signature, request.Context, operation.Token);
             Account(authentication, feed, identity, operation);
             Enter(DiagnosticPhase.PackageAsset);
             Interlocked.Exchange(ref _packageTotal, verified.ZipBytes);
             var zip = await Asset(verified.AssetId, UpdateTrust.MaxZipBytes, verified.ZipBytes, authentication, feed, identity, now, operation,
-                progress: read => Interlocked.Exchange(ref _packageRead, read)).ConfigureAwait(false);
+                progress: read => Interlocked.Exchange(ref _packageRead, read), link: ReleaseLink(feed, request.Context.ReleaseTag, verified.AssetName)).ConfigureAwait(false);
             Enter(DiagnosticPhase.PayloadVerification);
             var payload = UpdatePackage.VerifyPayload(zip, verified, operation.Token);
             Account(authentication, feed, identity, operation);

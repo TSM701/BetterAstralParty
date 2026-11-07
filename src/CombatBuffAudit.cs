@@ -17,6 +17,8 @@ internal static class CombatBuffAudit
     // separately by the encounter advice. Buffs added by later game updates are not here until audited.
     // 2026-10-23 audit of the buffs new in the 2026-10-15 tables (ATK per stack, DEF/move, move, cost/move/cards):
     // 3081104, 5008702, 8000101, 10711102, 10711103, 10721101, 10741101; combat-audit replays agree (0 mismatches).
+    // 2026-11-07 (user-approved): 1211201 调查发现 / 조사 결과, text only "伤害强化次数" (damage boost count), no Params,
+    // a count; 13 logged hits with it shown (10 exact, 3 lethal) and 0 mismatches in combat-audit.
     internal static readonly HashSet<int> Neutral = new()
     {
         10004, 10005, 10007, 10008, 10011, 10013, 10014, 201002, 201102, 210102,
@@ -31,6 +33,7 @@ internal static class CombatBuffAudit
         10131101, 10141301, 10150101, 10170101, 10171101, 10181101, 10250101, 10271101, 10410101, 10441101,
         10470101, 10490101, 10570101, 10581101, 10640101, 10701102, 20271101,
         3081104, 5008702, 8000101, 10711102, 10711103, 10721101, 10741101,
+        1211201,
     };
 
     internal static bool Counted(int id) => Modeled.Contains(id) || Neutral.Contains(id);

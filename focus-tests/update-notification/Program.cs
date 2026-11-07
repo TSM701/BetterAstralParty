@@ -359,10 +359,14 @@ Case("partial creation failure isolates notification breaker and hit layer",()=>
     Check(Live()==0 && ModUi.Opens==2,"partial cleanup");
 });
 // With the home button an ordinary release first shows as a toast (draft 3, 2026-11-03); its click opens the window.
-Case("a toast comes first, counts only once on screen, and its click opens the notes",()=>{
+Case("a toast comes first, stays without a window, comes back until shown, and its click opens the notes",()=>{
     Compatibility.Blocked.Clear(); UpdateNotificationUi.Clear(); GameUi.ToastAvailable=true; GameUi.ToastShown=false;
+    // Only a window set the context before 1.7.2-dev.12: a toast started without one ended on its next frame and restarted.
+    typeof(UpdateNotificationUi).GetField("_contextGeneration",BindingFlags.Static|BindingFlags.NonPublic)!.SetValue(null,-1);
     Inject(Available("2.9.0")); Frame(()=>UInput.Down=true); Check(UpdateNotificationUi.Toast==null,"not on the frame of another click");
     Frame(); Check(UpdateNotificationUi.Toast?.Key=="2.9.0" && Live()==0,"toast, no window");
+    var shownAt=UpdateNotificationUi.ToastShownAt; Frame(); Frame();
+    Check(UpdateNotificationUi.Toast?.Key=="2.9.0" && UpdateNotificationUi.ToastShownAt==shownAt,"a toast started without a window stays");
     GameUi.Home=GameUi.Home with{CurrentHome=false}; Frame(); Check(UpdateNotificationUi.Toast==null,"leaving home clears it");
     GameUi.Home=GameUi.Home with{CurrentHome=true}; Frame(); Check(UpdateNotificationUi.Toast?.Key=="2.9.0","a toast never on screen comes back");
     GameUi.ToastShown=true; Frame(); Frame();
@@ -380,6 +384,26 @@ Case("hovering holds the toast and its time runs out once",()=>{
     for(var i=0;i<100 && UpdateNotificationUi.Toast!=null;i++) Frame();
     Check(UpdateNotificationUi.Toast==null && Live()==0,"runs out after its time");
     Frame(); Frame(); Check(UpdateNotificationUi.Toast==null,"not announced again");
+});
+// User-requested 2026-11-07: a toast counts only after its whole time on screen (or the player's close or click).
+Case("a toast taken down early comes back for its full time, and a recheck keeps it",()=>{
+    GameUi.ToastShown=true; Inject(Available("2.9.5")); Frame();
+    for(var i=0;i<60;i++) Frame();
+    Check(UpdateNotificationUi.Toast?.Key=="2.9.5" && UpdateNotificationUi.ToastRemaining<0.7f,"its time ran on screen");
+    Inject(new(ReleaseUpdateStatus.Checking,Release("2.9.5"))); Frame(); Check(UpdateNotificationUi.Toast?.Key=="2.9.5","a recheck keeps it");
+    Inject(Available("2.9.5")); Frame();
+    GameUi.Home=GameUi.Home with{Blocked=true}; Frame(); Check(UpdateNotificationUi.Toast==null,"a window on top takes it down");
+    GameUi.Home=GameUi.Home with{Blocked=false}; Frame();
+    Check(UpdateNotificationUi.Toast?.Key=="2.9.5" && UpdateNotificationUi.ToastRemaining==1,"it comes back for the full time");
+    GameUi.ToastShown=false; for(var i=0;i<40;i++) Frame();
+    Check(UpdateNotificationUi.ToastRemaining==1,"time runs only while it is drawn");
+    GameUi.ToastShown=true; for(var i=0;i<60;i++) Frame();
+    GameUi.Home=GameUi.Home with{CurrentHome=false}; Frame(); GameUi.Home=GameUi.Home with{CurrentHome=true}; Frame();
+    Check(UpdateNotificationUi.Toast?.Key=="2.9.5" && UpdateNotificationUi.ToastRemaining==1,"leaving home brings it back too");
+    for(var i=0;i<200 && UpdateNotificationUi.Toast!=null;i++) Frame();
+    Check(UpdateNotificationUi.Toast==null && Live()==0,"runs out after its full time");
+    GameUi.Home=GameUi.Home with{CurrentHome=false}; Frame(); GameUi.Home=GameUi.Home with{CurrentHome=true}; Frame(); Frame();
+    Check(UpdateNotificationUi.Toast==null && Live()==0,"not announced again");
 });
 Case("the toast's close and OFF open no window",()=>{
     var opens=ModUi.Opens;

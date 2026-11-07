@@ -45,6 +45,14 @@ internal sealed class UpdateNotificationState
         Active = target; _pending = null; return true;
     }
     internal void Close() => Active = null;
+    // The toast keeps its release through a recheck (Checking clears Next but keeps the pending release).
+    internal bool Holds(string key) => Active?.Key == key || _pending?.Key == key;
+    // A toast that ran its whole time or was closed: not announced again this session.
+    internal void Done(string key)
+    {
+        if (_pending?.Key != key) return;
+        _shown.Add(key); _pending = null;
+    }
     // Update Settings showed this release: closing them must not announce it again.
     internal void Seen()
     {

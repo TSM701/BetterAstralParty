@@ -16,10 +16,25 @@ internal static partial class TestCommands
         Check(showDice.Contains("BattleRole::get_Dodge", StringComparison.Ordinal) && Regex.IsMatch(showDice, @"UIFight_Com_Defenser::showResult\r?\n[^\n]*ldc.i4.2\r?\n[^\n]*Controller::set_selectedIndex")
             && Regex.IsMatch(showDice, @"ldc.i4.2\r?\n[^\n]*ldc.i4.0\r?\n[^\n]*ldc.i4.0\r?\n[^\n]*UIFight_PlayerInfo::RefreshPoint_Defender")
             && Regex.IsMatch(refresh, @"UIFight_Com_Defenser::changeState\r?\n[^\n]*ldarg.3\r?\n[^\n]*brtrue[^\n]*\r?\n[^\n]*ldc.i4.0"), "Native failed dodge has zero total and clears its icon");
-        // The defender's raw die is public at showPoint 0: the server choice shows it through RefreshPoint_Defender(0, val, dodge).
+        // The server choice writes the defender's raw die at showPoint 0 through RefreshPoint_Defender(0, val, dodge).
         var choice = Il(NativeAsyncMoveNext(native, "GameLogic.FightLogic", "OnBattleChoiceS2CServerCallBack"));
         Check(Regex.IsMatch(choice, @"BattleSceneController::directorManager\r?\n[^\n]*ldc.i4.0\r?\n[^\n]*ldarg.0\r?\n[^\n]*::model\r?\n[^\n]*BattleChoiceS2C::get_Val")
-            && Regex.IsMatch(refresh, @"UIFight_Com_Defenser::showPoint\r?\n[^\n]*ldarg.1\r?\n[^\n]*Controller::set_selectedIndex"), "Native raw defense die shows at showPoint 0");
+            && Regex.IsMatch(refresh, @"UIFight_Com_Defenser::showPoint\r?\n[^\n]*ldarg.1\r?\n[^\n]*Controller::set_selectedIndex"), "Native raw defense die written at showPoint 0");
+        // In the logged fights it first shows in Dice_Show: both panels turn to showPoint 2, the defender's die plays, the
+        // arithmetic panel lists each side's value and every card's rolled bonus, and only then the totals replace the dice
+        // (PointChange plays only at showPoint 2). GetPointInfos splits the server total into exactly those parts.
+        var fightWindow = native.MainModule.GetType("UI.FightWindow");
+        var cardList = Il(fightWindow.Methods.Single(method => method.Name == "RefreshCardList"));
+        var showValues = Il(NativeAsyncMoveNext(native, "UI.FightWindow", "ShowFightValue"));
+        var pointInfos = Il(native.MainModule.GetType("BattleShowDirector").Methods.Single(method => method.Name == "GetPointInfos"));
+        Check(Regex.IsMatch(showDice, @"UIFight_Com_Defenser::showPoint\r?\n[^\n]*ldc.i4.2\r?\n[^\n]*set_selectedIndex[\s\S]*UIFight_PlayerInfo::RefreshDice_Defender\(System.Int32\)[\s\S]*FightWindow::ShowFightValue[\s\S]*UIFight_PlayerInfo::RefreshPoint_Attacker")
+            && Regex.IsMatch(refresh, @"showPoint\r?\n[^\n]*get_selectedIndex\(\)\r?\n[^\n]*ldc.i4.2\r?\n[^\n]*bne[^\n]*\r?\n[^\n]*ldloc.0\r?\n[^\n]*UIFight_Com_Point::PointChange")
+            && Regex.IsMatch(showValues, @"UIFight_Com_Value::player_atk\r?\n[^\n]*UIFight_Com_Value_Player::title[\s\S]*PointInfo::CurrentPoint")
+            && cardList.Contains("ldstr \"+{0}\"", StringComparison.Ordinal) && cardList.Contains("ldstr \"...+{0}\"", StringComparison.Ordinal)
+            && Regex.IsMatch(cardList, @"Value_Card::title_atk[\s\S]*Value_Card::title_def[\s\S]*Value_Card::title_total")
+            && pointInfos.Contains("party.model.cardCombat::get_CardBonus()", StringComparison.Ordinal)
+            && Regex.IsMatch(pointInfos, @"BattleRole::get_Atk\(\)\r?\n[^\n]*ldloc.3\r?\n[^\n]*sub\r?\n[^\n]*ldarg.1\r?\n[^\n]*BattleRole::get_Point\(\)\r?\n[^\n]*sub"),
+            "Native arithmetic panel reveals each side's value, card bonuses and the defender's die before the totals");
         // The director binds a fight's players in ActiveBattlePlatform before refreshing its actors' panels.
         var director = native.MainModule.GetType("BattleShowDirector");
         Check(new[] { "_attackerData", "_defenderData" }.All(name => director.Fields.Single(field => field.Name == name).FieldType.FullName == "GameLogic.BattlePlayerData")
@@ -56,13 +71,23 @@ internal static partial class TestCommands
             "NativeUi.Create(\"Fight\", \"修改为 90-90\")", "diamond.Call(\"SetXY\", 35f, 35f)", "NativeUi.Label(point, \"\", 38, 30, 36, 100, 36", "format.SetField(\"letterSpacing\", 0)",
             "TintArtwork(disc, Color.cyan)", "index == 0 ? Color.red : Color.cyan", "filter.Call(\"Tint\", color, 1f)", "image.Set(\"filter\", filter)", "CardDiceLayout.Row(row)",
             "NativeUi.Component(_panel, 160, 160)", "row.Empty.Set(\"text\", content.Empty)", "fixedDie == 0) _resolvedUi = _attacker = _defender = null",
-            "GameUi.Visible(number), die)", "Get<int>(\"selectedIndex\") != 5", "row == 0 ? \"骰子底P1\" : \"骰子底P3\"", "if (!Plugin.KoMinimum.Value) { Clear(); return; }", "CardKoMinimum.RevealedDefenseDie(defense.Field(\"showPoint\")" }, "Minimum-condition policy, native dice presentation and independent setting");
+            "GameUi.Visible(number), die)", "Get<int>(\"selectedIndex\") != 5", "row == 0 ? \"骰子底P1\" : \"骰子底P3\"", "if (!Plugin.KoMinimum.Value) { Clear(); return; }", "CardKoMinimum.RevealedDefenseDie(defenseState, GameUi.Visible(defenseNumber), defenseDie)" }, "Minimum-condition policy, native dice presentation and independent setting");
+        // Before the totals: the raw dice stay on the labels until PointChange plays, and revealed card values narrow
+        // only within the server's public range; the final arithmetic then owns the display.
+        Contains(dice, new[] { "_totals |= point.Call(\"GetTransition\", \"PointChange\")!.Get<bool>(\"playing\")",
+            "var preTotals = attackState == 2 && !_totals && _rawDie > 0 && die == _rawDie && GameUi.Visible(number);",
+            "preTotals && defenseState == 2 && GameUi.Visible(defenseNumber) && defenseDie is >= 1 and <= 6",
+            "a >= input.AttackMin && a <= input.AttackMax", "d >= input.DefenseMin && d <= input.DefenseMax", "!= 5 || _final)" }, "Pre-total dice and revealed card values");
+        NoPattern(dice, @"defensePoint\.Call\(""GetTransition"", ""PointChange""\)", "The defender's PointChange also plays when its die settles, so it never ends the pre-total stage");
+        Contains(view, new[] { "if (_prediction >= 0 || dodge || _die == 0 || atk != _die || def is < 1 or > 6) return;",
+            "FightValues.Revealed(values, true) is not { } attackValue || FightValues.Revealed(values, false) is not { } defenseValue",
+            "if (earlier == _prediction) return;", "_prediction >= 0 && !_early" }, "Early damage only from the raw dice and the revealed arithmetic panel, checked by the totals");
         Check(!Regex.IsMatch(dice, "ThresholdRange|DefenseThresholds|생존 가능 조건|KO 가능 조건|rangeText") && !dice.Contains("공격 눈 공개", StringComparison.Ordinal), "No mixed threshold policy or redundant revealed subtitle");
         var layout = ReadSource(context, "src/CardDiceLayout.cs");
         Check(!layout.Contains("피해량", StringComparison.Ordinal) && !layout.Contains("/ HP", StringComparison.Ordinal) && !dice.Contains("방어 선택 시 피해량", StringComparison.Ordinal), "Minimum conditions never become a damage presentation");
         foreach (var forbidden in new[] { "NativeUi.Arrow(", "\"이상\"", "\"이하\"", "\"확정\"", "\"Fight_Com_Point\"", "Set(\"visible\", possible)", "hpTop", "Local(life,", "NativeUi.Surface", "HigherAlsoPossible", "Plugin.ShowDetails.Value", "Plugin.Enabled.Value" })
             Check(!dice.Contains(forbidden, StringComparison.Ordinal), "Dice preserve numeric semantics without legacy presentation " + forbidden);
-        Check(view.Contains("if (!dodge) CardDiceUi.ShowFinal(parent, a, _hp, _prediction, _modifiers, _die);", StringComparison.Ordinal)
+        Check(view.Contains("if (!dodge) CardDiceUi.ShowFinal(parent, a, _hp, _prediction, _modifiers, _die, _defenseDie);", StringComparison.Ordinal)
             && view.IndexOf("CardDiceUi.ShowFinal(", StringComparison.Ordinal) > view.IndexOf("_prediction = CombatAdvisor.FinalDamage(", StringComparison.Ordinal)
             && view.IndexOf("_prediction = CombatAdvisor.FinalDamage(", StringComparison.Ordinal) > view.IndexOf("AdviceText.FinalDamageReady(", StringComparison.Ordinal)
             && view.IndexOf("if (!Plugin.FinalDamage.Value) return;", StringComparison.Ordinal) > view.IndexOf("CardDiceUi.ShowFinal(", StringComparison.Ordinal)

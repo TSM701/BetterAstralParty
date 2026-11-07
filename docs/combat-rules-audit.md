@@ -1,5 +1,55 @@
 # Combat rule audit
 
+## 2026-11-06 — dodge only against a certain KO
+
+User decision: the Defend/Dodge recommendation no longer compares worst-case KO chance and
+then worst-case HP loss. It recommends Dodge only when defending is a KO in every public
+outcome (every stat bonus, every allowed defense face) while a dodge can still survive, or
+when a dodge takes nothing in every outcome (a fixed dodge face above the revealed attack
+die) while defending can lose HP; the active Shushu shield still always recommends Dodge.
+Everything else, an exact tie and an unavailable dodge recommend Defend. The shown damage
+and KO figures are unchanged. Card and encounter advice model the defender's reply after
+each attack die with the same rule (CombatAdvisor.Choose), monsters included, and a
+Shushu-shielded defender as dodging, so their KO chances and HP losses follow the advice.
+
+## 2026-11-06 — widest guaranteed KO pair
+
+A guaranteed KO is a staircase of dice (a higher attack die tolerates a higher defense die),
+but the view showed one pair: the lowest attack die with the highest defense die it allows.
+Across 127 retained fights (damage approximated as max(1, ATK - DEF) + incoming bonus), the
+dice made the KO certain 40 times and the shown pair covered 28 of them. With an attack card
+of range 5 or more, 13 of 42 fights were certain KOs, 13 certain misses and 16 depended on
+the hidden bonus (8 each way). The view now shows the pair whose rectangle holds the most
+dice combinations, the lower attack die on a tie; it covered 36 of the 40. Survival mirrors it.
+A revealed attack die leaves one row, so the pair after the reveal is the same. Showing a
+"possible" pair beside it or a 50 % pair was drafted and not chosen.
+
+## 2026-11-06 — the defender's settled die ended the pre-total stage
+
+The KO view fixes the defender's raw die between its reveal and the totals, and ends that
+stage when PointChange plays. RefreshDice_Defender's onPlayEnd plays MaxPoint on a 6 and
+PointChange on 1-5, so for every non-6 die the defender's own reveal ended the stage before
+the die was read: across the retained logs the pre-total path fixed the defense die only for
+6s (9 times) and the KO status settled with the damage figure instead. In one logged hit the
+die showed at 16.52 s, the outcome was already certain from the public ranges, and the KO
+status came at 16.83 s with the arithmetic panel. Only the attacker's PointChange, which
+RefreshPoint_Attacker(2, total) plays at the totals, now ends the stage.
+
+The server's totals are in BattleFightData.attackerInfo/defenderInfo (Atk, Def) before
+Dice_Show starts, and GetPointInfos splits them for the panel. Reading them would show the
+outcome up to a few seconds before the game shows the dice, so the views keep using what is
+on screen.
+
+## 2026-11-06 — two Berserk cards (1.7.2-dev.7)
+
+A hero showing buff 2000801 twice (two Berserk cards, each Progress 0 and two rounds) was hit
+by a monster with ATK 14 against DEF 8 and lost 8 HP; the mod predicted 7, because the effect
+reader counts each buff ID once. That suits stacking buffs, which show one icon with a count,
+but every Berserk card makes its own buff, and each adds incoming damage +1 (6 + 2 = 8). Two
+hits on a hero with one Berserk matched the prediction. The reader now adds 2000801 once per
+active shown entry; every other ID still counts once. No other buff appeared twice in the
+retained logs, and three or more Berserk cards have not been observed.
+
 ## 2026-10-24 — two Shooting Star relics
 
 With both relics held, the server may resolve the release as one hit or as one hit per relic;
@@ -1020,3 +1070,36 @@ Params[0] with the buff association guard, but it is not the Shushu shield and
 does not trigger the Dodge override. 10009 (modification: damage equal to
 current HP when stacks reach 0) stays not counted; no logged hit shows it, and
 its trigger timing relative to a hit is unverified.
+
+## Revealed card bonuses and the raw defense die — 1.7.2-dev
+
+Every logged KO view kept revealedDefense=0: the server choice writes the
+defender's raw die at showPoint 0, but it first shows in Dice_Show, which turns
+both panels to showPoint 2 and then plays the defender's die. Both labels keep
+the raw dice until RefreshPoint_Attacker/Defender(2, total) play PointChange.
+In the same window FightWindow.ShowFightValue shows the arithmetic panel: each
+side's value without its die (player_atk/player_def title, half a second in)
+and every card's rolled bonus (RefreshCardList, "+N", or "...+N" summing the
+cards past the seventh). GetPointInfos builds these parts from the server
+total (Atk - card bonuses - Point), so value + die + bonuses is the total.
+
+The KO view now fixes the defender's die at showPoint 2 until PointChange, and
+replaces a side's public range with its revealed sum when that sum lies inside
+it. With both raw dice and both sums on screen, the final-damage figure and the
+KO status appear about half a second before the totals (one card: cards from
+about 0.2s, values at 0.6s, totals at 1.1s). The totals still compute the
+figure: damage.earlyCheck logs whether they agree, and a different total
+replaces it. The combat-audit prediction line still comes from the totals.
+Dodges keep the totals-only path. Observed in game on 2026-11-07 (1.7.2-dev.12,
+one PvE match and one replay): all 33 early figures equalled the totals, and
+77 defense dice were fixed before the totals.
+
+## Buff 1211201 — 1.7.2-dev
+
+Buff 1211201 (调查发现 / 조사 결과) has the original text 伤害强化次数, "damage
+boost count", and no Params: it is a count. In the 2026-11-07 session (one PvE
+match and one replay, 1.7.2-dev.12) it was shown on 13 logged hits, and
+combat-audit replayed all of them through the current model with 10 exact and
+3 lethal matches and no mismatch. The user approved adding it to
+CombatBuffAudit.Neutral, so it no longer shows as an effect the calculation
+does not count. Whether the count raises damage once it fills is not observed.

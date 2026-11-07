@@ -32,6 +32,7 @@ internal static unsafe class SmoothShape
     }
     private static readonly List<Page> Pages = new();
     private static readonly Dictionary<(float, float, float, float, float), RuntimeObject> Sprites = new(); // Corners and line (0: fill).
+    private static readonly Dictionary<string, RuntimeObject> Masks = new();
     private static readonly List<RuntimeObject> Others = new(); // Other mod root textures Tick checks (HomePortrait's bake).
     private const int PageSize = 512, Padding = 2;
     private static bool _failed, _tickFailed;
@@ -157,14 +158,34 @@ internal static unsafe class SmoothShape
         var size = ShapeRaster.Size(margin);
         var mask = ShapeRaster.Pixels(margin, state.TopLeft, state.TopRight, state.BottomLeft, state.BottomRight, line,
             (1f, 1f, 1f, line > 0 ? 0f : 1f), (1f, 1f, 1f, 1f));
+        return Sprites[key] = Region(mask, size);
+    }
+
+    // A white mask of another shape (the move direction arrows and rings, 2026-11-06) in the same atlas, shown by a new image
+    // stretched to the image's size and tinted by its colour. Null once smooth shapes have failed.
+    internal static RuntimeObject? MaskImage(string key, int size, Func<byte[]> pixels)
+    {
+        if (_failed) return null;
+        RuntimeObject? image = null;
+        try
+        {
+            if (!Masks.TryGetValue(key, out var sprite)) Masks[key] = sprite = Region(pixels(), size);
+            image = RuntimeObject.New(RuntimeObject.FindClass("FairyGUI", "GImage"));
+            image.Set("texture", sprite);
+            image.Set("touchable", false);
+            return image;
+        }
+        catch (Exception ex) { _failed = true; GameUi.Dispose(image); Plugin.Diagnostics.Error("SmoothShape", ex); return null; }
+    }
+
+    private static RuntimeObject Region(byte[] mask, int size)
+    {
         var (page, x, y) = Place(size + 2 * Padding);
         ShapeRaster.Blit(mask, size, page.Pixels, page.Size, x + Padding, y + Padding, Padding);
         fixed (byte* data = page.Pixels) page.Texture.LoadRawTextureData((IntPtr)data, page.Pixels.Length);
         page.Texture.Apply(false, false);
         // NTexture(NTexture root, Rect region, bool rotated): the region in pixels from the top-left, as package atlases use it.
-        sprite = RuntimeObject.New(RuntimeObject.FindClass("FairyGUI", "NTexture"), page.Root, new Rect(x + Padding, y + Padding, size, size), false);
-        Sprites[key] = sprite;
-        return sprite;
+        return RuntimeObject.New(RuntimeObject.FindClass("FairyGUI", "NTexture"), page.Root, new Rect(x + Padding, y + Padding, size, size), false);
     }
 
     // Shelf packing: left to right in rows, a new page when the last one is full.

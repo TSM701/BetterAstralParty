@@ -24,7 +24,7 @@ internal static class MenuLayout
     {
         ("전투 추천", false, new[] { "Enabled", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "Details", "ShootingStarShow", "KoMinimum", "KoCardPreview", "KoSpectator", "FinalDamage" }),
         ("전투 표시", false, new[] { "BattleStatus", "StatusHand", "StatusEffects", "CounterIcons", "CounterAnimation", "CounterSound", "ShushuMaster", "ShushuShield", "ShushuShieldRestrictions" }),
-        ("필드·카메라", false, new[] { "FieldBuffs", "FieldMarker", "FieldZoom", "ZoomSensitivity", "ZoomOutLimit", "FreeCameraSpeed", "IndicatorFade", "IndicatorFadeStrength", "IndicatorHide", "IndicatorHideDistance", "DiceLock" }),
+        ("필드·카메라", false, new[] { "FieldBuffs", "FieldMarker", "WalkDirection", "FieldZoom", "ZoomSensitivity", "ZoomOutLimit", "FreeCameraSpeed", "IndicatorFade", "IndicatorFadeStrength", "IndicatorHide", "IndicatorHideDistance", "DiceLock" }),
         ("손패·카드", false, new[] { "HandLayout", "FoldedHandOpacity", "CardPopups" }),
         ("캐릭터", false, new[] { "Names", "CharacterRoles", "CharacterGuide", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill" }),
         ("편의 기능", false, new[] { "AutoThanks", "PingFocus" }),
@@ -268,6 +268,7 @@ internal static class MenuLayout
         "CounterSound" => "인카운트·전투 반격 아이콘",
         "FieldBuffs" => "필드 캐릭터 위",
         "FieldMarker" => "필드 캐릭터 위",
+        "WalkDirection" => "필드 캐릭터 발밑",
         "FieldZoom" => "필드",
         "IndicatorFade" => "필드 인디케이터",
         "IndicatorHide" => "필드 인디케이터",
@@ -330,15 +331,19 @@ internal static class MenuLayout
     {
         "Language" => new[] { "Auto", "한국어", "English" },
         "HandLayout" => new[] { "Native", "Click", "Hover" },
+        "WalkDirection" => new[] { "Off", "Arrows", "Circles" },
         "InputAttention" => new[] { "Taskbar", "Windows", "Off" },
         "UpdateChannel" => new[] { "Stable", "PreRelease", "Beta" },
         "AutoUpdate" => new[] { "Off", "Check", "Download", "Apply" },
         _ => Array.Empty<string>()
     };
+    // Move Direction Highlight's saved value; anything else (a hand edit, an unknown value) is the default, Arrows.
+    internal static string WalkDirectionMode(string? value) => value is "Off" or "Circles" ? value : "Arrows";
     internal static string OptionLabel(string action, string value) => action switch
     {
         "Language" => value == "Auto" ? "자동" : value,
         "HandLayout" => value switch { "Click" => "클릭 펼치기", "Hover" => "호버 펼치기", _ => "기본" },
+        "WalkDirection" => value switch { "Off" => "끄기", "Circles" => "원과 화살표", _ => "화살표만" },
         "InputAttention" => InputAttentionState.Label(value),
         "UpdateChannel" => value switch { "PreRelease" => "프리 릴리즈", "Beta" => "비공개 베타", _ => "릴리즈" },
         "AutoUpdate" => value switch { "Off" => "끄기", "Check" => "확인만", "Download" => "자동 받기", "Apply" => "자동 적용", _ => "사용자 지정" },
@@ -371,6 +376,12 @@ internal static class MenuLayout
         "Language" => mode switch { "한국어" => "모드 안내를 한국어로 표시합니다.", "English" => "모드 안내를 영어로 표시합니다.", _ => "모드 안내 언어를 게임 메뉴에 맞춥니다." },
         "Names" => enabled ? "본명으로 표시합니다." : "이명으로 표시합니다.",
         "HandLayout" => !enabled ? "게임 기본 배치로 보여줍니다." : mode == "Click" ? "클릭한 묶음을 가로로 펼치고\n다른 곳을 클릭하면 접습니다." : "마우스를 올린 묶음을 위로 펼치고\n벗어나면 접습니다.",
+        "WalkDirection" => mode switch
+        {
+            "Off" => "게임 기본 표시만 보여줍니다.",
+            "Circles" => "발밑 원과 이동 방향 화살표를\n캐릭터보다 위에 그립니다.\n캐릭터 뒤쪽 원은 점선입니다.",
+            _ => "발밑 원의 이동 방향 화살표를\n캐릭터보다 위에 그립니다."
+        },
         "ShushuShield" when !enabled => "쉴드 효과를 그리지 않습니다.",
         "ShushuShieldRestrictions" when !enabled => "방어 버튼과 카드를 잠그지 않습니다.",
         "AutoThanks" when !enabled => "자동으로 보내지 않습니다.",
@@ -431,7 +442,7 @@ internal static class MenuLayout
         "General" => ("일반 설정", "언어·음소거·알림·진단을 설정합니다."),
         "Enabled" => ("행동 추천", "공격·놓아주기, 방어·회피와\n쓸 만한 카드를 추천합니다."),
         "Details" => ("추천 상세 수치", "예상 피해와\n전투불능 확률을 보여줍니다."),
-        "KoMinimum" => ("KO 주사위 조건", "KO·생존이 확정되는 최소 주사위를\n보여줍니다."),
+        "KoMinimum" => ("KO 주사위 조건", "KO·생존이 확정되는 주사위 조건을\n보여줍니다."),
         "CardPopups" => ("핑 상세 보기", "카드·칩 핑 말풍선을 클릭하면\n원본 이미지와 설명이 열립니다."),
         "HandLayout" => ("손패 묶기", "손패를 기능별로 모아\n클릭이나 호버로 펼칩니다."),
         "BattleStatus" => ("전투 상태", "양쪽의 손패 장수·공개 효과와\n반격 가능 여부를 보여줍니다.\n아이콘에 마우스를 올리면 설명이 나옵니다."),
@@ -456,6 +467,7 @@ internal static class MenuLayout
         "UpdateNotifications" => ("업데이트 알림 팝업", "새 버전이 나오면 홈 화면 위쪽에\n잠깐 알림을 띄웁니다.\n누르면 변경 내역이 열립니다."),
         "FieldBuffs" => ("플레이어 인디케이터", "플레이어 이름·HP와 공개 효과를 보여줍니다.\n효과 아이콘을 클릭하면 설명이 열립니다."),
         "FieldMarker" => ("인디케이터 높이", "점을 캐릭터 발밑(0%)부터\n원래 위치(100%) 사이로 옮깁니다."),
+        "WalkDirection" => ("이동 방향 강조", "플레이어·몬스터 발밑의 이동 방향을\n가려지지 않게 그립니다."),
         "FieldZoom" => ("휠 줌·자유 시점", "휠로 확대·축소하고 드래그로 시점을 옮깁니다.\n턴 바의 '자유 시점 카메라 종료'로\n기본 시점에 돌아갑니다."),
         "MatchFocus" => ("매칭 시 게임 창 띄우기", "PvE 매칭 성사나 방 시작 때\n게임 창을 한 번 앞으로 가져옵니다."),
         "Names" => ("이름 표기", "본명 또는 이명으로 표시합니다."),
@@ -488,7 +500,7 @@ internal static class MenuLayout
         "Opacity" => ("배경 불투명도", "0%에서도 글자·아이콘·테두리는\n그대로 보입니다."),
         "Close" => ("돌아가기", "설정을 닫고 돌아갑니다.\n변경 사항은 자동 저장됩니다."),
         "EncounterAdvice" => ("인카운트 추천", "조우 화면에서 공격·놓아주기를\n추천합니다."),
-        "DefenseAdvice" => ("방어·회피 추천", "방어와 회피 중\n유리한 쪽을 추천합니다."),
+        "DefenseAdvice" => ("방어·회피 추천", "방어를 추천하고, 방어해도 반드시\n쓰러질 때는 회피를 추천합니다."),
         "CardAdvice" => ("카드 추천", "쓸 만한 카드 위에\n효과를 표시합니다."),
         "ShootingStarShow" => ("슈팅 스타 표시", "놓아줄 때 몬스터에게 주는 피해와\n얻는 스타라이트를 보여줍니다."),
         "KoCardPreview" => ("카드 호버 조건", "카드에 마우스를 올리면\n카드 사용 후 조건으로 보여줍니다."),

@@ -275,7 +275,7 @@ foreach (var renderedHeight in new[] { 60f, 85f, 100f, 120f })
 if (MenuLayout.HelpY + MenuLayout.HelpHeight > MenuLayout.TabY || 255 + MenuLayout.ToggleHeight > 320 || 320 + MenuLayout.ToggleHeight > 390 || 455 + 60 > 520)
     throw new Exception("왼쪽 표시 설정·진단 로그 겹침/설정창 경계 침범");
 foreach (var action in new[] { "Enabled", "Details", "CardPopups", "BattleStatus", "FieldBuffs", "Names", "Diagnostics", "MuteUnfocused", "InputAttention",
-    "Scale", "Opacity", "IndicatorFadeStrength", "FoldedHandOpacity", "Close" })
+    "WalkDirection", "Scale", "Opacity", "IndicatorFadeStrength", "FoldedHandOpacity", "Close" })
 {
     var help = MenuLayout.Help(action);
     if (help == MenuLayout.Help("") || help.Title.Length == 0 || help.Body.Length == 0 || help.Body.Length > 80)
@@ -530,9 +530,9 @@ if (VisibleCombatAdvisor.Calculate(new(4, 10, 4, 3, 4, 4, 9, true)) != null
     || VisibleCombatAdvisor.Calculate(new(4, 10, 4, 4, 7, 4, 9, true)) != null)
     throw new Exception("잘못된 범위/특수 주사위 입력 허용");
 var uncertain = VisibleCombatAdvisor.Calculate(new(4, 2, 1, 10, 3, 0, 10, true))!.Value;
-if (uncertain.Recommendation != RecommendedAction.Dodge || !uncertain.Dodge.Contains("추천")
+if (uncertain.Recommendation != RecommendedAction.Defend || !uncertain.Defend.Contains("추천")
     || !uncertain.DefendQuick.Contains('~') || uncertain.DodgeQuick != "예상 피해 1\n전투불능 50%")
-    throw new Exception("불확실 범위 보존/최악 KO 기준 추천 실패");
+    throw new Exception("불확실 범위 보존/방어 확정 KO일 때만 회피 추천 실패");
 Console.WriteLine("PvE 제한·회피 불가·불확실 범위 검증 통과");
 
 foreach (var (width, height) in new[] { (1920f, 1080f), (1280f, 720f), (1024f, 768f), (2560f, 1080f), (800f, 600f) })
@@ -726,6 +726,7 @@ for (var fixedDie = 0; fixedDie <= 6; fixedDie++)
     var input = new PreRollCombat(9, life, 2, 5, -1, 3)
         { Modifiers = new(adjustment, cap) };
     var expected = new KoPair(fixedDie, 0);
+    var widest = 0; // Draft A (2026-11-06): the guaranteed rectangle with the most faces, the lower attack die on a tie.
     for (var attackDie = fixedDie == 0 ? 1 : fixedDie; attackDie <= (fixedDie == 0 ? 6 : fixedDie); attackDie++)
     {
         var limit = 0;
@@ -742,7 +743,8 @@ for (var fixedDie = 0; fixedDie <= 6; fixedDie++)
             }
             if (allKo) limit = defenseDie;
         }
-        if (limit > 0) { expected = new(attackDie, limit); break; }
+        var size = (fixedDie == 0 ? 7 - attackDie : 1) * limit;
+        if (size > widest) { expected = new(attackDie, limit); widest = size; }
     }
     if (CardKoMinimum.Calculate(input, new(true, 1, 6, 2), fixedDie) != expected)
         throw new Exception("KO pair exhaustive mismatch");
@@ -765,6 +767,11 @@ if (!CardKoMinimum.RevealedDie(1, true, 6) || CardKoMinimum.RevealedDie(1, false
 if (!CardKoMinimum.RevealedDefenseDie(0, true, 3) || CardKoMinimum.RevealedDefenseDie(2, true, 3)
     || CardKoMinimum.RevealedDefenseDie(0, false, 3) || CardKoMinimum.RevealedDefenseDie(0, true, 9))
     throw new Exception("Defense raw die must be read at showPoint 0, never from its total");
+// FightWindow.RefreshCardList formats "+{0}" per card and "...+{0}" for the rest past the seventh.
+if (CardKoMinimum.CardValue("+2") != 2 || CardKoMinimum.CardValue("...+13") != 13 || CardKoMinimum.CardValue("+-1") != -1
+    || CardKoMinimum.CardValue("2") != null || CardKoMinimum.CardValue("+") != null || CardKoMinimum.CardValue("...") != null
+    || CardKoMinimum.CardValue("+2a") != null || CardKoMinimum.CardValue("+99999") != null || CardKoMinimum.CardValue(null) != null)
+    throw new Exception("Revealed card bonus parsing failed");
 Console.WriteLine("KO pairs: exhaustive worst-case outcomes, revealed rolls, caps and visibility guards passed.");
 var shadow = CardAdvisor.FromConfig(10008, 1, 1, new[] { 3, 3, 1 }, 0, 0, 2)!.Value;
 if (!shadow.PreventCounter || shadow.Min != 3 || shadow.Max != 3)
@@ -885,7 +892,7 @@ var quick = VisibleCombatAdvisor.Calculate(new(9, 8, 3, 3, 5, 4, 4, true))!.Valu
 if (quick.Recommendation != RecommendedAction.Defend || quick.DefendQuick != "예상 피해 1.5\n전투불능 0%"
     || quick.DodgeQuick != "예상 피해 6.7\n전투불능 83.33%")
     throw new Exception("스크린샷 전투의 요약/추천 오류");
-if (uncertain.Recommendation != RecommendedAction.Dodge || blockedDodge.Recommendation != RecommendedAction.Defend)
+if (uncertain.Recommendation != RecommendedAction.Defend || blockedDodge.Recommendation != RecommendedAction.Defend)
     throw new Exception("불확실/회피 불가 상태의 단일 추천 누락");
 var compact = AdviceText.Quick(quick.DefendQuick);
 if (compact.Contains("<b>"))
@@ -987,7 +994,7 @@ ChoiceStats EnumerateExchange(int hp, int attack, int defense, bool canDodge)
         var evade = Enumerable.Range(1, 6).Select(d => d > a || d == 6 && a == 6 ? 0 : Math.Min(hp, attack + a)).ToArray();
         var blockKo = block.Count(d => d == hp);
         var evadeKo = evade.Count(d => d == hp);
-        var chosen = canDodge && (evadeKo < blockKo || evadeKo == blockKo && evade.Sum() < block.Sum()) ? evade : block;
+        var chosen = canDodge && (blockKo == 6 && evadeKo < 6 || evade.Sum() == 0 && block.Sum() > 0) ? evade : block;
         total += chosen.Sum(); ko += chosen.Count(d => d == hp); safe += chosen.Count(d => d == 0);
     }
     return new(total / 36, ko / 36, safe / 36);
@@ -1053,7 +1060,11 @@ if (weaklyBetter.Recommendation != RecommendedAction.Defend)
 var dodgeBetter = VisibleCombatAdvisor.Calculate(new(9, 1, 3, 3, 2, 20, 20, true))!.Value;
 if (dodgeBetter.Recommendation != RecommendedAction.Dodge || !dodgeBetter.Summary.Contains("회피 추천")
     || !quick.Summary.Contains("방어 추천") || !blockedDodge.Summary.Contains("회피 불가")
-    || !uncertain.Summary.Contains("회피 추천")) throw new Exception("방어자 단일 추천/회피 불가 표제 오류");
+    || !uncertain.Summary.Contains("방어 추천")) throw new Exception("방어자 단일 추천/회피 불가 표제 오류");
+// Defending survives a 6 here, so a lower dodge KO chance (4/6 < 5/6) no longer recommends dodge.
+var survivable = VisibleCombatAdvisor.Calculate(new(9, 5, 7, 7, 4, 1, 1, true))!.Value;
+if (survivable.Recommendation != RecommendedAction.Defend)
+    throw new Exception("방어로 살 수 있는데 회피 추천");
 foreach (var advice in new[] { tied, weaklyBetter, dodgeBetter, quick, blockedDodge, uncertain })
     if (!advice.Summary.StartsWith("방어자 기준") || advice.Summary.Contains("선택"))
         throw new Exception("방어자 이득 비교를 행동 예측처럼 표시함");
@@ -1067,29 +1078,22 @@ foreach (var defMin in new[] { -2, 0, 8 })
 foreach (var die in Enumerable.Range(1, 6))
 foreach (var canDodge in new[] { false, true })
 {
-    var blockAlways = true; var evadeAlways = true;
-    var blockWorst = (Ko: 0, Loss: 0); var evadeWorst = (Ko: 0, Loss: 0);
+    var dodgeEverywhere = true;
     for (var atk = atkMin; atk <= atkMin + 3; atk++)
     for (var def = defMin; def <= defMin + 3; def++)
     {
         var block = Enumerable.Range(1, 6).Select(d => Math.Min(hp, Math.Max(1, atk + die - def - d))).ToArray();
         var evade = Enumerable.Range(1, 6).Select(d => d > die || d == 6 && die == 6 ? 0 : Math.Min(hp, atk + die)).ToArray();
-        var b = (Ko: block.Count(d => d == hp), Loss: block.Sum());
-        var e = (Ko: evade.Count(d => d == hp), Loss: evade.Sum());
-        blockAlways &= b.CompareTo(e) <= 0;
-        evadeAlways &= b.CompareTo(e) >= 0;
-        blockWorst = (Math.Max(blockWorst.Ko, b.Ko), Math.Max(blockWorst.Loss, b.Loss));
-        evadeWorst = (Math.Max(evadeWorst.Ko, e.Ko), Math.Max(evadeWorst.Loss, e.Loss));
+        dodgeEverywhere &= block.All(d => d == hp) && evade.Any(d => d < hp) || evade.Sum() == 0 && block.Sum() > 0;
     }
-    var expected = !canDodge || blockAlways ? RecommendedAction.Defend
-        : evadeAlways || blockWorst.CompareTo(evadeWorst) > 0 ? RecommendedAction.Dodge : RecommendedAction.Defend;
+    var expected = canDodge && dodgeEverywhere ? RecommendedAction.Dodge : RecommendedAction.Defend;
     var actual = VisibleCombatAdvisor.Calculate(new(9, hp, atkMin, atkMin + 3, die, defMin, defMin + 3, canDodge))!.Value;
     if (actual.Recommendation != expected || actual.Summary.Contains("보류") || actual.Summary.Contains("동률")
         || actual.Defend.Contains("추천") == actual.Dodge.Contains("추천"))
         throw new Exception($"단일 추천 독립 열거 불일치: {hp}/{atkMin}/{defMin}/{die}/{canDodge}");
     singleChoiceCases++;
 }
-Console.WriteLine($"방어·회피 {singleChoiceCases}개 조건: 독립 주사위 열거·최악 KO/손실 비교·항상 한쪽 추천 검증 통과");
+Console.WriteLine($"방어·회피 {singleChoiceCases}개 조건: 독립 주사위 열거·방어 확정 KO일 때만 회피·항상 한쪽 추천 검증 통과");
 
 foreach (var scale in new[] { 0.75f, 1f, 1.5f })
 {

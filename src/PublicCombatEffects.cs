@@ -50,7 +50,9 @@ internal static class PublicCombatEffects
             var stacks = buff.Get<int>("Progress");
             if (stacks is < 0 or > 10000) return null;
             if (id == 10012 && stacks > 0) mind = true;
-            if (!applied.Add(id)) continue;
+            // A stacking buff is one icon with a count. Card 20008 (Berserk) makes a new buff each time it is played, and
+            // each adds: 2026-11-06, a hero with two shown took 8 from ATK 14 against DEF 8.
+            if (!applied.Add(id) && id != 2000801) continue;
             int? value = id switch
             {
                 2000801 => Parameter("Card", 20008, 3, 4, id),
