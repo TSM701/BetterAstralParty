@@ -33,6 +33,8 @@ sealed class RuntimeObject {
         if(name=="DrawRoundRect"){Set("stroke",args[1]);Set("fill",args[2]);return null;}
         throw new Exception("Unexpected native call: "+name);
     }
+    // The production value-result form; the stub answers through Call and unboxes.
+    public T Result<T,A>(string name,A a,RuntimeObject? b) where T:struct where A:struct => Call(name,a,b!)!.Value<T>();
 }
 static class ModText {public static bool Korean=true;}
 static class SmoothShape {

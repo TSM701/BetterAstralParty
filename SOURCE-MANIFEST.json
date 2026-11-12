@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "version": "1.9.0",
-  "buildSourceManifestSha256": "AEB0F13CABD12CDEE46768DEE76AFDE07F4282EC38BEDF16D858DDED2BE45A0E",
+  "version": "1.9.1",
+  "buildSourceManifestSha256": "B410D734E10E03690E946425F3CB81E4D6E1F9501C17323B7FAB246C5574376F",
   "files": [
     {
       "path": "Create-Diagnostics.cmd",
@@ -45,8 +45,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 48327,
-      "sha256": "9DE015F5F651E058ECA59AAAC93BAE7D7A24E02C679CF189C92A23651957C4AB"
+      "bytes": 48957,
+      "sha256": "20EC143692C3FCD85E695B2C4B22BBCD12DE8B0C786E318385A39A0D22E05E84"
     },
     {
       "path": "THIRD-PARTY-NOTICES/AsmResolver-LICENSE.txt",
@@ -205,8 +205,8 @@
     },
     {
       "path": "developer-tools/NativeCoverage.cs",
-      "bytes": 12369,
-      "sha256": "F16A3BAF846760F996307F21E0F46ECFF09E33FD58268F90C3CE2536A05F2004"
+      "bytes": 12579,
+      "sha256": "58E6690EF3F4F757661C5BC856F80EA324BBDD7418C6F2F7806CCDAF4FBA5DF8"
     },
     {
       "path": "developer-tools/PackagingBoundary.cs",
@@ -270,8 +270,8 @@
     },
     {
       "path": "developer-tools/TestCommands.Abi.cs",
-      "bytes": 49537,
-      "sha256": "E4BABAD74C048994553A439CD8426BEFE30C8A60AF37AAA970AB15DF28ACAAD1"
+      "bytes": 51534,
+      "sha256": "E4D30ECC0F15FCEF06A2B21F690CF3F60217A250C3E205D1B6E6278A1B554981"
     },
     {
       "path": "developer-tools/TestCommands.AbiBattle.cs",
@@ -330,8 +330,8 @@
     },
     {
       "path": "developer-tools/TestCommands.FieldFreeCamera.cs",
-      "bytes": 20566,
-      "sha256": "7F32E2AAFDEE5119B3E8A7D5E24CD77C6DC7869ECE8CAF45D500D5817F49F61B"
+      "bytes": 20543,
+      "sha256": "F757B59B83E72BF72D5255D661B4ACE586876726DFE6370754118148060C6840"
     },
     {
       "path": "developer-tools/TestCommands.FieldHelpers.cs",
@@ -360,8 +360,8 @@
     },
     {
       "path": "developer-tools/TestCommands.General.cs",
-      "bytes": 24253,
-      "sha256": "434AEBB792D381769CE33C8C5EE2D88AB832206C1A11CC81B17AF2AF8E08A3CA"
+      "bytes": 25068,
+      "sha256": "C23D32A00628CEDBEB8F2BCA80211102D599E03C5F1F6598242709D380A3F532"
     },
     {
       "path": "developer-tools/TestCommands.GeneralRuntime.cs",
@@ -375,8 +375,8 @@
     },
     {
       "path": "developer-tools/TestCommands.GeneralTemplates.cs",
-      "bytes": 41086,
-      "sha256": "783680DE310888099CBB5EF0CA108EB09C7CBFECE8C000327F9B5B65DFFD01C9"
+      "bytes": 49435,
+      "sha256": "C42D3B30CD7FD4076FFFC2453BE215801D3302302F3C8057479E21DB1409532F"
     },
     {
       "path": "developer-tools/TestCommands.Hand.cs",
@@ -835,8 +835,8 @@
     },
     {
       "path": "focus-tests/csharp-migration/hand-submit.template.cs",
-      "bytes": 8472,
-      "sha256": "E80747796630D9C4DD7B092CE269ACD443E80FC77C38B6600E68BAAB980D6529"
+      "bytes": 8677,
+      "sha256": "234BB2E4C1CF22F6DE600DE784538CAA3CBA6EAF693F4832FC540508965A7832"
     },
     {
       "path": "focus-tests/csharp-migration/player-tab-skill.template.cs",
@@ -895,8 +895,8 @@
     },
     {
       "path": "focus-tests/field-zoom/RuntimeFixture.template.cs",
-      "bytes": 93681,
-      "sha256": "435512815BF967882DF40C1C05400BC2FEF22181F7C15E1BF6DFAE5879212188"
+      "bytes": 93685,
+      "sha256": "20D2690620DE8DE5F328CDE7BA61039937CF05FE5C2933E8EFCB665960BCEF47"
     },
     {
       "path": "focus-tests/font-fallback/RuntimeFixture.cs",
@@ -1000,8 +1000,8 @@
     },
     {
       "path": "focus-tests/native-install/FixtureEntry.cs",
-      "bytes": 30432,
-      "sha256": "87E0862D36B25AEE958F0F1A30AFBC57DA566C4032B34AD7BCF1003567785FF3"
+      "bytes": 33778,
+      "sha256": "07E4E2BB66BE5E2AA29EEE1AA745A299BACC632386BEE3CE4FE28713F13F2F78"
     },
     {
       "path": "focus-tests/native-maintenance-common/BoundaryCases.cs",
@@ -1045,8 +1045,8 @@
     },
     {
       "path": "focus-tests/native-maintenance-integration/FixtureEntry.cs",
-      "bytes": 68366,
-      "sha256": "0D862F684D906EFC3CF2659202E582EEAA28C70FDA6656B4C028E6935CE89E33"
+      "bytes": 68788,
+      "sha256": "2209AD195D264CD0AD50448FA5A94278D1354202FB78538AD6959175B9D82B70"
     },
     {
       "path": "focus-tests/native-maintenance-integration/FixturePlugin.cs",
@@ -1150,8 +1150,8 @@
     },
     {
       "path": "focus-tests/update-notification/Program.cs",
-      "bytes": 54536,
-      "sha256": "68B14220E2864FBB67A3E0A06B27386DE0EA5F63900589603BDBD40A117975F1"
+      "bytes": 54898,
+      "sha256": "D36047C912D5470CE46E8E875043014C3A7E2C1682ECDE029BD73DEE2D99D525"
     },
     {
       "path": "focus-tests/update-notification/offline-nuget.config",
@@ -1435,8 +1435,8 @@
     },
     {
       "path": "src/DiagnosticLog.cs",
-      "bytes": 17962,
-      "sha256": "6CBA0CABEAD5F89AA79C0A5509B51557CB41502A74E39ED946BFE898152F3B0F"
+      "bytes": 18431,
+      "sha256": "20CDADA75AE11922C10756A8CD1BF3BFAD8C58CF1634F2F3EAE344D7C8388E58"
     },
     {
       "path": "src/DragState.cs",
@@ -1455,8 +1455,8 @@
     },
     {
       "path": "src/FieldBuffUi.cs",
-      "bytes": 25004,
-      "sha256": "BE6BA1C310EA83003D972ECFAF76861D07B6EEC4B6D378704D3F6275CB82CCD7"
+      "bytes": 25308,
+      "sha256": "6A8F2EEEC1468E96537B5C52F410AA96EF77567C94FF286E8DAF64177516F888"
     },
     {
       "path": "src/FieldCameraReturnUi.cs",
@@ -1480,8 +1480,8 @@
     },
     {
       "path": "src/FieldMonsterPlates.cs",
-      "bytes": 7884,
-      "sha256": "3D97DD3C3AEC871E9E547080E2E86C019AAC14A985E5D7E257707409A4E3FBD8"
+      "bytes": 8406,
+      "sha256": "C5A5D3F2383B92E954B81A9831F0A753DB8F217BA0636C868FC5BB7D2057D5AF"
     },
     {
       "path": "src/FieldNameFont.cs",
@@ -1495,8 +1495,8 @@
     },
     {
       "path": "src/FieldStatePlates.cs",
-      "bytes": 7255,
-      "sha256": "E54FEF69359AABBF9BA1304EE9CF297DD3D1AA038F9B2856E1A6337F26F03CB2"
+      "bytes": 7706,
+      "sha256": "C43B76338CA1B52E6DD134F824ED1E9EF1ADAA2EE8CEC63C8662C29B76154E45"
     },
     {
       "path": "src/FieldZoomGeometry.cs",
@@ -1505,8 +1505,8 @@
     },
     {
       "path": "src/FieldZoomUi.cs",
-      "bytes": 23647,
-      "sha256": "441A9D7CDDE1BA910C69A81C7250B90E771EEFFED94E65A23CF99277E92E582E"
+      "bytes": 24435,
+      "sha256": "EA46C2176579F3D6CC9CD1840E36A76D063D2D737F8AAB40387C2352BDF1BB8F"
     },
     {
       "path": "src/FightDataProbe.cs",
@@ -1525,8 +1525,8 @@
     },
     {
       "path": "src/GameUi.cs",
-      "bytes": 56567,
-      "sha256": "724C6154108724FEC5B2A520BA8A79F8E61BAB6F5A46CE28F6D2865CCC80E61F"
+      "bytes": 56777,
+      "sha256": "A32BF55428069301DD64C6C5CA70AB07994D9781E66A85BDAB7BB9D86189692B"
     },
     {
       "path": "src/HandClickBinding.cs",
@@ -1540,8 +1540,8 @@
     },
     {
       "path": "src/HandLayoutUi.cs",
-      "bytes": 43377,
-      "sha256": "5A764ED9096AB7EE947DB5F3A54730E8DE06182FDE30D43E09998D1EC6AEEBF4"
+      "bytes": 43866,
+      "sha256": "55AC7034DBCC81281941EC26C9275A42C70C90011049AC7DBD3805D681686962"
     },
     {
       "path": "src/HandOutlineBinding.cs",
@@ -1550,8 +1550,8 @@
     },
     {
       "path": "src/HomeEscQuit.cs",
-      "bytes": 2757,
-      "sha256": "EFB1620CC8DE81B21D8841B66975CF061B76B73820486BB9EB041E5BDD3DD858"
+      "bytes": 4303,
+      "sha256": "C6D713EF55229B975152D78158DE4024792D3F457B05D4E00A0CD8F8B711712E"
     },
     {
       "path": "src/HomePortrait.cs",
@@ -1600,8 +1600,8 @@
     },
     {
       "path": "src/ModUi.cs",
-      "bytes": 132619,
-      "sha256": "6C308D1DA39C05FC0600079F5F5E4B4B05827C26CA283F0D3416B011BE7CACDD"
+      "bytes": 132978,
+      "sha256": "006DB44CD4D1828E969B6DBC75C37909D5391DBC96541824F6FB94EC9A546E31"
     },
     {
       "path": "src/MonsterMoveProbe.cs",
@@ -1675,8 +1675,8 @@
     },
     {
       "path": "src/Plugin.cs",
-      "bytes": 46685,
-      "sha256": "4BE4EB7F2B20B4BCF42BF64812A806CC0F21542CCA66B9BFD421DF9212BC4336"
+      "bytes": 46684,
+      "sha256": "6D94B1DBF10267E2A14E66368707246AC0838B3BA7AA620DD25D32AAF26DF6C0"
     },
     {
       "path": "src/PrivateReleaseSession.cs",
@@ -1725,8 +1725,8 @@
     },
     {
       "path": "src/RuntimeObject.cs",
-      "bytes": 22807,
-      "sha256": "A58DCAC8A0B4D188EBE4FE5BFE946F094A37E80C871A0189BDC5904287CF7E39"
+      "bytes": 30827,
+      "sha256": "7968151F0B2169DCECDFCC4AF0222535C1B2100273BB3C372AE14F0BD8906C2A"
     },
     {
       "path": "src/SafeModeNotice.cs",
@@ -1820,8 +1820,8 @@
     },
     {
       "path": "src/UpdateNotificationState.cs",
-      "bytes": 4713,
-      "sha256": "E66477A272EF2AC30E2DB53C4C3A5F1CF2901EE1E6FFAEAE092E706AB2F1F0E8"
+      "bytes": 5140,
+      "sha256": "AFDE27CA3313AE5CAD4F80CFEDE91420E2FE574E2B57F80468D7B6EEA95C0F17"
     },
     {
       "path": "src/UpdateNotificationUi.cs",
@@ -1920,8 +1920,8 @@
     },
     {
       "path": "tools/NativeInstall.cs",
-      "bytes": 44569,
-      "sha256": "57AF9BA559F3538BBA9869E33642415E5B55A3C1C171EDEA0F84FA3A5F1518A0"
+      "bytes": 51930,
+      "sha256": "129E506389708F1639AE786CC73CE955F865B62EB3DB9D0EDA4EB715A05F1827"
     },
     {
       "path": "tools/NativeMaintenance.cs",

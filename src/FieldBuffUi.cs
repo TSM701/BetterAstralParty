@@ -91,6 +91,8 @@ internal static class FieldBuffUi
             catch { GameUi.Dispose(Ui); throw; }
         }
 
+        // The (object) arguments keep the params form: field-buffs pins this method's bytecode to the 0.4.30 renderer, and the
+        // allocation-free generic Call/Set overloads (2026-11-13) would otherwise bind here.
         internal void Refresh(RuntimeObject player, RuntimeObject buffs, RuntimeObject properties)
         {
             var attr = player.Get("Property")!;
@@ -99,31 +101,31 @@ internal static class FieldBuffUi
             if (_stats != stats)
             {
                 _stats = stats;
-                Ui.Call("UpdateHP", stats.Item1, stats.Item2);
-                Ui.Call("UpdateATK", stats.Item3);
-                Ui.Call("UpdateDEF", stats.Item4);
-                Ui.Call("UpdateExtraMovePoint", stats.Item5);
+                Ui.Call("UpdateHP", (object)stats.Item1, (object)stats.Item2);
+                Ui.Call("UpdateATK", (object)stats.Item3);
+                Ui.Call("UpdateDEF", (object)stats.Item4);
+                Ui.Call("UpdateExtraMovePoint", (object)stats.Item5);
             }
             var propertyCount = properties.Get<int>("Count");
             var count = propertyCount + buffs.Get<int>("Count");
             var changed = _effects.Count != count;
             if (changed)
             {
-                List.Set("numItems", count);
+                List.Set("numItems", (object)count);
                 _effects.Clear();
                 for (var i = 0; i < count; i++) _effects.Add(default);
             }
             for (var i = 0; i < count; i++)
             {
                 var property = i < propertyCount;
-                var data = property ? properties.Call("get_Item", i)! : buffs.Call("get_Item", i - propertyCount)!;
+                var data = property ? properties.Call("get_Item", (object)i)! : buffs.Call("get_Item", (object)(i - propertyCount))!;
                 var id = property ? data.Field("buffId")!.Value<int>() : data.Get<int>("BuffId");
                 var progress = property ? data.Field("property")!.Get<int>("Value") : data.Get<int>("Progress");
                 var rounds = property ? 0 : data.Get<int>("KeepRound");
                 var state = (property, id, progress, rounds);
                 if (_effects[i] == state) continue;
-                var icon = List.Call("GetChildAt", i)!;
-                icon.Field("showframe")!.Set("selectedIndex", 1);
+                var icon = List.Call("GetChildAt", (object)i)!;
+                icon.Field("showframe")!.Set("selectedIndex", (object)1);
                 if (property) icon.Call("RefreshProperty", data, false);
                 else icon.Call("RefreshBuff", data);
                 _effects[i] = state;

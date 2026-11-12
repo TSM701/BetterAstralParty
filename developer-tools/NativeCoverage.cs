@@ -69,6 +69,8 @@ internal static class NativeCoverage
         (new(@"StaticField\([^,()]+(?:\([^()]*\))?,\s*""([A-Za-z_]\w*)"""), "field", ""),
         (new(@"\.Call\(""([.A-Za-z_]\w*)"""), "method", ""),
         (new(@"StaticCall\([^,()]+(?:\([^()]*\))?,\s*""([.A-Za-z_]\w*)"""), "method", ""),
+        (new(@"\.(?:Result(?:<[^>()]+>)?|CallPointer)\(""([.A-Za-z_]\w*)"""), "method", ""),
+        (new(@"\b(?:GetOf<[^>()]+>|GetPointerOf)\([^,()]+(?:\([^()]*\))?,\s*""([A-Za-z_]\w*)"""), "method", "get_"),
     };
     private static readonly Regex ClassPattern = new(@"FindClass\(""([\w.]*)"",\s*""(\w+)""\)");
 

@@ -30,6 +30,8 @@ internal static class FieldZoomUi
     // writes it only in its constructor. The WASD Speed slider scales it while this feature runs, and Clear puts it back.
     private static RuntimeObject? _speedFree;
     private static float _speedBase, _speedSet;
+    private static Camera? _camera;
+    private static bool _cleared;
 
     internal static void Tick()
     {
@@ -52,7 +54,10 @@ internal static class FieldZoomUi
         var root = GameUi.Root;
         if (!Plugin.FieldZoom.Value || PvpSafety.Suspended || root == null) { Clear(); return; }
         var scene = RuntimeObject.StaticField(RuntimeObject.FindClass("Core.Scene", "BattleSceneController"), "inst");
-        if (scene?.Pointer != _scene?.Pointer) { Clear(); _scene = scene; }
+        // Outside a battle scene (home, loading) nothing below applies: undo once, not on every frame.
+        if (scene == null) { if (!_cleared) Clear(); return; }
+        _cleared = false;
+        if (scene.Pointer != _scene?.Pointer) { Clear(); _cleared = false; _scene = scene; }
         var logic = RuntimeObject.StaticField(RuntimeObject.FindClass("GameLogic", "GameLogicManager"), "_inst");
         var room = logic?.Get("room")?.Get("curRoomInfo");
         if (!Alive(scene) || !VisibleCombatAdvisor.IsPve(room?.Field("info")?.Get<int>("MapType") ?? 0)) { Clear(); return; }
@@ -77,7 +82,7 @@ internal static class FieldZoomUi
         var held = FieldFreeCamera.Holding;
         // FightWindow opens before the battle platform; yield only when the field renderer stops.
         var blocked = switching || status is not (0 or 1 or 2 or 3) || !Alive(cameraObject)
-            || !new Camera(cameraObject!.Pointer).enabled || !new Camera(cameraObject.Pointer).gameObject.activeInHierarchy
+            || !CameraOf(cameraObject!).enabled || !CameraOf(cameraObject!).gameObject.activeInHierarchy
             || logic?.Get("battle")?.Field<bool>("clientFinishReady") != true;
         var owned = FieldFreeCamera.Update(scene, brain!, free, player, blocked);
         FieldCameraReturnUi.Tick(FieldFreeCamera.Holding && !blocked);
@@ -104,7 +109,7 @@ internal static class FieldZoomUi
             || active.Call("GetCinemachineComponent", 1) != null) { WheelState("camera-body"); Reset(); return; }
         var follow = active.Get("Follow");
         if (!Alive(follow)) { _pendingWheel = 0; WheelState("camera-follow"); return; }
-        var camera = new Camera(cameraObject!.Pointer);
+        var camera = CameraOf(cameraObject!);
         if (camera.orthographic || camera.usePhysicalProperties || camera.lensShift.x != 0 || camera.lensShift.y != 0)
         { _pendingWheel = 0; WheelState("camera-lens"); return; }
         var offset = body.Field<Vector3>("m_FollowOffset");
@@ -137,7 +142,7 @@ internal static class FieldZoomUi
             if (frames?.Get<int>("Count") != 1) { _pendingWheel = 0; WheelState("camera-stack"); Restore(); return; }
             var frame = frames.Call("get_Item", 0);
             var blend = frame?.Field("blend");
-            if (_pendingWheel != 0 && (_wheelBrain != brain.Pointer || _wheelCamera != cameraObject.Pointer
+            if (_pendingWheel != 0 && (_wheelBrain != brain.Pointer || _wheelCamera != cameraObject!.Pointer
                 || _wheelFrame != frame?.Pointer)) _pendingWheel = 0;
             if (blend?.Field("CamB")?.Pointer != active.Pointer)
             { _pendingWheel = 0; WheelState("camera-stack"); Restore(); return; }
@@ -148,7 +153,7 @@ internal static class FieldZoomUi
                 if (wheelAllowed && float.IsFinite(wheel) && wheel != 0)
                 {
                     _pendingWheel = float.IsFinite(_pendingWheel + wheel) ? _pendingWheel + wheel : 0;
-                    _wheelBrain = brain.Pointer; _wheelCamera = cameraObject.Pointer; _wheelFrame = frame!.Pointer;
+                    _wheelBrain = brain.Pointer; _wheelCamera = cameraObject!.Pointer; _wheelFrame = frame!.Pointer;
                     WheelState("camera-transition");
                 }
                 return;
@@ -362,8 +367,14 @@ internal static class FieldZoomUi
 
     private static bool Same(Vector3 a, Vector3 b) => a.x == b.x && a.y == b.y && a.z == b.z;
     private static bool Finite(Vector3 v) => float.IsFinite(v.x) && float.IsFinite(v.y) && float.IsFinite(v.z);
-    private static bool Alive(RuntimeObject? obj) => obj != null
-        && RuntimeObject.StaticCall(RuntimeObject.FindClass("UnityEngine", "Object"), "op_Implicit", obj)!.Value<bool>();
+    // UnityEngine.Object's own liveness test (op_Implicit) for scene objects, read without a call or a boxed result:
+    // the engine zeroes a destroyed object's cached native pointer.
+    private static bool Alive(RuntimeObject? obj) => obj != null && obj.Field<IntPtr>("m_CachedPtr") != IntPtr.Zero;
+
+    // One interop wrapper for the render camera while it stays the same object, instead of new ones every frame; the plate
+    // layers read the same BattleSceneController.mainCamera.
+    internal static Camera CameraOf(RuntimeObject cameraObject) =>
+        _camera != null && _camera.Pointer == cameraObject.Pointer ? _camera : _camera = new Camera(cameraObject.Pointer);
 
     private static void Restore()
     {
@@ -406,8 +417,9 @@ internal static class FieldZoomUi
         void Attempt(Action action) { try { action(); } catch (Exception ex) { failure ??= ex; } }
         Attempt(Restore); Attempt(FieldFreeCamera.Clear); Attempt(FieldCameraReturnUi.Clear); Attempt(FieldIndicatorOpacity.Clear); Attempt(FieldMonsterPlates.Clear); Attempt(FieldStatePlates.Clear);
         _fieldVisible = _switching = false; _zoomOutLimit = 0;
-        _scene = null; Renderers.Clear(); Corners.Clear(); _nodes = IntPtr.Zero; _nodeCount = 0; _scanAt = 0;
+        _scene = null; _camera = null; Renderers.Clear(); Corners.Clear(); _nodes = IntPtr.Zero; _nodeCount = 0; _scanAt = 0;
         _pendingWheel = 0; _wheelBrain = _wheelCamera = _wheelFrame = IntPtr.Zero;
         if (failure != null) throw failure;
+        _cleared = true;
     }
 }

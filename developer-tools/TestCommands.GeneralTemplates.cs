@@ -217,6 +217,125 @@ __INVOKE__
 }
 """"""";
 
+    // RuntimeObject's allocation-free call forms against stub metadata that records each argument's bytes (2026-11-13).
+    private const string GeneralRuntimeGeneric0 = """""""
+#nullable enable
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Runtime.InteropServices;
+namespace BapGenericFixture {
+namespace UnityEngine { public struct Vector2 { public float x, y; } }
+public struct NullableRect { public bool HasValue; public float Value; }
+public unsafe class RuntimeObject {
+    private static readonly Dictionary<IntPtr, Type> Types = new();
+    private static readonly HashSet<IntPtr> CheckedReferences = new();
+    private static readonly Dictionary<string, string> Getters = new(), Setters = new();
+    public IntPtr Class { get; } = Id(typeof(object));
+    public IntPtr Pointer { get; }
+    public RuntimeObject(IntPtr pointer) { Pointer = pointer; }
+    private static Type[] Params = Array.Empty<Type>();
+    private static Type Return = typeof(void);
+    private static string? Fallback;
+    private static readonly List<string> Captured = new();
+    private static readonly IntPtr Buffer = Marshal.AllocHGlobal(32);
+    private static IntPtr Id(Type type) {
+        foreach (var entry in Types) if (entry.Value == type) return entry.Key;
+        var id = (IntPtr)(Types.Count + 1); Types.Add(id, type); return id;
+    }
+    private static IntPtr ClassOf(IntPtr pointer) => Id(typeof(object));
+    private static IntPtr MethodInfo(IntPtr klass, string name, int count) {
+        if (count != Params.Length) throw new MissingMethodException(name);
+        return (IntPtr)1000;
+    }
+    private static string Accessor(Dictionary<string, string> names, string prefix, string property) => prefix + property;
+    private static void CheckValue<T>(IntPtr klass) where T : unmanaged {
+        if (Types[klass] != typeof(T)) throw new InvalidCastException(typeof(T).Name);
+    }
+    private static void CheckArgument(IntPtr type, object? value) {
+        if (Types[type].IsValueType ? value is not null : value is not null and not RuntimeObject) throw new InvalidCastException("argument");
+    }
+    private static RuntimeObject? Wrap(IntPtr pointer) => pointer == IntPtr.Zero ? null : new(pointer);
+    // The params form: reached only for Nullable<Rect> and calls the generic forms do not take.
+    public RuntimeObject? Call(string method, params object?[] args) { Fallback = method; return null; }
+    private static string S(float value) => value.ToString(CultureInfo.InvariantCulture);
+    private static class IL2CPP {
+        internal static IntPtr il2cpp_method_get_param(IntPtr method, uint index) => Id(Params[index]);
+        internal static IntPtr il2cpp_method_get_return_type(IntPtr method) => Id(Return);
+        internal static bool il2cpp_type_is_byref(IntPtr type) => Types[type].IsByRef;
+        internal static IntPtr il2cpp_class_from_type(IntPtr type) => type;
+        internal static bool il2cpp_class_is_valuetype(IntPtr klass) => Types[klass].IsValueType;
+        internal static IntPtr il2cpp_object_unbox(IntPtr value) => value;
+        internal static IntPtr il2cpp_runtime_invoke(IntPtr method, IntPtr instance, void** args, ref IntPtr exception) {
+            for (var i = 0; i < Params.Length; i++) {
+                var type = Params[i];
+                if (type == typeof(float)) Captured.Add("f" + S(*(float*)args[i]));
+                else if (type == typeof(int)) Captured.Add("i" + *(int*)args[i]);
+                else if (type == typeof(bool)) Captured.Add("b" + *(byte*)args[i]);
+                else if (type == typeof(UnityEngine.Vector2)) { var v = *(UnityEngine.Vector2*)args[i]; Captured.Add("v" + S(v.x) + "," + S(v.y)); }
+                else Captured.Add("o" + (long)(IntPtr)args[i]);
+            }
+            Captured.Add("@" + (long)instance);
+            return Return == typeof(void) ? IntPtr.Zero : Buffer;
+        }
+    }
+__GENERIC__
+    private static void Reset(Type result, params Type[] parameters) { Params = parameters; Return = result; Fallback = null; Captured.Clear(); CheckedReferences.Clear(); }
+    private static string Seen => string.Join("|", Captured);
+    private static void Expect(bool ok, string reason) { if (!ok) throw new Exception(reason + " / " + Seen); }
+    private static bool Refuses<E>(Action action) where E : Exception { try { action(); return false; } catch (E) { return true; } }
+    public static void Run() {
+        var plate = new RuntimeObject((IntPtr)0x40);
+        var layer = new RuntimeObject((IntPtr)0x55);
+        // The compiler picks the allocation-free forms for the existing call shapes, and each value arrives whole.
+        Reset(typeof(void), typeof(float), typeof(float));
+        plate.Call("SetXY", 1.5f, -2.25f);
+        Expect(Fallback == null && Seen == "f1.5|f-2.25|@64", "Two floats bind the generic form");
+        Reset(typeof(void), typeof(UnityEngine.Vector2));
+        plate.Call("UpdateOffset", new UnityEngine.Vector2 { x = 3, y = -4 });
+        Expect(Fallback == null && Seen == "v3,-4|@64", "A Vector2 binds the generic form");
+        Reset(typeof(void), typeof(bool));
+        plate.Set("visible", true);
+        Expect(Fallback == null && Seen == "b1|@64", "Set with a bool binds the generic form");
+        Reset(typeof(void), typeof(UnityEngine.Vector2), typeof(object));
+        plate.Call("RootToLocal", new UnityEngine.Vector2 { x = 7, y = 8 }, layer);
+        Expect(Fallback == null && Seen == "v7,8|o85|@64", "A value and an object pass the value bytes and the object pointer");
+        // The exact guards stay: another value type, a by-ref parameter and an object for a value parameter are refused.
+        Reset(typeof(void), typeof(float));
+        Expect(Refuses<InvalidCastException>(() => plate.Call("SetX", 3)), "An int is refused for a float parameter");
+        Reset(typeof(void), typeof(float).MakeByRefType());
+        Expect(Refuses<InvalidCastException>(() => plate.Call("SetX", 3f)), "A by-ref parameter is refused");
+        Reset(typeof(void), typeof(UnityEngine.Vector2), typeof(float));
+        Expect(Refuses<InvalidCastException>(() => plate.Call("Pair", new UnityEngine.Vector2(), layer)), "An object is refused for a value parameter");
+        // Nullable<Rect> keeps its own runtime layout through the params form.
+        Reset(typeof(void), typeof(NullableRect));
+        plate.Set("scale9Grid", new NullableRect { HasValue = true });
+        Expect(Fallback == "set_scale9Grid" && Captured.Count == 0, "Nullable<Rect> goes back to the params form");
+        // Result<T> unboxes a value result and checks its type before calling.
+        *(UnityEngine.Vector2*)Buffer = new UnityEngine.Vector2 { x = 11, y = 12 };
+        Reset(typeof(UnityEngine.Vector2), typeof(UnityEngine.Vector2));
+        var local = layer.Result<UnityEngine.Vector2, UnityEngine.Vector2>("GlobalToLocal", new UnityEngine.Vector2 { x = 1, y = 2 });
+        Expect(local.x == 11 && local.y == 12 && Seen == "v1,2|@85", "Result<T> unboxes the value result");
+        Reset(typeof(float), typeof(UnityEngine.Vector2));
+        Expect(Refuses<InvalidCastException>(() => layer.Result<UnityEngine.Vector2, UnityEngine.Vector2>("GlobalToLocal", new UnityEngine.Vector2())) && Captured.Count == 0,
+            "Result<T> refuses another return type before calling");
+        // Pointer forms: a reference result's pointer, getters on a bare pointer, and no call on a null one.
+        Reset(typeof(object), typeof(int));
+        Expect(layer.CallPointer("GetChildAt", 2) == Buffer && Seen == "i2|@85", "CallPointer returns the reference result's pointer");
+        Reset(typeof(UnityEngine.Vector2), typeof(int));
+        Expect(Refuses<InvalidCastException>(() => layer.CallPointer("GetChildAt", 2)), "CallPointer refuses a value result");
+        *(bool*)Buffer = true;
+        Reset(typeof(bool));
+        Expect(GetOf<bool>((IntPtr)0x66, "visible") && Seen == "@102", "GetOf reads a value getter on a bare pointer");
+        Reset(typeof(object));
+        Expect(GetPointerOf((IntPtr)0x66, "parent") == Buffer, "GetPointerOf returns the reference getter's pointer");
+        Reset(typeof(bool));
+        Expect(Refuses<NullReferenceException>(() => GetOf<bool>(IntPtr.Zero, "visible")) && Captured.Count == 0, "No getter runs on a null pointer");
+    }
+}
+}
+""""""";
+
     // RuntimeObject.CheckNullableRect against metadata shaped like the runtime's System.Nullable<UnityEngine.Rect>.
     private const string GeneralNullableRectLayout0 = """""""
 #nullable enable

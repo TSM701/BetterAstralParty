@@ -153,8 +153,10 @@ internal static class GameUi
     internal static bool Visible(RuntimeObject? obj)
     {
         if (obj == null || obj.Get<bool>("isDisposed") || !obj.Get<bool>("onStage")) return false;
-        for (var current = obj; current != null; current = current.Get("parent"))
-            if (!current.Get<bool>("internalVisible") || !current.Get<bool>("internalVisible2")) return false;
+        // Ancestors through the pointers the object holds while on stage, not a wrapper each (many calls a frame, 2026-11-13).
+        for (var node = obj.Pointer; node != IntPtr.Zero; node = RuntimeObject.GetPointerOf(node, "parent"))
+            if (!RuntimeObject.GetOf<bool>(node, "internalVisible") || !RuntimeObject.GetOf<bool>(node, "internalVisible2")) return false;
+        GC.KeepAlive(obj);
         return true;
     }
 

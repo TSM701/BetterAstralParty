@@ -91,6 +91,23 @@ internal static class FixtureEntry
         Check(Encoding.UTF8.GetString(hidden.ReadTarget("BepInEx/config/BepInEx.cfg")!)==hiddenBefore+"[Logging.Console]\r\nEnabled = false\r\n"&&hidden.ReadTarget("doorstop_config.ini")!.SequenceEqual(shown.ReadTarget("doorstop_config.ini")!)&&hiddenNotes.Any(note=>note.Contains("BepInEx 로그 창을 껐습니다"))&&hiddenNotes.Last().StartsWith("적용 완료",StringComparison.Ordinal),"LoaderConsole Off changes only the existing configuration's log window line");
         var previewNotes=new List<string>();var previewed=Case(true);NativeInstall.Run(previewed,false,null,0,prompt=>"y",previewNotes.Add,checkOnly:true);
         Check(previewNotes.Any(note=>note.Contains("loaderConsole=on"))&&previewNotes.All(note=>!note.Contains("loaderConsole=fresh")),"CheckOnly names the existing log window state for the install window");
+        // An incomplete loader (a 2026-11-12 report: BepInEx removed, its settings left) gets the package's missing files.
+        var broken=Case();Write(broken.GameRoot,"BepInEx/config/BepInEx.cfg",Encoding.UTF8.GetBytes("[Logging]\r\nUnityLogListening = true\r\n[Logging.Console]\r\nEnabled = true\r\n"));
+        var brokenPreview=new List<string>();NativeInstall.Run(broken,false,null,0,prompt=>"y",brokenPreview.Add,checkOnly:true);
+        Check(brokenPreview.Any(note=>note.Contains("빠진 파일을 채우고"))&&brokenPreview.Any(note=>note.Contains("loaderConsole=on"))&&broken.ReadTarget("doorstop_config.ini")==null,"CheckOnly names an incomplete loader and its kept log window, changing nothing");
+        var brokenNotes=new List<string>();NativeInstall.Run(broken,false,null,0,prompt=>"y",brokenNotes.Add);
+        Check(Encoding.UTF8.GetString(broken.ReadTarget("doorstop_config.ini")!).Contains("enabled=true")&&broken.ReadTarget("BepInEx/core/inert.dll")!=null
+            &&Encoding.UTF8.GetString(broken.ReadTarget("BepInEx/config/BepInEx.cfg")!)=="[Logging]\r\nUnityLogListening = false\r\n[Logging.Console]\r\nEnabled = true\r\n"
+            &&broken.Expected.All(row=>broken.TargetHash(row.Key)==row.Value)&&brokenNotes.Last().StartsWith("적용 완료",StringComparison.Ordinal),"an incomplete loader gets its missing files and UnityLogListening off, keeping its log window");
+        var bare=Case();Write(bare.GameRoot,".doorstop_version",Encoding.UTF8.GetBytes("4.0.0"));var barePreview=new List<string>();
+        NativeInstall.Run(bare,false,null,0,prompt=>"y",barePreview.Add,checkOnly:true);NativeInstall.Run(bare,false,null,0,prompt=>"y",message=>{});
+        Check(barePreview.Any(note=>note.Contains("loaderConsole=fresh"))&&Encoding.UTF8.GetString(bare.ReadTarget("BepInEx/config/BepInEx.cfg")!)=="[Logging]\r\nUnityLogListening = false\r\n[Logging.Console]\r\nEnabled = false\r\n"
+            &&Encoding.UTF8.GetString(bare.ReadTarget(".doorstop_version")!)=="4.0.0","an incomplete loader without configuration starts like a new one and keeps its other settings");
+        var mixed=Case();Write(mixed.GameRoot,"BepInEx/core/inert.dll",Encoding.UTF8.GetBytes("another loader version"));var mixedNotes=new List<string>();
+        NativeInstall.Run(mixed,false,null,0,prompt=>"y",mixedNotes.Add);
+        Check(mixed.ReadTarget("doorstop_config.ini")==null&&Encoding.UTF8.GetString(mixed.ReadTarget("BepInEx/core/inert.dll")!)=="another loader version"
+            &&mixed.Expected.All(row=>mixed.TargetHash(row.Key)==row.Value)&&mixedNotes.Last().StartsWith("적용 완료",StringComparison.Ordinal)&&mixedNotes.Last().Contains("BepInEx\\core 폴더를 지운 뒤"),
+            "an incomplete loader with another version's files stays untouched; BAP installs and names what to delete");
         var withoutSteam=Case();NativeInstall.Run(withoutSteam,false,null,0,prompt=>"y",message=>{});
         Check(withoutSteam.Expected.All(row=>withoutSteam.TargetHash(row.Key)==row.Value)&&!FixtureControl.Events.Any(value=>value.StartsWith("steam-stop",StringComparison.Ordinal)||value.StartsWith("shortcut",StringComparison.Ordinal)),"normal file installation survives unavailable Steam shortcut discovery");
         // Only a 1.3.x takeover touches Steam: the entry that starts the removed launcher is rewritten inside the journal.
@@ -208,7 +225,10 @@ internal static class FixtureEntry
             Check(!FixtureControl.Events.Any(value=>value.Contains("lock")||value.StartsWith("stage:",StringComparison.Ordinal)||value.StartsWith("error:",StringComparison.Ordinal)||value=="game-stop")&&!Directory.Exists(NativeMaintenance.JournalRoot(preview.GameRoot)),"unsupported CheckOnly has no locks/stages/errors/process stops or backup root");
             SameGame(preview,before,"unsupported CheckOnly preserves exact target bytes");
         }
-        foreach(var partial in new[]{"winhttp.dll","BepInEx/core/OtherLoader.dll","dotnet/coreclr.dll","BepInEx/config/BepInEx.cfg"}) {
+        // A configuration alone is an incomplete loader of no known other kind and is filled in (the broken case in Flow).
+        var renamed=Case();Write(renamed.GameRoot,"BepInEx/config/BepInEx.cfg",Encoding.UTF8.GetBytes("[Logging]\r\n"));Write(renamed.GameRoot,"version.dll",Encoding.UTF8.GetBytes("renamed doorstop"));Run(renamed);
+        Check(renamed.ReadTarget("doorstop_config.ini")==null&&!File.Exists(Path.Combine(renamed.GameRoot,"BepInEx/core/inert.dll")),"a doorstop under another proxy name never gets a second loader beside it");
+        foreach(var partial in new[]{"winhttp.dll","BepInEx/core/OtherLoader.dll","dotnet/coreclr.dll"}) {
             var bundle=Case();var bytes=Encoding.UTF8.GetBytes("unknown foreign loader: "+partial);Write(bundle.GameRoot,partial,bytes);Run(bundle);
             Check(bundle.ReadTarget(partial)!.SequenceEqual(bytes),"Unknown/partial foreign loader is not overwritten: "+partial);
             Check(bundle.ReadTarget("doorstop_config.ini")==null,"Missing foreign config is not filled from another loader: "+partial);

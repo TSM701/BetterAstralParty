@@ -33,6 +33,7 @@ internal sealed class DiagnosticLog
         "updateNotice", "fieldZoom", "fieldDice", "cardTargets", "cardPreview", "hand", "shushu", "battleStatus", "encounter",
         "fieldBuffs", "settings" };
     private readonly double[] _featureMax = new double[TickFeatures.Length];
+    private readonly long[] _featureBytes = new long[TickFeatures.Length];
     private double _spikeMs, _spikeTopMs;
     private string _spikeTop = "none";
     private bool _spikeClrGc, _spikeNativeGc;
@@ -196,7 +197,7 @@ internal sealed class DiagnosticLog
 
     // Called just before Performance for the same frame. GC flags are attached to the slowest mod tick of the window;
     // a native GC between ticks is counted separately because it lands in the game's own frame time.
-    internal void TickSpikes(long[] marks, double milliseconds, int clrGcs, bool nativeGcInTick, bool nativeGcOutside)
+    internal void TickSpikes(long[] marks, long[] bytes, double milliseconds, int clrGcs, bool nativeGcInTick, bool nativeGcOutside)
     {
         lock (_gate)
         {
@@ -209,6 +210,7 @@ internal sealed class DiagnosticLog
             for (var i = 0; i < TickFeatures.Length; i++)
             {
                 if (marks[i] == 0 || marks[i + 1] == 0) continue;
+                _featureBytes[i] += bytes[i + 1] - bytes[i];
                 var ms = (marks[i + 1] - marks[i]) * milliseconds;
                 total += ms;
                 _featureMax[i] = Math.Max(_featureMax[i], ms);
@@ -226,11 +228,15 @@ internal sealed class DiagnosticLog
             features.Append(FormattableString.Invariant($"{(i == 0 ? "" : "; ")}{TickFeatures[i]}={_featureMax[i]:F2}"));
         Write(FormattableString.Invariant($"performance_spike tick_max_ms={_spikeMs:F3}; top={_spikeTop}; top_ms={_spikeTopMs:F3}; clr_gc={_spikeClrGc}; native_gc={_spikeNativeGc}; window_clr_gcs={_clrGcs}; window_native_gcs_in_tick={_nativeGcsInTick}; window_native_gcs_between_ticks={_nativeGcsOutside}"));
         Write("performance_features_max_ms " + features);
+        features.Clear();
+        for (var i = 0; i < TickFeatures.Length; i++)
+            features.Append(FormattableString.Invariant($"{(i == 0 ? "" : "; ")}{TickFeatures[i]}={_featureBytes[i] / Math.Max(1, _frames)}"));
+        Write("performance_features_bytes_per_frame " + features);
     }
 
     private void ResetPerformance()
     {
-        Array.Clear(_featureMax);
+        Array.Clear(_featureMax); Array.Clear(_featureBytes);
         _spikeMs = _spikeTopMs = 0; _spikeTop = "none"; _spikeClrGc = _spikeNativeGc = false;
         _clrGcs = _nativeGcsInTick = _nativeGcsOutside = 0;
         _sampleStart = -1;

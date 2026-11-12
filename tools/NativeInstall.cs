@@ -103,16 +103,20 @@ namespace BetterAstralParty.Installation
                 CheckCompatibility(bundle, output); Stage(phase, "Completed");
                 stage = "Package file / shared loader validation"; Stage(phase);
                 var files = OwnedPlan(); var shared = new Dictionary<string, string?>(StringComparer.Ordinal);
-                var freshLoader = !ExistingSharedLoader(bundle, output);
+                var loaderState = SharedLoaderState(bundle, output, out var foreignLoader);
+                var freshLoader = loaderState == LoaderState.Fresh; var repairLoader = loaderState == LoaderState.Incomplete;
                 var loader = freshLoader ? null : ReadExistingLoader(bundle, output);
-                if (freshLoader) files.AddRange(SharedLoaderPlan(bundle, shared));
+                if (freshLoader || repairLoader) files.AddRange(SharedLoaderPlan(bundle, shared, repairLoader));
                 var oldReceiptBytes = bundle.ReadTarget(InstallReceipt.Path, 16384);
                 var oldReceipt = oldReceiptBytes == null || takeover != null ? null : InstallReceipt.Parse(oldReceiptBytes);
                 if (updateOnly && (oldReceipt == null || bundle.TargetHash(UpdateTrust.PluginPath) == null)) throw new InvalidOperationException("UpdateOnly requires an existing installation. / 먼저 일반 설치를 실행하세요.");
                 var loaderBefore = takeover != null ? takeover.Receipt.LoaderBefore : LoaderBaseline(oldReceipt, loader, freshLoader, bundle.TargetHash(UpdateTrust.PluginPath) == null);
                 var prepared = SetupHost.PrepareWholeReceipt(bundle.GameRoot, bundle.PackageRoot, bundle.Version, loaderBefore.HasValue ? loaderBefore.Value ? "true" : "false" : "null");
                 var water = SetupHost.PrepareHighWater(bundle.GameRoot, bundle.PackageRoot, bundle.Version);
-                var (configBefore, configAfter, consoleOff) = PlanConfiguration(bundle, freshLoader, hideConsole ?? freshLoader, output);
+                // A filled-in loader gets a new one's configuration (UnityLogListening off); its log window goes off as a new
+                // one's does only when it had no configuration left, which then decides as before.
+                var (configBefore, configAfter, consoleOff) = PlanConfiguration(bundle, freshLoader || repairLoader,
+                    hideConsole ?? (freshLoader || repairLoader && bundle.ReadTarget(Configuration) == null), output);
                 var extra = new List<string> { InstallReceipt.Path };
                 if (configAfter != null) extra.Add(Configuration);
                 if (water != null) extra.Add(UpdateTransaction.HighWaterPath);
@@ -160,7 +164,10 @@ namespace BetterAstralParty.Installation
                 }
                 if (shortcutSkipped) output("1.3.x가 추가한 Steam 외부 게임은 바꾸지 않았습니다. 위 안내를 확인하세요. / The 1.3.x Steam library entry was left unchanged; see the notice above.");
                 if (consoleOff) output("게임을 켤 때 뜨는 BepInEx 로그 창을 껐습니다. / The BepInEx log window shown at game start is now off.");
-                output(updateOnly ? "기존 설치본 업데이트 완료. / Updated existing installation."
+                output(loaderState == LoaderState.Unusable
+                    ? (updateOnly ? "기존 설치본 업데이트 완료. " : "적용 완료! ") + "다만 공용 로더(BepInEx)가 일부 지워졌고 남은 파일(" + foreignLoader + ")이 이 패키지와 달라 채우지 않았으므로, 이대로는 모드가 켜지지 않습니다. 게임 폴더의 winhttp.dll, .doorstop_version, dotnet 폴더와 BepInEx\\core 폴더를 지운 뒤 다시 설치하세요. / "
+                        + (updateOnly ? "Updated existing installation. " : "Installed. ") + "However, the shared loader (BepInEx) is partly deleted and its remaining file " + foreignLoader + " differs from this package, so nothing was filled in and mods will not start. Delete winhttp.dll, .doorstop_version, the dotnet folder and BepInEx\\core in the game folder, then install again."
+                    : updateOnly ? "기존 설치본 업데이트 완료. / Updated existing installation."
                     // An existing loader switched off starts no mods from Steam; Mod.cmd passes the loader switch as launch arguments.
                     : !freshLoader && LoaderEnabled(loader) == false ? "적용 완료! 공용 로더가 꺼져 있어 Steam에서 그냥 실행하면 모드가 켜지지 않습니다. 게임 폴더의 BetterAstralParty-Mod.cmd로 실행하고 Steam의 실행 옵션 확인 창에서 허용하세요. / Installed. The shared loader is off, so a normal Steam launch starts no mods; run BetterAstralParty-Mod.cmd in the game folder and allow Steam's launch options prompt."
                     : "적용 완료! Steam에서 Astral Party를 실행하면 BetterAstralParty가 켜집니다. 모드 없이 실행하려면 게임 폴더의 AstralParty-Vanilla.cmd를 실행하세요. / Installed. Start Astral Party from Steam to play with BetterAstralParty, or run AstralParty-Vanilla.cmd in the game folder to play without it.");
@@ -194,9 +201,9 @@ namespace BetterAstralParty.Installation
                 // Read-only: the same receipt/channel validation the real installation runs, so CheckOnly reports its refusal.
                 SetupHost.PrepareWholeReceipt(bundle.GameRoot, bundle.PackageRoot, bundle.Version, "null");
             }
-            var existingLoader = ExistingSharedLoader(bundle, output);
+            var loaderState = SharedLoaderState(bundle, output, out _);
             if (updateOnly && (bundle.ReadTarget(InstallReceipt.Path, 16384) == null || bundle.TargetHash(UpdateTrust.PluginPath) == null)) throw new InvalidOperationException("UpdateOnly requires an existing installation.");
-            if (!existingLoader) SharedLoaderPlan(bundle, new Dictionary<string, string?>(StringComparer.Ordinal));
+            if (loaderState == LoaderState.Fresh || loaderState == LoaderState.Incomplete) SharedLoaderPlan(bundle, new Dictionary<string, string?>(StringComparer.Ordinal), loaderState == LoaderState.Incomplete);
             var shortcut = PlanShortcut(bundle, takeover, steamRoot, account, output, out _);
             var legacyWork = LegacyWork.Finished(bundle.GameRoot).Count;
             if (legacyWork != 0) output("CheckOnly: 끝난 1.3.x 업데이트 작업 기록 " + legacyWork + "개를 설치 후 정리합니다. / " + legacyWork + " finished 1.3.x update work records will be removed after installation.");
@@ -206,8 +213,11 @@ namespace BetterAstralParty.Installation
             if (history != 0) output("CheckOnly: 이전 재설치 기록 " + history + "개를 설치 후 BetterAstralParty.Update\\history로 옮깁니다. / " + history + " earlier reinstall records will move to BetterAstralParty.Update\\history after installation.");
             // The install window reads loaderConsole= to offer turning BepInEx's log window off.
             string console;
-            if (!existingLoader) console = "fresh";
-            else try { var state = ConsoleEnabled(bundle.ReadTarget(Configuration)); console = state == true ? "on" : state == false ? "off" : "unknown"; }
+            if (loaderState == LoaderState.Fresh) console = "fresh";
+            else try {
+                var configuration = bundle.ReadTarget(Configuration); var state = ConsoleEnabled(configuration);
+                console = loaderState == LoaderState.Incomplete && configuration == null ? "fresh" : state == true ? "on" : state == false ? "off" : "unknown";
+            }
                 catch (Exception error) when (error is IOException || error is UnauthorizedAccessException || error is System.Security.SecurityException || error is ApplySafetyException) { console = "unknown"; }
             output(console == "fresh" ? "CheckOnly: 새로 설치하는 BepInEx의 로그 창은 꺼 둡니다. / CheckOnly: loaderConsole=fresh; the new BepInEx log window starts off."
                 : console == "on" ? "CheckOnly: 게임을 켤 때 BepInEx 로그 창이 뜹니다. -LoaderConsole Off로 끌 수 있습니다. / CheckOnly: loaderConsole=on; -LoaderConsole Off turns the BepInEx log window off."
@@ -264,17 +274,65 @@ namespace BetterAstralParty.Installation
             var order = new[] { UpdateTrust.PluginPath, "BetterAstralParty.compatibility.json", "BetterAstralParty-Mod.cmd", "AstralParty-Vanilla.cmd" };
             return order.Select(relative => new FilePlan { Relative = relative, Source = NativeMaintenanceBundle.OwnedSources[relative] }).ToList();
         }
-        private static bool ExistingSharedLoader(NativeMaintenanceBundle bundle, Action<string> output)
+        // Unusable: incomplete, with another loader's files left, which this package never mixes with its own.
+        internal enum LoaderState { Fresh, Existing, Incomplete, Unusable }
+        // Files every BepInEx 6 IL2CPP loader needs to start, checked where the package ships them. Leftovers of a removed
+        // BepInEx (a 2026-11-12 report: doorstop_config.ini kept, BepInEx.Core.dll gone, no BepInEx log ever written)
+        // counted as an existing loader, so installation succeeded and the game started without any mod.
+        private static readonly string[] LoaderEntryFiles = { LoaderConfiguration, "winhttp.dll", "BepInEx/core/BepInEx.Unity.IL2CPP.dll", "BepInEx/core/BepInEx.Core.dll", "dotnet/coreclr.dll" };
+        // An incomplete loader keeps the settings it still has; only missing package files are added.
+        private static readonly string[] LoaderSettings = { LoaderConfiguration, ".doorstop_version", Configuration };
+        private static LoaderState SharedLoaderState(NativeMaintenanceBundle bundle, Action<string> output, out string? foreign)
         {
+            var found = false; foreign = null;
             foreach (var relative in new[] { LoaderConfiguration, "winhttp.dll", ".doorstop_version", "BepInEx/core", "dotnet", Configuration }) {
-                try { File.GetAttributes(WindowsPath.ForIo(Full(bundle.GameRoot, relative))); output("기존 공용 로더와 설정을 유지합니다. / Existing shared loader and settings are preserved."); return true; }
+                try { File.GetAttributes(WindowsPath.ForIo(Full(bundle.GameRoot, relative))); found = true; break; }
                 catch (FileNotFoundException) { } catch (DirectoryNotFoundException) { }
                 catch (Exception error) when (error is IOException || error is UnauthorizedAccessException || error is System.Security.SecurityException) {
-                    output("공용 로더 확인 불가: 기존 파일을 변경하지 않습니다. / Shared loader observation unavailable; existing files are preserved."); Failure("BootstrapGate", error); return true;
+                    output("공용 로더 확인 불가: 기존 파일을 변경하지 않습니다. / Shared loader observation unavailable; existing files are preserved."); Failure("BootstrapGate", error); return LoaderState.Existing;
                 }
             }
-            return false;
+            if (!found) return LoaderState.Fresh;
+            bool Present(string relative) => File.Exists(WindowsPath.ForIo(Full(bundle.GameRoot, relative)));
+            var missing = LoaderEntryFiles.Where(relative => bundle.Hashes.ContainsKey(".deps/bepinex/" + relative)
+                && !(relative == "winhttp.dll" ? DoorstopProxies.Any(Present) : Present(relative))).ToArray();
+            if (missing.Length == 0) { output("기존 공용 로더와 설정을 유지합니다. / Existing shared loader and settings are preserved."); return LoaderState.Existing; }
+            try { foreign = ForeignLoaderFile(bundle); }
+            catch (Exception error) when (error is IOException || error is UnauthorizedAccessException || error is System.Security.SecurityException || error is ApplySafetyException) {
+                output("공용 로더 확인 불가: 기존 파일을 변경하지 않습니다. / Shared loader observation unavailable; existing files are preserved."); Failure("BootstrapGate", error); return LoaderState.Existing;
+            }
+            if (foreign != null) {
+                output("공용 로더(BepInEx) 파일이 일부 없어 게임이 모드 없이 시작되는 상태입니다. 남은 파일(" + foreign + ")이 이 패키지와 달라 채우지 않고 그대로 둡니다. / The shared loader (BepInEx) is missing files, so the game starts without mods; its remaining file "
+                    + foreign + " differs from this package, so nothing is added and the loader is left as it is. missing=" + string.Join(", ", missing));
+                return LoaderState.Unusable;
+            }
+            output("공용 로더(BepInEx) 파일이 일부 없어 게임이 모드 없이 시작되는 상태입니다. 빠진 파일을 채우고 남은 설정은 유지합니다. / The shared loader (BepInEx) is missing files, so the game starts without mods; the missing files are added and its remaining settings kept: "
+                + string.Join(", ", missing));
+            return LoaderState.Incomplete;
         }
+        // A loader file left in place that this package does not ship as it is: a binary with other bytes, a file in BepInEx\core
+        // or dotnet the package does not have, or a doorstop proxy it does not ship.
+        private static string? ForeignLoaderFile(NativeMaintenanceBundle bundle)
+        {
+            foreach (var source in bundle.Hashes.Keys.Where(path => path.StartsWith(".deps/bepinex/", StringComparison.Ordinal)).OrderBy(path => path, StringComparer.Ordinal)) {
+                var relative = source.Substring(".deps/bepinex/".Length);
+                if (NativeMaintenanceFiles.IsDocumentation(source) || LoaderSettings.Contains(relative, StringComparer.OrdinalIgnoreCase)) continue;
+                var current = bundle.TargetHash(relative);
+                if (current != null && current != bundle.Hashes[source]) return relative;
+            }
+            foreach (var folder in new[] { "BepInEx/core", "dotnet" }) {
+                var full = WindowsPath.ForIo(Full(bundle.GameRoot, folder));
+                if (!Directory.Exists(full)) continue;
+                foreach (var path in Directory.GetFiles(full, "*", SearchOption.AllDirectories)) {
+                    var relative = folder + "/" + path.Substring(full.Length).TrimStart('\\').Replace('\\', '/');
+                    if (!bundle.Hashes.ContainsKey(".deps/bepinex/" + relative)) return relative;
+                }
+            }
+            return DoorstopProxies.FirstOrDefault(name => !bundle.Hashes.ContainsKey(".deps/bepinex/" + name) && File.Exists(WindowsPath.ForIo(Full(bundle.GameRoot, name))));
+        }
+        // Doorstop also starts the loader under these proxy names (the game ships none of them), so a renamed one is no missing
+        // winhttp.dll, and filling in winhttp.dll beside it would start a second proxy.
+        private static readonly string[] DoorstopProxies = { "winhttp.dll", "version.dll", "winmm.dll" };
         private static byte[]? ReadExistingLoader(NativeMaintenanceBundle bundle, Action<string> output)
         {
             try { return bundle.ReadTarget(LoaderConfiguration); }
@@ -282,7 +340,7 @@ namespace BetterAstralParty.Installation
                 output("공용 로더 설정을 읽지 못해 원래 상태를 기록하지 않습니다. / Shared loader baseline unavailable; existing configuration is untouched."); Failure("BootstrapGate", error); return null;
             }
         }
-        private static List<FilePlan> SharedLoaderPlan(NativeMaintenanceBundle bundle, Dictionary<string, string?> observed)
+        private static List<FilePlan> SharedLoaderPlan(NativeMaintenanceBundle bundle, Dictionary<string, string?> observed, bool repair = false)
         {
             var result = new List<FilePlan>();
             foreach (var source in bundle.Hashes.Keys.Where(path => path.StartsWith(".deps/bepinex/", StringComparison.Ordinal)).OrderBy(path => path, StringComparer.Ordinal)) {
@@ -291,7 +349,13 @@ namespace BetterAstralParty.Installation
                 if (UpdateTrust.Hash(bundle.Bytes(source, 64 * 1048576)) != expected) throw new InvalidDataException("Shared loader source changed.");
                 var relative = source.Substring(".deps/bepinex/".Length); NativeMaintenance.AssertTarget(bundle.GameRoot, Full(bundle.GameRoot, relative));
                 var current = bundle.TargetHash(relative);
-                if (current != null && current != expected) throw new InvalidDataException("Existing shared loader component differs; preserved for review: " + relative);
+                if (current != null && current != expected) {
+                    if (repair && LoaderSettings.Contains(relative, StringComparer.OrdinalIgnoreCase)) continue;
+                    // Another BepInEx version's files are never mixed with this package's.
+                    throw new InvalidDataException(repair
+                        ? "공용 로더(BepInEx)가 일부 빠져 있고 남은 파일(" + relative + ")은 이 패키지와 다른 버전이라 채우지 않습니다. 게임 폴더의 winhttp.dll, .doorstop_version, dotnet 폴더와 BepInEx\\core 폴더를 지운 뒤 다시 설치하세요. / The shared loader (BepInEx) is incomplete and its remaining file " + relative + " is another version, so it is not filled in. Delete winhttp.dll, .doorstop_version, the dotnet folder and BepInEx\\core in the game folder, then install again."
+                        : "Existing shared loader component differs; preserved for review: " + relative);
+                }
                 observed.Add(relative, current); if (current == null) result.Add(new FilePlan { Source = source, Relative = relative, Shared = true });
             }
             return result;

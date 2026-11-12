@@ -19,6 +19,7 @@ internal static class FieldStatePlates
     }
     private static readonly Group StatePlates = new("com_PlayerAttrInfos", "UICom_PlayerAttrInfo"),
         UpgradeTips = new("com_UpgradeTips", "UIBattleInfo_Com_UpgradeTips");
+    private static readonly Group[] Groups = { StatePlates, UpgradeTips };
     private static IntPtr _sceneClass, _roadClass;
     private static float _scanAt;
 
@@ -35,7 +36,7 @@ internal static class FieldStatePlates
         if (scan) _scanAt = Time.unscaledTime + 0.2f;
         if (_sceneClass == IntPtr.Zero) _sceneClass = RuntimeObject.FindClass("Core.Scene", "BattleSceneController");
         var cameraObject = RuntimeObject.StaticField(_sceneClass, "inst")?.Get("mainCamera");
-        foreach (var group in new[] { StatePlates, UpgradeTips })
+        foreach (var group in Groups)
         {
             var parent = battleUi?.Field(group.Container);
             if (!GameUi.Visible(parent)) { Release(group); continue; }
@@ -46,7 +47,7 @@ internal static class FieldStatePlates
             if (scan) Adopt(group);
             if (group == UpgradeTips) DropRemovedTips();
             // Hide When Far hides only the state plates; upgrade tips stay visible and keep following their character.
-            if (cameraObject != null && (group == UpgradeTips || !FieldIndicatorOpacity.Hidden)) Layout(group, new Camera(cameraObject.Pointer), scale);
+            if (cameraObject != null && (group == UpgradeTips || !FieldIndicatorOpacity.Hidden)) Layout(group, FieldZoomUi.CameraOf(cameraObject), scale);
         }
     }
 
@@ -73,12 +74,14 @@ internal static class FieldStatePlates
         UpgradeTips.Adopted.RemoveAll(tip =>
         {
             for (var i = 0; i < count; i++)
-                if (live.Call("get_Item", i)?.Pointer == tip.Pointer) return false;
+                if (live.CallPointer("get_Item", i) == tip.Pointer) return false;
             GameUi.Dispose(tip);
             return true;
         });
     }
 
+    // Per plate and frame: no wrapper for a value result or a child, no argument array (2026-11-13; zoomed out the plate
+    // layers allocated about 12 KB a frame).
     private static void Layout(Group group, Camera camera, float scale)
     {
         foreach (var ui in group.Adopted)
@@ -89,26 +92,29 @@ internal static class FieldStatePlates
             var shown = screen.z > 0;
             if (ui.Get<bool>("visible") != shown) ui.Set("visible", shown);
             if (!shown) continue;
-            var local = group.Layer!.Call("GlobalToLocal", new Vector2(screen.x, Screen.height - screen.y))!.Value<Vector2>();
+            var local = group.Layer!.Result<Vector2, Vector2>("GlobalToLocal", new Vector2(screen.x, Screen.height - screen.y));
             ui.Call("SetXY", local.x, local.y + ContentLift(ui) * (1 - scale));
         }
     }
 
     // Native owners: a state plate's character (GetOwnerPos, zero when hidden or dead), an upgrade tip's Target transform.
     private static Vector3? Owner(RuntimeObject ui) => ui.TypeName == "UICom_PlayerAttrInfo"
-        ? ui.Call("GetOwnerPos")!.Value<Vector3>()
-        : ui.Field("Target") is { } target ? target.Get<Vector3>("position") : null;
+        ? ui.Result<Vector3>("GetOwnerPos")
+        : ui.FieldPointer("Target") is var target && target != IntPtr.Zero ? RuntimeObject.GetOf<Vector3>(target, "position") : null;
 
     // Pixels between the plate's anchor (the character's screen point) and the bottom of its visible content above it.
     internal static float ContentLift(RuntimeObject ui)
     {
-        var anchor = ui.Field("_pivotAsAnchor")!.Value<bool>() ? ui.Get<float>("pivotY") * ui.Get<float>("height") : 0;
+        var anchor = ui.Field<bool>("_pivotAsAnchor") ? ui.Get<float>("pivotY") * ui.Get<float>("height") : 0;
         var bottom = float.NegativeInfinity;
+        // Children through the pointers the plate holds, not a wrapper each.
         for (int i = 0, count = ui.Get<int>("numChildren"); i < count; i++)
         {
-            var child = ui.Call("GetChildAt", i)!;
-            if (child.Get<bool>("visible")) bottom = Math.Max(bottom, child.Get<float>("yMin") + child.Get<float>("height"));
+            var child = ui.CallPointer("GetChildAt", i);
+            if (child != IntPtr.Zero && RuntimeObject.GetOf<bool>(child, "visible"))
+                bottom = Math.Max(bottom, RuntimeObject.GetOf<float>(child, "yMin") + RuntimeObject.GetOf<float>(child, "height"));
         }
+        GC.KeepAlive(ui);
         return float.IsFinite(bottom) ? Math.Max(0, anchor - bottom) : 0;
     }
 

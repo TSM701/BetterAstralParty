@@ -129,6 +129,13 @@ internal static partial class TestCommands
         var layout = Derive(source, @"(?s)    private static void CheckNullableRect\(.*?\r?\n    \}", "Production Nullable<Rect> layout check");
         RunGeneralFixture(context, Path.Combine(stage, "nullable-rect-layout"), GeneralNullableRectLayout0.Replace("__CHECK__", layout, StringComparison.Ordinal),
             "BapNullableRect.RuntimeObject.Run()", pin, allowUnsafe: true);
+        // The allocation-free forms (second performance round, 2026-11-13): calls with one or two unmanaged values, or a value
+        // and an object, bind there instead of the params form, pass each value's own bytes, keep the exact type guards and
+        // send Nullable<Rect> back to the params form; Result<T> unboxes a value result without a wrapper.
+        var generic = Derive(source, @"(?s)    internal RuntimeObject\? Call<A>\(string method, A a\) where A : unmanaged.*?    private static T Unbox<T>\(.*?;\r?\n",
+            "Production allocation-free call forms");
+        RunGeneralFixture(context, Path.Combine(stage, "generic-calls"), GeneralRuntimeGeneric0.Replace("__GENERIC__", generic, StringComparison.Ordinal),
+            "BapGenericFixture.RuntimeObject.Run()", pin, allowUnsafe: true);
     }
 
     private static void RuntimeGetters(DevContext context, string stage, Action<string> pin)

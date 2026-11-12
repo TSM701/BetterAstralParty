@@ -179,7 +179,7 @@ internal static class HandLayoutUi
             var foreignMotion = active?.Any(t => !LayoutMotion(entry, t, resting, show)) == true;
             // The container ancestry was checked once above; only inspect each remaining branch.
             var shown = Shown(card, _container) && Shown(entry.Face, card);
-            var waiting = card.Call("IsDistribute")!.Value<bool>();
+            var waiting = card.Result<bool>("IsDistribute");
             var usePending = UsePending(card, inputLocked);
             if (!shown) hidden++;
             if (waiting) distributing++;
@@ -235,7 +235,7 @@ internal static class HandLayoutUi
         var path = GameUi.PointerPath(refresh: true);
         var hovered = path.FirstOrDefault(item => Entries.ContainsKey(item.Pointer));
         var mouse = RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "Stage"), "get_inst")!.Get<Vector2>("touchPosition");
-        var pointer = root.Call("GlobalToLocal", mouse)!.Value<Vector2>();
+        var pointer = root.Result<Vector2, Vector2>("GlobalToLocal", mouse);
         if (clickMode)
         {
             // Monster cancel can leave an empty CardWindow on stage; only its actual hit owns the click.
@@ -305,7 +305,7 @@ internal static class HandLayoutUi
                     Place(pile[row], slot, root, row, motions.GetValueOrDefault(pile[row].Card.Pointer));
                 }
             }
-            if (!pile.Any(e => ready.Contains(e) && e.Owned))
+            if (!AnyOwnedReady(pile, ready))
             {
                 if (Captions.TryGetValue(group, out var hiddenCaption)) hiddenCaption.Set("visible", false);
                 if (PileTargets.TryGetValue(group, out var hiddenTarget)) hiddenTarget.Set("visible", false);
@@ -485,8 +485,14 @@ internal static class HandLayoutUi
         return true;
     }
     private static Vector2 ToLocal(RuntimeObject parent, RuntimeObject root, float x, float y) =>
-        parent.Call("RootToLocal", new Vector2(x, y), root)!.Value<Vector2>();
+        parent.Result<Vector2, Vector2>("RootToLocal", new Vector2(x, y), root);
     private static bool Near(Vector2 a, Vector2 b) => HandLayout.Resting(a.x, a.y, b.x, b.y);
+    // A loop, not a capturing lambda: this runs for every pile every frame.
+    private static bool AnyOwnedReady(List<Entry> pile, HashSet<Entry> ready)
+    {
+        foreach (var e in pile) if (e.Owned && ready.Contains(e)) return true;
+        return false;
+    }
     private static float Aspect(Entry e)
     {
         var zoom = e.Card.Field<Vector2>("zoomOutScale");
@@ -512,7 +518,8 @@ internal static class HandLayoutUi
         var corner = e.Face.Field<bool>("_pivotAsAnchor")
             ? new Vector2(-faceWidth * e.Face.Get<float>("pivotX"),
                 -faceHeight * e.Face.Get<float>("pivotY")) : Vector2.zero;
-        var offset = card.Call("GlobalToLocal", e.Face.Call("LocalToGlobal", corner)!.Value<Vector2>())!.Value<Vector2>();
+        // Every card every frame, folded or opened by hover: value results without wrappers (2026-11-13).
+        var offset = card.Result<Vector2, Vector2>("GlobalToLocal", e.Face.Result<Vector2, Vector2>("LocalToGlobal", corner));
         var pos = target - offset * scale;
         var actual = new Vector2(card.Get<float>("x"), card.Get<float>("y"));
         var centerOffset = offset + new Vector2(faceWidth * zoom.x, faceHeight * zoom.y) * .5f;
@@ -615,23 +622,24 @@ internal static class HandLayoutUi
     }
 
     // GetTween returns only the FIRST match; native hover and reflow can coexist on the same card.
-    private static Dictionary<IntPtr, List<RuntimeObject>> CardTweens()
+    private static unsafe Dictionary<IntPtr, List<RuntimeObject>> CardTweens()
     {
         ClearMotions();
         var result = Motions;
         var array = RuntimeObject.StaticField(_tweenManager, "_activeTweens");
         if (array == null) return result;
-        var items = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<Il2CppSystem.Object>(array.Pointer);
-        var count = Math.Min(items.Length, RuntimeObject.StaticField(_tweenManager, "_totalActiveTweens")!.Value<int>());
+        var count = Math.Min((int)Il2CppInterop.Runtime.IL2CPP.il2cpp_array_length(array.Pointer),
+            RuntimeObject.StaticField(_tweenManager, "_totalActiveTweens")!.Value<int>());
+        // Element pointers straight from the native array (after its four-pointer header, as Il2CppInterop's
+        // ArrayStartPointer): most active tweens belong to unrelated UI and are rejected by class before any wrapper.
+        var elements = array.Pointer + 4 * IntPtr.Size;
         for (var i = 0; i < count; i++)
         {
-            var item = items[i];
-            if (item == null) continue;
-            var motion = new RuntimeObject(item); // Reuse the array element's native GC handle.
-            if (motion.Field<bool>("_killed")) continue;
-            // Most active tweens belong to unrelated UI; reject them by class before wrapping the target.
-            var targetPointer = motion.FieldPointer("_target");
+            var tween = *(IntPtr*)(elements + i * IntPtr.Size);
+            if (tween == IntPtr.Zero || RuntimeObject.FieldOf<bool>(tween, "_killed")) continue;
+            var targetPointer = RuntimeObject.FieldPointerOf(tween, "_target");
             if (_cardClass == IntPtr.Zero || RuntimeObject.ClassOf(targetPointer) != _cardClass) continue;
+            var motion = new RuntimeObject(tween);
             var target = new RuntimeObject(targetPointer);
             if (target.Get("parent")?.Pointer != _container?.Pointer) continue;
             if (!result.TryGetValue(target.Pointer, out var list))

@@ -557,6 +557,9 @@ internal static partial class NativeMaintenanceIntegrationFixture
         Text(Full(game, "BepInEx/plugins/OtherMod/Other.dll"), "unrelated mod retained");
         Text(Full(game, "BepInEx/config/kr.betterastralparty.mod.cfg"), "1.3.x player setting");
         Text(Full(game, "doorstop_config.ini"), "[General]\r\nenabled=true\r\nunrelated=preserved\r\n");
+        // 1.3.x installed a whole shared loader; one with its start files missing is filled in instead of kept.
+        foreach (var path in new[] { "winhttp.dll", "BepInEx/core/BepInEx.Unity.IL2CPP.dll", "BepInEx/core/BepInEx.Core.dll", "dotnet/coreclr.dll" })
+            if (File.Exists(WindowsPath.ForIo(Full(Package, ".deps/bepinex/" + path)))) Write(Full(game, path), Read(Full(Package, ".deps/bepinex/" + path)));
         foreach (var path in LegacyReceipt.Owned) Text(Full(game, path), "inert 1.3.x owned file: " + path);
         string identity; using (var fence = new WindowsFileFence(game)) identity = fence.RootIdentity.Text;
         Text(Full(game, OrdinaryInstallRecovery.LegacyHelper), "inert 1.3.x update helper");

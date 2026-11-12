@@ -266,7 +266,7 @@ internal static partial class TestCommands
             "The settings' Exit Game asks message 1014 and quits through GameManager.CloseGame");
         var keys = Il(Method("UI.MessageBoxWindow", "OnKeyDown"));
         Check(Regex.IsMatch(keys, @"ldc.i4.s 27\n(?:IL_[0-9a-f]+: [^\n]*\n)+?IL_[0-9a-f]+: call [^\n]*MessageBoxWindow::OnClickCancel\(\)") && Regex.IsMatch(keys, @"ldc.i4.s 13\n(?:IL_[0-9a-f]+: [^\n]*\n)+?IL_[0-9a-f]+: call [^\n]*MessageBoxWindow::OnClickOk\(\)"),
-            "Native message box: Esc cancels and Enter confirms");
+            "Native message box: Esc cancels (except OK/Cancel boxes, below) and Enter confirms");
         var message = types["UI.MessageBoxWindow/MessageInfo"];
         string AsyncBody(string name) => Il(types.Values.Single(type => type.FullName.StartsWith("UI.MessageBoxWindow/<" + name + ">d__", StringComparison.Ordinal)).Methods.Single(method => method.Name == "MoveNext"));
         var pop = AsyncBody("PopWindow"); var queue = AsyncBody("TryShow");
@@ -276,13 +276,27 @@ internal static partial class TestCommands
             && Regex.IsMatch(Il(message.Methods.Single(method => method.Name == "Reset")), @"^IL_0000: ldarg.0\nIL_0001: ldc.i4.m1\nIL_[0-9a-f]+: stfld System.Int32 UI.MessageBoxWindow/MessageInfo::typeIndex")
             && set.Success && show > set.Index && queue.Contains("MessageInfo::typeIndex", StringComparison.Ordinal) && queue.Contains("::Push(", StringComparison.Ordinal),
             "A native message box sets its message before the asynchronous show and queues a second one, so HomeEscQuit reads curMsg");
+        // An OK/Cancel box (typeIndex 1) ignores Esc, so HomeEscQuit closes its own quit question (user-reported 2026-11-13). When the
+        // game handles Esc on such boxes itself this fails, and HomeEscQuit.Dismiss can go.
+        var okCancel = types.Values.Where(type => type.FullName.StartsWith("UI.MessageBoxWindow/<ShowOKCancel>d__", StringComparison.Ordinal))
+            .Select(type => Il(type.Methods.Single(method => method.Name == "MoveNext"))).Where(body => body.Contains("MessageInfo::.ctor", StringComparison.Ordinal)).ToArray();
+        Check(Regex.IsMatch(keys, @"ldc.i4.s 27\n(?:IL_[0-9a-f]+: [^\n]*\n)+?IL_[0-9a-f]+: ldfld System.Int32 UI.MessageBoxWindow/MessageInfo::typeIndex\nIL_[0-9a-f]+: ldc.i4.1\nIL_[0-9a-f]+: bne.un(?:.s)? IL_[0-9a-f]+\nIL_[0-9a-f]+: ret")
+            && okCancel.Length > 0 && okCancel.All(body => Regex.IsMatch(body, @"ldc.i4.1\n(?:IL_[0-9a-f]+: [^\n]*\n){1,12}?IL_[0-9a-f]+: (?:call|newobj) [^\n]*MessageInfo::.ctor")),
+            "Native OK/Cancel boxes are typeIndex 1 and ignore Esc, so HomeEscQuit closes its own question");
+        Check(message.Fields.Single(field => field.Name == "okCallback").FieldType.FullName == "System.Action"
+            && box.Methods.Count(method => method.Name == "OnClickCancel" && method.Parameters.Count == 0) == 1
+            && keys.Contains("System.Void FairyGUI.GButton::FireClick(System.Boolean,System.Boolean)", StringComparison.Ordinal)
+            && types["UI.UIMessageBoxWindow"].Fields.Any(field => field.Name == "bottom")
+            && types["UI.UICom_PopUpWindow_Bottom"].Fields.Single(field => field.Name == "btn_Cancel").FieldType.FullName == "FairyGUI.GButton",
+            "HomeEscQuit finds its question by curMsg.okCallback and closes it as the box's Esc branch does: Cancel press, then OnClickCancel");
         // The home's own keys. When the game answers Esc on the home itself this fails, and HomeEscQuit can be retired.
         Check(Il(Method("UI.HomePanel", "OnKeyDown")).Contains("ldc.i4.s 13", StringComparison.Ordinal)
             && !types.Values.Where(type => type.FullName.StartsWith("UI.HomePanel", StringComparison.Ordinal) || type.FullName.StartsWith("UI.BottomMenuPanel", StringComparison.Ordinal))
                 .SelectMany(type => type.Methods).Where(method => method.HasBody).Any(method => Il(method) is var body && body.Contains("ldc.i4.s 27", StringComparison.Ordinal)
                     && Regex.IsMatch(body, "get_keyCode|Input::GetKey")), "The native home answers Enter only; HomeEscQuit is still needed");
         var quit = ReadSource(context, "src/HomeEscQuit.cs");
-        Contains(quit, new[] { "GameUi.NotificationHome().Eligible && !UpdateNotificationUi.Open", "State.Step(Time.frameCount, idle, Input.GetKeyDown(KeyCode.Escape))", "box.Get<bool>(\"isShowing\")",
+        Contains(quit, new[] { "home.Idle && !UpdateNotificationUi.Open", "Input.GetKeyDown(KeyCode.Escape)", "State.Step(Time.frameCount, idle, escape)", "box.Get<bool>(\"isShowing\")",
+            "escape && _ok != null && Dismiss()", "FieldPointer(\"okCallback\") != _ok!.Pointer", "Call(\"FireClick\", true, false)", "box.Call(\"OnClickCancel\")",
             "Field<int>(\"typeIndex\") >= 0", "NativeDelegate.CreateDelegate(type, new Il2CppSystem.Object(game.Pointer), \"CloseGame\")", "box!.Call(\"ShowOKCancel\", QuitMessage, new RuntimeObject(_ok.Pointer), null, false)", "QuitMessage = 1014" },
             "Home Esc asks the native quit question only on an idle home with no message box showing or queued");
         Check(!Regex.IsMatch(Regex.Replace(quit, @"//[^\n]*", ""), @"Request\w*C2S|Application\.Quit|Call\(""(CloseGame|OnClickOk|Hide)""|SetField\(|\.Set\(|AddRelation|onKeyDown|DelegateSupport|ClassInjector|Il2CppSystem\.Action"),

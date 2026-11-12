@@ -8,9 +8,13 @@ namespace BetterAstralParty;
 // Resolve its actual runtime metadata; never load a second copy of game code.
 internal sealed unsafe class RuntimeObject
 {
-    private readonly Il2CppSystem.Object _object;
-    internal IntPtr Pointer => _object.Pointer;
-    internal IntPtr Class => _object.ObjectClass;
+    // One strong IL2CPP GC handle per wrapper, as Il2CppInterop's Il2CppObjectBase takes, without that second managed object.
+    // The IL2CPP heap never moves objects, so the pointer and class are read once instead of on every access. Hundreds of
+    // wrappers are made each frame; their finalizable objects set the CLR GC pauses the 2026-11-12 play logs showed.
+    private readonly IntPtr _handle;
+    private IntPtr _class;
+    internal IntPtr Pointer { get; }
+    internal IntPtr Class => _class != IntPtr.Zero ? _class : _class = IL2CPP.il2cpp_object_get_class(Pointer);
     internal string TypeName
     {
         get
@@ -88,8 +92,14 @@ internal sealed unsafe class RuntimeObject
         CheckedFeatures.Add(feature);
     }
 
-    internal RuntimeObject(IntPtr pointer) : this(new Il2CppSystem.Object(pointer)) { }
-    internal RuntimeObject(Il2CppSystem.Object value) => _object = value;
+    internal RuntimeObject(IntPtr pointer)
+    {
+        if (pointer == IntPtr.Zero) throw new NullReferenceException("Native object required");
+        Pointer = pointer;
+        _handle = IL2CPP.il2cpp_gchandle_new(pointer, false);
+    }
+    internal RuntimeObject(Il2CppSystem.Object value) : this(value.Pointer) { }
+    ~RuntimeObject() => IL2CPP.il2cpp_gchandle_free(_handle);
     private static RuntimeObject? Wrap(IntPtr pointer) => pointer == IntPtr.Zero ? null : new(pointer);
 
     internal static IntPtr FindClass(string ns, string name)
@@ -160,6 +170,25 @@ internal sealed unsafe class RuntimeObject
         return value;
     }
     internal static IntPtr ClassOf(IntPtr pointer) => pointer == IntPtr.Zero ? IntPtr.Zero : IL2CPP.il2cpp_object_get_class(pointer);
+    // Fields of an object read without wrapping it, to filter many objects of a live native collection within one frame;
+    // nothing here allocates, so the object cannot be collected between the reads. Wrap it before keeping or calling it.
+    internal static T FieldOf<T>(IntPtr instance, string name) where T : unmanaged
+    {
+        var field = FieldInfo(ClassOf(instance), name);
+        CheckValue<T>(IL2CPP.il2cpp_class_from_type(IL2CPP.il2cpp_field_get_type(field)));
+        T value = default;
+        IL2CPP.il2cpp_field_get_value(instance, field, &value);
+        return value;
+    }
+    internal static IntPtr FieldPointerOf(IntPtr instance, string name)
+    {
+        var field = FieldInfo(ClassOf(instance), name);
+        if (IL2CPP.il2cpp_class_is_valuetype(IL2CPP.il2cpp_class_from_type(IL2CPP.il2cpp_field_get_type(field))))
+            throw new InvalidCastException("Expected reference field " + name);
+        IntPtr value = IntPtr.Zero;
+        IL2CPP.il2cpp_field_get_value(instance, field, &value);
+        return value;
+    }
     internal static RuntimeObject? StaticField(IntPtr klass, string name) => Wrap(IL2CPP.il2cpp_field_get_value_object(FieldInfo(klass, name), IntPtr.Zero));
     // A static value field of klass, written after its class initializer ran. An instance field is refused: its offset
     // does not point into the class's static data.
@@ -236,6 +265,104 @@ internal sealed unsafe class RuntimeObject
         GC.KeepAlive(this);
         return result;
     }
+    // Allocation-free forms for per-frame paths (second performance round, 2026-11-13: zoomed-out field play still allocated
+    // 30 KB a frame). A call with one or two unmanaged values, or one value and an object, binds here instead of the params
+    // form, so no argument array and no boxed values; Set does the same. Result<T> also skips the wrapper of a value result.
+    internal RuntimeObject? Call<A>(string method, A a) where A : unmanaged
+    {
+        if (typeof(A) == typeof(NullableRect)) return Call(method, new object?[] { a }); // Its own layout; see CheckNullableRect.
+        var info = MethodInfo(Class, method, 1); ValueParameter<A>(info, 0);
+        void** args = stackalloc void*[1]; args[0] = &a;
+        return Wrap(InvokeRaw(info, args, method));
+    }
+    internal RuntimeObject? Call<A, B>(string method, A a, B b) where A : unmanaged where B : unmanaged
+    {
+        if (typeof(A) == typeof(NullableRect) || typeof(B) == typeof(NullableRect)) return Call(method, new object?[] { a, b });
+        var info = MethodInfo(Class, method, 2); ValueParameter<A>(info, 0); ValueParameter<B>(info, 1);
+        void** args = stackalloc void*[2]; args[0] = &a; args[1] = &b;
+        return Wrap(InvokeRaw(info, args, method));
+    }
+    internal RuntimeObject? Call<A>(string method, A a, RuntimeObject? b) where A : unmanaged
+    {
+        if (typeof(A) == typeof(NullableRect)) return Call(method, new object?[] { a, b });
+        var info = MethodInfo(Class, method, 2); ValueParameter<A>(info, 0); CheckArgument(IL2CPP.il2cpp_method_get_param(info, 1), b);
+        void** args = stackalloc void*[2]; args[0] = &a; args[1] = b == null ? null : (void*)b.Pointer;
+        var result = Wrap(InvokeRaw(info, args, method));
+        GC.KeepAlive(b);
+        return result;
+    }
+    internal void Set<A>(string property, A value) where A : unmanaged => Call(Accessor(Setters, "set_", property), value);
+    internal T Result<T>(string method) where T : unmanaged
+    {
+        var info = MethodInfo(Class, method, 0); ReturnValue<T>(info);
+        return Unbox<T>(InvokeRaw(info, null, method), method);
+    }
+    internal T Result<T, A>(string method, A a) where T : unmanaged where A : unmanaged
+    {
+        var info = MethodInfo(Class, method, 1); ReturnValue<T>(info); ValueParameter<A>(info, 0);
+        void** args = stackalloc void*[1]; args[0] = &a;
+        return Unbox<T>(InvokeRaw(info, args, method), method);
+    }
+    internal T Result<T, A>(string method, A a, RuntimeObject? b) where T : unmanaged where A : unmanaged
+    {
+        var info = MethodInfo(Class, method, 2); ReturnValue<T>(info); ValueParameter<A>(info, 0); CheckArgument(IL2CPP.il2cpp_method_get_param(info, 1), b);
+        void** args = stackalloc void*[2]; args[0] = &a; args[1] = b == null ? null : (void*)b.Pointer;
+        var result = Unbox<T>(InvokeRaw(info, args, method), method);
+        GC.KeepAlive(b);
+        return result;
+    }
+    // A reference result as a bare pointer (GetChildAt, get_Item), for a child the caller's object keeps alive this frame.
+    internal IntPtr CallPointer<A>(string method, A a) where A : unmanaged
+    {
+        var info = MethodInfo(Class, method, 1); ReturnReference(info); ValueParameter<A>(info, 0);
+        void** args = stackalloc void*[1]; args[0] = &a;
+        return InvokeRaw(info, args, method);
+    }
+    // Getters on a bare pointer, for ancestors and children an object the caller holds keeps alive (no wrapper each).
+    internal static T GetOf<T>(IntPtr instance, string property) where T : unmanaged
+    {
+        var info = MethodInfo(ClassOf(Required(instance)), Accessor(Getters, "get_", property), 0); ReturnValue<T>(info);
+        return Unbox<T>(InvokeOn(info, instance, property), property);
+    }
+    internal static IntPtr GetPointerOf(IntPtr instance, string property)
+    {
+        var info = MethodInfo(ClassOf(Required(instance)), Accessor(Getters, "get_", property), 0); ReturnReference(info);
+        return InvokeOn(info, instance, property);
+    }
+    private static IntPtr Required(IntPtr instance) => instance == IntPtr.Zero ? throw new NullReferenceException("Native object required") : instance;
+    private static void ValueParameter<A>(IntPtr method, uint index) where A : unmanaged
+    {
+        var type = IL2CPP.il2cpp_method_get_param(method, index);
+        if (type == IntPtr.Zero || IL2CPP.il2cpp_type_is_byref(type)) throw new InvalidCastException("Unsupported by-ref runtime argument");
+        CheckValue<A>(IL2CPP.il2cpp_class_from_type(type));
+    }
+    private static void ReturnValue<T>(IntPtr method) where T : unmanaged =>
+        CheckValue<T>(IL2CPP.il2cpp_class_from_type(IL2CPP.il2cpp_method_get_return_type(method)));
+    private static void ReturnReference(IntPtr method)
+    {
+        if (CheckedReferences.Contains(method)) return;
+        var klass = IL2CPP.il2cpp_class_from_type(IL2CPP.il2cpp_method_get_return_type(method));
+        if (klass == IntPtr.Zero || IL2CPP.il2cpp_class_is_valuetype(klass)) throw new InvalidCastException("Expected reference result");
+        CheckedReferences.Add(method);
+    }
+    private IntPtr InvokeRaw(IntPtr method, void** args, string name)
+    {
+        var instance = IL2CPP.il2cpp_class_is_valuetype(Class) ? IL2CPP.il2cpp_object_unbox(Pointer) : Pointer;
+        IntPtr exception = IntPtr.Zero;
+        var result = IL2CPP.il2cpp_runtime_invoke(method, instance, args, ref exception);
+        GC.KeepAlive(this);
+        if (exception != IntPtr.Zero) throw new InvalidOperationException("Game UI call failed: " + name);
+        return result;
+    }
+    private static IntPtr InvokeOn(IntPtr method, IntPtr instance, string name)
+    {
+        IntPtr exception = IntPtr.Zero;
+        var result = IL2CPP.il2cpp_runtime_invoke(method, instance, null, ref exception);
+        if (exception != IntPtr.Zero) throw new InvalidOperationException("Game UI getter failed: " + name);
+        return result;
+    }
+    private static T Unbox<T>(IntPtr result, string name) where T : unmanaged =>
+        result == IntPtr.Zero ? throw new InvalidOperationException("Game UI call failed: " + name) : *(T*)IL2CPP.il2cpp_object_unbox(result);
     internal static RuntimeObject? StaticCall(IntPtr klass, string method, params object?[] args) => Invoke(klass, IntPtr.Zero, method, args);
     internal static RuntimeObject New(IntPtr klass, params object[] args)
     {

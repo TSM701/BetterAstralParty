@@ -72,6 +72,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 - 게임이나 Steam을 종료해야 하면 설치 창이 안내합니다. 직접 종료한 뒤 다시 확인을 누르거나 취소할 수 있으며, 설치 도구가 프로세스를 강제로 종료하지는 않습니다.
 - `Install.cmd`나 `Uninstall.cmd`에 `-CheckOnly`, `-WhatIf` 같은 인자를 주면 창 대신 콘솔에서 진행합니다.
 - 새 공용 로더는 ON으로 설치됩니다.
+- 이미 있던 BepInEx가 일부 지워져 게임이 모드 없이 시작되는 상태면, 빠진 BepInEx 파일을 채우고 남은 설정은 유지합니다. 남은 파일이 다른 버전이면 BepInEx는 그대로 두고 BetterAstralParty만 설치한 뒤, 지우고 다시 설치할 파일을 안내합니다.
 
 </details>
 
@@ -288,6 +289,7 @@ BetterAstralParty 자체 코드는 [MIT 라이선스](LICENSE)로 제공합니�
 - When the game or Steam must be closed, the install window tells you. Close it yourself, then press Check again or cancel; the installer never force-closes processes.
 - Running `Install.cmd` or `Uninstall.cmd` with an argument such as `-CheckOnly` or `-WhatIf` uses the console instead of the window.
 - A newly installed shared loader defaults to ON.
+- If an existing BepInEx is partly deleted, so the game starts without mods, installation adds the missing BepInEx files and keeps its remaining settings. If the remaining files are another version, it leaves BepInEx as it is, installs only BetterAstralParty and names the files to delete before installing again.
 
 </details>
 

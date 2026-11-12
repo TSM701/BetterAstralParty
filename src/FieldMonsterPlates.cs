@@ -72,20 +72,22 @@ internal static class FieldMonsterPlates
         if (_sceneClass == IntPtr.Zero) _sceneClass = RuntimeObject.FindClass("Core.Scene", "BattleSceneController");
         var cameraObject = RuntimeObject.StaticField(_sceneClass, "inst")?.Get("mainCamera");
         if (cameraObject == null) return;
-        var camera = new Camera(cameraObject.Pointer);
+        var camera = FieldZoomUi.CameraOf(cameraObject);
         var root = GameUi.Root!;
         float width = root.Get<float>("width"), height = root.Get<float>("height");
-        var info = _sentinel?.Field("ShowInfo")?.Get<int>("selectedIndex") ?? 0;
+        var info = _sentinel == null ? 0 : Math.Max(0, ShowInfo(_sentinel));
         var self = _battleUi?.Field("_SelfPlayer")?.Field("CharacterInst");
         var stepping = self != null && self.Get<int>("canStep") > 0;
         Placed.Clear();
+        // Per plate and frame: no wrapper for a value result, no argument array (2026-11-13; zoomed out this layer
+        // allocated about 12 KB a frame).
         foreach (var ui in Adopted)
         {
             if (ui.Get<bool>("isDisposed")) continue;
-            if (ui.Field("ShowInfo")?.Get<int>("selectedIndex") != info) ui.Call("SwitchInfo", info == 1);
-            var owner = ui.Call("GetOwnerPos")!.Value<Vector3>();
+            if (ShowInfo(ui) != info) ui.Call("SwitchInfo", info == 1);
+            var owner = ui.Result<Vector3>("GetOwnerPos");
             var screen = owner == Vector3.zero || !camera.enabled ? default : camera.WorldToScreenPoint(owner);
-            var local = screen.z > 0 ? _layer!.Call("GlobalToLocal", new Vector2(screen.x, Screen.height - screen.y))!.Value<Vector2>() : default;
+            var local = screen.z > 0 ? _layer!.Result<Vector2, Vector2>("GlobalToLocal", new Vector2(screen.x, Screen.height - screen.y)) : default;
             var target = local - Vector2.up * (PlateLift * scale);
             var shown = screen.z > 0 && target.x > 0 && target.y > 0 && target.x < width && target.y < height;
             if (ui.Get<bool>("visible") != shown) ui.Set("visible", shown);
@@ -105,11 +107,19 @@ internal static class FieldMonsterPlates
             if (Rects[i].Y != Before[i]) Placed[i].Ui.Set("y", Rects[i].Y);
         foreach (var (ui, owner) in Placed)
         {
-            var point = _layer!.Call("TransformPoint", owner, ui)!.Value<Vector2>() - Vector2.up * (MarkerLift * scale);
+            var point = _layer!.Result<Vector2, Vector2>("TransformPoint", owner, ui) - Vector2.up * (MarkerLift * scale);
             ui.Call("UpdateGuideLine", point);
-            var buffs = ui.Field("graph_ShowBuff")!;
-            if (buffs.Get<bool>("visible") == stepping) buffs.Set("visible", !stepping);
+            if (RuntimeObject.GetOf<bool>(ui.FieldPointer("graph_ShowBuff"), "visible") == stepping) ui.Field("graph_ShowBuff")!.Set("visible", !stepping);
         }
+    }
+
+    // The plate's ShowInfo controller index, or -1 without one; read through the pointer the plate holds.
+    private static int ShowInfo(RuntimeObject plate)
+    {
+        var controller = plate.FieldPointer("ShowInfo");
+        var index = controller == IntPtr.Zero ? -1 : RuntimeObject.GetOf<int>(controller, "selectedIndex");
+        GC.KeepAlive(plate);
+        return index;
     }
 
     internal static void Clear()

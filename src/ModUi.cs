@@ -268,8 +268,8 @@ internal static partial class ModUi
         var clrGcs = measure ? GC.CollectionCount(0) : 0;
         var nativeUsed = measure ? (long)Il2CppInterop.Runtime.IL2CPP.il2cpp_gc_get_used_size() : 0;
         _measureTicks = measure;
-        Array.Clear(TickMarks);
-        TickMarks[0] = started;
+        Array.Clear(TickMarks); Array.Clear(TickBytes);
+        TickMarks[0] = started; TickBytes[0] = allocated;
         StallWatch.Enter(0);
         long gameEnd = started, popupEnd = started, statusEnd = started, coreEnd = started;
         long fieldStart = 0, fieldEnd = 0;
@@ -338,7 +338,7 @@ internal static partial class ModUi
                 var ended = System.Diagnostics.Stopwatch.GetTimestamp();
                 var milliseconds = 1000d / System.Diagnostics.Stopwatch.Frequency;
                 var nativeAfter = (long)Il2CppInterop.Runtime.IL2CPP.il2cpp_gc_get_used_size();
-                Plugin.Diagnostics.TickSpikes(TickMarks, milliseconds, GC.CollectionCount(0) - clrGcs,
+                Plugin.Diagnostics.TickSpikes(TickMarks, TickBytes, milliseconds, GC.CollectionCount(0) - clrGcs,
                     nativeAfter < nativeUsed, _nativeUsedAfterTick > 0 && nativeUsed < _nativeUsedAfterTick);
                 _nativeUsedAfterTick = nativeAfter;
                 Plugin.Diagnostics.Performance(ended / (double)System.Diagnostics.Stopwatch.Frequency,
@@ -353,13 +353,17 @@ internal static partial class ModUi
     }
 
     private static readonly long[] TickMarks = new long[DiagnosticLog.TickFeatures.Length + 1];
+    // Managed bytes allocated by the main thread at each mark: which feature's garbage sets off the CLR collections.
+    private static readonly long[] TickBytes = new long[DiagnosticLog.TickFeatures.Length + 1];
     private static bool _measureTicks;
     private static long _nativeUsedAfterTick;
 
     private static void Mark(int index)
     {
         StallWatch.Enter(index < DiagnosticLog.TickFeatures.Length ? index : -1);
-        if (_measureTicks) TickMarks[index] = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (!_measureTicks) return;
+        TickMarks[index] = System.Diagnostics.Stopwatch.GetTimestamp();
+        TickBytes[index] = GC.GetAllocatedBytesForCurrentThread();
     }
 
     internal static void FailUi(Exception ex) => Compatibility.Block("CoreUi", ex,

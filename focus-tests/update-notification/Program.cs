@@ -87,6 +87,9 @@ Case("home safety independent blockers all room phases and stale team disposal",
         good with{Blocked=true},good with{TeamId=1},good with{ConnectRoomId=1}}) Check(!bad.Eligible,"blocker");
     foreach(var room in new[]{-1,1,2,3,4,5,100}) Check(!(good with{RoomState=room}).Eligible,"room state");
     Check(good.Eligible,"disposed TeamId=0 independent of stale MatchStatus");
+    // Home Esc waits for nothing on top, not for the home's entrance motion.
+    Check((good with{ControlsReady=false}).Idle&&!(good with{Blocked=true}).Idle&&!(good with{TeamId=1}).Idle&&!(good with{CurrentHome=false}).Idle,"idle ignores only the entrance motion");
+    Check(!(good with{TeamId=12345}).Why.Contains("12345"),"diagnostic reason names no IDs");
 });
 Case("opening frame mismatch duplicate dispatch and keyboard input",()=>{
     var i=new UpdateNotificationInput();

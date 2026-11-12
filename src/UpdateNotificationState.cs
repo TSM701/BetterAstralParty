@@ -5,8 +5,11 @@ internal sealed record UpdateNotificationTarget(ReleaseUpdate Release, string Ke
 internal readonly record struct UpdateNotificationHome(bool Known, bool HomeVisible, bool CurrentHome,
     bool ControlsReady, bool Blocked, long TeamId, int RoomState, long ConnectRoomId)
 {
-    internal bool Eligible => Known && HomeVisible && CurrentHome && ControlsReady && !Blocked
-        && TeamId == 0 && RoomState == 0 && ConnectRoomId == 0;
+    // The current home with nothing on top and no team or room, while its entrance motion (Cut_in, touch lock) may still run.
+    internal bool Idle => Known && HomeVisible && CurrentHome && !Blocked && TeamId == 0 && RoomState == 0 && ConnectRoomId == 0;
+    internal bool Eligible => Idle && ControlsReady;
+    // For diagnostics: which part is off, never the IDs themselves.
+    internal string Why => $"known={Known}; visible={HomeVisible}; current={CurrentHome}; controls={ControlsReady}; blocked={Blocked}; team={TeamId != 0}; room={RoomState}; connect={ConnectRoomId != 0}";
 }
 
 internal sealed class UpdateNotificationState

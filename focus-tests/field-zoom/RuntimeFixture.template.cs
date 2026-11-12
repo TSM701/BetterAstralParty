@@ -108,7 +108,7 @@ sealed class RuntimeObject {
     public RuntimeObject? Get(string key)=>key=="CamB"?throw new Exception("CamB is a native field, not getter"):key=="Current"?Items[index]:Data.GetValueOrDefault(key) as RuntimeObject;
     public T Get<T>(string key)=>key is "Duration" or "TimeInBlend"?throw new Exception("Native blend times are fields, not getters"):key=="draggable"?(T)(object)(Data.GetValueOrDefault(key) is true):(T)Data[key];
     public RuntimeObject? Field(string key)=>key=="CamB"?Data.GetValueOrDefault(key) as RuntimeObject:Get(key);
-    public T Field<T>(string key)=>key is "Duration" or "TimeInBlend"?(T)Data[key]:Get<T>(key); public T Value<T>()=>Get<T>("value");
+    public T Field<T>(string key)=>key=="m_CachedPtr"?(T)(object)(Dead?IntPtr.Zero:Pointer):key is "Duration" or "TimeInBlend"?(T)Data[key]:Get<T>(key); public T Value<T>()=>Get<T>("value");
     public void SetField<T>(string key,T value) where T:unmanaged { if(key!="m_FollowOffset"&&key!="CameraSpeed")throw new Exception("Forbidden field write"); if(Dead)throw new Exception("Disposed write"); Data[key]=value;Writes++; }
     static RuntimeObject Box(object value)=>new(){Data=new(){{"value",value}}};
     public static IntPtr FindClass(string ns,string name) { var key=ns+"."+name; if(!Classes.TryGetValue(key,out var p))Classes[key]=p=(IntPtr)(++next);return p; }
@@ -117,7 +117,7 @@ sealed class RuntimeObject {
         return Statics.GetValueOrDefault(type);
     }
     public static RuntimeObject? StaticCall(IntPtr type,string method,params object?[] args)=>method switch {
-        "op_Implicit"=>Box(!((RuntimeObject)args[0]!).Dead), "get_isTouchOnUI"=>Box(OnUi),
+        "get_isTouchOnUI"=>Box(OnUi),
         "get_draggingObject"=>Dragging?new RuntimeObject():null, _=>throw new Exception("Unsupported static reader "+method) };
     public RuntimeObject? Call(string method,params object[] args)=>method switch {
         "GetCurPlayerCamera"=>Get("current"), "GetCinemachineComponent"=>Get((int)args[0]==0?"body":"aim"),
