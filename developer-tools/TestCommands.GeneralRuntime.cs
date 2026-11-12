@@ -84,7 +84,7 @@ internal static partial class TestCommands
     private static void AutoThanks(DevContext context, string stage, Action<string> pin)
     {
         var nativePath = context.NativeAssemblyPath; var corePath = Path.Combine(context.Root, ".research/extracted/mscorlib.dll.dll"); pin(nativePath); pin(corePath);
-        if (!context.NativeAssemblyExplicit) Check(context.Hash(nativePath) == "C20623C300D088FEC7F145BA9E0E636362B6DFC3D5805100B0799C5125EB51F8", "Audited historical native recommendation input");
+        if (!context.NativeAssemblyExplicit) Check(context.Hash(nativePath) == "BDB19B0CA19E8EF692CC8741CE8DAC9EE36D79C13EF1921EEE14D5B9AE4BADBB", "Audited historical native recommendation input");
         Check(context.Hash(corePath) == "D5B2944460EDCCD6D0266DD20BF922029FBA018124DD7B940B96812F4EF58BBD", "Audited engine core recommendation metadata input");
         using var native = Native(context); using var core = AssemblyDefinition.ReadAssembly(corePath);
         var scene = native.MainModule.GetType("Core.Scene.BaseSceneController"); var awake = scene.Methods.Single(method => method.Name == "Awake");

@@ -9,22 +9,24 @@ internal static class CardDiceUi
     private static UnknownEffectsRow? _unknownRow;
     private static UnknownEffectsHelp? _help;
     private static readonly List<(RuntimeObject Disc, RuntimeObject Number, RuntimeObject Comparison, RuntimeObject Empty)> Rows = new();
-    private static (PreRollCombat Input, CardBonus? Card, bool Hover, bool Unsupported, int FixedDie, int Language, int Role, int? FinalDamage)? _key;
+    private static (PreRollCombat Input, CardBonus? Card, bool Hover, bool Unsupported, int FixedDie, int Language, int Role, int? FinalDamage, bool Revealed)? _key;
     private static float _shownAt, _hideAt = -1, _holdUntil;
     private static float _x, _y, _scale = 1;
     private static RuntimeObject? _resolvedUi, _attacker, _defender;
     private static PreRollCombat _resolvedInput;
-    // The attack die seen at showPoint 1; the totals' PointChange has played; the final arithmetic owns the display.
-    private static int _rawDie;
-    private static bool _totals, _final;
+    // The rolled card values for a viewer with nothing left to choose (ServerFight.Rolled), or null.
+    private static (int? Attack, int? Defense)? _rolled;
+    // The server's decided hit owns the display (ShowFinal).
+    private static bool _final;
     private const float Width = CardDiceLayout.Width, Height = CardDiceLayout.Height;
 
     internal static void Show(RuntimeObject ui, RuntimeObject attackPoint,
-        PreRollCombat input, CardBonus? card, bool hover, bool unsupported, int fixedDie = 0, int? finalDamage = null, int fixedDefense = 0)
+        PreRollCombat input, CardBonus? card, bool hover, bool unsupported, int fixedDie = 0, int? finalDamage = null, int fixedDefense = 0,
+        bool revealed = false)
     {
         if (!Plugin.KoMinimum.Value) { Clear(); return; }
-        if (fixedDie == 0) _resolvedUi = _attacker = _defender = null; // New card phase/hover owns the display.
-        if (fixedDie == 0) { _rawDie = 0; _totals = _final = false; }
+        // revealed: fixedDie is a shown roll, which is 0 for a 0-only attacker (Moses's 약점), so 0 alone cannot mean "no roll yet".
+        if (!revealed) { _resolvedUi = _attacker = _defender = null; _final = false; } // New card phase/hover owns the display.
         if (_key is { } old && old.Language != ModText.Revision) Clear(keepObservation: true);
         if (_panel == null || _panel.Get<bool>("isDisposed") || _panel.Get("parent")?.Pointer != ui.Pointer
             || Rows.Any(row => row.Disc.Get("texture") == null))
@@ -69,14 +71,14 @@ internal static class CardDiceUi
         var role = ui.Field("playerState")!.Get<int>("selectedIndex");
         // Local defenders and spectators of a defending player see survival; others see the KO view.
         var survival = role == 1 || role == 2 && input.DefenderPlayer;
-        var key = (input, card, hover, unsupported, fixedDie, ModText.Revision, role, finalDamage);
+        var key = (input, card, hover, unsupported, fixedDie, ModText.Revision, role, finalDamage, revealed);
         if (_key != key)
         {
-            if (fixedDie > 0 && (_key == null || _key.Value.FixedDie != fixedDie || fixedDefense > 0 && _key.Value.Input.Modifiers.DefenseDice != input.Modifiers.DefenseDice))
+            if (revealed && (_key == null || !_key.Value.Revealed || _key.Value.FixedDie != fixedDie))
                 _holdUntil = Time.unscaledTime + CardDiceLayout.ResolvedHold;
-            if (fixedDie == 0) _holdUntil = 0;
+            if (!revealed) _holdUntil = 0;
             _key = key;
-            // All roles use the publicly revealed roll. Zero means it is still unknown.
+            // All roles use the publicly revealed roll. Zero means it is still unknown, or a 0-only attacker's only face.
             var thresholdDie = fixedDie;
             // Guaranteed thresholds (user-decided 2026-10-25): a met condition decides the outcome even at the worst
             // public card roll. Best-case thresholds assumed the top of random card bonuses (+1~N) and kept missing.
@@ -84,18 +86,19 @@ internal static class CardDiceUi
                 ? CardKoMinimum.Survival(input, card, thresholdDie, possible: false)
                 : CardKoMinimum.Calculate(input, card, thresholdDie, possible: false);
             var damage = pair == null ? null : CardKoMinimum.OutcomeRange(input, card, thresholdDie);
-            // Supplied only by RemainingHpUi after its public final-number readiness gate.
+            // Supplied only by RemainingHpUi from the server's decided hit (ServerFight).
             if (finalDamage is >= 0) damage = ((long)finalDamage.Value, (long)finalDamage.Value);
             var status = CardDiceLayout.Status(pair, damage, input.Hp, survival);
             var unconditional = status is "KO 불가" or "확정 KO";
             _title!.Set("text", ModText.Text(CardDiceLayout.Title(survival)));
-            _state!.Set("text", ModText.Text(fixedDie > 0 ? "" : hover ? "카드 사용 후" : "현재 상태"));
+            _state!.Set("text", ModText.Text(revealed ? "" : hover ? "카드 사용 후" : "현재 상태"));
             _status!.Set("text", ModText.Text(status));
-            _unknownRow!.Show(input.Modifiers.Unknown);
+            // The server's decided hit counts every effect, so nothing is left uncounted once it is shown.
+            _unknownRow!.Show(finalDamage is >= 0 ? default : input.Modifiers.Unknown);
             for (var index = 0; index < Rows.Count; index++)
             {
                 var row = Rows[index];
-                var content = CardDiceLayout.Content(pair, thresholdDie, index, survival, unconditional, input.Modifiers.DefenseDice, fixedDefense);
+                var content = CardDiceLayout.Content(pair, thresholdDie, index, survival, unconditional, input.Modifiers.DefenseDice, fixedDefense, input.Modifiers.AttackDice);
                 // Number font follows the live dice; symbols use normal UI typography/fallback.
                 NativeUi.CopyTextFormat(row.Number, attackPoint.Field("txt_Point")!);
                 var color = index == 0 ? Color.red : Color.cyan;
@@ -109,7 +112,7 @@ internal static class CardDiceUi
                     if (label == row.Empty) format.SetField("size", 60);
                     label.Set("textFormat", format);
                 }
-                row.Number.Set("text", content.Die > 0 ? content.Die.ToString() : "");
+                row.Number.Set("text", content.Die > 0 || content.Symbol == "=" ? content.Die.ToString() : "");
                 row.Comparison.Set("text", content.Symbol);
                 row.Empty.Set("text", content.Empty);
                 // Never hide the disc or its parent on an unavailable threshold.
@@ -142,26 +145,26 @@ internal static class CardDiceUi
         image.Set("filter", filter);
     }
 
-    internal static void BindResolved(RuntimeObject ui, RuntimeObject attacker, RuntimeObject defender, PreRollCombat input)
+    internal static void BindResolved(RuntimeObject ui, RuntimeObject attacker, RuntimeObject defender, PreRollCombat input,
+        (int? Attack, int? Defense)? rolled = null)
     {
         if (!Plugin.KoMinimum.Value) { Clear(); return; }
         // A counterattack swaps the director's actors: its roll starts a new exchange.
-        if (_attacker?.Pointer != attacker.Pointer || _defender?.Pointer != defender.Pointer) { _rawDie = 0; _totals = _final = false; }
-        _resolvedUi = ui; _attacker = attacker; _defender = defender; _resolvedInput = input;
+        if (_attacker?.Pointer != attacker.Pointer || _defender?.Pointer != defender.Pointer) _final = false;
+        _resolvedUi = ui; _attacker = attacker; _defender = defender; _resolvedInput = input; _rolled = rolled;
     }
 
     internal static void ShowFinal(RuntimeObject ui, RuntimeObject point, int hp, int damage,
         HitModifiers modifiers, int die, int defenseDie = 0)
     {
-        if (_resolvedUi?.Pointer != ui.Pointer || _key == null || die is < 1 or > 6) return;
+        if (_resolvedUi?.Pointer != ui.Pointer || _key == null || die is < 0 or > 6 || die == 0 && !modifiers.AttackDice.ZeroOnly) return;
         _final = true;
         Show(ui, point, _resolvedInput with { Hp = hp, Modifiers = modifiers }, null, false, false, die, damage,
-            defenseDie is >= 1 and <= 6 ? defenseDie : 0);
+            defenseDie is >= 1 and <= 6 ? defenseDie : 0, revealed: true);
         _holdUntil = Time.unscaledTime + CardDiceLayout.ResolvedHold;
     }
 
-    // Same visible-number polling as the damage indicator. The roll is written before
-    // the movie ends; only group_Point/number visibility reveals it publicly.
+    // The attack roll is written before its movie ends; only group_Point/number visibility reveals it publicly.
     internal static void PollResolved()
     {
         if (_resolvedUi == null) return;
@@ -179,44 +182,15 @@ internal static class CardDiceUi
             defense.Field("showResult")!.Get<int>("selectedIndex")))
         { Clear(); return; } // Defense-only conditions must not linger after choosing dodge.
         var attackState = attack.Field("showPoint")!.Get<int>("selectedIndex");
-        var defensePoint = defense.Field("com_Point")!;
-        if (CardKoMinimum.RevealedDie(attackState, GameUi.Visible(number), die)) _rawDie = die;
-        // Dice_Show turns both panels to showPoint 2, plays the defender's die and lists the card bonuses; the labels keep
-        // the raw dice until the totals' PointChange (RefreshPoint_*(2, total)), which ends this pre-total stage. Only the
-        // attacker's counts: the defender's also plays the moment its die settles on 1-5 (RefreshDice_Defender's onPlayEnd;
-        // a 6 plays MaxPoint), which ended the stage before any non-6 defense die was read (2026-11-06: only 6s were fixed).
-        _totals |= point.Call("GetTransition", "PointChange")!.Get<bool>("playing");
-        var preTotals = attackState == 2 && !_totals && _rawDie > 0 && die == _rawDie && GameUi.Visible(number);
-        if (!CardKoMinimum.RevealedDie(attackState, GameUi.Visible(number), die) && !preTotals)
-        { Hide(); return; } // Retain the last revealed condition briefly; never read totals as dice.
-        var input = _resolvedInput with {
+        if (!CardKoMinimum.RevealedDie(attackState, GameUi.Visible(number), die, _resolvedInput.Modifiers.AttackDice.ZeroOnly))
+        { Hide(); return; } // Retain the last revealed condition briefly; the server's decided hit settles it (ShowFinal).
+        var input = CardKoMinimum.WithRolled(_resolvedInput with {
             AttackMin = _attacker.Field("minATK")!.Value<int>(),
             AttackMax = _attacker.Field("maxATK")!.Value<int>(),
             DefenseMin = _defender.Field("minDEF")!.Value<int>(),
             DefenseMax = _defender.Field("maxDEF")!.Value<int>()
-        };
-        // The defender's raw die settles the outcome the moment it is public, before the totals are shown (2026-10-24).
-        var defenseNumber = defensePoint.Field("txt_Point")!;
-        int.TryParse(defenseNumber.Get("text")?.String(), out var defenseDie);
-        var defenseState = defense.Field("showPoint")!.Get<int>("selectedIndex");
-        var defenseShown = CardKoMinimum.RevealedDefenseDie(defenseState, GameUi.Visible(defenseNumber), defenseDie)
-            || preTotals && defenseState == 2 && GameUi.Visible(defenseNumber) && defenseDie is >= 1 and <= 6;
-        if (!defenseShown || !input.Modifiers.DefenseDice.Contains(defenseDie)) defenseDie = 0;
-        if (defenseDie > 0) input = input with { Modifiers = input.Modifiers with { DefenseDice = DiceFaces.Range(defenseDie, defenseDie) } };
-        if (preTotals)
-        {
-            // Revealed card bonuses replace their public ranges (user-requested 2026-11-06). A sum outside the server's
-            // public range means an effect the panel split differently: keep the range rather than trust it.
-            var values = _resolvedUi.Field("com_value");
-            var attackValue = FightValues.Revealed(values, true);
-            var defenseValue = FightValues.Revealed(values, false);
-            if (attackValue is { } a && a >= input.AttackMin && a <= input.AttackMax) input = input with { AttackMin = a, AttackMax = a };
-            if (defenseValue is { } d && d >= input.DefenseMin && d <= input.DefenseMax) input = input with { DefenseMin = d, DefenseMax = d };
-            if (Plugin.Diagnostics.IsRecording)
-                Plugin.Diagnostics.State("koMinimum.values", $"attack={attackValue?.ToString() ?? "hidden"}; defense={defenseValue?.ToString() ?? "hidden"}; "
-                    + $"attackExact={input.AttackMin == input.AttackMax}; defenseExact={input.DefenseMin == input.DefenseMax}; defenseDie={defenseDie}");
-        }
-        Show(_resolvedUi, point, input, null, false, false, _rawDie, fixedDefense: defenseDie);
+        }, _rolled);
+        Show(_resolvedUi, point, input, null, false, false, die, revealed: true);
     }
 
     internal static void Animate()
@@ -240,7 +214,7 @@ internal static class CardDiceUi
     }
     internal static void Clear(bool keepObservation = false)
     {
-        if (!keepObservation) { _resolvedUi = _attacker = _defender = null; _rawDie = 0; _totals = _final = false; }
+        if (!keepObservation) { _resolvedUi = _attacker = _defender = null; _final = false; _rolled = null; }
         _hideAt = -1; _holdUntil = 0;
         GameUi.Dispose(_panel); _panel = _title = _state = _status = null; _unknownRow = null; _help = null; _key = null; Rows.Clear();
     }

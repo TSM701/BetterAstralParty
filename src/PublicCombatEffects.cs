@@ -15,6 +15,7 @@ internal static class PublicCombatEffects
         if (count is < 0 or > 256) return null;
         var adjustment = 0;
         var mind = false;
+        var precision = 0;
         var applied = new HashSet<int>();
         var evidence = Plugin.Diagnostics.IsRecording ? new List<string>(count) : null;
         var unknown = new SortedSet<int>();
@@ -50,6 +51,7 @@ internal static class PublicCombatEffects
             var stacks = buff.Get<int>("Progress");
             if (stacks is < 0 or > 10000) return null;
             if (id == 10012 && stacks > 0) mind = true;
+            if (id == 1251201) precision = Math.Max(precision, stacks);
             // A stacking buff is one icon with a count. Card 20008 (Berserk) makes a new buff each time it is played, and
             // each adds: 2026-11-06, a hero with two shown took 8 from ATK 14 against DEF 8.
             if (!applied.Add(id) && id != 2000801) continue;
@@ -135,12 +137,12 @@ internal static class PublicCombatEffects
         }
         var result = new HitModifiers(adjustment, damageCap, immune)
             { ShushuShield = applied.Contains(1071101), MinimumHp = minimumHp, OnHitBonus = onHitBonus, Unknown = Unknown(unknown) };
-        result = ApplyDice(result, player!, source, applied, mind, role);
+        result = ApplyDice(result, player!, source, applied, mind, precision, role);
         return result.Valid ? result : null;
     }
 
     private static HitModifiers ApplyDice(HitModifiers result, RuntimeObject target, RuntimeObject? source,
-        HashSet<int> targetBuffs, bool mind, string role)
+        HashSet<int> targetBuffs, bool mind, int precision, string role)
     {
         // Only public profile passives and the same filtered native icon list as BattleStatusUi.
         // Final observed numbers still use HitDamage even if a pre-roll rule is unsupported.
@@ -149,7 +151,8 @@ internal static class PublicCombatEffects
             var actor = side == 0 ? target : source;
             if (actor == null) continue;
             var capped = side == 0 && targetBuffs.Contains(1250101);
-            var unsupported = side == 0 && targetBuffs.Contains(1250201);
+            var marked = side == 0 && targetBuffs.Contains(1250201);
+            var unsupported = false;
             if (side == 1 && actor.Get("buffContainer") is { } container)
             {
                 var buffs = container.Call("GetShowBuffs", actor, false)?.Field("Item1");
@@ -160,10 +163,20 @@ internal static class PublicCombatEffects
                     var buff = buffs!.Call("get_Item", i)!;
                     if (buff.Get<int>("DelayRound") > 0) continue;
                     capped |= buff.Get<int>("BuffId") == 1250101;
-                    unsupported |= buff.Get<int>("BuffId") == 1250201;
+                    marked |= buff.Get<int>("BuffId") == 1250201;
                 }
             }
-            // Zero-roll/conditional precedence not audited; on the attacker it only affects pre-roll views.
+            // STRBuff 1250201 (Moses's 약점 반격): "모제스와 교전 시, 공격 및 방어 주사위가 0이 됩니다". Character 125 is Moses
+            // (CharacterHandle.Id, independent of skins). Logged 2026-11-08: a marked monster's shown attack and defense
+            // dice were 0 against Moses (fights 5, 6, 13, 23, 24) and ordinary against hero 102 (fight 43).
+            var zeroed = false;
+            if (marked)
+            {
+                var opponent = (side == 0 ? source : target)?.Field("player")?.Field("characterConfig")?.Field("Id")?.Value<int>();
+                if (opponent is null or <= 0) unsupported = true;
+                else zeroed = opponent == 125;
+            }
+            // A mark whose opponent cannot be told apart from Moses; on the attacker it only affects pre-roll views.
             if (unsupported) result = side == 0 ? result with { DiceUnsupported = true } : result with { AttackUnsupported = true };
             var faces = default(DiceFaces);
             if (capped)
@@ -180,8 +193,9 @@ internal static class PublicCombatEffects
                 var id = passives!.Call("get_Item", i)!.Value<int>();
                 if (side == 0 && id == 104011)
                 {
-                    // Skill104011.Params: movement face, dodge face, pass-through damage, candy IDs/weights.
-                    var fixedFace = Parameter("Skill", id, 1, 9, 10401101);
+                    // Skill104011.Params: movement face, dodge face, pass-through damage, candy IDs/weights. Since the
+                    // 2026-11-12 tables its BuffId also lists 20004 (闪身, "always chooses Evade"), a standard icon.
+                    var fixedFace = Parameter("Skill", id, 1, 9, 10401101, 2);
                     if (fixedFace is null) return result with { DiceUnsupported = true };
                     result = result with { DodgeDice = DiceFaces.Range(fixedFace.Value, fixedFace.Value) };
                 }
@@ -194,6 +208,22 @@ internal static class PublicCombatEffects
                     if (maximum is null) return result with { AttackUnsupported = true };
                     faces = DiceFaces.Range(mind ? 3 : maximum.Value, maximum.Value);
                 }
+            }
+            // Moses's 정밀 기술 (buff 1251201, STRSkill 12512): "the dodge die always comes out above the current stack count";
+            // Params [3 max stacks, ATK +2 per stack, dodge floor +1 per stack], the ATK already in the native total. Its
+            // weighting is not observed: the faces above the floor count equally, as a die that never shows a lower face.
+            if (side == 0 && precision > 0)
+            {
+                var step = Parameter("Skill", 12512, 2, 3, 1251201);
+                if (step is null or < 0 || result.DodgeDice.Mask != 0) return result with { DiceUnsupported = true };
+                result = result with { DodgeDice = DiceFaces.Range(Math.Min(6, 1 + precision * step.Value), 6) };
+            }
+            // The marked side's dice are 0 whatever else limits them; a defender's die serves its dodge too. Only a monster
+            // carries the mark (skill 125020), so no hero dice passive meets it.
+            if (zeroed)
+            {
+                faces = DiceFaces.Range(0, 0);
+                if (side == 0) result = result with { DodgeDice = faces };
             }
             // The native catalogue proves support, not weighting/clamp/reroll semantics.
             // Keep thresholds usable; do not claim an exact pre-roll probability for restricted ranges.
@@ -265,7 +295,8 @@ internal static class PublicCombatEffects
         {
             var ids = config.Get(kind == "Skill" ? "BuffId" : "BuffIds")!;
             if (ids.Get<int>("Count") != expectedBuffCount) return null;
-            var associated = false;
+            // expectedBuffCount 0: a config that grants no buff (card 10010's final-ATK percent).
+            var associated = expectedBuffCount == 0;
             for (var i = 0; i < expectedBuffCount; i++)
                 associated |= ids.Call("get_Item", i)!.Value<int>() == buffId;
             if (!associated) return null;

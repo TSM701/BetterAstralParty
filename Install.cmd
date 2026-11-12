@@ -4,6 +4,8 @@ set "BAP_ENTRYROOT=%~dp0"
 set "BAP_MAINTENANCE_CWD=%CD%"
 "%SystemRoot%\System32\chcp.com" 65001 >nul
 set "BAP_PREVIEW=0"
+set "BAP_WINDOW="
+if "%~1"=="" set "BAP_WINDOW=--window"
 :arguments
 if "%~1"=="" goto bootstrap
 if /i "%~1"=="-WhatIf" set "BAP_PREVIEW=1"
@@ -29,11 +31,12 @@ if not exist "%BAP_BOOTLOG%" >"%BAP_BOOTLOG%" echo BAP-BOOTSTRAP-START: Capture 
 if not exist "\\?\%BAP_ENTRYROOT%artifacts\BetterAstralParty-Setup.exe" goto missing
 pushd "%BAP_ENTRYROOT%artifacts"
 if errorlevel 1 goto missing
+if defined BAP_WINDOW goto window
 if exist "\\?\%BAP_ENTRYROOT%package-manifest.json" goto packaged
-"BetterAstralParty-Setup.exe" --development --install %*
+".\BetterAstralParty-Setup.exe" --development --install %*
 goto result
 :packaged
-"BetterAstralParty-Setup.exe" --install %*
+".\BetterAstralParty-Setup.exe" --install %*
 :result
 set "BAP_EXIT=%errorlevel%"
 popd
@@ -59,5 +62,18 @@ echo Bootstrap log: "%BAP_BOOTLOG%"
 pause
 exit /b 1
 :preview
+pause
+exit /b %BAP_EXIT%
+:window
+rem The window shows the result and adds its exit to this log, so the console closes as soon as the window starts.
+set "BAP_WINDOW_MODE=--development"
+if exist "\\?\%BAP_ENTRYROOT%package-manifest.json" set "BAP_WINDOW_MODE="
+start "" ".\BetterAstralParty-Setup.exe" --window %BAP_WINDOW_MODE% --install
+set "BAP_EXIT=%errorlevel%"
+popd
+>>"%BAP_BOOTLOG%" echo BAP-BOOTSTRAP-WINDOW: started %BAP_EXIT%
+if "%BAP_EXIT%"=="0" exit /b 0
+echo Native installer could not start. No maintenance executed.
+echo Bootstrap log: "%BAP_BOOTLOG%"
 pause
 exit /b %BAP_EXIT%

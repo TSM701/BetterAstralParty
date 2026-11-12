@@ -39,9 +39,30 @@ namespace BetterAstralParty.Installation
                 Console.SetError(new StreamWriter(Console.OpenStandardError(), new UTF8Encoding(false)) { AutoFlush = true });
             }
         }
+        // Console front end. The install window (NativeSetupWindow) runs the same Operate with its own output and prompts.
         internal static int Run(string[] args)
         {
-            ConsoleReady(); _run = Guid.NewGuid().ToString("N"); Observations.Clear(); _preview = Array.Exists(args, arg => arg.TrimStart('-').Equals("whatif", StringComparison.OrdinalIgnoreCase) || arg.TrimStart('-').Equals("checkonly", StringComparison.OrdinalIgnoreCase));
+            ConsoleReady(); Exception? failure;
+            return Operate(args, line => Console.WriteLine(line), Consent, out failure, line => Console.Error.WriteLine(line));
+        }
+        // A development checkout's window route: the console that started it has closed, so this forwards to the pinned
+        // package without one and only a failure of the forwarding itself is shown (the pinned window shows the rest).
+        internal static int RunWindowed(string[] args)
+        {
+            Exception? failure;
+            var code = Operate(args, line => { }, prompt => null, out failure);
+            if (failure != null) {
+                var action = RecoveryAction(failure);
+                MessageBoxW(IntPtr.Zero, failure.Message + (action == null ? "" : "\r\n\r\n" + action), "BetterAstralParty", 0x10);
+            }
+            return code;
+        }
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int MessageBoxW(IntPtr owner, string text, string caption, uint type);
+        private static Action<string> _say = line => Console.WriteLine(line);
+        internal static int Operate(string[] args, Action<string> say, Func<string, string?> ask, out Exception? failure, Action<string>? warn = null)
+        {
+            _say = say; failure = null; warn ??= say;
+            _run = Guid.NewGuid().ToString("N"); Observations.Clear(); _preview = Array.Exists(args, arg => arg.TrimStart('-').Equals("whatif", StringComparison.OrdinalIgnoreCase) || arg.TrimStart('-').Equals("checkonly", StringComparison.OrdinalIgnoreCase));
             IDisposable? diagnostics = null; var priorWaiting = NativeSteamMaintenance.WaitingDiagnostic;
             NativeSteamMaintenance.WaitingDiagnostic = Waiting;
             try {
@@ -59,13 +80,13 @@ namespace BetterAstralParty.Installation
                 string? steamObservation = null;
                 var steam = updateOnly ? null : FindSteamRoot(account == 0, value => {
                     steamObservation = value;
-                    Console.WriteLine("Steam 자동 탐색을 사용할 수 없어 Steam 라이브러리 항목은 변경하지 않습니다. / Steam discovery unavailable; shortcuts will remain unchanged.");
+                    say("Steam 자동 탐색을 사용할 수 없어 Steam 외부 게임은 변경하지 않습니다. / Steam discovery unavailable; shortcuts will remain unchanged.");
                 });
                 try { _game = ResolveOperationGame(supplied, steam, _package, removing, emergency); }
                 catch (InvalidOperationException) when (supplied == null && !_preview) {
                     var candidates = NativeSteamMaintenance.FindGameDirectories(steam, _package, Observe);
-                    for (var index = 0; index < candidates.Count; index++) Console.WriteLine((index + 1).ToString(CultureInfo.InvariantCulture) + ": " + candidates[index]);
-                    var choice = Consent("INT 게임 설치 폴더를 입력하세요 (Astral Party 또는 8vJXnINT). 빈 값은 취소합니다. / Enter INT game installation folder; blank cancels.");
+                    for (var index = 0; index < candidates.Count; index++) say((index + 1).ToString(CultureInfo.InvariantCulture) + ": " + candidates[index]);
+                    var choice = ask("INT 게임 설치 폴더를 입력하세요 (Astral Party 또는 8vJXnINT). 빈 값은 취소합니다. / Enter INT game installation folder; blank cancels.");
                     if (string.IsNullOrWhiteSpace(choice)) throw new InvalidOperationException("Maintenance cancelled; no game files changed.");
                     int selected; if (int.TryParse(choice, NumberStyles.None, CultureInfo.InvariantCulture, out selected) && selected > 0 && selected <= candidates.Count) choice = candidates[selected - 1];
                     _game = ResolveOperationGame(choice, steam, _package, removing, emergency);
@@ -74,40 +95,43 @@ namespace BetterAstralParty.Installation
                     if (steam == null && account != 0) throw new InvalidOperationException("Cannot verify the requested Steam account without its installation directory.");
                     if (steam != null) try { account = NativeSteamMaintenance.ResolveAccount(steam, account); }
                         catch (Exception error) when (account == 0 && (error is SteamProfileUnavailableException || error is IOException || error is InvalidDataException || error is InvalidOperationException || error is UnauthorizedAccessException || error is System.Security.SecurityException || error is DecoderFallbackException)) {
+                            // Only a 1.3.x takeover needs the profile; NativeInstall says so when it does.
                             Observe("NativeInstallShortcut: action=Skipped; reason=SteamProfileUnavailable; exception=" + error.GetType().Name
                                 + "; hresult=0x" + error.HResult.ToString("X8", CultureInfo.InvariantCulture));
-                            Console.WriteLine("Steam 계정을 확인하지 못해 파일 설치만 진행합니다. Steam 라이브러리에 Astral Party - BetterAstralParty가 추가되지 않습니다. / Steam profile unavailable; install files without changing shortcuts.");
                         }
                 }
                 var recoveryPlan = Get(values, "recoveryplan");
                 using (var bundle = new NativeMaintenanceBundle(_package, _game, recoveryPlan == null ? null : NativeSteamMaintenance.ResolveUserPath(recoveryPlan))) {
                     _version = bundle.Version;
-                    Console.WriteLine("INT installation: " + _game);
+                    say("INT installation: " + _game);
                     if (!_preview) diagnostics = SetupHost.BeginInstallerDiagnostics(_game, _version);
                     SetupHost.ValidateMaintenancePaths(_game, NativeMaintenance.JournalRoot(_game));
                     if (_operation == "Installation") {
                         if (steamObservation != null) Observe(steamObservation);
-                        NativeInstall.Run(bundle, updateOnly, steam, account, Consent, Console.WriteLine, restartSteam: values.ContainsKey("restartsteam"), checkOnly: _preview, observation: Observe);
+                        var console = Get(values, "loaderconsole");
+                        NativeInstall.Run(bundle, updateOnly, steam, account, ask, say, restartSteam: values.ContainsKey("restartsteam"), checkOnly: _preview, observation: Observe,
+                            hideConsole: console == null ? (bool?)null : console.Equals("Off", StringComparison.OrdinalIgnoreCase));
                     }
-                    else if (emergency) NativeEmergencyUninstall.Run(bundle, steam, account, _preview, Consent, Console.WriteLine);
-                    else NativeUninstall.Run(bundle, steam, account, Get(values, "restoreloader") ?? "Keep", _preview, Consent, Console.WriteLine, value => {
+                    else if (emergency) NativeEmergencyUninstall.Run(bundle, steam, account, _preview, ask, say);
+                    else NativeUninstall.Run(bundle, steam, account, Get(values, "restoreloader") ?? "Keep", _preview, ask, say, value => {
                         Observe(value); if (steamObservation != null) { Observe(steamObservation); steamObservation = null; }
                     });
                 }
-                Console.WriteLine((_preview ? "검사 완료. 변경 없음. / Check completed; no maintenance executed." : "작업 완료. / Maintenance completed.") + " Version: " + _version + "; run: " + _run);
+                say((_preview ? "검사 완료. 변경 없음. / Check completed; no maintenance executed." : "작업 완료. / Maintenance completed.") + " Version: " + _version + "; run: " + _run);
                 SaveObservations();
                 return 0;
             } catch (Exception error) {
-                if (!_preview) { SetupHost.RecordInstallerFailure("BootstrapGate", error); var path = Failure(error); if (path != null) Console.WriteLine("Debug log: " + path); }
-                var action = RecoveryAction(error); if (action != null) Console.Error.WriteLine(action);
-                Console.Error.WriteLine(error.Message); return 1;
+                failure = error;
+                if (!_preview) { SetupHost.RecordInstallerFailure("BootstrapGate", error); var path = Failure(error); if (path != null) say("Debug log: " + path); }
+                var action = RecoveryAction(error); if (action != null) warn(action);
+                warn(error.Message); return 1;
             } finally { NativeSteamMaintenance.WaitingDiagnostic = priorWaiting; diagnostics?.Dispose(); }
         }
         internal static Dictionary<string, string?> Options(string[] args)
         {
             var result = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-            var flags = new HashSet<string>(new[] { "install", "uninstall", "force-uninstall", "development", "updateonly", "restartsteam", "whatif", "checkonly" }, StringComparer.OrdinalIgnoreCase);
-            var fields = new HashSet<string>(new[] { "gameroot", "accountid", "recoveryplan", "restoreloader" }, StringComparer.OrdinalIgnoreCase);
+            var flags = new HashSet<string>(new[] { "install", "uninstall", "force-uninstall", "development", "updateonly", "restartsteam", "whatif", "checkonly", "window" }, StringComparer.OrdinalIgnoreCase);
+            var fields = new HashSet<string>(new[] { "gameroot", "accountid", "recoveryplan", "restoreloader", "loaderconsole" }, StringComparer.OrdinalIgnoreCase);
             for (var at = 0; at < args.Length; at++) {
                 var name = args[at].TrimStart('-');
                 if (result.ContainsKey(name) || (!flags.Contains(name) && !fields.Contains(name))) throw new ArgumentException("Unsupported/duplicate maintenance argument: " + args[at]);
@@ -115,6 +139,9 @@ namespace BetterAstralParty.Installation
                 else { if (++at == args.Length || args[at].Length == 0) throw new ArgumentException("Maintenance argument value required."); result.Add(name, args[at]); }
             }
             if (Array.FindAll(new[] { "install", "uninstall", "force-uninstall" }, result.ContainsKey).Length != 1) throw new ArgumentException("Select exactly one maintenance operation.");
+            var console = Get(result, "loaderconsole");
+            if (console != null && (!result.ContainsKey("install") || result.ContainsKey("updateonly") || !console.Equals("Off", StringComparison.OrdinalIgnoreCase) && !console.Equals("Keep", StringComparison.OrdinalIgnoreCase)))
+                throw new ArgumentException("LoaderConsole must be Off or Keep and belongs to a normal installation.");
             if (result.ContainsKey("install") && result.ContainsKey("restoreloader") || result.ContainsKey("uninstall") && (result.ContainsKey("updateonly") || result.ContainsKey("restartsteam") || result.ContainsKey("recoveryplan"))) throw new ArgumentException("Unsupported argument for this maintenance operation.");
             if (result.ContainsKey("force-uninstall") && (result.ContainsKey("updateonly") || result.ContainsKey("restartsteam") || result.ContainsKey("recoveryplan") || result.ContainsKey("restoreloader"))) throw new ArgumentException("Emergency removal preserves loader settings and cannot install or adopt a recovery plan.");
             var accountText = Get(result, "accountid"); uint account;
@@ -191,7 +218,7 @@ namespace BetterAstralParty.Installation
                         forward.Add(args[at]);
                     }
                     forward.Add("-GameRoot"); forward.Add(game);
-                    Console.WriteLine("개발 폴더 실행 기준 / Development maintenance baseline: " + version);
+                    _say("개발 폴더 실행 기준 / Development maintenance baseline: " + version);
                     using (var child = Process.Start(new ProcessStartInfo { FileName = WindowsPath.ForProcess(image.Path), Arguments = CommandLine(forward), WorkingDirectory = WindowsPath.ForProcess(package), UseShellExecute = false }) ?? throw new InvalidOperationException("Native setup tool could not start.")) { child.WaitForExit(); pointer.Recheck(); manifest.Recheck(); image.Recheck(); return child.ExitCode; }
                 }
             }
@@ -210,7 +237,7 @@ namespace BetterAstralParty.Installation
             }
             return string.Join(" ", output);
         }
-        private static void Observe(string value) { if (!_preview) { Console.WriteLine(value); if (Observations.Count < 16) Observations.Add(value.Substring(0, Math.Min(value.Length, 2048))); } }
+        private static void Observe(string value) { if (!_preview) { _say(value); if (Observations.Count < 16) Observations.Add(value.Substring(0, Math.Min(value.Length, 2048))); } }
         internal static void SaveObservations()
         { if (!_preview && Observations.Count != 0) SaveLog("BetterAstralParty Maintenance observation\r\nRun: " + _run + "\r\nVersion: " + _version + "\r\n" + string.Join("\r\n", Observations)); }
         internal static void SaveCompatibilityWarnings(string root, string[] warnings)

@@ -200,7 +200,7 @@ internal static partial class TestCommands
         var surfaceCalls = plugin.MainModule.GetType("BetterAstralParty.AdviceBadge").Methods.Single(method => method.Name == ".ctor").Body.Instructions.Count(instruction => instruction.Operand is MethodReference method && method.Name == ".ctor" && method.DeclaringType.FullName == "BetterAstralParty.NativeUi/Surface");
         Check(cardCalls == 1 && surfaceCalls == 1, "Compiled CardUi -> AdviceBadge -> owned Surface chain");
         Contains(ReadSource(context, "src/Plugin.cs"), new[] { "\"배경 불투명도\", 1f", "AcceptableValueRange<float>(0f, 1f)" }, "Default 100 percent opacity and bounds");
-        Contains(ReadSource(context, "src/ModUi.cs"), new[] { "\"ZoomOutLimit\" => Plugin.ZoomOutLimit, \"IndicatorHideDistance\" => Plugin.IndicatorHideDistance, _ => Plugin.Opacity", "SliderEntry(action).Value = percent * 0.01f;" }, "Opacity slider writes the setting");
+        Contains(ReadSource(context, "src/ModUi.cs"), new[] { "\"ZoomOutLimit\" => Plugin.ZoomOutLimit, \"IndicatorHideDistance\" => Plugin.IndicatorHideDistance, _ => Plugin.Opacity", "SliderEntry(action).Value = MenuLayout.SliderStored(action, percent);" }, "Opacity slider writes the setting");
         Contains(ReadSource(context, "src/MenuLayout.cs"), new[] { "\"Opacity\" }", "_ => (0, 100)" }, "Opacity slider range includes zero");
         static double Luminance(string text) { var values = new[] { 0, 2, 4 }.Select(index => Convert.ToInt32(text.Substring(index, 2), 16) / 255d).Select(value => value <= .04045 ? value / 12.92 : Math.Pow((value + .055) / 1.055, 2.4)).ToArray(); return .2126 * values[0] + .7152 * values[1] + .0722 * values[2]; }
         Check((Luminance("FFFFFF") + .05) / (Luminance("000000") + .05) >= 7, "White text and black outline contrast");
@@ -229,6 +229,64 @@ internal static partial class TestCommands
         Contains(notification, new[] { "Shell_NotifyIcon(0,", "Shell_NotifyIcon(1,", "Shell_NotifyIcon(2,", "0x20 | 0x10 | 0x40", "0x1 | 0x10 | 0x80", "ProcessExit", "if (!_added) return;" }, "Bounded Windows notification lifecycle");
         var clear = notification.IndexOf("_data.Flags = 0x20 | 0x10; _data.Info = \"\";", StringComparison.Ordinal);
         Check(clear >= 0 && clear < notification.IndexOf("Shell_NotifyIcon(2,", StringComparison.Ordinal), "Hide empties the shown balloon before removing the icon, so refocus takes the toast down");
+        // CardChoiceTimer (2026-11-12): the card-choice window's request no longer cancels its input timer.
+        MethodDefinition Method(string type, string name) => types[type].Methods.Single(method => method.Name == name);
+        var operation = types["GameLogic.OperationTimer"];
+        Check(operation.Methods.Count(method => method.Name == "GetOperateTimer" && method.IsStatic && method.ReturnType.FullName == "UnityTimer.Timer" && method.Parameters.Count == 1 && method.Parameters[0].ParameterType.FullName == "System.Int64") == 1
+            && operation.Methods.Count(method => method.Name == "CancelOperatTimer" && method.IsStatic && method.ReturnType.FullName == "System.Void" && method.Parameters.Count == 1 && method.Parameters[0].ParameterType.FullName == "System.Int64") == 1, "Native input timer reader and cancel by action Sn");
+        var downtime = Il(Method("GameLogic.OperationTimer", "ActionDownTime"));
+        var refuse = Regex.Match(downtime, @"::ContainsKey\([^)]*\)\nIL_[0-9a-f]+: brtrue(?:\.s)? (IL_[0-9a-f]+)");
+        Check(refuse.Success && Regex.IsMatch(downtime, refuse.Groups[1].Value + @": ldnull\nIL_[0-9a-f]+: ret"), "Native ActionDownTime starts no second timer under a registered Sn");
+        Check(types["UI.ChooseRoundCardWindow"].Fields.Single(field => field.Name == "_sn").FieldType.FullName == "System.Int64"
+            && Regex.IsMatch(Il(Method("UI.ChooseRoundCardWindow", "OnHide")), @"ldc.i4.0\nIL_[0-9a-f]+: conv.i8\nIL_[0-9a-f]+: stfld System.Int64 UI.ChooseRoundCardWindow::_sn")
+            && Regex.IsMatch(Il(Method("UI.ChooseRoundCardWindow", "ChooseRoundCard")), @"^IL_0000: ldarg.0\nIL_0001: ldfld System.Int64 UI.ChooseRoundCardWindow::_sn\nIL_[0-9a-f]+: brtrue")
+            && Il(Method("UI.ChooseRoundCardWindow", "AutoChooseRoundCard")).Contains("ChooseRoundCardWindow::ChooseRoundCard()", StringComparison.Ordinal),
+            "A closed card-choice window clears its Sn, and its auto choice then sends nothing");
+        foreach (var name in new[] { "ShowBuildShopCard", "ShowRoundCard" })
+            Check(types.Values.Where(type => type.FullName.StartsWith("UI.ChooseRoundCardWindow/<" + name + ">", StringComparison.Ordinal)).SelectMany(type => type.Methods)
+                .Any(method => Il(method) is var body && body.Contains("OperationTimer::ActionDownTime", StringComparison.Ordinal) && body.Contains("ChooseRoundCardWindow::AutoChooseRoundCard", StringComparison.Ordinal)), "Card-choice timer auto-picks through the window: " + name);
+        // The bug itself; when the game cancels the timer again this fails, and CardChoiceTimer can be retired (it is a no-op then).
+        Check(Il(Method("UI.ChooseRoundCardWindow", "ChooseRoundCard")).Contains("CardLogic::RequestBuildingCardS2C", StringComparison.Ordinal)
+            && !Il(Method("GameLogic.CardLogic", "RequestBuildingCardS2C")).Contains("CancelOperatTimer", StringComparison.Ordinal)
+            && Il(Method("GameLogic.CardLogic", "RequestRoundCard")).Contains("OperationTimer::CancelOperatTimer", StringComparison.Ordinal),
+            "Native card choice still leaves its input timer (2026-11-12 game bug); CardChoiceTimer is still needed");
+        var choice = ReadSource(context, "src/CardChoiceTimer.cs");
+        Contains(choice, new[] { "\"GetOperateTimer\", _sn", "\"CancelOperatTimer\", due", "InputAttentionState.StaleChoiceTimer(", "IsPVE", "IsReplay", "\"ChooseRoundCardWindow\", maxDepth: 1", "Field<long>(\"_sn\")" }, "Card-choice timer workaround cancels only the closed window's own timer, PvE only");
+        Check(!Regex.IsMatch(Regex.Replace(choice, @"//[^\n]*", ""), @"Request\w*C2S|ActionDownTime|Call\(""(ChooseRoundCard|AutoChooseRoundCard|Hide)""|SetField\(|\.Set\("), "Card-choice timer workaround sends nothing and changes no window");
+        // HomeEscQuit (2026-11-12): Esc on the idle home asks the game's own quit question.
+        var box = types["UI.MessageBoxWindow"];
+        var ask = box.Methods.FirstOrDefault(method => method.Name == "ShowOKCancel" && method.Parameters.Count == 4); // RuntimeObject takes the first by name and count
+        Check(ask != null && ask.Parameters.Select(parameter => parameter.ParameterType.FullName).SequenceEqual(new[] { "System.Int32", "System.Action", "System.Action", "System.Boolean" })
+            && types["Core.GameManager"].Methods.Count(method => method.Name == "CloseGame" && method.IsPublic && !method.IsStatic && method.ReturnType.FullName == "System.Void" && method.Parameters.Count == 0) == 1
+            && Il(Method("Core.GameManager", "CloseGame")).Contains("Application::Quit()", StringComparison.Ordinal), "Native quit question by message ID, and CloseGame quits");
+        var exitGame = types.Values.Where(type => type.FullName.StartsWith("UI.SettingWindow/", StringComparison.Ordinal)).SelectMany(type => type.Methods).Where(method => method.HasBody).ToArray();
+        Check(exitGame.Any(method => method.Name == "MoveNext" && method.DeclaringType.Name.StartsWith("<ExitGame>", StringComparison.Ordinal)
+                && Regex.IsMatch(Il(method), @"ldc.i4 1014\n(?:IL_[0-9a-f]+: [^\n]*\n)+?IL_[0-9a-f]+: callvirt [^\n]*MessageBoxWindow::ShowOKCancel\(System.Int32,"))
+            && exitGame.Any(method => method.Name.StartsWith("<ExitGame>", StringComparison.Ordinal) && Il(method).Contains("GameManager::CloseGame()", StringComparison.Ordinal)),
+            "The settings' Exit Game asks message 1014 and quits through GameManager.CloseGame");
+        var keys = Il(Method("UI.MessageBoxWindow", "OnKeyDown"));
+        Check(Regex.IsMatch(keys, @"ldc.i4.s 27\n(?:IL_[0-9a-f]+: [^\n]*\n)+?IL_[0-9a-f]+: call [^\n]*MessageBoxWindow::OnClickCancel\(\)") && Regex.IsMatch(keys, @"ldc.i4.s 13\n(?:IL_[0-9a-f]+: [^\n]*\n)+?IL_[0-9a-f]+: call [^\n]*MessageBoxWindow::OnClickOk\(\)"),
+            "Native message box: Esc cancels and Enter confirms");
+        var message = types["UI.MessageBoxWindow/MessageInfo"];
+        string AsyncBody(string name) => Il(types.Values.Single(type => type.FullName.StartsWith("UI.MessageBoxWindow/<" + name + ">d__", StringComparison.Ordinal)).Methods.Single(method => method.Name == "MoveNext"));
+        var pop = AsyncBody("PopWindow"); var queue = AsyncBody("TryShow");
+        var set = Regex.Match(pop, @"stfld [^\n]*MessageBoxWindow::curMsg"); var show = pop.IndexOf("MessageBoxWindow::TryShowAsync()", StringComparison.Ordinal);
+        Check(box.Fields.Single(field => field.Name == "curMsg").FieldType.FullName == "UI.MessageBoxWindow/MessageInfo" && message.IsValueType
+            && message.Fields.Single(field => field.Name == "typeIndex").FieldType.FullName == "System.Int32"
+            && Regex.IsMatch(Il(message.Methods.Single(method => method.Name == "Reset")), @"^IL_0000: ldarg.0\nIL_0001: ldc.i4.m1\nIL_[0-9a-f]+: stfld System.Int32 UI.MessageBoxWindow/MessageInfo::typeIndex")
+            && set.Success && show > set.Index && queue.Contains("MessageInfo::typeIndex", StringComparison.Ordinal) && queue.Contains("::Push(", StringComparison.Ordinal),
+            "A native message box sets its message before the asynchronous show and queues a second one, so HomeEscQuit reads curMsg");
+        // The home's own keys. When the game answers Esc on the home itself this fails, and HomeEscQuit can be retired.
+        Check(Il(Method("UI.HomePanel", "OnKeyDown")).Contains("ldc.i4.s 13", StringComparison.Ordinal)
+            && !types.Values.Where(type => type.FullName.StartsWith("UI.HomePanel", StringComparison.Ordinal) || type.FullName.StartsWith("UI.BottomMenuPanel", StringComparison.Ordinal))
+                .SelectMany(type => type.Methods).Where(method => method.HasBody).Any(method => Il(method) is var body && body.Contains("ldc.i4.s 27", StringComparison.Ordinal)
+                    && Regex.IsMatch(body, "get_keyCode|Input::GetKey")), "The native home answers Enter only; HomeEscQuit is still needed");
+        var quit = ReadSource(context, "src/HomeEscQuit.cs");
+        Contains(quit, new[] { "GameUi.NotificationHome().Eligible && !UpdateNotificationUi.Open", "State.Step(Time.frameCount, idle, Input.GetKeyDown(KeyCode.Escape))", "box.Get<bool>(\"isShowing\")",
+            "Field<int>(\"typeIndex\") >= 0", "NativeDelegate.CreateDelegate(type, new Il2CppSystem.Object(game.Pointer), \"CloseGame\")", "box!.Call(\"ShowOKCancel\", QuitMessage, new RuntimeObject(_ok.Pointer), null, false)", "QuitMessage = 1014" },
+            "Home Esc asks the native quit question only on an idle home with no message box showing or queued");
+        Check(!Regex.IsMatch(Regex.Replace(quit, @"//[^\n]*", ""), @"Request\w*C2S|Application\.Quit|Call\(""(CloseGame|OnClickOk|Hide)""|SetField\(|\.Set\(|AddRelation|onKeyDown|DelegateSupport|ClassInjector|Il2CppSystem\.Action"),
+            "Home Esc quits only through the game's own OK, with a native delegate and no key handler");
     }
 
     private static void PvpSafety(DevContext context, string stage, Action<string> pin)
@@ -241,7 +299,7 @@ internal static partial class TestCommands
         foreach (var (name, value) in new[] { ("Pve", 4), ("CampaignPve", 6), ("PracticePve", 9), ("Pvenovice", 10), ("MutatorPve", 12) }) Check((int)types["MapModeType"].Fields.Single(field => field.Name == name).Constant == value, "Native PvE mode " + name);
         Check(Il(types["GameLogic.MatchData"].Methods.Single(method => method.Name == "Dispose")).Contains("_teamId", StringComparison.Ordinal), "Disposed matchmaking clears native team identity");
         var source = GeneralWithoutNamespace(ReadSource(context, "src/PvpSafety.cs")); var driver = ReadSource(context, "src/ModUi.cs"); var gate = driver.IndexOf("PvpSafety.Poll()", StringComparison.Ordinal);
-        foreach (var name in new[] { "PingFocusGuard.Tick()", "InputAttention.Tick()", "FocusAudio.Tick()", "GameUi.Tick()", "CharacterGuideUi.Tick()", "ModFont.Tick()", "CardPreviewUi.Tick()", "HandLayoutUi.Tick()", "BattleStatusUi.Tick()", "EncounterCounterUi.Tick()", "FieldBuffUi.Tick()", "ShushuShieldUi.Tick()", "MonsterMoveProbe.Tick()", "WalkDirectionUi.Tick()" })
+        foreach (var name in new[] { "PingFocusGuard.Tick()", "InputAttention.Tick()", "CardChoiceTimer.Tick()", "HomeEscQuit.Tick()", "FocusAudio.Tick()", "GameUi.Tick()", "CharacterGuideUi.Tick()", "ModFont.Tick()", "CardPreviewUi.Tick()", "HandLayoutUi.Tick()", "BattleStatusUi.Tick()", "EncounterCounterUi.Tick()", "FieldBuffUi.Tick()", "ShushuShieldUi.Tick()", "MonsterMoveProbe.Tick()", "FightDataProbe.Tick()", "WalkDirectionUi.Tick()" })
             Check(gate >= 0 && driver.IndexOf(name, StringComparison.Ordinal) > gate, "Feature after PvP gate " + name);
         foreach (var name in new[] { "Request", "SetField(", ".Set(", ".Call(" }) Check(!source.Contains(name, StringComparison.Ordinal), "Read-only PvP gate " + name);
         Check(driver.Contains("if (PvpSafety.Suspended) FocusAudio.Restore(); else FocusAudio.Tick();", StringComparison.Ordinal) && driver.IndexOf("FocusAudio.Tick()", StringComparison.Ordinal) < driver.IndexOf("if (pauseGameplay)", StringComparison.Ordinal), "Startup audio independent of gameplay readiness");

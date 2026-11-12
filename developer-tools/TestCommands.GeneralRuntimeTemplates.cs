@@ -530,9 +530,10 @@ sealed class RuntimeObject {
     internal T Value<T>()=>(T)Data["value"]!;
     internal string String()=>(string)Data["value"]!;
     internal RuntimeObject? Call(string name,params object[] args)=>name=="GetTransition"
-        ? Get("transition:"+(string)args[0]) : throw new Exception("Unexpected native call: "+name);
+        ? Get("transition:"+(string)args[0]) : name=="get_Item" ? ((List<RuntimeObject>)Data["items"]!)[(int)args[0]] : throw new Exception("Unexpected native call: "+name);
     internal static RuntimeObject Box(object value) { var result=new RuntimeObject(); result.Data["value"]=value; return result; }
 }
+static class Time { internal static float unscaledTime; }
 static class GameUi {
     internal static RuntimeObject? Root;
     internal static bool HomeAvailable;
@@ -558,17 +559,11 @@ static class Plugin {
     }
 }
 static class PublicCombatEffects {
-    internal static HitModifiers? Read(RuntimeObject defender,string context,RuntimeObject? attacker)=>default(HitModifiers);
+    internal static bool Fail;
+    internal static HitModifiers? Read(RuntimeObject defender,string context,RuntimeObject? attacker)=>Fail?null:default(HitModifiers);
+    internal static int? Parameter(string kind,int id,int index,int expectedCount,int buffId,int expectedBuffCount=1)=>kind=="Card" && id==10010 && index==2 && expectedBuffCount==0 ? 50 : null;
 }
-static class AdviceText {
-    internal static bool Ready=true;
-    internal static bool FinalDamageReady(bool saw,bool finished,bool attackPulse,bool defensePulse,bool escaped)=>Ready;
-}
-sealed class UnknownEffectsRow {
-    internal static int Shown;
-    internal UnknownEffectsRow(RuntimeObject parent,float width,float y,bool help) {}
-    internal void Show(UnknownEffects unknown) { Shown++; }
-}
+__SERVER__
 static class CardDiceUi {
     internal static int Calls,Damage;
     internal static void ShowFinal(RuntimeObject parent,RuntimeObject attack,int hp,int damage,HitModifiers modifiers,int die,int defenseDie=0) {
@@ -576,89 +571,93 @@ static class CardDiceUi {
         Calls++;Damage=damage;
     }
 }
-static class FightValues {
-    internal static int? Attack,Defense;
-    internal static int? Revealed(RuntimeObject? values,bool attacker)=>attacker?Attack:Defense;
-}
 internal static class RemainingHpUi {
 __FIELDS__
     internal static int Rendered;
 __UPDATE__
-__NUMBER__
+__LOG__
 __ANIMATE__
 __RESET__
 __DISPLAY_CLEAR__
 __CLEAR__
-__POLL__
     sealed class World {
-        internal readonly RuntimeObject Fight=new(),Parent=new(),Attack=new(),Defense=new(),Attacker=new(),Defender=new(),AttackPoint=new(),DefensePoint=new();
+        internal readonly RuntimeObject Fight=new(),Parent=new(),Attack=new(),Defense=new(),Attacker=new(),Defender=new();
         internal World() {
             Clear(); _failed=false; Rendered=0;
             Plugin.Enabled.Value=Plugin.KoMinimum.Value=Plugin.FinalDamage.Value=true;
             Plugin.Diagnostics.Events=Plugin.Diagnostics.Results=0; Plugin.Diagnostics.LastResult=default;
-            CardDiceUi.Calls=CardDiceUi.Damage=GameUi.Disposed=0; AdviceText.Ready=true; FightValues.Attack=FightValues.Defense=null;
+            CardDiceUi.Calls=CardDiceUi.Damage=GameUi.Disposed=0;PublicCombatEffects.Fail=false;
             GameUi.Root=new();GameUi.HomeAvailable=false;
             Fight.Data["defenderData"]=Defender;Fight.Data["attackerData"]=Attacker;Defender.Data["Property"]=null;
             Attacker.Data["characterType"]=RuntimeObject.Box(1);
             Parent.Data["txt_Failure"]=new RuntimeObject();((RuntimeObject)Parent.Data["txt_Failure"]!).Data["visible"]=false;
-            Parent.Data["step"]=new RuntimeObject();((RuntimeObject)Parent.Data["step"]!).Data["selectedIndex"]=5;
-            var values=new RuntimeObject();Parent.Data["com_value"]=values;
-            var cut=new RuntimeObject();cut.Data["playing"]=false;values.Data["transition:Cut_out"]=cut;
-            foreach(var actor in new[]{Attack,Defense}) {
-                var state=new RuntimeObject();state.Data["selectedIndex"]=1;actor.Data["showPoint"]=state;
-            }
-            Attack.Data["com_Point"]=AttackPoint;Defense.Data["com_Point"]=DefensePoint;
-            foreach(var point in new[]{AttackPoint,DefensePoint}) {
-                point.Data["txt_Point"]=new RuntimeObject();((RuntimeObject)point.Data["txt_Point"]!).Data["text"]=RuntimeObject.Box("3");
-                var pulse=new RuntimeObject();pulse.Data["playing"]=true;point.Data["transition:PointChange"]=pulse;
-            }
-            foreach(var name in new[]{"changeState","showResult"}) { var state=new RuntimeObject();state.Data["selectedIndex"]=0;Defense.Data[name]=state; }
+            Attack.Data["com_Point"]=new RuntimeObject();
             Defense.Data["txt_Life"]=new RuntimeObject();
         }
-        internal void Capture() { Update(Fight,Parent,Attack,Defense,3,10);Update(Fight,Parent,Attack,Defense,5,10); }
-        internal void Totals(int attack,int defense) {
-            Attack.Field("showPoint")!.Data["selectedIndex"]=Defense.Field("showPoint")!.Data["selectedIndex"]=2;
-            AttackPoint.Field("txt_Point")!.Data["text"]=RuntimeObject.Box(attack.ToString(CultureInfo.InvariantCulture));
-            DefensePoint.Field("txt_Point")!.Data["text"]=RuntimeObject.Box(defense.ToString(CultureInfo.InvariantCulture));
-        }
+        internal void Capture() { Update(Fight,Parent,Attack,Defense,3,10,null);Update(Fight,Parent,Attack,Defense,5,10,null); }
+        // The server's decided hit: raw dice 3 and 2, totals 8 and 3, and the defender's HP change.
+        internal void Decide(int damage,bool dodge=false)=>Update(Fight,Parent,Attack,Defense,5,10,new ServerFight(3,2,8,3,dodge,-damage));
     }
     static void Check(bool pass,string reason) { if(!pass)throw new Exception("Final damage lifetime: "+reason); }
     static void Display() { _point=new();_pointContext=_parent!.Pointer;_layout=(1,1,1);_alpha=.5f;_showing=_animated=true; }
+    static RuntimeObject Director(bool end,long attacker,long defender,int[]? cards=null,int point=4,int atk=12) {
+        RuntimeObject Role(long id,int point,int atk,int def,bool dodge,int incHp) {
+            var role=new RuntimeObject();role.Data["PlayerId"]=id;role.Data["Point"]=point;role.Data["Atk"]=atk;role.Data["Def"]=def;role.Data["Dodge"]=dodge;role.Data["IncHp"]=incHp;
+            role.Data["UseCards"]=null;role.Data["CardCombatBonus"]=null;return role;
+        }
+        var data=new RuntimeObject();data.Data["isEnd"]=RuntimeObject.Box(end);
+        data.Data["attackerInfo"]=Role(7,point,atk,0,false,0);data.Data["defenderInfo"]=Role(9,2,0,5,false,-7);
+        if(cards!=null) {
+            var used=new RuntimeObject();var items=new List<RuntimeObject>();
+            foreach(var id in cards){var card=new RuntimeObject();card.Data["CardId"]=id;items.Add(card);}
+            used.Data["items"]=items;used.Data["Count"]=items.Count;((RuntimeObject)data.Data["attackerInfo"]!).Data["CardCombatBonus"]=used;
+        }
+        var director=new RuntimeObject();director.Data["fightData"]=data;
+        director.Data["attackerId"]=RuntimeObject.Box(attacker);director.Data["defendeId"]=RuntimeObject.Box(defender);
+        return director;
+    }
     internal static void Run() {
-        var w=new World();w.Capture();w.Totals(8,3);Update(w.Fight,w.Parent,w.Attack,w.Defense,5,10);
-        Check(_hp==10 && _die==3 && _prediction==5 && _captured && Plugin.Diagnostics.Events==1 && CardDiceUi.Calls==1 && CardDiceUi.Damage==5 && Rendered==1,"public final hit frozen once");
+        Check(ServerFight.Decided(Director(true,7,9))==new ServerFight(4,2,12,5,false,-7),"server fight read after both choices");
+        Check(ServerFight.Decided(Director(false,7,9))==null,"nothing is read before the server ends the fight");
+        Check(ServerFight.Rolled(Director(false,7,9))==((int?)8,(int?)3) && ServerFight.Rolled(Director(true,7,9))==((int?)8,(int?)3),"rolled values are the totals without their dice, before and after the end");
+        Check(ServerFight.Rolled(Director(false,9,7))==null,"another fight's rolled values are not this fight's");
+        // Powerful Attack (10010) in CardCombatBonus: 24 before the die, then 24 + die 3 = 27 -> 41 from the server.
+        Check(ServerFight.Boost(Director(false,7,9,new[]{10001,10010}))==new FinalBoost(50,1) && ServerFight.Boost(Director(false,7,9,new[]{10001}))==default
+            && ServerFight.Boost(Director(false,9,7,new[]{10010}))==default,"the shown attacker's Powerful Attack cards are counted by card ID");
+        Check(ServerFight.Rolled(Director(false,7,9,new[]{10010},0,24))==((int?)24,(int?)3) && ServerFight.Rolled(Director(false,7,9,new[]{10010},3,41))==((int?)24,(int?)3)
+            && ServerFight.Rolled(Director(false,7,9,new[]{10010},3,40))==((int?)null,(int?)3),"a boosted attacker's rolled value comes back from the server's total");
+        Check(ServerFight.Decided(Director(true,9,7))==null && ServerFight.Decided(Director(true,7,8))==null,"another fight's players (a counterattack) are not this fight");
+        var empty=new RuntimeObject();empty.Data["fightData"]=null;
+        Check(ServerFight.Decided(empty)==null && ServerFight.Decided(null)==null,"no fight data, no director");
+        var w=new World();w.Capture();
+        Check(_hp==10 && _captured && _prediction==-1 && Plugin.Diagnostics.Events==0 && Rendered==0,"nothing before the server decides");
+        w.Decide(5);
+        Check(_prediction==5 && Plugin.Diagnostics.Events==2 && CardDiceUi.Calls==1 && CardDiceUi.Damage==5 && Rendered==1,"server hit frozen once with the model check");
+        w.Decide(9);
+        Check(_prediction==5 && Plugin.Diagnostics.Events==2 && CardDiceUi.Calls==1 && Rendered==1,"a frozen hit is not replaced");
         Display();var oldPoint=_point;Plugin.FinalDamage.Value=false;Animate();ClearDisplay();
-        Check(_point==null && _pointContext==IntPtr.Zero && _layout==null && _alpha==-1 && !_showing && !_animated && GameUi.Disposed==1 && oldPoint!.Get<bool>("isDisposed"),"OFF removes only owned artwork idempotently");
-        Check(_hp==10 && _die==3 && _prediction==5 && _captured && !_resultLogged && _parent==w.Parent && _fight==w.Fight,"OFF preserves the original HP/dice and frozen evidence");
-        Update(w.Fight,w.Parent,w.Attack,w.Defense,6,5);
+        Check(_point==null && _pointContext==IntPtr.Zero && _layout==null && _alpha==-1 && _resultAt==-1 && !_showing && !_animated && GameUi.Disposed==1 && oldPoint!.Get<bool>("isDisposed"),"OFF removes only owned artwork idempotently");
+        Check(_hp==10 && _prediction==5 && _captured && !_resultLogged && _parent==w.Parent,"OFF preserves the original HP and frozen evidence");
+        Update(w.Fight,w.Parent,w.Attack,w.Defense,6,5,null);
         Check(Plugin.Diagnostics.Results==1 && Plugin.Diagnostics.LastResult==(10,5,5) && _hp==10 && _prediction==5,"result after OFF uses original HP rather than recapturing post-hit HP");
-        Plugin.FinalDamage.Value=true;Update(w.Fight,w.Parent,w.Attack,w.Defense,6,5);
-        Check(Plugin.Diagnostics.Results==1 && Plugin.Diagnostics.Events==1 && CardDiceUi.Calls==1,"ON cannot duplicate consumed evidence/results");
-        Clear();Check(_hp==0 && _die==0 && _prediction==-1 && !_captured && !_resultLogged && _fight==null && _parent==null,"native scene clear resets the capture");
-        w=new World();Plugin.Enabled.Value=false;Plugin.FinalDamage.Value=false;w.Capture();w.Totals(4,1);PollFinalPoints();
-        Check(_hp==10 && _die==3 && _prediction==3 && _captured && CardDiceUi.Calls==1 && CardDiceUi.Damage==3 && Rendered==0 && Plugin.Diagnostics.Events==1,"KO ON polls new public final evidence while advice and damage art are OFF");
-        Update(w.Fight,w.Parent,w.Attack,w.Defense,6,7);
-        Check(Plugin.Diagnostics.LastResult==(10,3,7) && Plugin.Diagnostics.Results==1,"OFF new-hit result retains original HP");
-        w=new World();Plugin.FinalDamage.Value=Plugin.KoMinimum.Value=false;w.Capture();w.Totals(4,1);PollFinalPoints();
-        Check(_prediction==-1 && CardDiceUi.Calls==0 && Rendered==0,"both independent final consumers OFF skip pending polling");
-        Plugin.KoMinimum.Value=true;PollFinalPoints();Check(_prediction==3 && CardDiceUi.Damage==3 && Rendered==0,"KO re-enable resumes the same public pending hit");
-        Display();GameUi.HomeAvailable=true;Plugin.FinalDamage.Value=true;Animate();
+        Plugin.FinalDamage.Value=true;Update(w.Fight,w.Parent,w.Attack,w.Defense,6,5,null);
+        Check(Plugin.Diagnostics.Results==1 && Plugin.Diagnostics.Events==2 && CardDiceUi.Calls==1,"ON cannot duplicate consumed evidence/results");
+        Clear();Check(_hp==0 && _prediction==-1 && !_captured && !_resultLogged && _parent==null,"native scene clear resets the capture");
+        w=new World();Plugin.Enabled.Value=false;Plugin.FinalDamage.Value=false;w.Capture();w.Decide(12);
+        Check(_prediction==12 && CardDiceUi.Calls==1 && CardDiceUi.Damage==12 && Rendered==0 && Plugin.Diagnostics.Events==2,"KO view settles from the server while advice and damage art are OFF");
+        Update(w.Fight,w.Parent,w.Attack,w.Defense,6,0,null);
+        Check(Plugin.Diagnostics.LastResult==(10,12,0) && Plugin.Diagnostics.Results==1,"overkill stays in the frozen figure");
+        w=new World();w.Capture();w.Decide(5);Display();Time.unscaledTime=7;Update(w.Fight,w.Parent,w.Attack,w.Defense,5,10,null);
+        Check(_resultAt==-1,"the figure is held through the dice show");
+        Update(w.Fight,w.Parent,w.Attack,w.Defense,6,5,null);Time.unscaledTime=8;Update(w.Fight,w.Parent,w.Attack,w.Defense,6,5,null);
+        Check(_resultAt==7 && Plugin.Diagnostics.Results==1,"the result step starts the figure's fade once");
+        w=new World();w.Capture();w.Decide(0,dodge:true);
+        Check(_prediction==0 && CardDiceUi.Calls==0 && Rendered==1,"an escaped dodge shows no damage and leaves the defense-only KO view alone");
+        w=new World();PublicCombatEffects.Fail=true;w.Capture();w.Decide(4);
+        Check(!_captured && _prediction==-1 && Rendered==0,"no figure without a captured pre-hit state");
+        w=new World();w.Capture();w.Decide(4);Display();GameUi.HomeAvailable=true;Plugin.FinalDamage.Value=true;Animate();
         Check(_prediction==-1 && !_captured && _parent==null && _point==null,"scene exit still performs full cleanup");
         GameUi.HomeAvailable=false;Clear();Plugin.Enabled.Value=Plugin.KoMinimum.Value=Plugin.FinalDamage.Value=true;
-        // Before the totals the labels hold the raw dice (3 and 2) and the arithmetic panel the rest of each sum (5 and 1).
-        w=new World();w.Capture();w.Totals(3,2);AdviceText.Ready=false;Update(w.Fight,w.Parent,w.Attack,w.Defense,5,10);
-        Check(_prediction==-1 && _defenseDie==2 && Rendered==0,"no early figure before the panel shows both sides");
-        FightValues.Attack=5;FightValues.Defense=1;w.Totals(4,2);Update(w.Fight,w.Parent,w.Attack,w.Defense,5,10);
-        Check(_prediction==-1 && Rendered==0,"a label that is no longer the raw attack die is not summed");
-        w.Totals(3,2);PollFinalPoints();
-        Check(_prediction==5 && _early && CardDiceUi.Calls==1 && CardDiceUi.Damage==5 && Rendered==1 && Plugin.Diagnostics.Events==1,"revealed panel and raw dice predict before the totals");
-        PollFinalPoints();Check(_prediction==5 && Rendered==1 && Plugin.Diagnostics.Events==1,"early figure is frozen until the totals");
-        w.Totals(8,3);AdviceText.Ready=true;PollFinalPoints();
-        Check(_prediction==5 && !_early && CardDiceUi.Calls==1 && Rendered==1 && Plugin.Diagnostics.Events==3,"matching totals keep the early figure without redrawing");
-        w=new World();w.Capture();w.Totals(3,2);AdviceText.Ready=false;FightValues.Attack=5;FightValues.Defense=1;PollFinalPoints();
-        w.Totals(9,3);AdviceText.Ready=true;PollFinalPoints();
-        Check(_prediction==6 && !_early && CardDiceUi.Calls==2 && CardDiceUi.Damage==6 && Rendered==2,"differing totals replace the early figure");
-        Clear();
     }
 }
 """"""";

@@ -56,8 +56,26 @@ internal static partial class TestCommands
             Check(Regex.IsMatch(source, @"\A@echo off\r?\nsetlocal DisableDelayedExpansion\r?\n"), file + " delayed expansion disabled");
             Contains(source, new[] { "set \"BAP_ENTRYROOT=%~dp0\"", "set \"BAP_MAINTENANCE_CWD=%CD%\"", "package-manifest.json", "--development --" + operation, "--" + operation + " %*", "exit /b %BAP_EXIT%" }, file);
             Check(!Regex.IsMatch(source, @"(?i)powershell(?:\.exe)?|pwsh(?:\.exe)?|wscript|cscript|mshta|Add-Type|Assembly\]::Load"), file + " invokes no interpreter");
-            Check(!Regex.IsMatch(source, @"(?im)^\s*(?:call|start)\s"), file + " retains synchronous exit code");
+            // The window route alone starts Setup without waiting, so its console closes; every console route waits for the exit code.
+            var window = "start \"\" \".\\BetterAstralParty-Setup.exe\" --window %BAP_WINDOW_MODE% --" + operation;
+            Contains(source, new[] { "if \"%~1\"==\"\" set \"BAP_WINDOW=--window\"", "if defined BAP_WINDOW goto window", window }, file + " opens the window only without arguments");
+            Check(!Regex.IsMatch(source.Replace(window, ""), @"(?im)^\s*(?:call|start)\s"), file + " retains synchronous exit code outside the window route");
         }
+        // Every prompt the window can meet maps to its buttons: a [y/N] consent, an "r: … Enter" recheck or the "1 / 2" choice.
+        Contains(ReadSource(context, "tools/NativeSetupWindow.cs"), new[] { "prompt.Contains(\"[y/N]\")", "prompt.StartsWith(\"r: \", StringComparison.Ordinal) && prompt.Contains(\"Enter\")", "prompt.Contains(\"1 / 2\")" }, "Install window prompt kinds");
+        var prompts = 0;
+        foreach (var file in new[] { "tools/NativeInstall.cs", "tools/NativeUninstall.cs", "tools/NativeEmergencyUninstall.cs", "tools/NativeMaintenance.cs", "tools/NativeSteamMaintenance.cs" })
+            foreach (Match prompt in Regex.Matches(ReadSource(context, file), @"(?:[Cc]onsent|Choice)\((?:consent, )?""([^""]+)""")) {
+                var text = prompt.Groups[1].Value; prompts++;
+                Check(text.Contains("[y/N]") || text.StartsWith("r: ", StringComparison.Ordinal) && text.Contains("Enter") || text.Contains("1 / 2"), "Install window understands the prompt: " + text[..Math.Min(48, text.Length)]);
+            }
+        Check(prompts >= 10, "Install window prompt inventory found the engine prompts: " + prompts);
+        // The window answers the two removal confirmations itself; their texts must stay what it looks for.
+        Contains(ReadSource(context, "tools/NativeUninstall.cs"), new[] { "consent(\"BetterAstralParty 파일을 백업 후 제거할까요?" }, "Uninstall confirmation the window answers");
+        Contains(ReadSource(context, "tools/NativeEmergencyUninstall.cs"), new[] { "consent(\"표시한 파일과 복구 백업을 복원 불가능하게 영구 삭제할까요?", "output(\"영구 삭제 대상 / ", "output(\"위 목록과 ", "if (!whatIf) NativeSteamMaintenance.WaitGameClosed(", "output(removeShortcut ? \"일치하는 BetterAstralParty Steam 외부 게임만 제거합니다." }, "Force-Uninstall listing and confirmation the window compares and answers");
+        // Korean text names the shortcuts earlier versions added as Steam's own menu does (Steam 외부 게임 추가), user-decided 2026-11-08.
+        foreach (var file in Directory.EnumerateFiles(Path.Combine(context.Root, "tools"), "*.cs").Select(path => "tools/" + Path.GetFileName(path)).Append("README.md"))
+            Check(!Regex.IsMatch(ReadSource(context, file), @"Steam ?(?:라이브러리 |클라이언트 )?항목|라이브러리 항목"), file + " calls the earlier shortcuts Steam 외부 게임");
         var entry = ReadSource(context, "tools/NativeMaintenanceEntry.cs");
         Contains(entry, new[] { "_operation = emergency ? \"EmergencyUninstall\" : values.ContainsKey(\"install\") ? \"Installation\" : \"Uninstall\";" }, "Native failure records distinguish forced removal from ordinary uninstall");
         var start = entry.IndexOf("private static int Development(", StringComparison.Ordinal);

@@ -8,7 +8,7 @@ internal static class FieldZoomUi
     private static RuntimeObject? _scene, _body;
     private static Vector3 _original, _applied, _target;
     private static bool _owned;
-    private static bool _fieldVisible;
+    private static bool _fieldVisible, _switching;
     private static float _zoomOutLimit;
     private static readonly List<Renderer> Renderers = new();
     private static readonly List<FieldZoomGeometry.Point> Corners = new();
@@ -64,9 +64,19 @@ internal static class FieldZoomUi
         var manager = RuntimeObject.StaticField(RuntimeObject.FindClass("Core.Camera", "CameraManager"), "_inst");
         var player = manager?.Call("GetCurPlayerCamera")?.Field("vCamera");
         var cameraObject = scene.Get("mainCamera");
+        // A board switch (Magic Academy's phase change) runs on the native camera: the zoom yields while it plays, and
+        // the free view ends with it, since the board it looked at is gone. The board is read again afterwards.
+        var lands = RuntimeObject.StaticField(RuntimeObject.FindClass("Core.Unit", "LandManager"), "_inst")?.Field("NodeDict");
+        var switching = SubMapSwitch.Running(lands?.Pointer ?? IntPtr.Zero);
+        if (switching != _switching)
+        {
+            _switching = switching; _scanAt = 0;
+            Plugin.Diagnostics.State("fieldZoom.mapSwitch", switching ? "running; freeView=" + FieldFreeCamera.Holding : "done");
+        }
+        if (switching) FieldFreeCamera.Clear();
         var held = FieldFreeCamera.Holding;
         // FightWindow opens before the battle platform; yield only when the field renderer stops.
-        var blocked = status is not (0 or 1 or 2 or 3) || !Alive(cameraObject)
+        var blocked = switching || status is not (0 or 1 or 2 or 3) || !Alive(cameraObject)
             || !new Camera(cameraObject!.Pointer).enabled || !new Camera(cameraObject.Pointer).gameObject.activeInHierarchy
             || logic?.Get("battle")?.Field<bool>("clientFinishReady") != true;
         var owned = FieldFreeCamera.Update(scene, brain!, free, player, blocked);
@@ -395,7 +405,7 @@ internal static class FieldZoomUi
         Exception? failure = null;
         void Attempt(Action action) { try { action(); } catch (Exception ex) { failure ??= ex; } }
         Attempt(Restore); Attempt(FieldFreeCamera.Clear); Attempt(FieldCameraReturnUi.Clear); Attempt(FieldIndicatorOpacity.Clear); Attempt(FieldMonsterPlates.Clear); Attempt(FieldStatePlates.Clear);
-        _fieldVisible = false; _zoomOutLimit = 0;
+        _fieldVisible = _switching = false; _zoomOutLimit = 0;
         _scene = null; Renderers.Clear(); Corners.Clear(); _nodes = IntPtr.Zero; _nodeCount = 0; _scanAt = 0;
         _pendingWheel = 0; _wheelBrain = _wheelCamera = _wheelFrame = IntPtr.Zero;
         if (failure != null) throw failure;

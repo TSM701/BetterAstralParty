@@ -7,12 +7,11 @@ namespace BetterAstralParty;
 internal static class RemainingHpUi
 {
     private static RuntimeObject? _point, _parent;
-    // Shown only when this hit involves effects the calculation does not count.
-    private static UnknownEffectsRow? _unknownRow;
     private static RuntimeObject? _title;
     private static IntPtr _pointContext;
-    private static RuntimeObject? _fight, _attack, _defense;
     private static float _shownAt;
+    // When the result step started while the figure was shown, or -1: the figure fades from then (AdviceText.DamageEnd).
+    private static float _resultAt = -1;
     private static bool _showing, _lethal;
     private static (float Width, float Height, float Scale)? _layout;
     private static float _alpha = -1;
@@ -20,14 +19,13 @@ internal static class RemainingHpUi
     private static float _pointWidth, _pointHeight;
     private static bool _drifted;
     private static IntPtr _defender;
-    private static int _hp, _die, _defenseDie, _step, _prediction = -1;
+    private static int _hp, _step, _prediction = -1;
     private static HitModifiers _modifiers;
-    private static bool _captured, _animated, _failed, _sawValues, _valuesFinished, _resultLogged;
-    // The prediction came from the arithmetic panel before the totals; the totals still check it.
-    private static bool _early;
+    private static bool _captured, _animated, _failed, _resultLogged;
 
+    // decided: the server's fight data once both sides have chosen (ServerFight), else null.
     internal static void Update(RuntimeObject fight, RuntimeObject parent, RuntimeObject attack,
-        RuntimeObject defense, int step, int hp)
+        RuntimeObject defense, int step, int hp, ServerFight? decided)
     {
         if (_failed) return;
         try
@@ -37,7 +35,7 @@ internal static class RemainingHpUi
             if (_parent?.Pointer != parent.Pointer || _defender != defender.Pointer || step < _step)
                 ResetCapture();
             _parent = parent; _defender = defender.Pointer; _step = step;
-            _fight = fight; _attack = attack; _defense = defense;
+            if (step == 6 && _showing && _resultAt < 0) _resultAt = Time.unscaledTime;
             if (step == 6 && !_resultLogged && _prediction >= 0
                 && GameUi.Visible(defense.Field("txt_Life")) && hp is >= 0 and <= 10000)
             {
@@ -45,7 +43,7 @@ internal static class RemainingHpUi
                 // HP loss is capped by death. It cannot verify exact overkill damage,
                 // and a difference may include healing/other result-phase effects.
                 // PlayDefenderDead displays max(1, HP) for monster attackers, even on KO.
-                // Use the visible defeat caption only after results; never read future fight data.
+                // Use the visible defeat caption only after results.
                 var monsterDefeat = GameUi.Visible(parent.Field("txt_Failure"))
                     && fight.Get("attackerData")?.Get("characterType")?.Value<int>() == 2;
                 // The native applied HP change: on a KO it may keep the overkill the HP label cannot show. It is read
@@ -56,83 +54,26 @@ internal static class RemainingHpUi
                     catch (Exception ex) { Plugin.Diagnostics.Error("RemainingHpUi.ChangeHP", ex); }
                 Plugin.Diagnostics.CombatResult(_hp, _prediction, hp, _modifiers, monsterDefeat, changeHp);
             }
-            var a = attack.Field("com_Point")!;
-            var d = defense.Field("com_Point")!;
             if (step == 3 || CombatAdvisor.IsFinalHpPhase(step) && !_captured)
             {
                 var bonus = PublicCombatEffects.Read(defender, "remainingHP", fight.Get("attackerData"));
                 _captured = hp > 0 && bonus != null;
                 _hp = hp; _modifiers = bonus ?? default;
             }
-            if (!CombatAdvisor.IsFinalHpPhase(step) || _prediction >= 0 && !_early) return;
-            var attackState = attack.Field("showPoint")!.Get<int>("selectedIndex");
-            // State 1 is the die; state 2 may be a final total that also happens to be <=6.
-            if (attackState == 1 && Number(a.Field("txt_Point"), out var die) && die is >= 1 and <= 6)
-                _die = die;
-            // Observe the arithmetic panel even while a point/transition is hidden.
-            // Otherwise a short Cut_out can finish before any eligible polling sample.
-            var values = parent.Field("com_value");
-            var valuesVisible = GameUi.Visible(values);
-            _sawValues |= valuesVisible;
-            _valuesFinished |= values?.Call("GetTransition", "Cut_out")?.Get<bool>("playing") == true
-                || _sawValues && !valuesVisible;
-            if (!_captured || !GameUi.Visible(a) || !GameUi.Visible(d)
-                || attackState != 2
-                || defense.Field("showPoint")!.Get<int>("selectedIndex") != 2
-                || !Number(a.Field("txt_Point"), out var atk) || !Number(d.Field("txt_Point"), out var def))
-            { return; }
-            var dodgeResult = defense.Field("showResult")!.Get<int>("selectedIndex");
-            var dodge = CombatAdvisor.IsDodge(defense.Field("changeState")!.Get<int>("selectedIndex"), dodgeResult);
-            // Failure is announced before the native arithmetic replaces the raw die.
-            if (dodgeResult == 2 && def != 0) return;
-            if (dodge && _die == 0) return;
-            // Dice_Show writes both final labels and starts PointChange, then waits
-            // 800ms before HideFightValue. The paired pulses are the early signal;
-            // showPoint=2 alone is not (it is also set before arithmetic begins).
-            // A total outside the supported rules (negative, or a dodge above 6) skips this hit instead of
-            // tripping the breaker that would hide the final-damage view for the rest of the session.
-            if (atk < 0 || def < 0 || dodge && def > 6) return;
-            var escaped = dodge && def is >= 1 and <= 6 && (def > _die || def == 6 && _die == 6);
-            var early = !AdviceText.FinalDamageReady(_sawValues, _valuesFinished,
-                a.Call("GetTransition", "PointChange")!.Get<bool>("playing"),
-                d.Call("GetTransition", "PointChange")!.Get<bool>("playing"), escaped);
-            if (early)
-            {
-                // Before the totals replace them, both labels hold the raw dice and the arithmetic panel shows each side's
-                // value and every card's rolled bonus: with the dice they sum to the coming totals (user-requested 2026-11-06).
-                if (_prediction >= 0 || dodge || _die == 0 || atk != _die || def is < 1 or > 6) return;
-                _defenseDie = def;
-                if (FightValues.Revealed(values, true) is not { } attackValue || FightValues.Revealed(values, false) is not { } defenseValue
-                    || attackValue + _die < 0 || defenseValue + def < 0) return;
-                atk = attackValue + _die; def = defenseValue + def;
-            }
+            // The server decides the hit once both sides have chosen; nothing before that is final.
+            if (!CombatAdvisor.IsFinalHpPhase(step) || _prediction >= 0 || !_captured || decided is not { } server) return;
             var root = GameUi.Root;
             if (root == null) return;
-            // Cards/skills can change public effects after the initial phase snapshot.
-            // Refresh at the visible final-number boundary, before freezing this hit.
-            var finalModifiers = PublicCombatEffects.Read(defender, "remainingHP", fight.Get("attackerData"));
-            if (finalModifiers == null) return;
-            var earlier = _early ? _prediction : -1;
-            _modifiers = finalModifiers.Value;
-            // Freeze this hit once; overkill remains damage, not capped HP loss.
-            _prediction = CombatAdvisor.FinalDamage(_hp, atk, def, dodge, _die, _modifiers);
-            _early = early;
-            // Record before creating/rendering optional UI: a rendering failure must
-            // not erase the numerical evidence. Rolls are already visibly revealed.
-            if (Plugin.Diagnostics.IsRecording)
-            {
-                // One prediction line per hit, from the totals, as combat-audit expects; the early figure is checked against it.
-                if (early)
-                    Plugin.Diagnostics.CombatEvent($"damage.early before={_hp}; atk={atk}; def={def}; attackDie={_die}; defenseDie={_defenseDie}; damage={_prediction}");
-                else
-                    Plugin.Diagnostics.CombatEvent($"prediction before={_hp}; atk={atk}; def={def}; attackDie={_die}; "
-                        + $"dodge={dodge}; damage={_prediction}; modifiers={_modifiers}; "
-                        + "order=escape,base-minimum,additive,zero-clamp,on-hit,cap,HP-floor");
-                if (earlier >= 0) Plugin.Diagnostics.CombatEvent($"damage.earlyCheck early={earlier}; totals={_prediction}; match={earlier == _prediction}");
-            }
-            if (earlier == _prediction) return; // The totals confirmed the figure already shown.
+            // Cards/skills can change public effects after the initial phase snapshot: the KO view and the model check use the latest.
+            _modifiers = PublicCombatEffects.Read(defender, "remainingHP", fight.Get("attackerData")) ?? _modifiers;
+            // The server's own HP change for this hit: every effect counted and overkill kept (the tutorial's copy of the
+            // server builds it as Min(DEF - ATK, -1) and clamps only the new HP). Freeze it once.
+            _prediction = Math.Max(0, -server.HpChange);
+            // Record before creating/rendering optional UI: a rendering failure must not erase the numerical evidence.
+            if (Plugin.Diagnostics.IsRecording) LogModel(server);
+            var a = attack.Field("com_Point")!;
             // A failure in optional KO rendering must not disable the independent damage view/log.
-            try { if (!dodge) CardDiceUi.ShowFinal(parent, a, _hp, _prediction, _modifiers, _die, _defenseDie); }
+            try { if (!server.Dodge) CardDiceUi.ShowFinal(parent, a, _hp, _prediction, _modifiers, server.AttackDie, server.DefenseDie); }
             catch (Exception ex) { Plugin.Diagnostics.Error("CardDiceUi.Final", ex); }
             if (!Plugin.FinalDamage.Value) return; // Retain public final evidence for the independent KO view.
             Ensure(root);
@@ -152,8 +93,7 @@ internal static class RemainingHpUi
                 format.SetField("outlineColor", color);
                 text.Set("textFormat", format);
             }
-            _unknownRow?.Show(_modifiers.Unknown);
-            _shownAt = Time.unscaledTime;
+            _shownAt = Time.unscaledTime; _resultAt = -1;
             _layout = null; _alpha = -1; _drifted = false;
             _point.Set("visible", true);
             _showing = true;
@@ -162,8 +102,8 @@ internal static class RemainingHpUi
             {
                 Plugin.Diagnostics.State("damage.layout", $"x={_point.Get<float>("x"):F1}; y={_point.Get<float>("y"):F1}; "
                     + $"onStage={_point.Get<bool>("onStage")}; visible={GameUi.Visible(_point)}");
-                Plugin.Diagnostics.State("damage", $"before={_hp}; atk={atk}; def={def}; dodge={dodge}; "
-                    + $"modifiers={_modifiers}; damage={_prediction}; observedHP={hp}; arithmeticExited={_valuesFinished}");
+                Plugin.Diagnostics.State("damage", $"before={_hp}; atk={server.Attack}; def={server.Defense}; dodge={server.Dodge}; "
+                    + $"modifiers={_modifiers}; damage={_prediction}; observedHP={hp}");
             }
         }
         catch (Exception ex)
@@ -174,11 +114,20 @@ internal static class RemainingHpUi
         }
     }
 
-    private static bool Number(RuntimeObject? text, out int number)
+    // The damage model's figure from the server's totals, for combat-audit; the server's HP change is the answer it is
+    // checked against. Totals the model does not accept are logged without a prediction line.
+    private static void LogModel(ServerFight server)
     {
-        number = 0;
-        return GameUi.Visible(text) && int.TryParse(text!.Get("text")!.String(),
-            NumberStyles.Integer, CultureInfo.InvariantCulture, out number);
+        var defense = server.Dodge ? server.DefenseDie : server.Defense; // A dodge is decided by the two dice (DefendDiceSuccess).
+        var model = -1;
+        try { model = CombatAdvisor.FinalDamage(_hp, server.Attack, defense, server.Dodge, server.AttackDie, _modifiers); }
+        catch (ArgumentOutOfRangeException) { }
+        if (model >= 0)
+            Plugin.Diagnostics.CombatEvent($"prediction before={_hp}; atk={server.Attack}; def={defense}; attackDie={server.AttackDie}; "
+                + $"dodge={server.Dodge}; damage={model}; modifiers={_modifiers}; "
+                + "order=escape,base-minimum,additive,zero-clamp,on-hit,cap,HP-floor");
+        Plugin.Diagnostics.CombatEvent($"damage.server before={_hp}; attackDie={server.AttackDie}; defenseDie={server.DefenseDie}; "
+            + $"atk={server.Attack}; def={server.Defense}; dodge={server.Dodge}; incHp={server.HpChange}; model={model}; match={model == _prediction}");
     }
 
     private static void Ensure(RuntimeObject parent)
@@ -187,7 +136,7 @@ internal static class RemainingHpUi
             && _point.Get("parent")?.Pointer == parent.Pointer
             && _pointContext == _parent?.Pointer) return;
         GameUi.Dispose(_point);
-        _point = null; _unknownRow = null;
+        _point = null;
         _pointContext = _parent?.Pointer ?? IntPtr.Zero;
         _point = NativeUi.Create("Fight", "Fight_Com_Point")!;
         _pointWidth = _point.Get<float>("width"); _pointHeight = _point.Get<float>("height");
@@ -207,7 +156,6 @@ internal static class RemainingHpUi
         _point.Field("txt_Point")!.Set("visible", true);
         parent.Call("AddChild", _point);
         _title = NativeUi.Label(_point, ModText.Text("피해량"), 0, _point.Get<float>("height"), _point.Get<float>("width"), 28, 22, dark: true);
-        _unknownRow = new UnknownEffectsRow(_point, _point.Get<float>("width"), _point.Get<float>("height") + 30, help: false);
     }
 
     private static void RefreshArtwork(RuntimeObject source)
@@ -250,7 +198,8 @@ internal static class RemainingHpUi
             if (GameUi.HomeAvailable || root == null
                 || _point?.Get<bool>("isDisposed") != false) { Clear(); return; }
             var elapsed = Time.unscaledTime - _shownAt;
-            if (elapsed >= AdviceText.DamageLifetime)
+            var end = AdviceText.DamageEnd(_resultAt < 0 ? -1 : _resultAt - _shownAt);
+            if (elapsed >= end)
             {
                 _point.Set("visible", false);
                 _showing = false;
@@ -280,7 +229,7 @@ internal static class RemainingHpUi
                 _point.Call("SetScale", scale, scale);
                 NativeUi.Position(_point, (width - _pointWidth * scale) / 2, height * 0.24f - _pointHeight * scale / 2, scale);
             }
-            var alpha = AdviceText.DamageAlpha(elapsed, _lethal);
+            var alpha = AdviceText.DamageAlpha(elapsed, end, _lethal);
             if (_alpha != alpha) { _alpha = alpha; _point.Set("alpha", alpha); }
             if (_lethal && !_animated)
             {
@@ -298,46 +247,25 @@ internal static class RemainingHpUi
     internal static void ResetCapture()
     {
         _parent = null;
-        _fight = _attack = _defense = null;
-        _defender = IntPtr.Zero; _captured = _sawValues = _valuesFinished = false;
-        _resultLogged = false;
-        _step = _hp = _die = _defenseDie = 0; _modifiers = default; _prediction = -1; _early = false;
+        _defender = IntPtr.Zero; _captured = _resultLogged = false;
+        _step = _hp = 0; _modifiers = default; _prediction = -1;
     }
 
     // A language switch relabels the drawn number in place, so the current hit's final damage stays on screen.
     internal static void RefreshLanguage()
     {
         if (_point == null || _point.Get<bool>("isDisposed")) return;
-        try { _title?.Set("text", ModText.Text("피해량")); _unknownRow?.Show(_modifiers.Unknown); }
+        try { _title?.Set("text", ModText.Text("피해량")); }
         catch (Exception ex) { Plugin.Diagnostics.Error("RemainingHpUi.Language", ex); ClearDisplay(); }
     }
 
     internal static void ClearDisplay()
     {
-        GameUi.Dispose(_point); _point = null; _unknownRow = null; _title = null;
+        GameUi.Dispose(_point); _point = null; _title = null;
         _pointContext = IntPtr.Zero;
-        _layout = null; _alpha = -1;
+        _layout = null; _alpha = -1; _resultAt = -1;
         _showing = _animated = false;
     }
 
     internal static void Clear() { ClearDisplay(); ResetCapture(); }
-
-    // Only the pending final-number window needs frame-rate polling. The main
-    // scene scan and advice calculations keep their existing 0.2s cadence.
-    internal static void PollFinalPoints()
-    {
-        if (_failed || _prediction >= 0 && !_early || _step != 5 || (!Plugin.FinalDamage.Value && !Plugin.KoMinimum.Value)) return;
-        try
-        {
-            if (!GameUi.Visible(_parent) || !GameUi.Visible(_attack) || !GameUi.Visible(_defense)
-                || _fight == null || _fight.Get<bool>("isDisposed")) return;
-            if (_parent!.Field("step")!.Get<int>("selectedIndex") != 5) return;
-            Update(_fight, _parent, _attack!, _defense!, 5, _hp);
-        }
-        catch (Exception ex)
-        {
-            Plugin.Diagnostics.Error("DamageUi.PollFinalPoints", ex);
-            Clear(); _failed = true;
-        }
-    }
 }

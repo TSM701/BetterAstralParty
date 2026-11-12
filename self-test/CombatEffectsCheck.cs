@@ -106,20 +106,16 @@ internal static class CombatEffectsCheck
         Require(CombatAdvisor.FinalDamage(9, 7, 3, false, 0, new(-99, 0)) == 0, "damage shield");
         Require(CombatAdvisor.FinalDamage(9, 7, 3, false, 0, new(1, 1)) == 1, "damage capped Berserk");
         Require(CombatAdvisor.FinalDamage(9, 7, 5, true, 4, new(1, 0)) == 0, "damage successful dodge");
-        Require(AdviceText.DamageAlpha(0) == 0 && AdviceText.DamageAlpha(0.06f) is > 0 and < 1
-            && AdviceText.DamageAlpha(0.12f) == 1, "fast damage entrance fade");
-        Require(AdviceText.DamageAlpha(0, true) == 1 && AdviceText.DamageAlpha(AdviceText.DamageLifetime, true) == 0,
+        Require(AdviceText.DamageAlpha(0, 4) == 0 && AdviceText.DamageAlpha(0.06f, 4) is > 0 and < 1
+            && AdviceText.DamageAlpha(0.12f, 4) == 1, "fast damage entrance fade");
+        Require(AdviceText.DamageAlpha(0, 4, true) == 1 && AdviceText.DamageAlpha(4, 4, true) == 0,
             "lethal starts fully visible and retains exit fade");
-        Require(AdviceText.DamageLifetime == 3f && AdviceText.DamageAlpha(0.5f) == 1 && AdviceText.DamageAlpha(2.5f) == 1, "three second total lifetime");
-        Require(AdviceText.DamageAlpha(2.75f) is > 0 and < 1 && AdviceText.DamageAlpha(3f) == 0, "damage exit fade");
+        Require(AdviceText.DamageEnd(-1) == AdviceText.DamageLifetime && AdviceText.DamageEnd(5.75f) == 6.25f
+            && AdviceText.DamageEnd(20) == AdviceText.DamageLifetime, "held until the result step starts, capped when it is never seen");
+        Require(AdviceText.DamageAlpha(0.5f, 6.25f) == 1 && AdviceText.DamageAlpha(5.75f, 6.25f) == 1
+            && AdviceText.DamageAlpha(6f, 6.25f) is > 0 and < 1 && AdviceText.DamageAlpha(6.25f, 6.25f) == 0, "damage exit fade once the result step starts");
         Require(AdviceText.RecommendationScale(0) < 1 && AdviceText.RecommendationScale(0.5f) == 1, "native style entrance scale");
         Console.WriteLine("Damage indicator: 9 calculation and animation checks passed");
-        Require(!AdviceText.FinalDamageReady(false, false, true, true, false), "raw dice pulses cannot preview damage");
-        Require(!AdviceText.FinalDamageReady(true, false, true, false, false), "both final updates required");
-        Require(AdviceText.FinalDamageReady(true, false, true, true, false), "preview before arithmetic exit and hit");
-        Require(AdviceText.FinalDamageReady(true, true, false, false, false), "late sample fallback");
-        Require(AdviceText.FinalDamageReady(false, false, false, false, true), "successful dodge skips arithmetic");
-        Console.WriteLine("Damage preview: 5 early-final-number readiness checks passed");
     }
 
     private static void CheckThresholdRanges()

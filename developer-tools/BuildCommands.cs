@@ -235,8 +235,9 @@ internal static class BuildCommands
         var arguments = new List<string> { compiler, "/nologo", "/noconfig", "/utf8output", "/nostdlib+", "/langversion:latest", "/nullable:enable", "/define:NETFRAMEWORK", "/warnaserror+",
             "/deterministic+", "/pathmap:" + context.Root + "=/src/BetterAstralParty", "/platform:x64", "/target:winexe",
             "/main:SetupHost", "/out:" + Path.Combine(output, "BetterAstralParty-Setup.exe") };
-        // No System.Net.Http or WinForms: the setup host has no network or UI-framework code.
-        foreach (var name in new[] { "mscorlib.dll", "System.dll", "System.Core.dll", "System.Security.dll", "System.Web.Extensions.dll", "System.IO.Compression.dll", "System.IO.Compression.FileSystem.dll" }) {
+        // No System.Net.Http: the setup host has no network code. WinForms and System.Drawing draw only its install window
+        // (NativeSetupWindow, user-approved 2026-11-07), part of every .NET Framework 4.8 installation.
+        foreach (var name in new[] { "mscorlib.dll", "System.dll", "System.Core.dll", "System.Security.dll", "System.Web.Extensions.dll", "System.IO.Compression.dll", "System.IO.Compression.FileSystem.dll", "System.Windows.Forms.dll", "System.Drawing.dll" }) {
             var reference = Path.Combine(framework, name); if (!File.Exists(reference)) throw new FileNotFoundException("Framework reference missing.", reference);
             arguments.Add("/reference:" + reference);
         }

@@ -28,11 +28,13 @@ internal static partial class TestCommands
         Pattern(uninstall, "if\\s*\\(!restoreLoader\\.Equals\\(\"Keep\", StringComparison\\.OrdinalIgnoreCase\\) && plan\\.Targets\\.Count != 0\\)\\s*try \\{ loaderUpdated = LoaderChange", "Default native removal bypasses loader mutation");
         var entry = ReadSource(context, "tools/NativeMaintenanceEntry.cs"); Contains(entry, new[] { "Get(values, \"restoreloader\") ?? \"Keep\"" }, "Default loader restoration is Keep");
         var plugin = ReadSource(context, "src/Plugin.cs"); var load = plugin.IndexOf("public override void Load()", StringComparison.Ordinal);
-        var gate = plugin.IndexOf("Environment.GetEnvironmentVariable(\"BAP_COMPATIBILITY_CHECKED\")", load, StringComparison.Ordinal); var start = plugin.IndexOf("MinimalDiagnostics = DiagnosticOwner.Start(", load, StringComparison.Ordinal);
-        Check(load >= 0 && gate > load && gate < start && plugin[gate..start].Contains("return;", StringComparison.Ordinal), "Ordinary Steam launch returns before BetterAstralParty initialization");
-        var consume = plugin.IndexOf("StartupGuard.ConsumeLaunchRequest()", load, StringComparison.Ordinal); Check(consume > load && consume < gate, "Mod launch request is consumed before the activation gate");
+        var gate = plugin.IndexOf("if (vanilla == \"request-fresh\")", load, StringComparison.Ordinal); var start = plugin.IndexOf("MinimalDiagnostics = DiagnosticOwner.Start(", load, StringComparison.Ordinal);
+        Check(load >= 0 && gate > load && gate < start && plugin[gate..start].Contains("return;", StringComparison.Ordinal), "A fresh AstralParty-Vanilla.cmd request returns before BetterAstralParty initialization");
+        Check(plugin[load..start].Split("return;").Length == 2 && !plugin.Contains("BAP_COMPATIBILITY_CHECKED", StringComparison.Ordinal), "Every other launch the shared loader makes runs BetterAstralParty");
+        foreach (var name in new[] { "StartupGuard.VanillaRequestName", "StartupGuard.LaunchRequestName" })
+        { var consume = plugin.IndexOf("StartupGuard.ConsumeLaunchRequest(" + name + ")", load, StringComparison.Ordinal); Check(consume > load && consume < gate, name + " is consumed before the activation decision"); }
         var guard = ReadSource(context, "src/StartupGuard.cs");
-        Pattern(guard, @"File\.Delete\(path\);\s*return LaunchRequestFresh\(age\);", "Launch request is deleted before it is honoured");
+        Pattern(guard, @"File\.Delete\(path\);\s*return age <", "Launch request is deleted before it is honoured");
         Contains(guard, new[] { "TimeSpan.FromMinutes(3)" }, "Launch request is short-lived");
         Contains(guard, new[] { "!text.Contains(\" stage=Stopped \", StringComparison.Ordinal)", "internal static void Stopped() => Stage(\"Stopped\");" }, "A deliberate safety stop is not a failed start");
         Contains(plugin, new[] { "StartupGuard.Stage(\"BootstrapGate\", \"Failed\"); StartupGuard.Stopped(); return;" }, "Update recovery gate marks its stop as deliberate");
@@ -41,6 +43,8 @@ internal static partial class TestCommands
         NoPattern(modEntry, @"SteamOverlayGameId|SteamGameId|AstralParty_INT\.exe"" --doorstop", "Mod entry never starts the game itself or overrides Steam overlay identity");
         // Issue #15: a PC whose PATH lacks System32 cannot find tasklist/find/findstr; call them by full path.
         var vanillaEntry = ReadSource(context, "tools/AstralParty-Vanilla.cmd");
+        Pattern(vanillaEntry, @"type nul > ""%REQUEST%\\vanilla-launch\.request"" 2>nul\r?\nif errorlevel 1 \([^)]*exit /b 1\r?\n\)\r?\nstart """" ""steam://launch/2622000/dialog""",
+            "Vanilla entry lets Steam start the owned app only after its request is written");
         foreach (var (name, batchText) in new[] { ("Mod", modEntry), ("Vanilla", vanillaEntry) })
         {
             Contains(batchText, new[] { "\"%SystemRoot%\\System32\\tasklist.exe\"", "\"%SystemRoot%\\System32\\find.exe\"" }, name + " entry calls system tools by full path");

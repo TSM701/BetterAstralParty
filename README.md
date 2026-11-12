@@ -48,27 +48,29 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 ### 설치와 실행
 
 > [!IMPORTANT]
-> 1.3.x 사용자는 게임을 종료하고 1.4.0 패키지의 `Install.cmd`를 실행하세요. 기존 설치를 이어받아 이전 실행기·업데이트 도우미 파일을 정리하고 Steam 항목을 새 실행 방식으로 바꾸며, 설정은 유지합니다. 1.3.x는 1.4.0으로 자동 업데이트되지 않고 게임 안에 `수동 다운로드 필요`로 표시됩니다. 1.3.x 설치를 바로 이어받는 기능은 2026년 12월 15일 이후 첫 공개 버전부터 지원하지 않으며, 그 뒤에는 1.3.x 패키지의 `Uninstall.cmd`로 먼저 제거한 다음 설치해야 합니다.
+> 1.3.x 사용자는 게임을 종료하고 1.4.0 패키지의 `Install.cmd`를 실행하세요. 기존 설치를 이어받아 이전 실행기·업데이트 도우미 파일을 정리하고 Steam 외부 게임을 새 실행 방식으로 바꾸며, 설정은 유지합니다. 1.3.x는 1.4.0으로 자동 업데이트되지 않고 게임 안에 `수동 다운로드 필요`로 표시됩니다. 1.3.x 설치를 바로 이어받는 기능은 2026년 12월 15일 이후 첫 공개 버전부터 지원하지 않으며, 그 뒤에는 1.3.x 패키지의 `Uninstall.cmd`로 먼저 제거한 다음 설치해야 합니다.
 
 > [!WARNING]
 > 1.2.x 이하 사용자는 사용하던 패키지의 `Uninstall.cmd`로 먼저 제거한 뒤 새로 설치하세요. 제거에 실패하면 새 패키지의 `Force-Uninstall.cmd`를 시도하고, 그래도 해결되지 않으면 보관할 데이터를 백업한 뒤 게임을 클린 설치하고 다시 시도해주세요.
 
 1. [다운로드](https://github.com/TSM701/BetterAstralParty/releases)에서 `BetterAstralParty-<버전>.zip`을 받으세요. 소스 ZIP은 설치용이 아닙니다.
-2. 순정 Steam 클라이언트에서 Astral Party INT(Global)를 한 번 실행해 업데이트와 데이터 다운로드를 마친 뒤 정상 종료하세요.
+2. Steam에서 Astral Party INT(Global)를 한 번 실행해 업데이트와 데이터 다운로드를 마친 뒤 정상 종료하세요.
 3. 쓰기 가능한 별도 폴더에 ZIP 전체를 압축 해제하세요. 게임 폴더에 직접 덮어쓰거나 ZIP 안에서 실행하지 마세요.
-4. Steam에 로그인한 상태에서 압축을 푼 폴더의 `Install.cmd`를 실행하세요. 경로를 묻는 경우 Steam의 설치된 파일 → 찾아보기로 확인한 `Astral Party` 폴더 또는 `8vJXnINT` 하위 폴더를 선택하세요.
-5. Steam 라이브러리의 Astral Party - BetterAstralParty로 실행하세요. 콘솔 창이 잠깐 보였다 사라질 수 있으며, 첫 실행은 로더 초기화와 파일 다운로드로 시간이 걸리고 인터넷 연결이 필요할 수 있습니다. Steam이 원래 게임을 실행하므로 라이브러리에는 Astral Party가 실행 중으로 표시되고, Steam 오버레이와 게임 내 결제도 그대로 사용할 수 있습니다. 게임이 이미 켜져 있으면 먼저 종료한 뒤 실행하세요.
+4. 압축을 푼 폴더의 `Install.cmd`를 실행하면 설치 창이 열립니다. 게임 폴더를 확인한 뒤 설치를 누르세요. 게임 폴더를 찾지 못하면 Steam의 설치된 파일 → 찾아보기로 연 `Astral Party` 폴더를 고르세요.
+5. Steam에서 Astral Party를 실행하세요. 첫 실행은 로더 초기화와 파일 다운로드로 시간이 걸리고 인터넷 연결이 필요할 수 있습니다.
 
 > [!TIP]
-> 모드 없이 실행하려면 순정 Steam 클라이언트로 실행하거나 게임 폴더의 `AstralParty-Vanilla.cmd`를 실행하세요. 두 실행 방법은 BetterAstralParty 적용 여부만 구분하며 다른 BepInEx 모드는 그대로 유지합니다. 전환 전 게임을 종료하고 Steam의 실행 옵션은 바꾸지 마세요.
+> 모드 없이 실행하려면 게임 폴더의 `AstralParty-Vanilla.cmd`를 실행하세요. 그 실행에서만 BetterAstralParty가 꺼지고 다른 BepInEx 모드는 그대로 유지합니다. 전환 전 게임을 종료하고 Steam의 실행 옵션은 바꾸지 마세요.
 
 <details>
 <summary>설치되는 파일과 추가 안내</summary>
 
 - 설치 도구는 패키지의 `artifacts/BetterAstralParty-Setup.exe`이며 게임 폴더에 복사되지 않습니다. 게임 폴더에는 `BetterAstralParty-Mod.cmd`, `AstralParty-Vanilla.cmd`, `BetterAstralParty.compatibility.json`, `BepInEx/plugins/BetterAstralParty/BetterAstralParty.dll`과 설치 기록만 남습니다.
-- Steam 경로나 계정을 찾지 못하면 Steam 라이브러리 항목은 건드리지 않고 파일만 설치합니다. 순정 Steam 클라이언트에서 게임을 실행한 뒤 `Install.cmd`를 다시 실행하면 Astral Party - BetterAstralParty 항목을 추가할 수 있습니다.
-- 이전 버전이 만든 Steam 항목의 이름은 Astral Party - Mod입니다. 게임 안 업데이트로는 이름이 바뀌지 않고, 새 패키지의 `Install.cmd`를 실행하면 Steam을 한 번 종료한 뒤 Astral Party - BetterAstralParty로 바뀝니다. 플레이 시간과 배너는 그대로 남습니다.
-- 게임이나 Steam을 종료해야 하면 설치 도구가 안내합니다. 직접 종료한 뒤 재확인하거나 취소할 수 있으며, 설치 도구가 프로세스를 강제로 종료하지는 않습니다.
+- 설치는 Steam 외부 게임을 추가하지 않으므로 Steam을 종료하지 않아도 됩니다.
+- 이전 버전이 추가한 Steam 외부 게임 Astral Party - BetterAstralParty 또는 Astral Party - Mod는 계속 쓸 수 있습니다. 필요 없으면 Steam에서 직접 지워도 되고, `Uninstall.cmd`로 제거할 때도 함께 정리됩니다.
+- 게임을 켤 때 뜨는 BepInEx 로그 창은 설치 창의 확인란으로 끌 수 있습니다. BepInEx를 새로 설치할 때는 기본으로 꺼 두고, 이미 있던 설정은 고를 때만 바꿉니다.
+- 게임이나 Steam을 종료해야 하면 설치 창이 안내합니다. 직접 종료한 뒤 다시 확인을 누르거나 취소할 수 있으며, 설치 도구가 프로세스를 강제로 종료하지는 않습니다.
+- `Install.cmd`나 `Uninstall.cmd`에 `-CheckOnly`, `-WhatIf` 같은 인자를 주면 창 대신 콘솔에서 진행합니다.
 - 새 공용 로더는 ON으로 설치됩니다.
 
 </details>
@@ -83,8 +85,8 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 전투 추천
 - 행동 추천: 기본 ON. 공개 정보를 바탕으로 공격·놓아주기, 방어·회피, 카드 사용을 추천합니다. 방어·회피는 방어를 추천하고, 방어해도 반드시 쓰러질 때는 회피를 추천합니다. 선택을 자동 입력하지 않으며, 모드 전체를 끄는 스위치가 아닙니다. 슈팅 스타 칩이 있으면 놓아주기 버튼에 놓아줄 때 몬스터에게 주는 피해와 얻는 스타라이트를 표시합니다.
 - 추천 상세 수치: 기본 ON. 행동 추천에 마우스를 올리면 피해와 전투불능 확률을 표시합니다. OFF는 수치만 숨기고 추천 아이콘은 유지합니다.
-- KO 주사위 조건: 기본 ON. 공격하거나 다른 사람 전투에서 몬스터가 방어할 때는 KO 주사위 조건, 내가 방어하거나 다른 사람 전투에서 플레이어가 방어할 때는 생존 주사위 조건을 표시합니다. 조건은 카드 보너스가 가장 낮게 나와도 결과가 확정되는 주사위이고, 그런 주사위 조합을 가장 많이 담는 조건을 보여 줍니다. 카드 보너스가 공개되면 실제 값으로 다시 계산합니다. 카드 호버 조건도 포함합니다. 계산에 반영되지 않은 효과가 전투에 있으면 아래에 그 효과 아이콘과 "미반영 효과"를 표시하고, 물음표에 마우스를 올리면 설명이 뜹니다.
-- 최종 피해: 기본 ON. 주사위와 카드 보너스가 공개되면 최종 합계가 나오기 전에 피해를 계산해 표시합니다. 계산에 반영되지 않은 효과가 있으면 피해량 아래에 그 효과 아이콘과 "미반영 효과"를 함께 표시합니다.
+- KO 주사위 조건: 기본 ON. 공격하거나 다른 사람 전투에서 몬스터가 방어할 때는 KO 주사위 조건, 내가 방어하거나 다른 사람 전투에서 플레이어가 방어할 때는 생존 주사위 조건을 표시합니다. 조건은 카드 보너스가 가장 낮게 나와도 결과가 확정되는 주사위이고, 그런 주사위 조합을 가장 많이 담는 조건을 보여 줍니다. 관전 중이거나, 내가 공격하고 카드 선택이 끝나면 카드 보너스는 실제로 나온 값으로 계산합니다. 양쪽 선택이 끝나면 서버가 정한 주사위로 확정 KO 또는 KO 불가를 바로 표시합니다. 카드 호버 조건도 포함합니다. 계산에 반영되지 않은 효과가 전투에 있으면 아래에 그 효과 아이콘과 "미반영 효과"를 표시하고, 물음표에 마우스를 올리면 설명이 뜹니다.
+- 최종 피해: 기본 ON. 양쪽 선택이 끝나 주사위 연출이 시작되면 서버가 정한 피해량을 표시합니다.
 
 전투 표시
 - 전투 상태: 기본 ON. 전투 HP 아래 공개 손패 장수·효과와 플레이어·몬스터의 반격 상태를 표시합니다. 계산에 반영되지 않은 효과 아이콘에는 물음표 표시가 붙고, 설명에 "계산 미반영"이 표시됩니다.
@@ -97,12 +99,12 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 - 인디케이터 높이: 기본 100%. 플레이어 인디케이터의 점을 캐릭터 발밑(0%)부터 원래 위치(100%) 사이 높이에 표시합니다. 슬라이더로 조절합니다.
 - 이동 방향 강조: 기본 화살표만. 플레이어와 몬스터 발밑의 이동 방향 표시를 캐릭터·몬스터·나무에 가려지지 않게 위에 다시 그립니다. 화살표만은 각 원이 가리키는 자리에 화살표를 바닥에 눕혀 그립니다. 원과 화살표는 원까지 그리며 캐릭터 뒤쪽 절반은 점선으로 표시합니다. 끄기는 게임 기본 표시만 남깁니다.
 - 휠 줌·자유 시점: 기본 ON. PvE 필드에서 휠 줌과 자유 시점을 사용하며 턴이 바뀌어도 유지합니다. 턴 바의 핀 오른쪽 자유 시점 카메라 종료 버튼으로 기본 시점에 복귀합니다. 플레이어 칸의 얼굴을 누르면 그 플레이어로 시점이 옮겨지고, 이름·칩 부분을 누르면 줌을 유지한 채 상세정보만 열립니다. 줌 중에도 몬스터 인디케이터는 몬스터 옆 같은 자리에 표시됩니다. 주사위 화면 고정(기본 ON)을 켜 두면 굴린 주사위가 줌과 자유 시점에서도 기본 시점과 같은 화면 위치·크기로 보이고, 끄면 게임 기본처럼 필드 위에 남아 줌에 따라 크기가 바뀝니다.
-- 줌 아웃 시 반투명·멀면 숨기기: 각각 기본 ON. 휠 줌을 사용할 때 인디케이터에 적용합니다.
-- 반투명 정도: 기본 100%, 0~100%. 줌 아웃했을 때 인디케이터가 흐려지는 정도를 슬라이더로 조절합니다.
+- 줌 아웃 시 불투명도·멀면 숨기기: 각각 기본 ON. 휠 줌을 사용할 때 인디케이터에 적용합니다.
+- 줌 아웃 시 불투명도 슬라이더: 기본 30%, 0~100%. 가장 멀리 줌 아웃했을 때 인디케이터의 불투명도를 슬라이더로 조절합니다. 100%는 원래대로, 0%는 보이지 않습니다.
 - 줌 감도: 기본 100%, 10~300%. 휠 한 칸에 확대·축소되는 양입니다.
 - 최대 줌 아웃: 기본 100%, 0~100%. 휠로 멀어질 수 있는 최대 거리이며, 100%는 필드 전체가 보이는 거리이고 0%는 기본 시점보다 멀어지지 않습니다.
 - WASD 속도: 기본 100%, 10~300%. WASD로 자유 시점을 움직이는 속도입니다.
-- 숨김 거리: 기본 25%, 0~100%. 멀면 숨기기에서 인디케이터가 숨는 줌 아웃 거리이며, 10% 더 가까워지면 다시 나타납니다.
+- 숨김 거리: 기본 25%, 0~100%. 멀면 숨기기에서 인디케이터가 숨고 다시 나타나는 줌 아웃 거리입니다.
 
 손패·카드
 - 손패 묶기: 기본·클릭 펼치기·호버 펼치기 중 선택하며 처음에는 기본입니다. 내 PvE 필드 손패를 기능별로 묶고 클릭은 가로로, 호버는 위로 펼칩니다. 두 방식 모두 카드 위쪽의 제출 영역으로 드래그하며, 호버에서는 이 영역이 강조됩니다.
@@ -118,6 +120,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 편의 기능
 - 감사합니다 자동 전송: 기본 ON. 게임 기본 감사합니다 추천이 전송 가능할 때 추천 한 건당 한 번 전송합니다. PvP·관전·재생에서는 전송하지 않습니다.
 - Alt+Tab 핑 모드 해제: 기본 ON. Alt+Tab 후 남은 핑 선택 모드를 전송 없이 해제합니다.
+- 홈 화면에서 Esc를 누르면 게임의 종료 확인 창이 열립니다.
 
 실험 기능 (BETA)
 - 구버전 리플레이 재생: 기본 OFF. 전적에서 게임 버전이 달라 재생할 수 없던 리플레이의 재생 버튼을 켭니다. 리플레이는 지금 게임으로 재생되므로 규칙이 바뀐 부분에서 도중에 멈추거나 화면이 틀릴 수 있습니다.
@@ -173,34 +176,33 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 - 받는 도중 게임을 끄거나 인터넷 연결 문제로 받지 못해도 자동 업데이트는 꺼지지 않고 다음 실행 때 다시 받습니다. 파일을 바꾸는 적용 도중에 끊긴 경우에만 자동 업데이트가 꺼지고, 업데이트 설정에서 `다시 사용`을 눌러야 합니다.
 - 같은 공개 버전이 프리 릴리즈↔릴리즈로 바뀌어도 설치된 파일과 저장한 채널은 그대로 둡니다.
 - 수동 업데이트는 버전 역행과 같은 버전의 다른 파일 덮어쓰기를 차단합니다.
-- Astral Party - BetterAstralParty로 실행할 때 공용 로더가 OFF라면 안내창 없이 ON으로 전환하며, 변경 전 원본은 `BepInEx/config/BetterAstralParty.loader-before-*.bak`에 보관합니다.
+- 공용 로더가 OFF면 Steam에서 실행해도 모드가 켜지지 않습니다. 게임 폴더의 `BetterAstralParty-Mod.cmd`로 실행하면 그 실행에서만 로더를 켜고, Steam이 실행 옵션 확인 창을 띄웁니다. 로더 설정 파일은 바꾸지 않습니다.
 - 이전에 받은 패키지의 설치·제거 도구는 자동 업데이트로 바뀌지 않으므로 최신 전체 패키지를 사용하세요.
-- 자동 업데이트 파일과 임시 작업 파일은 게임 폴더의 `BetterAstralParty.Update/`에 모입니다.
+- 자동 업데이트 파일과 임시 작업 파일은 게임 폴더의 `BetterAstralParty.Update/`에 모입니다. 제거 후 다시 설치할 때 남기는 이전 업데이트 기록은 그 안의 `history/`에 보관합니다.
 - 게임 핫픽스로 파일 해시나 카탈로그가 달라진 것만으로 설치·실행을 막지 않습니다. 실제로 맞지 않는 선택 기능만 중단합니다.
 - 안전 모드로 실행한 다음 실행에서도 다시 묻습니다. 새 BetterAstralParty 버전이나 바뀐 게임 빌드에서는 묻지 않고 평소처럼 시작합니다. 안전 모드에서 새 버전을 자동으로 적용할 수 없으면(자동 적용이 꺼져 있거나 자동 업데이트가 꺼진 상태) 확인 창이 설치 ZIP으로 설치하라고 안내합니다.
-- 모드를 켠 상태로 게임 자체가 시작되지 않으면 순정 Steam 클라이언트로 실행하거나 `Create-Diagnostics.cmd`로 진단 ZIP을 만들고 최신 전체 패키지를 설치하세요.
+- 모드를 켠 상태로 게임 자체가 시작되지 않으면 `AstralParty-Vanilla.cmd`로 실행하거나 `Create-Diagnostics.cmd`로 진단 ZIP을 만들고 최신 전체 패키지를 설치하세요.
 
 </details>
 
 ### 제거
 
-최신 전체 패키지의 `Uninstall.cmd`를 실행하고 제거 목록을 확인하세요. 모드 파일과 설정은 `%LOCALAPPDATA%/BetterAstralParty/Backups/v5`에 백업한 뒤 제거합니다. 공용 BepInEx 파일과 로더 설정, 다른 모드, 한국어 패치는 유지합니다. 1.2.x 이하 버전은 사용하던 패키지의 제거기를 사용하세요.
+최신 전체 패키지의 `Uninstall.cmd`를 실행하면 제거 창이 열립니다. 지울 파일 수를 확인한 뒤 제거를 누르세요. 모드 파일과 설정은 `%LOCALAPPDATA%/BetterAstralParty/Backups/v5`에 백업한 뒤 제거합니다. 공용 BepInEx 파일과 로더 설정, 다른 모드, 한국어 패치는 유지합니다. 1.2.x 이하 버전은 사용하던 패키지의 제거기를 사용하세요.
 
 > [!CAUTION]
-> 정상 제거가 실패하면 `Force-Uninstall.cmd`를 실행하고 삭제 목록을 확인하세요. 동의하면 표시된 BetterAstralParty 파일·설정·해당 설치의 복구 백업을 되돌릴 수 없게 삭제합니다. 공용 로더와 다른 모드는 보존합니다.
+> 정상 제거가 실패하면 `Force-Uninstall.cmd`를 실행하세요. 강제 제거 창에서 지울 파일 수를 확인하고, 전체 목록은 자세히 보기에서 볼 수 있습니다. 되돌릴 수 없다는 확인란을 선택한 뒤 영구 삭제를 누르면 BetterAstralParty 파일·설정·해당 설치의 복구 백업을 백업 없이 삭제합니다. 공용 로더와 다른 모드는 보존합니다.
 
 <details>
 <summary>제거 추가 안내</summary>
 
-- Steam 라이브러리 항목을 지우려면 Steam을 종료해야 합니다. 제거가 끝나도 Steam은 다시 켜지지 않으니 필요하면 직접 실행하세요.
-- Steam 경로나 계정을 찾지 못하면 Steam 라이브러리 항목 정리는 건너뜁니다. 남은 Astral Party - BetterAstralParty 또는 Astral Party - Mod 항목은 Steam에서 직접 제거할 수 있습니다.
+- 이전 버전이 추가한 Steam 외부 게임이 있으면 지우기 위해 Steam을 종료해야 합니다. 제거가 끝나도 Steam은 다시 켜지지 않으니 필요하면 직접 실행하세요.
+- Steam 경로나 계정을 찾지 못하면 Steam 외부 게임 정리는 건너뜁니다. 남은 Astral Party - BetterAstralParty 또는 Astral Party - Mod는 Steam에서 직접 제거할 수 있습니다.
 - 완전 제거 후에는 전체 패키지의 `Install.cmd`로 재설치할 수 있습니다. 복구 안내가 나오면 로그와 백업을 보관하고 표시된 절차를 따르세요.
 
 </details>
 
 ### 문제 해결과 제보
 
-- Steam 항목이 안 보이면 Steam을 재시작하고 라이브러리 필터와 로그인 계정을 확인하세요. 항목 복구에는 `Install.cmd`를 사용하세요.
 - `Install.cmd`가 버전 때문에 설치를 거부하면, 화면에 막은 버전과 할 일이 함께 나옵니다. 그 버전 이상을 받거나 `Uninstall.cmd`로 제거한 뒤 새로 설치하세요. 설정은 보관된 사본으로 다시 불러올 수 있습니다.
 - 설치·실행 오류는 `Open-Logs.cmd`로 로그를 확인하세요. 계산 문제는 모드 설정에서 진단 로그를 켠 뒤 재현하세요.
 - 진단 ZIP은 패키지의 `Create-Diagnostics.cmd` 또는 F8 → 일반 설정 → 진단 ZIP 만들기로 만들며, 바탕 화면의 `BetterAstralParty-Diagnostics` 폴더에 저장됩니다.
@@ -268,21 +270,23 @@ BetterAstralParty 자체 코드는 [MIT 라이선스](LICENSE)로 제공합니�
 > If you use 1.2.x or earlier, uninstall with your previous package's `Uninstall.cmd` first, then install fresh. If removal fails, try `Force-Uninstall.cmd` from the new package. If that still does not help, back up any data you want to keep, perform a clean installation of the game and try again.
 
 1. Download `BetterAstralParty-<version>.zip` from [Download](https://github.com/TSM701/BetterAstralParty/releases). Source ZIPs are not installation packages.
-2. Launch Astral Party INT(Global) once through the Steam client, let game and data updates finish, then exit normally.
+2. Start Astral Party INT(Global) once from Steam, let game and data updates finish, then exit normally.
 3. Extract the entire ZIP to a separate writable folder. Do not overwrite the game folder directly or run inside the ZIP.
-4. While signed in to Steam, run `Install.cmd` from the extracted folder. If prompted, select the `Astral Party` folder or its `8vJXnINT` child, as shown by Steam's Installed Files → Browse.
-5. Launch Astral Party - BetterAstralParty from your Steam library. A console window may flash briefly. First-time loader initialization and file downloads may take time and require internet access. Steam starts the game itself, so the library shows Astral Party as running and the Steam overlay and in-game purchases keep working. Close the game first if it is already running.
+4. Run `Install.cmd` from the extracted folder. An install window opens; check the game folder, then press Install. If it cannot find the game, choose the `Astral Party` folder Steam opens from Installed Files → Browse.
+5. Start Astral Party from Steam. First-time loader initialization and file downloads may take time and require internet access.
 
 > [!TIP]
-> To play without the mod, launch through the Steam client or run `AstralParty-Vanilla.cmd` in the game folder. The two launch methods only select BetterAstralParty; other BepInEx mods stay available in both. Close the game before switching and leave Astral Party's Steam launch options unchanged.
+> To play without the mod, run `AstralParty-Vanilla.cmd` in the game folder. Only that launch runs without BetterAstralParty; other BepInEx mods stay available. Close the game before switching and leave Astral Party's Steam launch options unchanged.
 
 <details>
 <summary>Installed files and more</summary>
 
 - The installer is `artifacts/BetterAstralParty-Setup.exe` inside the package and is not copied into the game folder. The game folder only receives `BetterAstralParty-Mod.cmd`, `AstralParty-Vanilla.cmd`, `BetterAstralParty.compatibility.json`, `BepInEx/plugins/BetterAstralParty/BetterAstralParty.dll` and installation records.
-- If Steam or its account cannot be discovered, files are installed without changing shortcuts. Launch the game through the Steam client, then rerun `Install.cmd` to add the entry.
-- Earlier versions named the Steam entry Astral Party - Mod. In-game updates keep that name; running `Install.cmd` from a new package closes Steam once and renames it to Astral Party - BetterAstralParty, keeping playtime and artwork.
-- When the game or Steam must be closed, the installer tells you. Close it yourself, then recheck or cancel; the installer never force-closes processes.
+- Installation adds no Steam library entry, so Steam does not need to be closed.
+- The Astral Party - BetterAstralParty or Astral Party - Mod entry added by earlier versions keeps working. Remove it in Steam if you no longer need it; `Uninstall.cmd` also removes it.
+- The BepInEx log window shown at game start can be turned off with a check box in the install window. A newly installed BepInEx starts with it off; an existing setting changes only when you tick the box.
+- When the game or Steam must be closed, the install window tells you. Close it yourself, then press Check again or cancel; the installer never force-closes processes.
+- Running `Install.cmd` or `Uninstall.cmd` with an argument such as `-CheckOnly` or `-WhatIf` uses the console instead of the window.
 - A newly installed shared loader defaults to ON.
 
 </details>
@@ -297,8 +301,8 @@ Open Mod Settings in the lobby using its button or F8, or from the Mod Settings 
 Battle Advice
 - Action Advice: ON by default. Recommends Attack/Let Go, Defend/Dodge and cards from public information without selecting actions. Defend/Dodge recommends Defend, or Dodge when defending is a sure KO. It is not a master switch for the whole mod. With a Shooting Star chip, the Let Go button shows the damage dealt to the monster and the Starlight gained when you let it go.
 - Advice Details: ON by default. Hover over action advice to see damage and KO probabilities. OFF hides the numbers but keeps recommendation icons.
-- KO Dice Target: ON by default. Shows the KO dice target when you attack or a monster defends in another player's combat, and the survival dice target when you defend or a player defends in another player's combat. A target is the roll that decides the outcome even at the lowest card bonus, chosen to cover the most such dice combinations, and is recalculated with the actual bonuses once they are revealed. Includes card-hover conditions. When the combat has effects the calculation does not count, their icons appear below with "Effects not counted"; hover the question mark for an explanation.
-- Final Damage: ON by default. Shows the damage calculated from the revealed dice and card bonuses, before the final totals appear. When effects the calculation does not count are involved, their icons appear under the damage with "Effects not counted".
+- KO Dice Target: ON by default. Shows the KO dice target when you attack or a monster defends in another player's combat, and the survival dice target when you defend or a player defends in another player's combat. A target is the roll that decides the outcome even at the lowest card bonus, chosen to cover the most such dice combinations. While spectating, or once your attack cards are locked, card bonuses count at the values actually rolled. Once both sides have chosen, it shows the certain or impossible KO from the dice the server decided. Includes card-hover conditions. When the combat has effects the calculation does not count, their icons appear below with "Effects not counted"; hover the question mark for an explanation.
+- Final Damage: ON by default. Shows the damage the server decided as soon as both sides have chosen and the dice show starts.
 
 Battle Display
 - Combat Status: ON by default. Shows public hand counts and effects below combat HP, and whether each player or monster can counterattack. Effect icons the calculation does not count carry a question mark, and their description shows "Not in calculations".
@@ -311,12 +315,12 @@ Field / Camera
 - Indicator Height: 100% by default. Places the player indicator marker between the character's base (0%) and its original height (100%), adjusted with a slider.
 - Move Direction Highlight: Arrows Only by default. Redraws the walk-direction marks under players and monsters on top, so characters, monsters and trees no longer hide them. Arrows Only draws an arrow where each circle points, lying flat on the ground. Circles and Arrows also draws the circles, with the half behind the character dashed. Off leaves only the game's own marks.
 - Wheel Zoom and Free Camera: ON by default. Enables PvE field wheel zoom and a Free Camera that persist across turns. Select Exit Free Camera to the right of the turn-bar pin to restore the default view. Clicking a player's portrait moves the view to that player; clicking the name and chip area opens the details and keeps the zoom. Monster indicators stay in the same place beside the monster while zoomed. With Pin Dice to Screen (ON by default), rolled dice keep the default view's screen position and size while zoomed or in Free Camera; turn it off to leave them on the field as in the base game, so zoom changes their size.
-- Fade When Zoomed Out / Hide When Far: both ON by default. Apply to field indicators while wheel zoom is in use.
-- Fade Strength: 100% by default, 0–100%. A slider for how much indicators fade when zoomed out.
+- Opacity When Zoomed Out / Hide When Far: both ON by default. Apply to field indicators while wheel zoom is in use.
+- Opacity When Zoomed Out slider: 30% by default, 0–100%. A slider for indicator opacity at the farthest zoom-out; 100% is unchanged and 0% hides them.
 - Zoom Sensitivity: 100% by default, 10–300%. How far one wheel tick zooms.
 - Max Zoom-Out: 100% by default, 0–100%. How far the wheel can zoom out; 100% shows the whole field and 0% stays at the default view.
 - WASD Speed: 100% by default, 10–300%. How fast WASD moves the Free Camera.
-- Hide Distance: 25% by default, 0–100%. The zoom-out distance at which Hide When Far hides indicators; they return 10% closer.
+- Hide Distance: 25% by default, 0–100%. The zoom-out distance at which Hide When Far hides indicators and shows them again.
 
 Hand and Cards
 - Group Hand: Native, Click or Hover; the default is Native. Groups your PvE field hand by function; Click expands horizontally and Hover upward. In both modes, drag cards to the submission area above the cards; Hover highlights it.
@@ -332,6 +336,7 @@ Characters
 Convenience
 - Auto Thanks: ON by default. Sends the game's Thanks suggestion once each time it appears. Never sends in PvP, spectating or replays.
 - Clear Ping Mode on Alt+Tab: ON by default. Cancels lingering ping selection after Alt+Tab without sending a ping.
+- Press Esc on the home screen to open the game's exit confirmation.
 
 Experimental (BETA)
 - Old Version Replays: OFF by default. Enables the play button for match record replays from another game version, which the game otherwise refuses. The replay plays through the current game, so it may stop midway or show the wrong outcome where the rules have changed.
@@ -387,26 +392,26 @@ Updates
 - Closing the game during a download, or a download that fails on the network, does not turn automatic updates off; the next start downloads again. Only an apply cut off while it replaces files turns them off, and then `Re-enable Updates` in Update Settings is needed.
 - Reclassifying the same public version between Pre-release and Release leaves installed files and your saved channel unchanged.
 - Manual updates block downgrades and replacing a version with different files at the same version.
-- Launching Astral Party - BetterAstralParty turns an OFF shared loader ON without a prompt and keeps the original configuration at `BepInEx/config/BetterAstralParty.loader-before-*.bak`.
+- With the shared loader OFF, starting from Steam runs no mods. `BetterAstralParty-Mod.cmd` in the game folder turns the loader on for that launch only, and Steam asks you to confirm its launch options. The loader configuration file is not changed.
 - Automatic updates do not replace the installation/removal tools in previously downloaded packages; use the latest complete package.
-- Automatic-update downloads and temporary working files are kept in `BetterAstralParty.Update/` inside the game folder.
+- Automatic-update downloads and temporary working files are kept in `BetterAstralParty.Update/` inside the game folder. The earlier update record kept when you reinstall after a removal goes to its `history/` folder.
 - Changed game hashes or catalogs after a hotfix alone do not block installation or launch. Only an incompatible optional feature stops.
 - The start after a safe-mode run asks again. A new BetterAstralParty version or a changed game build starts normally without asking. If safe mode cannot apply a new version by itself (Apply Automatically is off, or automatic updates are turned off), a message box asks you to install the complete ZIP.
-- If the game itself cannot start with the mod, launch through the Steam client or create a diagnostics ZIP with `Create-Diagnostics.cmd`, and install the latest complete package.
+- If the game itself cannot start with the mod, start it with `AstralParty-Vanilla.cmd` or create a diagnostics ZIP with `Create-Diagnostics.cmd`, and install the latest complete package.
 
 </details>
 
 ### Uninstall
 
-Run `Uninstall.cmd` from the latest complete package and review the removal list. Mod files and settings are backed up under `%LOCALAPPDATA%/BetterAstralParty/Backups/v5` before removal. Shared BepInEx files and loader settings, other mods and Korean patches are preserved. Installations of 1.2.x or earlier must use their previous package's uninstaller.
+Run `Uninstall.cmd` from the latest complete package; a removal window opens. Check how many files it removes, then press Uninstall. Mod files and settings are backed up under `%LOCALAPPDATA%/BetterAstralParty/Backups/v5` before removal. Shared BepInEx files and loader settings, other mods and Korean patches are preserved. Installations of 1.2.x or earlier must use their previous package's uninstaller.
 
 > [!CAUTION]
-> If normal removal fails, run `Force-Uninstall.cmd` and review the deletion list. After confirmation, it permanently deletes the listed BetterAstralParty files, settings and recovery backups for that installation. Shared loader files and other mods are preserved.
+> If normal removal fails, run `Force-Uninstall.cmd`. The force-uninstall window shows how many files it deletes, and Details shows the full list. Tick the box confirming that deleted files cannot be restored, then press Delete permanently; it deletes the BetterAstralParty files, settings and recovery backups for that installation without a backup. Shared loader files and other mods are preserved.
 
 <details>
 <summary>More about removal</summary>
 
-- Removing the Steam library entry needs Steam closed. Steam is not started again after removal; start it yourself when needed.
+- Removing a Steam library entry added by an earlier version needs Steam closed. Steam is not started again after removal; start it yourself when needed.
 - If Steam or its account cannot be discovered, shortcut cleanup is skipped. Remove any remaining Astral Party - BetterAstralParty or Astral Party - Mod entry manually in Steam.
 - After complete removal, run `Install.cmd` from a complete package to reinstall. If recovery is required, keep logs and backups and follow the displayed procedure.
 
@@ -414,7 +419,6 @@ Run `Uninstall.cmd` from the latest complete package and review the removal list
 
 ### Troubleshooting and reports
 
-- Missing Steam entry: restart Steam and check library filters and the signed-in account. Use `Install.cmd` to repair the entry.
 - If `Install.cmd` refuses a version, it shows the version that blocks it and what to do: install that version or newer, or remove the mod with `Uninstall.cmd` and install again. Settings can be restored from the kept copy.
 - Installation or launch errors: open logs with `Open-Logs.cmd`. For calculation issues, turn on Diagnostic Log in mod settings and reproduce the issue.
 - Create a diagnostics ZIP with the package's `Create-Diagnostics.cmd` or F8 → General → Create Diagnostics ZIP. It is saved to the `BetterAstralParty-Diagnostics` folder on the Desktop.

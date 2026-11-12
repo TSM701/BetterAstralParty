@@ -1,7 +1,8 @@
 @echo off
 setlocal DisableDelayedExpansion
-rem Steam's "Astral Party - BetterAstralParty" shortcut. Steam itself starts the owned app 2622000, so the overlay and
-rem in-game checkout bind to the real game. A short-lived request file activates BetterAstralParty for that launch.
+rem Target of the "Astral Party - BetterAstralParty" Steam entry that earlier versions added. Steam itself starts
+rem the owned app 2622000, so the overlay and in-game checkout bind to the real game. BetterAstralParty runs on every
+rem launch now; the request file only records this route, and the arguments below still turn an OFF loader on.
 if not exist "%~dp0AstralParty_INT.exe" (
     echo Astral Party not found next to this file. Reinstall BetterAstralParty.
     pause

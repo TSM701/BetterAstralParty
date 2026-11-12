@@ -104,6 +104,8 @@ internal static class PublicCombatEffectsCheck
         try
         {
             Catalog(104011, 10401101, 4,4,-2,21014,400,21015,300,21016,300);
+            // The 2026-11-12 tables list the standard 20004 (闪身) icon after the skill's own buff.
+            configs[104011].Members["BuffId"] = Numbers(10401101, 20004);
             Catalog(106311, 10631101, 6,1,-1,1);
             Catalog(12501, 1250101, 3);
             var ordinary = Actor(Array.Empty<int>());
@@ -112,6 +114,18 @@ internal static class PublicCombatEffectsCheck
             var advice = CombatAdvisor.Calculate(new(10,6,3,0) { Modifiers = fixedDodge });
             Check(advice.Recommendation == RecommendedAction.Dodge && advice.Dodge.ExpectedDamage == 0, "fixed-4 reproduction corrected");
             Check(VisibleCombatAdvisor.Calculate(new(9,10,3,3,3,0,0,true) { Modifiers = fixedDodge })?.Recommendation == RecommendedAction.Dodge, "choice UI shares fixed dodge");
+            // Moses's 정밀 기술 (1251201, STRSkill 12512 Params [3, 2, 1]): the dodge die is always above the stack count.
+            Catalog(12512, 1251201, 3,2,1);
+            var precise = PublicCombatEffects.Read(Actor(Array.Empty<int>(), Buff(1251201, 2)), "dice", ordinary)!.Value;
+            Check(precise.DodgeDice == DiceFaces.Range(3,6) && precise.DefenseDice == default && precise.PreRollDiceKnown, "two stacks: dodge 3..6, defense unchanged");
+            Check(PublicCombatEffects.Read(Actor(Array.Empty<int>(), Buff(1251201, 0)), "dice", ordinary)!.Value.DodgeDice == default, "no stacks, ordinary dodge");
+            Check(PublicCombatEffects.Read(Actor(Array.Empty<int>(), Buff(1251201, 9)), "dice", ordinary)!.Value.DodgeDice == DiceFaces.Range(6,6), "the floor never passes 6");
+            Check(PublicCombatEffects.Read(Actor(new[] {104011}, Buff(1251201, 1)), "dice", ordinary)!.Value.DiceUnsupported, "a fixed dodge face and the floor are not combined");
+            Check(CombatAdvisor.Calculate(new(5,9,2,0) { Modifiers = precise }).Dodge.ExpectedDamage == 0
+                && CombatAdvisor.Calculate(new(5,9,2,0) { Modifiers = precise }).Recommendation == RecommendedAction.Dodge, "a floor above the attack die is a certain escape");
+            Check(Math.Abs(CombatAdvisor.Calculate(new(5,9,4,0) { Modifiers = precise }).Dodge.KnockoutChance - .5) < 1e-9, "faces 3..6 against a 4: two of four escape");
+            Catalog(12512, 1251201, 3,2);
+            Check(PublicCombatEffects.Read(Actor(Array.Empty<int>(), Buff(1251201, 1)), "dice", ordinary)!.Value.DiceUnsupported, "a changed 12512 schema is unsupported");
             var source = Actor(new[] {106311});
             var fixedAttack = PublicCombatEffects.Read(ordinary, "dice", source)!.Value;
             Check(fixedAttack.AttackDice == DiceFaces.Range(6,6), "no Mind fixes attack to live face");
@@ -131,7 +145,43 @@ internal static class PublicCombatEffectsCheck
             Check(VisibleCombatAdvisor.Calculate(new(9,10,3,3,3,0,0,true) { Modifiers = unknown }) != null, "a revealed attack die keeps defend/dodge advice despite an unsupported attacker rule");
             Check(CardKoMinimum.Calculate(new(9,10,5,5,2,2) { Modifiers = unknown }, null, 3, possible:true) != null && CardKoMinimum.Calculate(new(9,10,5,5,2,2) { Modifiers = unknown }, null, possible:true) == null,
                 "an unsupported attacker rule hides only the pre-roll KO view");
-            Check(PublicCombatEffects.Read(Actor(Array.Empty<int>(), Buff(1250201)), "dice", ordinary)!.Value.DiceUnsupported, "zero-roll conditional rule not treated as ordinary");
+            Check(PublicCombatEffects.Read(Actor(Array.Empty<int>(), Buff(1250201)), "dice", ordinary)!.Value.DiceUnsupported, "a mark whose opponent is unknown is not treated as ordinary");
+            // Moses's 약점 (1250201): the marked side's dice are 0 against Moses (character 125) and ordinary against anyone else.
+            RuntimeObject Hero(int id, params RuntimeObject[] buffs) => RuntimeObject.Node(
+                ("player", RuntimeObject.Node(("GetBattlePassiveSkillId", Numbers()), ("characterConfig", RuntimeObject.Node(("Id", RuntimeObject.Number(id)))))),
+                ("buffContainer", RuntimeObject.Node(("GetShowBuffs", RuntimeObject.Node(("Item1", RuntimeObject.List(buffs)), ("Item2", RuntimeObject.List()))))));
+            var marked = Hero(1072, Buff(1250201));
+            var mosesHits = PublicCombatEffects.Read(marked, "dice", Hero(125))!.Value;
+            Check(mosesHits.DefenseDice.ZeroOnly && mosesHits.DodgeDice.ZeroOnly && mosesHits.AttackDice == default && mosesHits.DiceValid && mosesHits.PreRollDiceKnown,
+                "a marked defender's defense and dodge dice are 0 against Moses");
+            var markedHits = PublicCombatEffects.Read(Hero(125), "dice", marked)!.Value;
+            Check(markedHits.AttackDice.ZeroOnly && markedHits.DefenseDice == default && markedHits.PreRollDiceKnown, "a marked attacker's die is 0 against Moses");
+            var otherHits = PublicCombatEffects.Read(marked, "dice", Hero(102))!.Value;
+            Check(otherHits.DefenseDice == default && otherHits.DodgeDice == default && otherHits.PreRollDiceKnown && !otherHits.DiceUnsupported, "the mark changes nothing against another hero");
+            Check(PublicCombatEffects.Read(Hero(1072, Buff(1250201), Buff(1250101)), "dice", Hero(125))!.Value.DefenseDice.ZeroOnly, "a 0 die stays 0 under the max-3 cap");
+            // Logged 2026-11-08, fight 6: Moses ATK 5 + die 6 = 11 against the marked monster's DEF 2 + die 0, STR mark +1: 10.
+            Check(CombatAdvisor.Calculate(new(28, 11, 6, 2) { Modifiers = mosesHits with { Bonus = 1 } }).Defend.ExpectedDamage == 10, "fight 6: a 0 defense die adds nothing");
+            Check(CombatAdvisor.Calculate(new(9, 9, 2, 2) { Modifiers = mosesHits }).Dodge.KnockoutChance == 1, "a 0 dodge die never escapes");
+            // Fights 5 and 23: the marked monster's shown attack die was 0 and Moses's dodge (4, 5) escaped.
+            Check(CombatAdvisor.FinalDamage(8, 5, 4, true, 0, markedHits) == 0 && CombatAdvisor.FinalDamage(8, 5, 1, false, 0, markedHits) == 4, "a 0 attack die is a real roll");
+            Check(CombatAdvisor.Calculate(new(8, 5, 0, 1) { Modifiers = markedHits }).Dodge.ExpectedDamage == 0, "every dodge face beats a 0 attack die");
+            Check(VisibleCombatAdvisor.Calculate(new(4, 8, 5, 5, 0, 1, 1, true) { Modifiers = markedHits }) != null && VisibleCombatAdvisor.Calculate(new(4, 8, 5, 5, 0, 1, 1, true)) == null,
+                "a shown 0 is a revealed die only for a 0-only attacker");
+            var zeroDefense = new PreRollCombat(4, 8, 5, 5, 2, 2) { Modifiers = mosesHits };
+            var zeroPair = CardKoMinimum.Calculate(zeroDefense, null)!.Value;
+            // HP 8, ATK 5 + die against DEF 2 + 0: 3 + die, so a 5 or 6 is a certain KO.
+            Check(zeroPair == new KoPair(5, CardKoMinimum.ZeroRow) && CardDiceLayout.Status(zeroPair, CardKoMinimum.OutcomeRange(zeroDefense, null), 8) == ""
+                && CardDiceLayout.Content(zeroPair, 0, 1, defenseDice: zeroDefense.Modifiers.DefenseDice) == (0, "=", "") && CardDiceLayout.Content(zeroPair, 0, 0, defenseDice: zeroDefense.Modifiers.DefenseDice) == (5, "≥", ""),
+                "KO against a 0 defense die needs only the attack die, and the defense row reads = 0");
+            // HP 3, ATK 5 + 0 against DEF 1 + die: 4 - die (at least 1), so Moses survives from a 2.
+            var zeroAttack = new PreRollCombat(4, 3, 5, 5, 1, 1) { Modifiers = markedHits };
+            var zeroSurvival = CardKoMinimum.Survival(zeroAttack, null)!.Value;
+            Check(zeroSurvival == new KoPair(0, 2) && CardDiceLayout.Status(zeroSurvival, CardKoMinimum.OutcomeRange(zeroAttack, null), 3, true) == ""
+                && CardDiceLayout.Content(zeroSurvival, 0, 0, true, attackDice: markedHits.AttackDice) == (0, "=", "")
+                && CardDiceLayout.Content(zeroSurvival, 0, 1, true, defenseDice: markedHits.DefenseDice, attackDice: markedHits.AttackDice) == (2, "≥", ""),
+                "survival against a 0 attack die needs only the defense die, and the attack row reads = 0");
+            Check(CardKoMinimum.RevealedDie(1, true, 0, true) && !CardKoMinimum.RevealedDie(1, true, 0) && DiceFaces.Range(0, 0).Valid && !default(DiceFaces).Contains(0),
+                "a shown 0 counts as revealed only for a 0-only attacker; ordinary dice never include 0");
             var uncounted = PublicCombatEffects.Read(Actor(Array.Empty<int>(), Buff(10007), Buff(5007002), Buff(9999901, 1, 2)), "dice",
                 Actor(Array.Empty<int>(), Buff(2002001)))!.Value;
             Check(uncounted.Unknown == new UnknownEffects(2002001, 5007002, Count: 2) && uncounted.Bonus == 0,
@@ -158,9 +208,13 @@ internal static class PublicCombatEffectsCheck
                 Check(CardKoMinimum.OutcomeRange(input,null) == (values.Min(),values.Max()), "all-outcome bounds use allowed faces");
             }
             Catalog(104011,10401101,4,5,-2,21014,400,21015,300,21016,300);
+            configs[104011].Members["BuffId"] = Numbers(10401101, 20004);
             Check(PublicCombatEffects.Read(Actor(new[] {104011}), "dice", ordinary)!.Value.DodgeDice == DiceFaces.Range(5,5), "live dodge parameter, no cached face");
             Catalog(104011,999,4,4,-2,21014,400,21015,300,21016,300);
+            configs[104011].Members["BuffId"] = Numbers(999, 20004);
             Check(PublicCombatEffects.Read(Actor(new[] {104011}), "dice", ordinary)!.Value.DiceUnsupported, "changed schema association unsupported");
+            Catalog(104011,10401101,4,4,-2,21014,400,21015,300,21016,300);
+            Check(PublicCombatEffects.Read(Actor(new[] {104011}), "dice", ordinary)!.Value.DiceUnsupported, "the single-buff schema before 2026-11-12 is not this table");
             Console.WriteLine("Public dice: fixed dodge/attack, Mind, caps, allowed KO/survival faces, unknown precedence and final-result independence passed (native substitute).");
         }
         finally { RuntimeObject.Tables.Clear(); }

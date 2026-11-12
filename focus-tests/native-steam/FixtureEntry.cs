@@ -155,20 +155,20 @@ internal static partial class FixtureEntry
             var custom = NativeSteamMaintenance.EmptyShortcuts();
             ((OrderedDictionary)custom["shortcuts"]!).Add("3", Item("\"" + Path.Combine(game, "BetterAstralParty-Mod.cmd") + "\"", args: "custom"));
             var customBytes = NativeSteamMaintenance.WriteShortcuts(custom); File.WriteAllBytes(path, customBytes);
-            Check(!NativeSteamMaintenance.PlanRegister(steam, 11, game) && NativeSteamMaintenance.Register(steam, 11, game) == null && File.ReadAllBytes(path).SequenceEqual(customBytes),
+            Check(!NativeSteamMaintenance.PlanConvert(steam, 11, game) && NativeSteamMaintenance.Register(steam, 11, game) == null && File.ReadAllBytes(path).SequenceEqual(customBytes),
                 "a Mod shortcut with user launch options is kept and never registered twice");
             var kept = new List<Exception>();
-            Check(!NativeSteamMaintenance.PlanRegister(steam, 11, game, kept.Add) && kept.Count == 0 && !NativeSteamMaintenance.PlanRemove(steam, 11, game, kept.Add)
+            Check(!NativeSteamMaintenance.PlanConvert(steam, 11, game, kept.Add) && kept.Count == 0 && !NativeSteamMaintenance.PlanRemove(steam, 11, game, kept.Add)
                 && kept.Count == 1 && kept[0] is SteamProfileUnavailableException { Reason: "SteamShortcutCustomized", Guidance: not null }, "removal keeps a customized Mod entry and reports why");
             var formerCustom = NativeSteamMaintenance.EmptyShortcuts();
             ((OrderedDictionary)formerCustom["shortcuts"]!).Add("3", Item("\"" + Path.Combine(game, "BetterAstralParty-Mod.cmd") + "\"", "Astral Party - Mod", "custom"));
             var formerCustomBytes = NativeSteamMaintenance.WriteShortcuts(formerCustom); File.WriteAllBytes(path, formerCustomBytes);
-            Check(!NativeSteamMaintenance.PlanRegister(steam, 11, game) && NativeSteamMaintenance.Register(steam, 11, game) == null && File.ReadAllBytes(path).SequenceEqual(formerCustomBytes),
+            Check(!NativeSteamMaintenance.PlanConvert(steam, 11, game) && NativeSteamMaintenance.Register(steam, 11, game) == null && File.ReadAllBytes(path).SequenceEqual(formerCustomBytes),
                 "a former-name entry with user launch options stays the user's and is neither renamed nor registered twice");
             File.WriteAllBytes(path, original); var backup = path + ".BetterAstralParty-" + new string('a', 32) + ".bak"; File.Move(path, backup);
-            Check(NativeSteamMaintenance.PlanRegister(steam, 11, game), "a backup a finished swap kept is not an interruption");
+            var none = new List<Exception>(); Check(!NativeSteamMaintenance.PlanConvert(steam, 11, game, none.Add) && none.Count == 0, "a backup a finished swap kept is not an interruption");
             var temp = path + "." + new string('b', 32) + ".tmp"; File.WriteAllBytes(temp, original); var skipped = new List<Exception>();
-            Check(!NativeSteamMaintenance.PlanRegister(steam, 11, game, skipped.Add) && !NativeSteamMaintenance.PlanRemove(steam, 11, game, skipped.Add) && NativeSteamMaintenance.Register(steam, 11, game) == null && !File.Exists(path)
+            Check(!NativeSteamMaintenance.PlanConvert(steam, 11, game, skipped.Add) && !NativeSteamMaintenance.PlanRemove(steam, 11, game, skipped.Add) && NativeSteamMaintenance.Register(steam, 11, game) == null && !File.Exists(path)
                 && skipped.Count == 2 && skipped.All(error => error is SteamProfileUnavailableException { Reason: "SteamShortcutSwapInterrupted", Guidance: not null }),
                 "an interrupted shortcut swap is never overwritten with a fresh file and is reported with restore guidance");
             File.Delete(temp); File.Move(backup, path);
@@ -177,10 +177,10 @@ internal static partial class FixtureEntry
             if (malformed) File.WriteAllBytes(path, new byte[] { 3, 0, 8 });
             var preserved = File.ReadAllBytes(path); var beforeFiles = Directory.GetFiles(steam, "*", SearchOption.AllDirectories).Length;
             using (var locked = malformed ? null : File.Open(path, FileMode.Open, FileAccess.Read, FileShare.None)) {
-                Reject(() => NativeSteamMaintenance.PlanRegister(steam, 11, game), "default shortcut registration planning remains strict");
+                Reject(() => NativeSteamMaintenance.PlanConvert(steam, 11, game), "default shortcut registration planning remains strict");
                 Reject(() => NativeSteamMaintenance.PlanRemove(steam, 11, game), "default shortcut removal planning remains strict");
                 var failures = new List<Exception>();
-                Check(!NativeSteamMaintenance.PlanRegister(steam, 11, game, failures.Add) && !NativeSteamMaintenance.PlanRemove(steam, 11, game, failures.Add)
+                Check(!NativeSteamMaintenance.PlanConvert(steam, 11, game, failures.Add) && !NativeSteamMaintenance.PlanRemove(steam, 11, game, failures.Add)
                     && failures.Count == 2, "opted-in read-only planning skips corrupt/locked shared data");
                 Check(!NativeSteamMaintenance.PlanRemove(steam, 11, game, _ => throw new IOException("inert diagnostic failure")), "optional diagnostic callback cannot force unsafe shortcut mutation");
             }
@@ -188,10 +188,10 @@ internal static partial class FixtureEntry
                 "optional planning neither rewrites nor backs up shared profile data");
             File.WriteAllBytes(path, original);
         }
-        Check(NativeSteamMaintenance.PlanRegister(steam, 11, game), "absent owned shortcut needs registration");
+        Check(!NativeSteamMaintenance.PlanConvert(steam, 11, game), "installations add no entry, so an absent owned entry needs nothing");
         var registered = NativeSteamMaintenance.Register(steam, 11, game)!;
         Check(registered.Backup != null && File.ReadAllBytes(registered.Backup).SequenceEqual(original), "exact original VDF retained by no-overwrite backup");
-        Check(!NativeSteamMaintenance.PlanRegister(steam, 11, game) && NativeSteamMaintenance.PlanRemove(steam, 11, game), "registered shortcut skips Steam mutation");
+        Check(!NativeSteamMaintenance.PlanConvert(steam, 11, game) && NativeSteamMaintenance.PlanRemove(steam, 11, game), "registered shortcut skips Steam mutation");
         var current = File.ReadAllBytes(path); Check(NativeSteamMaintenance.Register(steam, 11, game) == null && File.ReadAllBytes(path).SequenceEqual(current), "already registered is a byte-preserving no-op");
         var parsed = NativeSteamMaintenance.ReadShortcuts(current); var owned = NativeSteamMaintenance.OwnedShortcutKeys(parsed, game)[0]; var item = (OrderedDictionary)((OrderedDictionary)parsed["shortcuts"]!)[owned]!;
         var id = (uint)item["appid"]!; var hero = Path.Combine(Path.GetDirectoryName(path)!, "grid", id + "_hero.png"); var image = Encoding.UTF8.GetBytes("owned old hero");
@@ -213,30 +213,30 @@ internal static partial class FixtureEntry
         Check(NativeSteamMaintenance.Remove(steam, 11, game) == null, "missing owned shortcut is a no-op");
         var legacyRoot = NativeSteamMaintenance.EmptyShortcuts(); var legacyItems = (OrderedDictionary)legacyRoot["shortcuts"]!; legacyItems.Add("5", Item("unrelated", "Other shortcut"));
         legacyItems.Add("6", Item("\"" + Path.Combine(game, "BetterAstralParty-Launcher.exe") + "\"")); File.WriteAllBytes(path, NativeSteamMaintenance.WriteShortcuts(legacyRoot));
-        Check(NativeSteamMaintenance.PlanRegister(steam, 11, game), "1.3.x launcher shortcut needs conversion");
+        Check(NativeSteamMaintenance.PlanConvert(steam, 11, game), "1.3.x launcher shortcut needs conversion");
         var converted = NativeSteamMaintenance.Register(steam, 11, game)!; var convertedRoot = NativeSteamMaintenance.ReadShortcuts(File.ReadAllBytes(path)); bool wasLegacy;
         var convertedKey = NativeSteamMaintenance.OwnedShortcutKeys(convertedRoot, game, out wasLegacy); var convertedItem = (OrderedDictionary)((OrderedDictionary)convertedRoot["shortcuts"]!)[convertedKey[0]]!;
         Check(convertedKey.SequenceEqual(new[] { "6" }) && !wasLegacy && (uint)convertedItem["appid"]! == 0x80000001U && (string)convertedItem["custom"]! == (string)Item("x")["custom"]!
             && ((OrderedDictionary)convertedRoot["shortcuts"]!).Count == 2, "legacy shortcut converted in place: same key, app ID and unrelated fields; no duplicate entry");
-        Check(!NativeSteamMaintenance.PlanRegister(steam, 11, game) && converted.Backup != null, "converted shortcut is current and the original VDF is backed up");
+        Check(!NativeSteamMaintenance.PlanConvert(steam, 11, game) && converted.Backup != null, "converted shortcut is current and the original VDF is backed up");
         var formerRoot = NativeSteamMaintenance.EmptyShortcuts(); var formerItems = (OrderedDictionary)formerRoot["shortcuts"]!; formerItems.Add("5", Item("unrelated", "Other shortcut"));
         formerItems.Add("6", Item("\"" + Path.Combine(game, "BetterAstralParty-Mod.cmd") + "\"", "Astral Party - Mod")); var formerBytes = NativeSteamMaintenance.WriteShortcuts(formerRoot); File.WriteAllBytes(path, formerBytes);
         Check(NativeSteamMaintenance.PlanRemove(steam, 11, game), "removal finds the entry under its former name");
         var formerShown = new List<string>(); var formerRemoved = NativeSteamMaintenance.Remove(steam, 11, game, formerShown.Add)!;
         Check(formerShown.Count == 1 && formerShown[0].Contains("Astral Party - Mod") && !NativeSteamMaintenance.PlanRemove(steam, 11, game), "removal names the former-name entry it removed");
         NativeSteamMaintenance.Rollback(formerRemoved);
-        Check(File.ReadAllBytes(path).SequenceEqual(formerBytes) && NativeSteamMaintenance.PlanRegister(steam, 11, game), "a former-name entry needs renaming");
+        Check(File.ReadAllBytes(path).SequenceEqual(formerBytes) && !NativeSteamMaintenance.PlanConvert(steam, 11, game), "a former-name entry already starts Mod.cmd and installation leaves it");
         var renamed = NativeSteamMaintenance.Register(steam, 11, game)!; var renamedRoot = NativeSteamMaintenance.ReadShortcuts(File.ReadAllBytes(path)); bool stillLegacy;
         var renamedKey = NativeSteamMaintenance.OwnedShortcutKeys(renamedRoot, game, out stillLegacy); var renamedItem = (OrderedDictionary)((OrderedDictionary)renamedRoot["shortcuts"]!)[renamedKey[0]]!;
         Check(renamedKey.SequenceEqual(new[] { "6" }) && !stillLegacy && (string)renamedItem["AppName"]! == "Astral Party - BetterAstralParty" && (uint)renamedItem["appid"]! == 0x80000001U
-            && (string)renamedItem["custom"]! == "preserve me" && ((OrderedDictionary)renamedRoot["shortcuts"]!).Count == 2 && renamed.Backup != null && !NativeSteamMaintenance.PlanRegister(steam, 11, game),
+            && (string)renamedItem["custom"]! == "preserve me" && ((OrderedDictionary)renamedRoot["shortcuts"]!).Count == 2 && renamed.Backup != null && !NativeSteamMaintenance.PlanConvert(steam, 11, game),
             "the former-name entry is renamed in place: same key, app ID and fields; no duplicate entry");
         File.WriteAllBytes(path, original);
         var alias = Path.Combine(steam, "inert-linked-shortcuts.vdf");
         if (!CreateHardLinkW(alias, path, IntPtr.Zero)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
         try {
-            Reject(() => NativeSteamMaintenance.PlanRegister(steam, 11, game), "hard-linked profile data cannot authorize shortcut mutation");
-            var skipped = 0; Check(!NativeSteamMaintenance.PlanRegister(steam, 11, game, _ => skipped++) && !NativeSteamMaintenance.PlanRemove(steam, 11, game, _ => skipped++) && skipped == 2,
+            Reject(() => NativeSteamMaintenance.PlanConvert(steam, 11, game), "hard-linked profile data cannot authorize shortcut mutation");
+            var skipped = 0; Check(!NativeSteamMaintenance.PlanConvert(steam, 11, game, _ => skipped++) && !NativeSteamMaintenance.PlanRemove(steam, 11, game, _ => skipped++) && skipped == 2,
                 "optional linked shared shortcut data is preserved rather than accessed for mutation");
             Check(File.ReadAllBytes(path).SequenceEqual(original), "linked shortcuts and unrelated entries remain unchanged");
         }

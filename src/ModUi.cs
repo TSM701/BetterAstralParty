@@ -257,6 +257,10 @@ internal static partial class ModUi
         catch (Exception ex) { Compatibility.Block("PingFocus", ex); }
         try { InputAttention.Tick(); }
         catch (Exception ex) { Compatibility.Block("InputAttention", ex, InputAttention.Stop); }
+        try { CardChoiceTimer.Tick(); }
+        catch (Exception ex) { Compatibility.Block(CardChoiceTimer.Feature, ex, CardChoiceTimer.Clear); }
+        try { HomeEscQuit.Tick(); }
+        catch (Exception ex) { Compatibility.Block(HomeEscQuit.Feature, ex); }
         var measure = Plugin.DiagnosticLogging.Value && Plugin.Diagnostics.IsRecording;
         var started = measure ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         var allocated = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
@@ -311,7 +315,7 @@ internal static partial class ModUi
             BattleStatusUi.Tick(); Mark(14);
             EncounterCounterUi.Tick(); Mark(15);
             if (measure) fieldStart = System.Diagnostics.Stopwatch.GetTimestamp();
-            FieldBuffUi.Tick(); WalkDirectionUi.Tick(); PlayerTabUi.Tick(); MonsterMoveProbe.Tick(); Mark(16);
+            FieldBuffUi.Tick(); WalkDirectionUi.Tick(); PlayerTabUi.Tick(); MonsterMoveProbe.Tick(); FightDataProbe.Tick(); Mark(16);
             if (measure) fieldEnd = System.Diagnostics.Stopwatch.GetTimestamp();
             if (measure) statusEnd = System.Diagnostics.Stopwatch.GetTimestamp();
             try { TickSettings(); }
@@ -451,7 +455,7 @@ internal static partial class ModUi
     };
 
     // Stored settings in whole percent; the slider shows them from the range minimum.
-    private static int SliderValue(string action) => (int)Math.Round(100 * SliderEntry(action).Value);
+    private static int SliderValue(string action) => MenuLayout.SliderPercent(action, SliderEntry(action).Value);
 
     // Default marker (user-chosen 2026-10-27, replacing a dark line that clashed with the pink bar): a translucent copy of
     // the native star grip (Setting_Com_Slider_grip, the star only; the pink tail belongs to the bar) at the default value,
@@ -462,7 +466,7 @@ internal static partial class ModUi
     {
         var bar = slider.Field("_barObjectH"); var grip = slider.Field("_gripObject");
         if (bar == null || grip == null || max <= min) return;
-        var ratio = Math.Clamp(((float)Math.Round(100 * (float)SliderEntry(action).DefaultValue) - min) / (max - min), 0f, 1f);
+        var ratio = Math.Clamp(((float)MenuLayout.SliderPercent(action, (float)SliderEntry(action).DefaultValue) - min) / (max - min), 0f, 1f);
         var mark = NativeUi.Create("Setting", "Setting_Com_Slider_grip");
         if (mark == null) return;
         mark.Set("touchable", false);
@@ -494,7 +498,7 @@ internal static partial class ModUi
 
     private static void SetSliderValue(string action, int percent)
     {
-        SliderEntry(action).Value = percent * 0.01f;
+        SliderEntry(action).Value = MenuLayout.SliderStored(action, percent);
     }
 
     private static IntPtr _sliderPackage;
@@ -577,7 +581,7 @@ internal static partial class ModUi
         if (pixels <= 0) return;
         var step = range / pixels;
         var next = _dragStart + (TouchX() - _dragX) * step;
-        var fallback = Math.Round(100 * (float)SliderEntry(action).DefaultValue) - min;
+        var fallback = MenuLayout.SliderPercent(action, (float)SliderEntry(action).DefaultValue) - min;
         next = Math.Clamp(Math.Abs(next - fallback) <= DefaultSnapPixels * step ? fallback : Math.Round(next), 0, range);
         if (next != slider.Get<double>("value")) slider.Set("value", next);
     }

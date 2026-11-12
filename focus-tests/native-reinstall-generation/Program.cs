@@ -111,13 +111,48 @@ internal static class NativeReinstallGenerationFixture
         Unchanged(gameBefore, removed.Game, "review writes no game files or locks"); Unchanged(backupsBefore, removed.Backups, "review writes no backups or locks");
         removed.Retire(beta, plan);
         Check(!File.Exists(Path.Combine(removed.Game, UpdateTransaction.HighWaterPath)) && !File.Exists(Path.Combine(removed.Game, "BetterAstralParty.reinstall-v5.pending")), "successful retirement closes the generation");
-        var archives = Directory.GetFiles(removed.Game, UpdateTransaction.HighWaterPath + ".uninstalled-*", SearchOption.TopDirectoryOnly);
-        Check(archives.Length == 1 && Hash(Read(archives[0])) == plan.WaterHash, "exact previous high-water bytes archived");
-        using (var game = new WindowsFileFence(removed.Game)) using (var archive = game.OpenFile(Path.GetFileName(archives[0])))
+        var history = Path.Combine(removed.Game, "BetterAstralParty.Update", "history");
+        var archives = Directory.GetFiles(history, UpdateTransaction.HighWaterPath + ".uninstalled-*", SearchOption.TopDirectoryOnly);
+        Check(archives.Length == 1 && Hash(Read(archives[0])) == plan.WaterHash, "exact previous high-water bytes archived in the history folder");
+        using (var game = new WindowsFileFence(removed.Game)) using (var archive = game.OpenFile(UpdateWorkPath.History + "/" + Path.GetFileName(archives[0])))
             Check(archive.Identity.Text == plan.WaterIdentity, "retirement preserves the original high-water object identity");
-        Check(Directory.GetFiles(removed.Game, "BetterAstralParty.reinstall-v5.completed-*", SearchOption.TopDirectoryOnly).Length == 1, "durable completed generation record retained");
+        Check(Directory.GetFiles(history, "BetterAstralParty.reinstall-v5.completed-*", SearchOption.TopDirectoryOnly).Length == 1, "durable completed generation record retained in the history folder");
+        Check(Directory.GetFiles(removed.Game, "BetterAstralParty.*-v5.*-*", SearchOption.TopDirectoryOnly).Length == 0, "no reinstall record is left in the game root");
         Unchanged(backupsBefore, removed.Backups, "all removal backups remain after retirement");
         Check(Encoding.ASCII.GetString(Read(Path.Combine(removed.Game, "unrelated.keep"))) == "other mod/settings remain", "unrelated file retained");
+    }
+    // Records earlier versions left in the game root move into the history folder; anything unverified or blocked stays.
+    private static void MovedHistory(Package stable)
+    {
+        var game = new Removal("move-history", stable).Game; string root;
+        using (var fence = new WindowsFileFence(game)) { root = fence.RootIdentity.Text; UpdateWorkPath.EnsureHistory(fence); }
+        string Pair(char id, string recordRoot, bool archive = true, string? waterHash = null)
+        {
+            var nonce = new string(id, 32); var water = Encoding.ASCII.GetBytes("inert high-water fixture " + id + "\n");
+            var name = UpdateTransaction.HighWaterPath + ".uninstalled-" + nonce;
+            if (archive) Write(Path.Combine(game, name), water);
+            Write(Path.Combine(game, UpdateWorkPath.ReinstallRecordPrefix + nonce), Encoding.UTF8.GetBytes(
+                "{\"schema\":1,\"purpose\":\"clean-reinstall-generation\",\"root\":\"" + recordRoot + "\",\"fromVersion\":\"1.4.0\",\"toVersion\":\"1.4.1\",\"packageManifestSha256\":\""
+                + new string('A', 64) + "\",\"backupId\":\"" + new string('b', 32) + "\",\"proofSha256\":\"" + new string('C', 64) + "\",\"waterSha256\":\"" + (waterHash ?? Hash(water))
+                + "\",\"archive\":\"" + name + "\"}"));
+            return nonce;
+        }
+        var good = Pair('a', root); var recordOnly = Pair('e', root, archive: false);
+        var foreign = Pair('b', "ABCD1234:0000000000000123"); var changed = Pair('c', root, waterHash: new string('F', 64)); var taken = Pair('d', root);
+        var history = Path.Combine(game, "BetterAstralParty.Update", "history");
+        Write(Path.Combine(history, UpdateTransaction.HighWaterPath + ".uninstalled-" + taken), Encoding.ASCII.GetBytes("keep destination"));
+        var before = Snapshot(game);
+        Check(ReinstallHistory.Move(game, null, false) == 2, "a preview counts only verified pairs whose history destination is free");
+        Unchanged(before, game, "a preview moves nothing");
+        var notes = new List<string>();
+        Check(ReinstallHistory.Move(game, notes.Add) == 2 && notes.Count == 1 && notes[0].Contains("Moved 2 earlier reinstall records"), "verified pairs move and the move is reported once");
+        foreach (var nonce in new[] { good, recordOnly })
+            Check(File.Exists(Path.Combine(history, UpdateWorkPath.ReinstallRecordPrefix + nonce)) && !File.Exists(Path.Combine(game, UpdateWorkPath.ReinstallRecordPrefix + nonce)), "generation record moved: " + nonce[0]);
+        Check(File.Exists(Path.Combine(history, UpdateTransaction.HighWaterPath + ".uninstalled-" + good)) && !File.Exists(Path.Combine(game, UpdateTransaction.HighWaterPath + ".uninstalled-" + good)), "the archive moves with its record");
+        foreach (var nonce in new[] { foreign, changed, taken })
+            Check(File.Exists(Path.Combine(game, UpdateWorkPath.ReinstallRecordPrefix + nonce)) && File.Exists(Path.Combine(game, UpdateTransaction.HighWaterPath + ".uninstalled-" + nonce)), "an unverified or blocked pair stays in the game root: " + nonce[0]);
+        Check(Encoding.ASCII.GetString(Read(Path.Combine(history, UpdateTransaction.HighWaterPath + ".uninstalled-" + taken))) == "keep destination", "an existing history file is never overwritten");
+        Check(ReinstallHistory.Move(game, notes.Add) == 0 && notes.Count == 1, "a second run moves nothing and says nothing");
     }
     private static void Refusals(Package stable, Package beta)
     {
@@ -165,8 +200,10 @@ internal static class NativeReinstallGenerationFixture
             try { removed.Retire(beta, plan); throw new Exception("Expected interruption"); } catch (Interrupted) { }
             finally { NativeReinstallGeneration.FixtureBoundary = null; }
             Check(hit && File.Exists(Path.Combine(removed.Game, "BetterAstralParty.reinstall-v5.pending")), boundary + ": durable intent retained");
-            var paths = Directory.GetFiles(removed.Game, UpdateTransaction.HighWaterPath + "*", SearchOption.TopDirectoryOnly);
-            Check(paths.Length == 1 && Hash(Read(paths[0])) == plan.WaterHash, boundary + ": exact original history retained");
+            var history = Path.Combine(removed.Game, "BetterAstralParty.Update", "history");
+            var paths = Directory.GetFiles(removed.Game, UpdateTransaction.HighWaterPath + "*", SearchOption.TopDirectoryOnly)
+                .Concat(Directory.Exists(history) ? Directory.GetFiles(history, UpdateTransaction.HighWaterPath + "*") : new string[0]).ToArray();
+            Check(paths.Length == 1 && Hash(Read(paths[0])) == plan.WaterHash, boundary + ": exact original history retained (game root or history folder)");
             Reject(() => removed.Review(beta), boundary + ": interruption blocks automatic retry");
             Unchanged(before, removed.Backups, boundary + ": removal backups unchanged");
         }
@@ -249,7 +286,7 @@ internal static class NativeReinstallGenerationFixture
         try
         {
             var stable = new Package(args[2], args[3]); var beta = new Package(args[4], args[5]); var stableBefore = Snapshot(stable.Root); var betaBefore = Snapshot(beta.Root);
-            MetadataCases(args[6]); Happy(stable, beta); Refusals(stable, beta); Interruptions(stable, beta); HistoryPredicate(stable, beta);
+            MetadataCases(args[6]); Happy(stable, beta); MovedHistory(stable); Refusals(stable, beta); Interruptions(stable, beta); HistoryPredicate(stable, beta);
             Unchanged(stableBefore, stable.Root, "immutable stable package unchanged"); Unchanged(betaBefore, beta.Root, "immutable beta package unchanged");
             Json(Path.Combine(Scratch, "verification.json"), new { Passed = true, Checks, Stable = stable.Root, StableManifest = stable.ManifestHash, Beta = beta.Root, BetaManifest = beta.ManifestHash,
                 ActualInstallation = false, SigningOrKeys = false, GameSteamNetworkOrRuntimeExecuted = false });

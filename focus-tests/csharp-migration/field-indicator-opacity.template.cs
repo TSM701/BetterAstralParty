@@ -90,7 +90,7 @@ public static class OpacityCheck {
         Equal(.8f*s.Player.Display.Alpha,.18f);Equal(.4f*s.Monster.Display.Alpha,.18f);
         FieldIndicatorOpacity.Tick(0);Equal(s.Monster.Alpha,1);Equal(s.Player.Alpha,.5f);
         int writes=s.Monster.Writes+s.Player.Writes;FieldIndicatorOpacity.Clear();Assert(writes==s.Monster.Writes+s.Player.Writes);
-        var weak=new Scene();Plugin.IndicatorFadeStrength.Value=.5f;FieldIndicatorOpacity.Tick(.5f);Equal(weak.Monster.Alpha,.725f);Plugin.IndicatorFadeStrength.Value=0;FieldIndicatorOpacity.Tick(.5f);Equal(weak.Monster.Alpha,1);Plugin.IndicatorFadeStrength.Value=1;FieldIndicatorOpacity.Clear();
+        var weak=new Scene();Plugin.IndicatorFadeStrength.Value=.5f;FieldIndicatorOpacity.Tick(.5f);Equal(weak.Monster.Alpha,.725f);Plugin.IndicatorFadeStrength.Value=0;FieldIndicatorOpacity.Tick(.5f);Equal(weak.Monster.Alpha,1);Plugin.IndicatorFadeStrength.Value=100f/70f;FieldIndicatorOpacity.Tick(1f);Equal(weak.Monster.Alpha,0);Plugin.IndicatorFadeStrength.Value=1;FieldIndicatorOpacity.Clear();
         foreach(float alpha in new[]{0f,.1f,.5f,1f,1.5f}) {
             s=new Scene();s.Monster.NativeAlpha(alpha);s.Player.NativeAlpha(alpha);FieldIndicatorOpacity.Tick(.5f);
             Equal(s.Monster.Alpha,alpha*.45f);Equal(s.Player.Alpha,alpha*.45f);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,alpha);Equal(s.Player.Alpha,alpha);
@@ -103,9 +103,9 @@ public static class OpacityCheck {
         Assert(s.Monster.Display.Writes==1&&s.Player.Display.Writes==1);
         // Render and hit-test both consult DisplayObject.visible, independently of child alpha/touchable.
         Assert(!s.Monster.Display.Visible&&!s.Player.Display.Visible);
-        FieldIndicatorOpacity.Tick(.55f);Assert(FieldIndicatorOpacity.Hidden&&!s.Monster.Display.Visible);
-        FieldIndicatorOpacity.Tick(.50f);Assert(!FieldIndicatorOpacity.Hidden&&s.Monster.Display.Visible&&s.Player.Display.Visible);
-        FieldIndicatorOpacity.Tick(.55f);Assert(!FieldIndicatorOpacity.Hidden&&s.Monster.Display.Visible);
+        FieldIndicatorOpacity.Tick(.59f);Assert(!FieldIndicatorOpacity.Hidden&&s.Monster.Display.Visible&&s.Player.Display.Visible);
+        FieldIndicatorOpacity.Tick(.60f);Assert(FieldIndicatorOpacity.Hidden&&!s.Monster.Display.Visible);
+        FieldIndicatorOpacity.Tick(.59f);Assert(!FieldIndicatorOpacity.Hidden&&s.Monster.Display.Visible);
         FieldIndicatorOpacity.Tick(1f);FieldIndicatorOpacity.Tick(2f);Equal(s.Monster.Alpha,.3f);Assert(FieldIndicatorOpacity.Hidden);
         FieldIndicatorOpacity.Clear();Assert(!FieldIndicatorOpacity.Hidden&&s.Monster.Display.Visible&&s.Player.Display.Visible);Equal(s.Monster.Alpha,1);
         // Hide distance 0-100 % (issue #16): 0 % hides at any zoom-out, 100 % only at the stop.

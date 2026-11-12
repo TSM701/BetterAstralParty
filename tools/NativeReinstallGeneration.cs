@@ -289,7 +289,10 @@ namespace BetterAstralParty.Installation
                     {
                         if (water.Identity.Text != plan.WaterIdentity || water.Hash() != plan.WaterHash) throw Bad("ReinstallWaterChanged");
                         maintenance.Recheck(game); processes.Recheck(); heldBackupLock.Recheck(); Absent(game);
-                        var nonce = Guid.NewGuid().ToString("N"); var archive = UpdateTransaction.HighWaterPath + ".uninstalled-" + nonce;
+                        // The intent stays in the game root, where every tool looks for an unfinished reinstall; the archive and
+                        // the completed record go to the history folder, made first so a failure there leaves no intent behind.
+                        UpdateWorkPath.EnsureHistory(game);
+                        var nonce = Guid.NewGuid().ToString("N"); var archive = UpdateWorkPath.History + "/" + UpdateTransaction.HighWaterPath + ".uninstalled-" + nonce;
                         var record = new Dictionary<string, object?> { { "schema", 1 }, { "purpose", "clean-reinstall-generation" }, { "root", plan.RootIdentity },
                             { "fromVersion", plan.Version }, { "toVersion", version }, { "packageManifestSha256", manifestHash }, { "backupId", plan.BackupId },
                             { "proofSha256", plan.JournalHash }, { "waterSha256", plan.WaterHash }, { "archive", archive } };
@@ -301,7 +304,7 @@ namespace BetterAstralParty.Installation
                             intent.Stream.Write(bytes, 0, bytes.Length); intent.Flush(); Boundary("intent-durable", archive);
                             water.RenameTo(game, archive); water.Flush(); Boundary("water-archived", archive);
                             if (water.Hash() != plan.WaterHash) throw Bad("ReinstallArchiveChanged");
-                            intent.RenameTo(game, "BetterAstralParty.reinstall-v5.completed-" + nonce); intent.Flush(); Boundary("generation-completed", archive);
+                            intent.RenameTo(game, UpdateWorkPath.History + "/" + UpdateWorkPath.ReinstallRecordPrefix + nonce); intent.Flush(); Boundary("generation-completed", archive);
                         }
                     }
                 }

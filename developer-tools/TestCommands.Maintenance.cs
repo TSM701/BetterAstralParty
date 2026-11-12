@@ -79,7 +79,9 @@ internal static partial class TestCommands
                 var root = Path.Combine(stage, "frontend-" + ++number, label); Directory.CreateDirectory(Path.Combine(root, "artifacts")); File.WriteAllBytes(Path.Combine(root, entry), sources[entry]); File.Copy(stub, Path.Combine(root, "artifacts/BetterAstralParty-Setup.exe"), false);
                 if (!development) File.WriteAllText(Path.Combine(root, "package-manifest.json"), "{}");
                 var resultPath = Path.Combine(root, "inert-result.json"); var game = Path.Combine(cwd, "selected game [1] (2)"); var relative = label == "bang!folder" && delayed == "on"; var invocation = relative ? entry : Path.Combine(root, entry); var caller = relative ? root : cwd;
-                var environment = new Dictionary<string, string?> { ["LOCALAPPDATA"] = Path.Combine(root, "local-data"), ["TEMP"] = Path.Combine(root, "temp-data"), ["BAP_ENTRY_RESULT"] = resultPath, ["BAP_FIXTURE_EXIT"] = status.ToString(System.Globalization.CultureInfo.InvariantCulture), ["BAP_EXIT"] = "parent-value" };
+                // NoDefaultCurrentDirectoryInExePath: cmd skips the current folder for bare names, so the entries name .\ themselves.
+                // Never with a relative invocation: cmd would then look the entry up on PATH and run another program's Install.cmd.
+                var environment = new Dictionary<string, string?> { ["LOCALAPPDATA"] = Path.Combine(root, "local-data"), ["TEMP"] = Path.Combine(root, "temp-data"), ["BAP_ENTRY_RESULT"] = resultPath, ["BAP_FIXTURE_EXIT"] = status.ToString(System.Globalization.CultureInfo.InvariantCulture), ["BAP_EXIT"] = "parent-value", ["NoDefaultCurrentDirectoryInExePath"] = number % 2 == 0 && !relative ? "1" : null };
                 var code = RunFrontendCommand("\"\"" + invocation + "\" -GameRoot \"" + game + "\" " + preview + " <nul\"", delayed, caller, environment);
                 Check(code == status && File.Exists(resultPath), "CMD exit code and inert dispatch: " + number);
                 var result = PackagingBoundary.Parse(File.ReadAllBytes(resultPath)); var operation = entry == "Install.cmd" ? "install" : entry == "Uninstall.cmd" ? "uninstall" : "force-uninstall";
@@ -92,6 +94,22 @@ internal static partial class TestCommands
             var local = Path.Combine(root, "local-data"); var temporary = Path.Combine(root, "temp-data");
             var code = RunFrontendCommand("\"\"" + Path.Combine(root, entry) + "\" " + preview + " <nul\"", "off", cwd, new Dictionary<string, string?> { ["LOCALAPPDATA"] = local, ["TEMP"] = temporary });
             Check(code != 0 && (preview.Length == 0 || !Directory.Exists(local) && !Directory.Exists(temporary)), "Missing setup fails without preview writes: " + number);
+        }
+        // Double-clicked: no arguments, so the entry starts the window without waiting, logs the start and its console closes.
+        foreach (var development in new[] { false, true }) foreach (var entry in sources.Keys) {
+            var root = Path.Combine(stage, "window-" + ++number); Directory.CreateDirectory(Path.Combine(root, "artifacts")); File.WriteAllBytes(Path.Combine(root, entry), sources[entry]); File.Copy(stub, Path.Combine(root, "artifacts/BetterAstralParty-Setup.exe"), false);
+            if (!development) File.WriteAllText(Path.Combine(root, "package-manifest.json"), "{}");
+            var resultPath = Path.Combine(root, "inert-result.json"); var local = Path.Combine(root, "local-data");
+            var environment = new Dictionary<string, string?> { ["LOCALAPPDATA"] = local, ["TEMP"] = Path.Combine(root, "temp-data"), ["BAP_ENTRY_RESULT"] = resultPath, ["BAP_FIXTURE_EXIT"] = "7", ["NoDefaultCurrentDirectoryInExePath"] = "1" };
+            var code = RunFrontendCommand("\"\"" + Path.Combine(root, entry) + "\" <nul\"", "off", cwd, environment);
+            JsonElement? result = null; var watch = Stopwatch.StartNew();
+            while (result == null && watch.ElapsedMilliseconds < 15000) { try { result = PackagingBoundary.Parse(File.ReadAllBytes(resultPath)); } catch (Exception error) when (error is IOException || error is JsonException || error is InvalidDataException) { Thread.Sleep(50); } }
+            Check(code == 0 && result != null, "CMD window route returns at once with the started Setup's own exit left to it: " + number);
+            var operation = entry == "Install.cmd" ? "install" : entry == "Uninstall.cmd" ? "uninstall" : "force-uninstall";
+            var args = result!.Value.GetProperty("args").EnumerateArray().Select(value => value.GetString()).ToArray();
+            Check(PackagingBoundary.Text(result.Value, "operation") == operation && PackagingBoundary.Flag(result.Value, "development") == development && args[0] == "--window" && args.Length == (development ? 3 : 2) && PackagingBoundary.Text(result.Value, "executableRoot") == Path.Combine(root, "artifacts"), "CMD window route arguments: " + number);
+            var logs = Directory.GetFiles(Path.Combine(local, "BetterAstralParty", "Logs"), "Bootstrap-*.log");
+            Check(logs.Length == 1 && File.ReadAllText(logs[0]).Contains("BAP-BOOTSTRAP-WINDOW: started 0"), "CMD window route logs its start: " + number);
         }
         context.WriteJsonCreateNew(Path.Combine(stage, "frontend-matrix.json"), new { cases = number, actualInstallerExecuted = false, actualGameOrSteamTouched = false, parentDelayedExpansionTested = true });
     }

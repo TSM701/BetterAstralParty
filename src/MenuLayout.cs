@@ -319,9 +319,15 @@ internal static class MenuLayout
     {
         "Scale" => (75, 150), "ZoomSensitivity" or "FreeCameraSpeed" => (10, 300), "ZoomOutLimit" => (0, 100), "IndicatorHideDistance" => (0, 100), _ => (0, 100)
     };
+    // The zoomed-out slider shows the indicators' opacity at the farthest zoom-out. The file keeps the fade strength it always
+    // stored (0 = no fade, 1 = the original curve ending at 30 %, 100/70 ending at 0 %), so saved values and backups keep their look.
+    internal static int SliderPercent(string action, float stored) =>
+        action == "IndicatorFadeStrength" ? 100 - (int)Math.Round(70 * stored) : (int)Math.Round(100 * stored);
+    internal static float SliderStored(string action, int percent) =>
+        action == "IndicatorFadeStrength" ? (100 - percent) / 70f : percent * 0.01f;
     internal static string SliderLabel(string action) => action switch
     {
-        "FieldMarker" => "위치 조정", "IndicatorFadeStrength" => "반투명 정도", "FoldedHandOpacity" => "불투명도",
+        "FieldMarker" => "위치 조정", "IndicatorFadeStrength" or "FoldedHandOpacity" => "불투명도",
         "ZoomSensitivity" => "줌 감도", "ZoomOutLimit" => "최대 줌 아웃", "FreeCameraSpeed" => "WASD 속도", "IndicatorHideDistance" => "숨김 거리",
         "Scale" => "표시 크기", _ => "배경 불투명도"
     };
@@ -455,14 +461,14 @@ internal static class MenuLayout
         "PlayerTabRole" => ("역할", "게임 내부 분류로\n캐릭터 역할을 보여줍니다."),
         "PlayerTabSkill" => ("스킬 쿨타임", "액티브 스킬의 남은 턴/전체 턴을\n보여줍니다."),
         "CharacterGuide" => ("준비 화면 스킬 설명", "준비 화면 초상화에 마우스를 올리면\n스킬·재사용 대기시간·잠재력이 나옵니다."),
-        "IndicatorFade" => ("줌 아웃 시 반투명", "줌 아웃할수록 플레이어·몬스터\n인디케이터를 반투명하게 합니다."),
+        "IndicatorFade" => ("줌 아웃 시 불투명도", "줌 아웃할수록 플레이어·몬스터\n인디케이터의 불투명도를 낮춥니다."),
         "IndicatorHide" => ("멀면 숨기기", "멀리 줌 아웃하면 숨기고\n다시 확대하면 보여줍니다."),
         "DiceLock" => ("주사위 화면 고정", "줌·자유 시점에서도 굴린 주사위를\n기본 시점과 같은 위치·크기로 보여줍니다."),
         "CounterSound" => ("소리", "반격 아이콘이 나타날 때\n알림음을 냅니다."),
         "CounterAnimation" => ("애니메이션", "인카운트·전투 반격 아이콘을\n움직여 보여줍니다."),
         "OldReplays" => ("구버전 리플레이 재생", "버전이 다른 리플레이도 재생합니다.\n지금 게임과 규칙이 달라 도중에\n멈추거나 화면이 틀릴 수 있습니다."),
         "PingFocus" => ("Alt+Tab 핑 모드 해제", "Alt+Tab 후 남은 핑 선택 모드를\n핑을 보내지 않고 끕니다."),
-        "FinalDamage" => ("최종 피해", "공개된 최종 수치로\n계산한 피해를 보여줍니다."),
+        "FinalDamage" => ("최종 피해", "양쪽 선택이 끝나면\n서버가 정한 피해를 보여줍니다."),
         "SuppressNotices" => ("시작 공지 끄기", "공지가 자동으로 열리지 않습니다."),
         "UpdateNotifications" => ("업데이트 알림 팝업", "새 버전이 나오면 홈 화면 위쪽에\n잠깐 알림을 띄웁니다.\n누르면 변경 내역이 열립니다."),
         "FieldBuffs" => ("플레이어 인디케이터", "플레이어 이름·HP와 공개 효과를 보여줍니다.\n효과 아이콘을 클릭하면 설명이 열립니다."),
@@ -494,7 +500,7 @@ internal static class MenuLayout
         "ZoomOutLimit" => ("최대 줌 아웃", "휠로 멀어질 수 있는 최대 거리입니다.\n100%는 필드 전체가 보이는 거리입니다."),
         "FreeCameraSpeed" => ("WASD 속도", "WASD로 자유 시점을 움직이는 속도입니다."),
         "IndicatorHideDistance" => ("숨김 거리", "인디케이터가 숨는 줌 아웃 거리입니다.\n값이 작을수록 더 일찍 숨습니다."),
-        "IndicatorFadeStrength" => ("반투명 정도", "줌 아웃했을 때 인디케이터가 흐려지는 정도입니다.\n0%는 흐려지지 않습니다."),
+        "IndicatorFadeStrength" => ("줌 아웃 시 불투명도", "가장 멀리 줌 아웃했을 때의 불투명도입니다.\n100%는 원래대로, 0%는 보이지 않습니다."),
         "FoldedHandOpacity" => ("접힌 카드 불투명도", "묶여 접힌 카드의 불투명도입니다.\n100%는 원래대로, 0%는 보이지 않습니다."),
         "Scale" => ("표시 크기", "75%부터 150%까지 조절합니다."),
         "Opacity" => ("배경 불투명도", "0%에서도 글자·아이콘·테두리는\n그대로 보입니다."),

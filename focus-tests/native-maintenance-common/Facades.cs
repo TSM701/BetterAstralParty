@@ -42,7 +42,7 @@ namespace BetterAstralParty.Installation
     }
     internal static class NativeInstall
     {
-        internal static void Run(NativeMaintenanceBundle bundle, bool update, string? steam, uint account, Func<string, string?> consent, Action<string> output, bool restartSteam, bool checkOnly, Action<string>? observation = null)
+        internal static void Run(NativeMaintenanceBundle bundle, bool update, string? steam, uint account, Func<string, string?> consent, Action<string> output, bool restartSteam, bool checkOnly, Action<string>? observation = null, bool? hideConsole = null)
         { throw new Exception("Fixture must not install a package"); }
     }
     internal static class NativeUninstall

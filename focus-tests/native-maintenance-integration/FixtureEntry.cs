@@ -55,6 +55,15 @@ internal static partial class NativeMaintenanceIntegrationFixture
     private static void Say(string text) { if (Output.Count < 300) Output.Add(text); }
     private static void Seed()
     {
+        // The install window compiles with the engine; its pure helpers run here.
+        Check(NativeSetupWindow.Pick("가나 / Alpha", true) == "가나" && NativeSetupWindow.Pick("가나 / Alpha", false) == "Alpha" && NativeSetupWindow.Pick("Version: 1.0 / x", true) == "Version: 1.0 / x",
+            "install window shows one language of a bilingual engine line");
+        Check(NativeSetupWindow.Kind("계속할까요? / Continue? [y/N]") == NativeSetupWindow.PromptKind.YesNo && NativeSetupWindow.Kind("r: 종료 후 재확인 / recheck, Enter: 취소 / cancel") == NativeSetupWindow.PromptKind.Recheck
+            && NativeSetupWindow.Kind("1 / 2 선택, Enter는 취소 / Choose 1 / 2, Enter cancels") == NativeSetupWindow.PromptKind.Choice && NativeSetupWindow.Kind("INT 게임 설치 폴더를 입력하세요") == NativeSetupWindow.PromptKind.Other,
+            "install window prompt kinds");
+        // 04:07 on 2026-11-08 a force-uninstall check of 1172 files took about 10 s; its three hashing passes then make ~35 s.
+        Check(SetupForm.Estimate(0, false) == 5 && SetupForm.Estimate(1.4, false) == 5 && SetupForm.Estimate(4, false) == 10 && SetupForm.Estimate(10, true) == 35
+            && SetupForm.Estimate(30, true) == 95 && SetupForm.Estimate(-1, true) == 5, "install window estimate repeats the timed check's reads and rounds up to 5 s");
         Text(Full(Game, "AstralParty_INT.exe"), "inert synthetic game image; never execute");
         foreach (var path in new[] { "GameAssembly.dll", "UnityPlayer.dll", "AstralParty_INT_Data/StreamingAssets/aa/catalog.bundle", "AstralParty_INT_Data/StreamingAssets/aa/settings.json" }) Text(Full(Game, path), "synthetic native anchor: " + path);
         Text(Full(Game, "AstralParty_INT_Data/data.unity3d"), "UnityFS\0" + new string('x', 56));
@@ -66,7 +75,7 @@ internal static partial class NativeMaintenanceIntegrationFixture
         var shortcuts = NativeSteamMaintenance.EmptyShortcuts();
         var unrelated = new OrderedDictionary(StringComparer.OrdinalIgnoreCase); unrelated.Add("appid", 987654U); unrelated.Add("AppName", "Unrelated fixture shortcut"); unrelated.Add("exe", "inert-other.exe"); unrelated.Add("LaunchOptions", "other");
         ((OrderedDictionary)shortcuts["shortcuts"]!).Add("99", unrelated); Write(Full(profile, "shortcuts.vdf"), NativeSteamMaintenance.WriteShortcuts(shortcuts));
-        Check(NativeSteamMaintenance.PlanRegister(Steam, 1, Game), "explicit synthetic Steam profile has no owned shortcut");
+        Check(!NativeSteamMaintenance.PlanRemove(Steam, 1, Game), "explicit synthetic Steam profile has no owned shortcut");
     }
     private static void Prepare()
     {
@@ -207,6 +216,7 @@ internal static partial class NativeMaintenanceIntegrationFixture
     private static void Install(bool update, bool preview)
     {
         var before = State(); var loader = File.Exists(WindowsPath.ForIo(Full(Game, "doorstop_config.ini"))) ? Read(Full(Game, "doorstop_config.ini")) : null;
+        var entries = Read(Full(Steam, "userdata/1/config/shortcuts.vdf"));
         using (var bundle = new NativeMaintenanceBundle(Package, Game))
         {
             NativeInstall.Run(bundle, update, update ? null : Steam, update ? 0U : 1U, Consent, Say, checkOnly: preview);
@@ -217,6 +227,9 @@ internal static partial class NativeMaintenanceIntegrationFixture
             Check(journals.Length > 0 && journals.All(path => MaintenanceJson.List(MaintenanceJson.Read(Read(WindowsPath.FromIo(path))), "Entries").Select(MaintenanceJson.Map).All(row => !new[] { Full(Game, "changelog.txt"), Full(Game, "README.md") }.Contains(MaintenanceJson.Text(row, "Target"), StringComparer.OrdinalIgnoreCase))), "new actual install transactions do not read or back up loader documentation");
             var receipt = InstallReceipt.Parse(bundle.ReadTarget(InstallReceipt.Path, 16384)!);
             Check(receipt.Channels?.ActiveVersion == FixtureBoundary.Version && receipt.Channels.ActiveChannel == FixtureBoundary.Channel, "installed receipt binds actual version and channel");
+            Check(Read(Full(Steam, "userdata/1/config/shortcuts.vdf")).SequenceEqual(entries), "installation adds and rewrites no Steam entry");
+            // An entry an earlier version added stays until removal; seed one so the removal checks keep covering it.
+            if (!NativeSteamMaintenance.PlanRemove(Steam, 1, Game)) NativeSteamMaintenance.Register(Steam, 1, Game);
             Check(NativeSteamMaintenance.PlanRemove(Steam, 1, Game), "selected synthetic profile owns exactly the native shortcut");
             if (loader == null) Check(Encoding.UTF8.GetString(Read(Full(Game, "doorstop_config.ini"))).Contains("enabled=true"), "new approved shared loader defaults ON");
             else Check(loader.SequenceEqual(Read(Full(Game, "doorstop_config.ini"))), "existing shared loader bytes preserved");
@@ -470,9 +483,11 @@ internal static partial class NativeMaintenanceIntegrationFixture
     private static void Reinstall(bool preview)
     {
         Install(false, preview); if (preview) return; Preserved();
-        Check(Directory.GetFiles(WindowsPath.ForIo(Game), "BetterAstralParty.reinstall-v5.completed-*", SearchOption.TopDirectoryOnly).Length == 1
+        var history = WindowsPath.ForIo(Full(Game, UpdateWorkPath.History));
+        Check(Directory.GetFiles(history, "BetterAstralParty.reinstall-v5.completed-*", SearchOption.TopDirectoryOnly).Length == 1
             && Encoding.ASCII.GetString(Read(Full(Game, UpdateTransaction.HighWaterPath))).Contains("\nversion=" + FixtureBoundary.Version + "\n"), "complete removal permits a new installation generation with a fresh high-water record");
-        Check(Directory.GetFiles(WindowsPath.ForIo(Game), UpdateTransaction.HighWaterPath + ".uninstalled-*", SearchOption.TopDirectoryOnly).Any(path => Read(WindowsPath.FromIo(path)).SequenceEqual(Read(Full(Scratch, "expected-water.bin")))), "generation retains exact archived historical high-water bytes");
+        Check(Directory.GetFiles(history, UpdateTransaction.HighWaterPath + ".uninstalled-*", SearchOption.TopDirectoryOnly).Any(path => Read(WindowsPath.FromIo(path)).SequenceEqual(Read(Full(Scratch, "expected-water.bin")))), "generation retains exact archived historical high-water bytes in the history folder");
+        Check(Directory.GetFiles(WindowsPath.ForIo(Game), "BetterAstralParty.*-v5.*-*", SearchOption.TopDirectoryOnly).Length == 0, "the clean reinstall leaves no generation record in the game root");
     }
     private static void RemovalWithoutGame()
     {

@@ -52,6 +52,13 @@ internal static class DragStateCheck
             ("Core.GameSettings", "MouseControl", "System.Boolean", true, true), ("Core.GameSettings", "KeyControl", "System.Boolean", true, true), ("GameLogic.BattleLogic", "clientFinishReady", "System.Boolean", true, false),
             ("GameLogic.FightLogic", "fightStatus", "System.Boolean", true, false), ("GameLogic.BattlePlayerData", "CharacterInst", "Core.Unit.Character", true, false), ("Core.Unit.Character", "vCamera", "Core.Camera.CharacterCamera", true, false),
             ("Core.Camera.CharacterCamera", "vCamera", "Cinemachine.CinemachineVirtualCamera", true, false) }) ExactField(native, type, name, result, visible, isStatic);
+        // Since the 2026-11-12 update the native free camera moves by GameSettings.GetAxis, the player's rebindable keys;
+        // the owned view reads the same static reader.
+        Check(native.MainModule.GetType("Core.GameSettings").Methods.Count(method => method.Name == "GetAxis" && method.IsStatic && method.ReturnType.FullName == "System.Single"
+            && method.Parameters.Count == 1 && method.Parameters[0].ParameterType.FullName == "System.String") == 1, "Native rebindable movement axis reader");
+        Check(NativeMethod(native, "Core.FreeCameraObject", "HandleMoveCamera").Body.Instructions.Any(instruction => instruction.Operand is MethodReference reference
+            && reference.DeclaringType.FullName == "Core.GameSettings" && reference.Name == "GetAxis"), "Native free camera moves by the rebindable axis");
+        Contains(ReadSource(context, "src/FieldFreeCamera.cs"), new[] { "RuntimeObject.StaticCall(settings, \"GetAxis\", axis)!.Value<float>()" }, "Owned free view moves by the native rebindable axis");
         ExactMethod(native, "GameLogic.BattleLogic", "GetCurrentPlayer", "GameLogic.BattlePlayerData");
         ExactMethod(native, "Core.Camera.CameraManager", "CancelFreeStatus", "System.Void");
         ExactMethod(native, "Core.Camera.CameraManager", "SwitchCamera", "Cysharp.Threading.Tasks.UniTask`1<System.Boolean>", "Core.Camera.CharacterCamera");
@@ -109,7 +116,7 @@ internal static class DragStateCheck
         foreach (var pattern in new[] {
             "!Plugin\\.FieldZoom\\.Value\\s*\\|\\|\\s*PvpSafety\\.Suspended\\s*\\|\\|\\s*root\\s*==\\s*null",
             "!Alive\\(scene\\)\\s*\\|\\|\\s*!VisibleCombatAdvisor\\.IsPve",
-            "var blocked\\s*=\\s*status is not \\(0 or 1 or 2 or 3\\)\\s*\\|\\|\\s*!Alive\\(cameraObject\\)",
+            "var blocked\\s*=\\s*switching\\s*\\|\\|\\s*status is not \\(0 or 1 or 2 or 3\\)\\s*\\|\\|\\s*!Alive\\(cameraObject\\)",
             "!new Camera\\(cameraObject!\\.Pointer\\)\\.enabled",
             "!new Camera\\(cameraObject\\.Pointer\\)\\.gameObject\\.activeInHierarchy",
             "logic\\?\\.Get\\(\"battle\"\\)\\?\\.Field<bool>\\(\"clientFinishReady\"\\)\\s*!=\\s*true",

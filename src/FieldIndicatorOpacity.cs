@@ -16,12 +16,12 @@ internal static class FieldIndicatorOpacity
         while (ancestor != null && ancestor.Pointer != root.Pointer) ancestor = ancestor.Get("parent");
         if (ancestor == null) { Clear(); return; }
         zoomOut = Math.Min(1f, zoomOut);
-        // Reappear 10% closer than the hide point so the boundary never flickers.
+        // One point both ways (user-requested 2026-11-10): the zoom eases one way and stops, so the boundary cannot flicker.
         // Hide distance 0-100 %; at 0 % any zoom-out hides and the native view always shows them.
         var hideAt = Math.Clamp(Plugin.IndicatorHideDistance.Value, 0f, 1f);
-        Hidden = Plugin.IndicatorHide.Value && zoomOut > 0 && (Hidden ? zoomOut > hideAt - .1f : zoomOut >= hideAt);
-        // Strength 100% keeps the original curve; lower values blend it back toward fully opaque.
-        var alpha = Plugin.IndicatorFade.Value ? 1f - Math.Clamp(Plugin.IndicatorFadeStrength.Value, 0f, 1f) * (1f - .6f * (1f - zoomOut * .5f)) : 1f;
+        Hidden = Plugin.IndicatorHide.Value && zoomOut >= hideAt;
+        // Strength 1 keeps the original curve (30 % at the far end); lower blends toward opaque, 100/70 reaches 0 % at the far end.
+        var alpha = Plugin.IndicatorFade.Value ? Math.Max(0f, 1f - Math.Clamp(Plugin.IndicatorFadeStrength.Value, 0f, 100f / 70f) * (1f - .6f * (1f - zoomOut * .5f))) : 1f;
         Monsters.Tick(field!.Field("com_AttrInfos"), alpha, Hidden);
         Players.Tick(field.Field("com_PlayerAttrInfos"), alpha, Hidden);
     }

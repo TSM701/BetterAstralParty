@@ -203,7 +203,7 @@ Publish, push, create a remote release/draft/tag or upload assets only when the 
 
 Complete user-facing installation ZIPs use `BetterAstralParty-<version>.zip`, for example `BetterAstralParty-1.0.0.zip`. Automatic-update and source archives retain `-update.zip` and `-source.zip`. Internal unsigned candidates retain the `-unsigned-candidate.zip` suffix; existing immutable packages and internal whole-package contract names are unchanged.
 
-For routine synchronization of an existing installation, use `Install.cmd -UpdateOnly -GameRoot <verified INT path>`. This uses the same pinned bundle without registering shortcuts or restarting Steam. Normal installation handles first installation and shortcut repair. Preserve backups, settings, translation patches, unrelated mods and the vanilla loader-OFF default. Do not force-close the game without fresh interactive consent.
+For routine synchronization of an existing installation, use `Install.cmd -UpdateOnly -GameRoot <verified INT path>`. This uses the same pinned bundle without touching Steam. Normal installation handles first installation and repair; it adds no Steam entry. Preserve backups, settings, translation patches, unrelated mods and the vanilla loader-OFF default. Do not force-close the game without fresh interactive consent.
 
 ## Historical focused checks
 

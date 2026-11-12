@@ -187,7 +187,7 @@ namespace BetterAstralParty.Installation
                 if (receipt != null && !receipt.Legacy) SetupHost.ValidateInstalledHistory(game);
                 var plan = PlanFiles(bundle, receipt, output);
                 if (plan.Targets.Count == 0 && !removeShortcut)
-                { output("제거할 확인된 파일·Steam 라이브러리 항목이 없습니다. / No verified mod files or shortcut to remove."); return 0; }
+                { output("제거할 확인된 파일·Steam 외부 게임이 없습니다. / No verified mod files or shortcut to remove."); return 0; }
                 var loaderPath = Full(game, "doorstop_config.ini"); string? loaderUpdated = null, loaderSkipped = null;
                 if (!restoreLoader.Equals("Keep", StringComparison.OrdinalIgnoreCase) && plan.Targets.Count != 0)
                     try { loaderUpdated = LoaderChange(bundle, receipt, restoreLoader, whatIf, consent, output, reason => loaderSkipped = reason); }
@@ -200,12 +200,14 @@ namespace BetterAstralParty.Installation
                 if (loaderUpdated != null) output("공용 로더 enabled 설정을 명시한 선택으로 복원합니다. / Restore shared loader enabled setting; other settings preserved.");
                 if (removeShortcut) output("Remove the matching BetterAstralParty shortcut only; keep all other Steam entries.");
                 if (shortcutSkipped != null) output((shortcutDiscoveryError as SteamProfileUnavailableException)?.Guidance
-                    ?? "Steam 정보를 확정할 수 없어 Steam 라이브러리 항목은 남겨 둡니다. 확인된 모드 파일만 백업 후 제거합니다. / Steam discovery unavailable or ambiguous; keep shortcuts and back up/remove only verified mod files. Reason: " + shortcutSkipped);
+                    ?? "Steam 정보를 확정할 수 없어 Steam 외부 게임은 남겨 둡니다. 확인된 모드 파일만 백업 후 제거합니다. / Steam discovery unavailable or ambiguous; keep shortcuts and back up/remove only verified mod files. Reason: " + shortcutSkipped);
                 output("전용 설정·로그도 백업 후 제거합니다. 공용 로더·다른 모드는 유지합니다. / Includes mod settings/logs; shared loader and other mods stay.");
                 var legacyWork = LegacyWork.Finished(game).Count;
                 if (legacyWork != 0) output("끝난 1.3.x 업데이트 작업 기록 " + legacyWork + "개도 정리합니다. / Also removes " + legacyWork + " finished 1.3.x update work records.");
                 var archived = UpdateFaults.RemovableArchived(game);
                 if (archived != 0) output("끝난 업데이트 기록 " + archived + "개도 정리합니다. / Also removes " + archived + " finished update records.");
+                var history = ReinstallHistory.Move(game, null, false);
+                if (history != 0) output("이전 재설치 기록 " + history + "개는 BetterAstralParty.Update\\history로 옮겨 보관합니다. / Moves " + history + " earlier reinstall records to BetterAstralParty.Update\\history and keeps them.");
                 if (whatIf) { output("WhatIf: BetterAstralParty 파일 백업 및 제거 / Back up and remove listed BetterAstralParty files"); return 0; }
                 if (consent("BetterAstralParty 파일을 백업 후 제거할까요? / Back up and remove listed BetterAstralParty files? [y/N]") != "y")
                 { output(cancelled); return 0; }
@@ -245,6 +247,7 @@ namespace BetterAstralParty.Installation
                 if (transaction != null) { NativeMaintenance.CompleteTransaction(bundle, transaction, backupTargets); transaction = null; }
                 LegacyWork.Remove(game, output);
                 UpdateFaults.RemoveArchived(game, output);
+                ReinstallHistory.Move(game, output);
                 maintenance?.Dispose(); maintenance = null;
                 SetupHost.RecordInstallerStage("Uninstall", "Completed");
                 foreach (var relative in new[] { "BepInEx/plugins/BetterAstralParty", "BepInEx/BetterAstralParty-Diagnostics" })
@@ -257,8 +260,8 @@ namespace BetterAstralParty.Installation
                 output(plan.Retained || receipt == null
                     ? "확인된 파일 제거를 마쳤습니다. 미확인·변경 파일과 기록은 남아 있습니다. / Verified files removed; unknown or modified files and evidence remain."
                     : shortcutSkipped != null
-                        ? "모드 파일 제거 완료. Steam 라이브러리 항목은 남겨 두었습니다. BetterAstralParty 항목이 남아 있으면 Steam에서 직접 제거하세요. 공용 로더·다른 모드는 유지합니다. / Removed verified mod files; Steam shortcut cleanup skipped. Shared loader and other mods preserved."
-                        : "제거 완료. 모드 파일과 Steam 라이브러리의 BetterAstralParty 항목을 정리했습니다. 공용 로더 설정과 다른 모드는 유지합니다. / Removed mod files and shortcut; shared loader settings and other mods preserved.");
+                        ? "모드 파일 제거 완료. Steam 외부 게임은 남겨 두었습니다. BetterAstralParty가 남아 있으면 Steam에서 직접 제거하세요. 공용 로더·다른 모드는 유지합니다. / Removed verified mod files; Steam shortcut cleanup skipped. Shared loader and other mods preserved."
+                        : "제거 완료. 모드 파일과 BetterAstralParty Steam 외부 게임을 정리했습니다. 공용 로더 설정과 다른 모드는 유지합니다. / Removed mod files and shortcut; shared loader settings and other mods preserved.");
                 return 0;
             }
             catch (Exception error)

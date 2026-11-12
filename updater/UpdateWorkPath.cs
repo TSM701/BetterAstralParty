@@ -55,5 +55,20 @@ namespace BetterAstralParty.Updating
             }
             fence.Recheck();
         }
+        // Clean-reinstall records (the archived high-water and its generation record) live here, not in the game root
+        // (since 1.8.1-dev.2). Every scanner of this container reads only bap-v5-* names, so older plugins and tools pass it by.
+        internal const string History = Root + "/history";
+        internal const string ReinstallRecordPrefix = "BetterAstralParty.reinstall-v5.completed-";
+        internal static void EnsureHistory(WindowsFileFence fence)
+        {
+            Container(fence, true);
+            try { fence.DirectoryIdentity(History); }
+            catch (ApplySafetyException error) when (error.NativeError == 2 || error.NativeError == 3)
+            {
+                try { fence.CreatePrivateDirectory(History); }
+                catch (ApplySafetyException raced) when (raced.NativeError == 80 || raced.NativeError == 183) { fence.DirectoryIdentity(History); }
+            }
+            fence.AssertPrivateDirectory(History); fence.Recheck();
+        }
     }
 }

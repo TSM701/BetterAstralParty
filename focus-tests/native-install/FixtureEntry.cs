@@ -44,6 +44,21 @@ internal static class FixtureEntry
         var unicode = Encoding.Unicode.GetPreamble().Concat(Encoding.Unicode.GetBytes("UnityLogListening = true\r\n사용자 설정=보존\r\n")).ToArray();
         Check(NativeInstall.DisableUnityListening(unicode).SequenceEqual(Encoding.Unicode.GetPreamble().Concat(Encoding.Unicode.GetBytes("UnityLogListening = false\r\n사용자 설정=보존\r\n"))),"UTF16 BOM and unrelated Korean configuration bytes preserved");
         Check(Encoding.UTF8.GetString(NativeInstall.DisableUnityListening(null))=="[Logging]\r\nUnityLogListening = false\r\n","absent configuration uses existing baseline");
+        // BepInEx's log window: only [Logging.Console] Enabled changes; another section's Enabled and every other byte stay.
+        var bepinex="[Logging.Disk]\r\nEnabled = true\r\n\r\n[Logging.Console]\r\n\r\n## Enables showing a console for log output.\r\nEnabled = true \r\n\r\nPreventClose = false\r\n\r\n[Preloader]\r\nEnabled = true\r\n";
+        Check(NativeInstall.ConsoleEnabled(Encoding.UTF8.GetBytes(bepinex))==true&&NativeInstall.ConsoleEnabled(null)==true&&NativeInstall.ConsoleEnabled(Encoding.UTF8.GetBytes("[Logging]\r\nx=1\r\n"))==true,"absent console setting is BepInEx's default, shown");
+        Check(Encoding.UTF8.GetString(NativeInstall.DisableConsole(Encoding.UTF8.GetBytes(bepinex)))==bepinex.Replace("Enabled = true \r\n\r\nPreventClose","Enabled = false \r\n\r\nPreventClose"),"only the console section's Enabled line changes");
+        Check(NativeInstall.ConsoleEnabled(NativeInstall.DisableConsole(Encoding.UTF8.GetBytes(bepinex)))==false,"turned-off console reads back off");
+        Check(Encoding.UTF8.GetString(NativeInstall.DisableConsole(Encoding.UTF8.GetBytes("[Logging.Console]\r\nPreventClose = false\r\n")))=="[Logging.Console]\r\nEnabled = false\r\nPreventClose = false\r\n","a missing Enabled line goes right under its header");
+        Check(Encoding.UTF8.GetString(NativeInstall.DisableConsole(Encoding.UTF8.GetBytes("[Logging]\nx=1")))=="[Logging]\nx=1\n[Logging.Console]\nEnabled = false\n","a missing section is appended in the file's own line endings");
+        Check(Encoding.UTF8.GetString(NativeInstall.DisableConsole(null))=="[Logging.Console]\r\nEnabled = false\r\n","absent configuration gets only the console line");
+        var twice=Encoding.UTF8.GetBytes("[Logging.Console]\r\nEnabled = true\r\nEnabled = false\r\n");
+        Check(NativeInstall.ConsoleEnabled(twice)==null,"two console lines are ambiguous");
+        Reject(()=>NativeInstall.DisableConsole(twice),"ambiguous console setting keeps its bytes");
+        var offAlready=Encoding.UTF8.GetBytes("[Logging.Console]\r\nEnabled = false\r\n");
+        Check(object.ReferenceEquals(NativeInstall.DisableConsole(offAlready),offAlready),"a console already off keeps the exact bytes");
+        var unicodeConsole=Encoding.Unicode.GetPreamble().Concat(Encoding.Unicode.GetBytes("[Logging.Console]\r\nEnabled = true\r\n사용자=보존\r\n")).ToArray();
+        Check(NativeInstall.DisableConsole(unicodeConsole).SequenceEqual(Encoding.Unicode.GetPreamble().Concat(Encoding.Unicode.GetBytes("[Logging.Console]\r\nEnabled = false\r\n사용자=보존\r\n"))),"UTF16 configuration keeps its encoding and unrelated text");
         Check(NativeInstall.LoaderBaseline(null,null,true,true)==false,"fresh loader baseline false while installed source remains ON");
         Check(NativeInstall.LoaderBaseline(null,Encoding.UTF8.GetBytes("enabled=false\n"),false,true)==false,"existing disabled loader baseline recorded");
         Check(NativeInstall.LoaderBaseline(null,Encoding.UTF8.GetBytes("enabled=true\nenabled=false\n"),false,true)==null,"ambiguous loader baseline remains unknown");
@@ -56,32 +71,51 @@ internal static class FixtureEntry
         Reject(()=>NativeInstall.TransitionMode("1.4.1","1.4.0",null,old,expected,new Dictionary<string,string?>{{"owned","CUSTOM"},{InstallReceipt.Path,"R"}}),"unverified modified installation preserved");
     }
     private static void Flow() {
-        var fresh=Case();FixtureControl.NeedsShortcut=true;Run(fresh);
+        var fresh=Case();FixtureControl.NeedsShortcut=true;var freshNotes=new List<string>();NativeInstall.Run(fresh,false,Path.Combine(root,"Steam"),11,prompt=>"y",freshNotes.Add);
         Check(Before("inputs-validate","ordinary-lock")&&Before("ordinary-lock","game-stop")&&Before("game-stop","update-check")&&Before("update-check","state-observe"),"ordinary recovery and process preflight precede owned observation");
-        Check(Before("steam-stop","guard")&&Before("guard","ordinary-start")&&Before("ordinary-start","shortcut-register")&&Before("shortcut-register","ordinary-complete"),"Steam stop and the maintenance guard precede ordinary target mutation");
-        Check(Before("ordinary-complete","guard-release")&&Before("guard-release","ordinary-unlock")&&Before("ordinary-unlock","steam-resume"),"guard and locks released after completion; Steam restarted last");
+        Check(Before("guard","ordinary-start")&&Before("ordinary-start","ordinary-complete")&&Before("ordinary-complete","guard-release")&&Before("guard-release","ordinary-unlock"),"the maintenance guard precedes ordinary target mutation; guard and locks released after completion");
+        Check(!FixtureControl.Events.Any(value=>value.StartsWith("steam",StringComparison.Ordinal)||value.StartsWith("shortcut",StringComparison.Ordinal)),"a fresh installation adds no Steam entry and never stops Steam");
+        Check(freshNotes.Last().Contains("AstralParty-Vanilla.cmd"),"a fresh installation names the way to start without BetterAstralParty");
+        Check(Before("archived-clean","history-move")&&Before("history-move","guard-release"),"earlier reinstall records move into the history folder inside the maintenance guard");
         Check(fresh.Expected.All(row=>fresh.TargetHash(row.Key)==row.Value),"fresh complete owned payload fingerprints");
         Check(Encoding.UTF8.GetString(fresh.ReadTarget("doorstop_config.ini")!).Contains("enabled=true"),"approved fresh shared loader ON bytes");
         Check(InstallReceipt.Parse(fresh.ReadTarget(InstallReceipt.Path)!).LoaderBefore==false,"historical loader baseline preserved separately");
+        Check(Encoding.UTF8.GetString(fresh.ReadTarget("BepInEx/config/BepInEx.cfg")!)=="[Logging]\r\nUnityLogListening = false\r\n[Logging.Console]\r\nEnabled = false\r\n"&&freshNotes.Any(note=>note.Contains("BepInEx 로그 창을 껐습니다")),"a BepInEx installed now starts with its log window off");
+        var keptFresh=Case();NativeInstall.Run(keptFresh,false,null,0,prompt=>"y",message=>{},hideConsole:false);
+        Check(Encoding.UTF8.GetString(keptFresh.ReadTarget("BepInEx/config/BepInEx.cfg")!)=="[Logging]\r\nUnityLogListening = false\r\n","LoaderConsole Keep leaves a new BepInEx's log window to its default");
+        var shown=Case(true);var shownBefore=shown.ReadTarget("BepInEx/config/BepInEx.cfg")!;var shownNotes=new List<string>();
+        NativeInstall.Run(shown,false,null,0,prompt=>"y",shownNotes.Add);
+        Check(shown.ReadTarget("BepInEx/config/BepInEx.cfg")!.SequenceEqual(shownBefore),"an existing configuration keeps its log window without LoaderConsole");
+        var hidden=Case(true);var hiddenBefore=Encoding.UTF8.GetString(hidden.ReadTarget("BepInEx/config/BepInEx.cfg")!);var hiddenNotes=new List<string>();
+        NativeInstall.Run(hidden,false,null,0,prompt=>"y",hiddenNotes.Add,hideConsole:true);
+        Check(Encoding.UTF8.GetString(hidden.ReadTarget("BepInEx/config/BepInEx.cfg")!)==hiddenBefore+"[Logging.Console]\r\nEnabled = false\r\n"&&hidden.ReadTarget("doorstop_config.ini")!.SequenceEqual(shown.ReadTarget("doorstop_config.ini")!)&&hiddenNotes.Any(note=>note.Contains("BepInEx 로그 창을 껐습니다"))&&hiddenNotes.Last().StartsWith("적용 완료",StringComparison.Ordinal),"LoaderConsole Off changes only the existing configuration's log window line");
+        var previewNotes=new List<string>();var previewed=Case(true);NativeInstall.Run(previewed,false,null,0,prompt=>"y",previewNotes.Add,checkOnly:true);
+        Check(previewNotes.Any(note=>note.Contains("loaderConsole=on"))&&previewNotes.All(note=>!note.Contains("loaderConsole=fresh")),"CheckOnly names the existing log window state for the install window");
         var withoutSteam=Case();NativeInstall.Run(withoutSteam,false,null,0,prompt=>"y",message=>{});
         Check(withoutSteam.Expected.All(row=>withoutSteam.TargetHash(row.Key)==row.Value)&&!FixtureControl.Events.Any(value=>value.StartsWith("steam-stop",StringComparison.Ordinal)||value.StartsWith("shortcut",StringComparison.Ordinal)),"normal file installation survives unavailable Steam shortcut discovery");
+        // Only a 1.3.x takeover touches Steam: the entry that starts the removed launcher is rewritten inside the journal.
+        var converted=Case(legacy:true);FixtureControl.NeedsShortcut=true;Run(converted);
+        Check(Before("shortcut-plan","steam-stop")&&Before("steam-stop","guard")&&Before("guard","ordinary-start")&&Before("ordinary-start","shortcut-register")&&Before("shortcut-register","ordinary-complete"),"takeover: Steam stop and the maintenance guard precede the launcher entry rewrite inside the journal");
+        Check(Before("ordinary-complete","guard-release")&&Before("guard-release","ordinary-unlock")&&Before("ordinary-unlock","steam-resume"),"takeover: guard and locks released after completion; Steam restarted last");
         foreach(var shortcutFailure in new Exception[]{new InvalidDataException("FAKE_PRIVATE_SHORTCUT"),new IOException("FAKE_PRIVATE_SHORTCUT")}) {
-            var optional=Case();FixtureControl.PlanFailure=shortcutFailure;FixtureControl.NeedsShortcut=true;var observations=new List<string>();
+            var optional=Case(legacy:true);FixtureControl.PlanFailure=shortcutFailure;FixtureControl.NeedsShortcut=true;var observations=new List<string>();
             NativeInstall.Run(optional,false,Path.Combine(root,"Steam"),11,prompt=>"y",message=>{},observation:observations.Add);
-            Check(optional.Expected.All(row=>optional.TargetHash(row.Key)==row.Value)&&Encoding.UTF8.GetString(optional.ReadTarget("doorstop_config.ini")!).Contains("enabled=true"),"unreadable optional shortcut planning retains complete fresh-loader installation");
-            Check(!FixtureControl.Events.Contains("steam-stop")&&!FixtureControl.Events.Contains("shortcut-register")&&observations.Count==1&&observations[0].Contains("reason=SteamShortcutPlanUnavailable; exception="+shortcutFailure.GetType().Name+"; hresult=0x")&&!observations[0].Contains("FAKE_PRIVATE"),"optional shortcut install emits bounded cause and never changes Steam");
+            Check(optional.Expected.All(row=>optional.TargetHash(row.Key)==row.Value),"unreadable optional shortcut planning retains the complete takeover");
+            Check(!FixtureControl.Events.Contains("steam-stop")&&!FixtureControl.Events.Contains("shortcut-register")&&observations.Count==1&&observations[0].Contains("reason=SteamShortcutPlanUnavailable; exception="+shortcutFailure.GetType().Name+"; hresult=0x")&&!observations[0].Contains("FAKE_PRIVATE"),"optional shortcut takeover emits bounded cause and never changes Steam");
         }
         {
-            var swapCut=Case();FixtureControl.PlanFailure=new SteamProfileUnavailableException("SteamShortcutSwapInterrupted","INERT RESTORE GUIDANCE");FixtureControl.NeedsShortcut=true;var notices=new List<string>();
+            var swapCut=Case(legacy:true);FixtureControl.PlanFailure=new SteamProfileUnavailableException("SteamShortcutSwapInterrupted","INERT RESTORE GUIDANCE");FixtureControl.NeedsShortcut=true;var notices=new List<string>();
             NativeInstall.Run(swapCut,false,Path.Combine(root,"Steam"),11,prompt=>"y",notices.Add);
-            Check(notices.Any(line=>line.StartsWith("INERT RESTORE GUIDANCE",StringComparison.Ordinal)&&line.Contains("reason=SteamShortcutSwapInterrupted"))&&notices.Last().Contains("Steam shortcut was left unchanged")
-                &&!FixtureControl.Events.Contains("shortcut-register"),"an interrupted shortcut swap prints its restore guidance and a skipped-shortcut completion");
+            Check(notices.Any(line=>line.StartsWith("INERT RESTORE GUIDANCE",StringComparison.Ordinal)&&line.Contains("reason=SteamShortcutSwapInterrupted"))&&notices.Any(line=>line.Contains("entry was left unchanged; see the notice above"))
+                &&!FixtureControl.Events.Contains("shortcut-register"),"an interrupted shortcut swap prints its restore guidance and a skipped-entry completion");
         }
         var upgrade=Case(true);var loader=upgrade.ReadTarget("doorstop_config.ini")!;var config=upgrade.ReadTarget("BepInEx/config/BepInEx.cfg")!;Run(upgrade,true);
         Check(!FixtureControl.Events.Any(value=>value.StartsWith("steam",StringComparison.Ordinal)||value.StartsWith("shortcut",StringComparison.Ordinal)),"UpdateOnly never queries/stops/registers/restarts Steam");
         Check(upgrade.ReadTarget("doorstop_config.ini")!.SequenceEqual(loader)&&upgrade.ReadTarget("BepInEx/config/BepInEx.cfg")!.SequenceEqual(config),"existing shared loader/config bytes preserved");
         Check(InstallReceipt.Parse(upgrade.ReadTarget(InstallReceipt.Path)!).LoaderBefore==true,"first historical loader baseline retained across update");
-        var sameRouting=Case(true);Run(sameRouting);Check(!FixtureControl.Events.Contains("steam-stop")&&!FixtureControl.Events.Contains("shortcut-register"),"registered exact shortcut skips Steam lifecycle");
+        var sameRouting=Case(true);var offNotes=new List<string>();NativeInstall.Run(sameRouting,false,Path.Combine(root,"Steam"),11,prompt=>"y",offNotes.Add);
+        Check(!FixtureControl.Events.Any(value=>value.StartsWith("steam",StringComparison.Ordinal)||value.StartsWith("shortcut",StringComparison.Ordinal)),"reinstalling over an installation skips the Steam lifecycle");
+        Check(offNotes.Last().Contains("BetterAstralParty-Mod.cmd"),"an existing loader switched off is named with the Mod.cmd route");
         var pending=Case(true);FixtureControl.Pending=true;Directory.CreateDirectory(NativeMaintenance.JournalRoot(pending.GameRoot));File.WriteAllText(NativeMaintenance.JournalPath(pending.GameRoot),"inert pending");Run(pending);
         Check(Before("ordinary-recovery","state-observe"),"partial ordinary journal restored before current owned observation");
         var interrupted=Case(true);FixtureControl.PendingUpdate=true;Run(interrupted);Check(Before("update-recover","state-observe")&&!FixtureControl.PendingUpdate,"interrupted in-game update recovered before owned observation");
@@ -89,9 +123,9 @@ internal static class FixtureEntry
         var failure=Case();var before=GameFiles(failure);FixtureControl.FailConfig=true;Reject(()=>Run(failure),"interrupted fresh-loader configuration write fails");
         Check(FixtureControl.Events.Contains("ordinary-rollback")&&Before("ordinary-rollback","ordinary-unlock"),"automatic rollback retains ordinary lock");SameGame(failure,before,"rollback exact fingerprints restore pre-install bytes");
         Takeover();
-        var routed=Case(true);FixtureControl.NeedsShortcut=true;FixtureControl.FailComplete=true;Reject(()=>Run(routed),"post-registration journal completion failure reported");Check(!FixtureControl.Events.Contains("ordinary-rollback")&&File.Exists(NativeMaintenance.JournalPath(routed.GameRoot)),"registered routing keeps pending ordinary transaction for recovery");
+        var routed=Case(legacy:true);FixtureControl.NeedsShortcut=true;FixtureControl.FailComplete=true;Reject(()=>Run(routed),"post-registration journal completion failure reported");Check(!FixtureControl.Events.Contains("ordinary-rollback")&&File.Exists(NativeMaintenance.JournalPath(routed.GameRoot)),"registered routing keeps pending ordinary transaction for recovery");
         var preview=Case(true);var snapshot=preview.Expected.Keys.Concat(new[]{InstallReceipt.Path,"doorstop_config.ini"}).ToDictionary(path=>path,path=>preview.ReadTarget(path)!);Run(preview,preview:true);
-        Check(!FixtureControl.Events.Any(value=>value.Contains("lock")||value.StartsWith("stage:",StringComparison.Ordinal)||value=="write-probe"||value=="game-stop"||value=="steam-stop"||value=="ordinary-start"||value=="guard"),"CheckOnly has no locks/writes/process stops or diagnostic stages");
+        Check(!FixtureControl.Events.Any(value=>value.Contains("lock")||value.StartsWith("stage:",StringComparison.Ordinal)||value=="write-probe"||value=="game-stop"||value=="steam-stop"||value=="ordinary-start"||value=="guard"||value=="history-move")&&FixtureControl.Events.Contains("history-count"),"CheckOnly has no locks/writes/process stops or diagnostic stages and only counts reinstall records");
         Check(snapshot.All(row=>preview.ReadTarget(row.Key)!.SequenceEqual(row.Value))&&!Directory.Exists(NativeMaintenance.JournalRoot(preview.GameRoot)),"CheckOnly exact install bytes and absence of journal directory preserved");
         var pendingPreview=Case(true);FixtureControl.Pending=true;Run(pendingPreview,preview:true);Check(!FixtureControl.Events.Contains("state-observe")&&!FixtureControl.Events.Contains("ordinary-recovery"),"CheckOnly pending journal previews before owned observation");
         var generationPreview=Case();FixtureControl.Generation=true;Run(generationPreview,preview:true);Check(!FixtureControl.Events.Contains("generation-retire")&&!FixtureControl.Events.Contains("state-observe"),"CheckOnly new generation retains high-water and skips inappropriate installed observation");

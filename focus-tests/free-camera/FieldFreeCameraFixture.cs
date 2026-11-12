@@ -65,7 +65,8 @@ public static class Input {
     public static bool GetMouseButton(int i) => Buttons[i];
     public static bool GetMouseButtonDown(int i) => Down[i];
     public static bool GetMouseButtonUp(int i) => Up[i];
-    public static float GetAxis(string name) => name switch { "Horizontal"=>Horizontal, "Vertical"=>Vertical, _=>throw new Exception("Unexpected input axis") };
+    // The owned view must read the native rebindable axis (Core.GameSettings.GetAxis), never Unity's fixed axes.
+    public static float GetAxis(string name) => throw new Exception("Unity input axis read instead of the native rebindable axis: " + name);
 }
 public static class Application { public static bool isFocused=true; }
 public static class Time { public static float deltaTime=1f/60f,unscaledTime; }
@@ -187,6 +188,8 @@ internal sealed class RuntimeObject {
         if (name!="_inst") throw new Exception("Unexpected singleton field"); return Singletons.GetValueOrDefault(type);
     }
     public static RuntimeObject? StaticCall(IntPtr type,string name,params object?[] args) {
+        if (type==FindClass("Core","GameSettings") && name=="GetAxis" && args.Length==1 && args[0] is string axis)
+            return Box(axis switch { "Horizontal"=>Input.Horizontal, "Vertical"=>Input.Vertical, _=>throw new Exception("Unexpected native axis") });
         if (type!=FindClass("FairyGUI","Stage") || args.Length!=0) throw new Exception("Unexpected static native call");
         return name switch { "get_inst"=>Check.Stage, "get_touchScreen"=>Box(Check.TouchScreen), _=>throw new Exception("Unexpected Stage reader") };
     }

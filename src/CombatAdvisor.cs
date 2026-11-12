@@ -1,15 +1,18 @@
 namespace BetterAstralParty;
 
-// Zero is the ordinary 1..6 set. Bits represent achievable faces, not hidden rolls.
+// Zero is the ordinary 1..6 set. Bits represent achievable faces, not hidden rolls. Bit 0 is a face of 0, which only a
+// rule gives: Moses's 약점 (STRBuff 1250201) makes the marked side's dice 0 against Moses.
 public readonly record struct DiceFaces(byte Mask = 0)
 {
     private uint Bits => Mask == 0 ? 126u : Mask;
-    public bool Valid => (Mask & ~126) == 0;
+    public bool Valid => (Mask & 128) == 0;
+    // Shown dice read 0 here, the value elsewhere means "not revealed yet"; callers check this instead.
+    public bool ZeroOnly => Mask == 1;
     public int Min => System.Numerics.BitOperations.TrailingZeroCount(Bits);
     public int Max => System.Numerics.BitOperations.Log2(Bits);
     public int Count => System.Numerics.BitOperations.PopCount(Bits);
-    public bool Contains(int die) => die is >= 1 and <= 6 && (Bits & (1u << die)) != 0;
-    internal static DiceFaces Range(int min, int max) => min is >= 1 and <= 6 && max >= min && max <= 6
+    public bool Contains(int die) => die is >= 0 and <= 6 && (Bits & (1u << die)) != 0;
+    internal static DiceFaces Range(int min, int max) => min is >= 0 and <= 6 && max >= min && max <= 6
         ? new((byte)(((1 << (max + 1)) - 1) & ~((1 << min) - 1))) : new(128);
 }
 
@@ -46,6 +49,31 @@ public readonly record struct HitModifiers(int Bonus = 0, int Cap = 0, bool Immu
         && MinimumHp is >= 0 and <= 10000 && OnHitBonus is >= 0 and <= 100;
     public bool DiceValid => !DiceUnsupported && AttackDice.Valid && DefenseDice.Valid && DodgeDice.Valid;
     public bool PreRollDiceKnown => DiceValid && !AttackUnsupported && !AttackDistributionUnknown && !DefenseDistributionUnknown;
+}
+
+// Card 10010 회심의 일격 ("final ATK +50 % for this battle"), Count times in this fight. The native ATK range never includes
+// it; the server applies it to ATK + die and rounds a half up (2026-11-11 logs: 27 -> 41 and 21 -> 32 at +50 %), so +50 %
+// is exact and another percent stays between half-up and ceiling. How two boosts combine is not observed: added (Low) and
+// applied one after the other (High) bound it.
+public readonly record struct FinalBoost(int Percent, int Count)
+{
+    internal bool Valid => Count == 0 || Percent is > 0 and <= 100 && Count <= 3;
+    internal FinalBoost Plus(int percent) => percent <= 0 ? this : new(Math.Max(Percent, percent), Count + 1);
+    internal (long Low, long High) Apply(long attack)
+    {
+        if (Count <= 0 || Percent <= 0 || attack <= 0) return (attack, attack);
+        var high = attack;
+        for (var i = 0; i < Count; i++) high = (high * (100 + Percent) + 99) / 100;
+        return ((attack * (100 + Count * Percent) + 50) / 100, high);
+    }
+    // ATK + die whose boosted total is the server's; null unless exactly one value gives it under every candidate rule.
+    internal int? Before(int total)
+    {
+        int? found = null;
+        for (var value = 0; value <= total; value++)
+            if (Apply(value) == (total, total)) { if (found != null) return null; found = value; }
+        return found;
+    }
 }
 
 public readonly record struct CombatInput(
@@ -96,7 +124,7 @@ public static class CombatAdvisor
     {
         if (hp is < 0 or > 10000 || attack is < 0 or > 10000 || defense is < 0 or > 10000
             || !modifiers.Valid
-            || dodge && (attackDie is < 1 or > 6 || defense is > 6))
+            || dodge && (attackDie is < 0 or > 6 || attackDie == 0 && !modifiers.AttackDice.ZeroOnly || defense is > 6))
             throw new ArgumentOutOfRangeException(nameof(hp));
         // Zero here is the native failed-dodge total, not an achievable pre-roll die.
         var escaped = dodge && (defense > attackDie || defense == 6 && attackDie == 6);
@@ -129,7 +157,7 @@ public static class CombatAdvisor
         var noDamage = 0;
 
         for (long bonus = input.DefenseBonusMin; bonus <= input.DefenseBonusMax; bonus++)
-        for (var die = 1; die <= 6; die++)
+        for (var die = 0; die <= 6; die++)
         {
             if (!input.Modifiers.DefenseDice.Contains(die)) continue;
             var damage = HitDamage(Math.Max(1L, (long)input.FinalAttack - input.BaseDefense - bonus - die), input.Modifiers, input.Hp);
@@ -150,7 +178,7 @@ public static class CombatAdvisor
     {
         var successes = 0;
 
-        for (var die = 1; die <= 6; die++)
+        for (var die = 0; die <= 6; die++)
         {
             if (!input.Modifiers.DodgeDice.Contains(die)) continue;
             successes += die > input.AttackerDie || die == 6 && input.AttackerDie == 6 ? 1 : 0;
@@ -201,7 +229,8 @@ public static class CombatAdvisor
         if (input.FinalAttack < 0) throw new ArgumentOutOfRangeException(nameof(input), "최종 공격력은 음수일 수 없습니다.");
         if (!input.Modifiers.Valid || !input.Modifiers.DiceValid || input.Modifiers.DefenseDistributionUnknown)
             throw new ArgumentOutOfRangeException(nameof(input), "Invalid hit modifiers");
-        if (input.AttackerDie is < 1 or > 6) throw new ArgumentOutOfRangeException(nameof(input), "공격 주사위는 1~6이어야 합니다.");
+        if (input.AttackerDie is < 0 or > 6 || input.AttackerDie == 0 && !input.Modifiers.AttackDice.ZeroOnly)
+            throw new ArgumentOutOfRangeException(nameof(input), "공격 주사위는 1~6이어야 합니다.");
         if (input.DefenseBonusMin > input.DefenseBonusMax || (long)input.DefenseBonusMax - input.DefenseBonusMin > 100)
             throw new ArgumentOutOfRangeException(nameof(input), "방어 보정 범위가 올바르지 않습니다.");
     }

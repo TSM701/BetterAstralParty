@@ -25,36 +25,35 @@ internal static class StartupGuard
 
     internal static string Directory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BetterAstralParty", "Runtime");
 
-    // BetterAstralParty-Mod.cmd writes this empty file right before asking Steam to start app 2622000, so the
-    // Steam overlay and checkout bind to the real game. A later Steam-client launch must stay vanilla:
-    // the request is deleted on every load and honoured only while fresh and only when the delete succeeded.
-    internal const string LaunchRequestName = "mod-launch.request";
+    // The launch scripts write these empty files right before asking Steam to start app 2622000, so the Steam overlay
+    // and checkout bind to the real game. AstralParty-Vanilla.cmd's request keeps BAP off for that one launch; every
+    // other launch runs BAP (since 1.8.1-dev.1; before, only Mod.cmd's request turned it on). Mod.cmd's request now only names the
+    // route. Each request is deleted on every load and honoured only while fresh.
+    internal const string LaunchRequestName = "mod-launch.request", VanillaRequestName = "vanilla-launch.request";
     internal static readonly TimeSpan LaunchRequestLifetime = TimeSpan.FromMinutes(3);
-    internal static bool LaunchRequestFresh(TimeSpan age) => age >= TimeSpan.FromSeconds(-5) && age <= LaunchRequestLifetime;
-    internal static string LaunchRequestReason { get; private set; } = "request-absent";
-    internal static bool ConsumeLaunchRequest()
+    // Returns request-fresh, -absent, -stale, -future or -unreadable; directory replaces the per-user folder in tests.
+    internal static string ConsumeLaunchRequest(string name, string? directory = null)
     {
         try
         {
-            var path = Path.Combine(Directory, LaunchRequestName);
+            var path = Path.Combine(directory ?? Directory, name);
             var info = new FileInfo(path);
-            if (!info.Exists) { LaunchRequestReason = "request-absent"; return false; }
+            if (!info.Exists) return "request-absent";
             var age = DateTime.UtcNow - info.LastWriteTimeUtc;
-            LaunchRequestReason = age < TimeSpan.FromSeconds(-5) ? "request-future" : age > LaunchRequestLifetime ? "request-stale" : "request-fresh";
             File.Delete(path);
-            return LaunchRequestFresh(age);
+            return age < TimeSpan.FromSeconds(-5) ? "request-future" : age > LaunchRequestLifetime ? "request-stale" : "request-fresh";
         }
-        catch { LaunchRequestReason = "request-unreadable"; return false; }
+        catch { return "request-unreadable"; }
     }
 
     // Why BAP was ON or OFF for the latest launch, in fixed tokens the collector keeps. Never throws.
-    internal static void RecordLaunchDecision(bool active, string route)
+    internal static void RecordLaunchDecision(bool active, string route, string request)
     {
         try
         {
             System.IO.Directory.CreateDirectory(Directory);
             var text = "time=" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture) + "\nactive=" + (active ? "true" : "false")
-                + "\nroute=" + route + "\nrequest=" + LaunchRequestReason + "\n";
+                + "\nroute=" + route + "\nrequest=" + request + "\n";
             var path = Path.Combine(Directory, "launch-decision.state"); var temporary = path + ".tmp";
             File.WriteAllText(temporary, text, Encoding.ASCII); File.Move(temporary, path, true);
         }

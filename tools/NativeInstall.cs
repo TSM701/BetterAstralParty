@@ -41,23 +41,29 @@ namespace BetterAstralParty.Installation
             if (record && report.Error != null) Failure("BootstrapGate", report.Error);
             foreach (var warning in report.Warnings) output(warning);
         }
-        private static bool PlanShortcut(NativeMaintenanceBundle bundle, bool updateOnly, string? steamRoot, uint account, Action<string> output, out bool skipped, Action<string>? observation = null)
+        // Installations add no Steam entry since 1.8.1-dev.1: BAP runs on every launch (user-decided 2026-11-07). A 1.3.x
+        // takeover still rewrites the entry that starts the launcher it removes, so that entry keeps working.
+        private static bool PlanShortcut(NativeMaintenanceBundle bundle, bool takeover, string? steamRoot, uint account, Action<string> output, out bool skipped, Action<string>? observation = null)
         {
+            skipped = false;
+            if (!takeover) return false;
+            const string Kept = "1.3.x가 추가한 Steam 외부 게임은 바꾸지 않습니다. / The 1.3.x Steam library entry is left unchanged. ";
+            if (steamRoot == null || account == 0) { skipped = true; output("Steam 계정을 확인하지 못했습니다. / Steam profile unavailable. " + Kept); return false; }
             var unavailable = false;
-            var plan = !updateOnly && steamRoot != null && account != 0 && NativeSteamMaintenance.PlanRegister(steamRoot, account, bundle.GameRoot, error => {
+            var plan = NativeSteamMaintenance.PlanConvert(steamRoot, account, bundle.GameRoot, error => {
                 unavailable = true; var known = error as SteamProfileUnavailableException;
                 var detail = "NativeInstallShortcut: action=Skipped; reason=" + (known?.Reason ?? "SteamShortcutPlanUnavailable") + "; exception=" + error.GetType().Name
                     + "; hresult=0x" + error.HResult.ToString("X8", System.Globalization.CultureInfo.InvariantCulture);
-                output(known?.Guidance != null ? known.Guidance + " Steam 라이브러리에 Astral Party - BetterAstralParty가 추가되지 않습니다. / Astral Party - BetterAstralParty is not added to the Steam library. " + detail
-                    : "Steam 라이브러리 항목 정보를 읽지 못해 기존 정보를 보존하고 파일만 설치합니다. Steam 라이브러리에 Astral Party - BetterAstralParty가 추가되지 않습니다. / Steam shortcut planning unavailable; preserve profile data and install files only. " + detail);
+                output((known?.Guidance != null ? known.Guidance + " " : "Steam 외부 게임 정보를 읽지 못해 기존 정보를 보존합니다. / Steam shortcut data unavailable; profile data preserved. ") + Kept + detail);
                 try { observation?.Invoke(detail); } catch { }
             });
             skipped = unavailable; return plan;
         }
-        internal static void Run(NativeMaintenanceBundle bundle, bool updateOnly, string? steamRoot, uint account, Func<string, string?> consent, Action<string> output, bool restartSteam = false, bool checkOnly = false, Action<string>? observation = null)
+        // hideConsole: -LoaderConsole Off/Keep; without it a BepInEx installed now starts with its log console off and an
+        // existing configuration keeps its own choice (user-decided 2026-11-08).
+        internal static void Run(NativeMaintenanceBundle bundle, bool updateOnly, string? steamRoot, uint account, Func<string, string?> consent, Action<string> output, bool restartSteam = false, bool checkOnly = false, Action<string>? observation = null, bool? hideConsole = null)
         {
             if (updateOnly && (restartSteam || account != 0 || steamRoot != null)) throw new InvalidOperationException("UpdateOnly cannot register or restart Steam. / UpdateOnly는 Steam을 변경할 수 없습니다.");
-            if (!updateOnly && (steamRoot == null || account == 0)) output("Steam 라이브러리 항목을 바꾸지 않고 파일만 설치합니다. Steam에서 순정 게임 실행 후 설치기를 다시 실행하면 Steam 라이브러리에 Astral Party - BetterAstralParty를 추가할 수 있습니다. / Install files without changing Steam shortcuts; run the original game through Steam and rerun installation to add the shortcut.");
             if (checkOnly) { Preview(bundle, updateOnly, steamRoot, account, consent, output); return; }
             var session = new SteamSessionState(); NativeMaintenance.Transaction? transaction = null;
             NativeMaintenance.InstallLock? installLock = null;
@@ -106,8 +112,9 @@ namespace BetterAstralParty.Installation
                 var loaderBefore = takeover != null ? takeover.Receipt.LoaderBefore : LoaderBaseline(oldReceipt, loader, freshLoader, bundle.TargetHash(UpdateTrust.PluginPath) == null);
                 var prepared = SetupHost.PrepareWholeReceipt(bundle.GameRoot, bundle.PackageRoot, bundle.Version, loaderBefore.HasValue ? loaderBefore.Value ? "true" : "false" : "null");
                 var water = SetupHost.PrepareHighWater(bundle.GameRoot, bundle.PackageRoot, bundle.Version);
+                var (configBefore, configAfter, consoleOff) = PlanConfiguration(bundle, freshLoader, hideConsole ?? freshLoader, output);
                 var extra = new List<string> { InstallReceipt.Path };
-                if (freshLoader) extra.Add(Configuration);
+                if (configAfter != null) extra.Add(Configuration);
                 if (water != null) extra.Add(UpdateTransaction.HighWaterPath);
                 if (takeover != null) extra.AddRange(takeover.Removals.Keys);
                 targets = files.Select(file => Full(bundle.GameRoot, file.Relative)).Concat(extra.Select(path => Full(bundle.GameRoot, path))).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
@@ -115,7 +122,7 @@ namespace BetterAstralParty.Installation
                 stage = "Maintenance path planning / write permission preflight";
                 foreach (var target in targets) NativeMaintenance.AssertTarget(bundle.GameRoot, target);
                 NativeMaintenance.TestWritable(targets);
-                var needsShortcut = PlanShortcut(bundle, updateOnly, steamRoot, account, output, out var shortcutSkipped, observation);
+                var needsShortcut = PlanShortcut(bundle, takeover != null, steamRoot, account, output, out var shortcutSkipped, observation);
                 if (needsShortcut) NativeMaintenance.TestWritable(new[] { Full(steamRoot!, "userdata/" + account + "/config/shortcuts.vdf") });
                 if (bundle.TargetHash(UpdateTrust.PluginPath) != null) output("기존 설치: 사용자 설정을 유지하고 변경 대상 파일을 백업합니다. / Existing installation: settings preserved; target files backed up.");
                 Stage(phase, "Completed"); stage = "Steam shortcut planning / Steam closed"; phase = "WaitForExit"; Stage(phase);
@@ -134,11 +141,10 @@ namespace BetterAstralParty.Installation
                         WriteTarget(bundle, file.Relative, bytes, original.Hash, !original.Existed, rollback);
                     }
                     Stage(phase, "Completed"); phase = "Configuration"; Stage(phase); stage = "Loader configuration";
-                    var config = freshLoader ? bundle.ReadTarget(Configuration) : null;
-                    var updated = freshLoader ? DisableUnityListening(config) : null;
-                    if (freshLoader && (config == null || !updated!.SequenceEqual(config))) {
+                    if (configAfter != null && (configBefore == null || !configAfter.SequenceEqual(configBefore))) {
                         var entry = Entry(transaction, bundle, Configuration);
-                        WriteTarget(bundle, Configuration, updated!, entry.Hash, !entry.Existed, rollback);
+                        if (bundle.TargetHash(Configuration) != (configBefore == null ? null : UpdateTrust.Hash(configBefore))) throw new InvalidDataException("Loader configuration changed after preflight; original bytes retained.");
+                        WriteTarget(bundle, Configuration, configAfter, entry.Hash, !entry.Existed, rollback);
                     }
                     foreach (var file in bundle.Expected) if (bundle.TargetHash(file.Key) != file.Value) throw new InvalidDataException("Installed payload differs from the verified bundle: " + file.Key);
                     var receipt = Entry(transaction, bundle, InstallReceipt.Path);
@@ -150,10 +156,14 @@ namespace BetterAstralParty.Installation
                     NativeMaintenance.CompleteTransaction(bundle, transaction, targets); transaction = null; Stage(phase, "Completed");
                     LegacyWork.Remove(bundle.GameRoot, output);
                     UpdateFaults.RemoveArchived(bundle.GameRoot, output);
+                    ReinstallHistory.Move(bundle.GameRoot, output);
                 }
-                output(needsShortcut ? "적용 완료! Steam 라이브러리의 \"Astral Party - BetterAstralParty\"로 실행하세요. / Installed; start \"Astral Party - BetterAstralParty\" from Steam."
-                    : shortcutSkipped ? "파일 설치 완료. Steam 라이브러리 항목은 바꾸지 않았습니다. 위 안내를 확인하세요. / Installed files; the Steam shortcut was left unchanged, see the notice above."
-                    : "기존 설치본 업데이트 완료. / Updated existing installation.");
+                if (shortcutSkipped) output("1.3.x가 추가한 Steam 외부 게임은 바꾸지 않았습니다. 위 안내를 확인하세요. / The 1.3.x Steam library entry was left unchanged; see the notice above.");
+                if (consoleOff) output("게임을 켤 때 뜨는 BepInEx 로그 창을 껐습니다. / The BepInEx log window shown at game start is now off.");
+                output(updateOnly ? "기존 설치본 업데이트 완료. / Updated existing installation."
+                    // An existing loader switched off starts no mods from Steam; Mod.cmd passes the loader switch as launch arguments.
+                    : !freshLoader && LoaderEnabled(loader) == false ? "적용 완료! 공용 로더가 꺼져 있어 Steam에서 그냥 실행하면 모드가 켜지지 않습니다. 게임 폴더의 BetterAstralParty-Mod.cmd로 실행하고 Steam의 실행 옵션 확인 창에서 허용하세요. / Installed. The shared loader is off, so a normal Steam launch starts no mods; run BetterAstralParty-Mod.cmd in the game folder and allow Steam's launch options prompt."
+                    : "적용 완료! Steam에서 Astral Party를 실행하면 BetterAstralParty가 켜집니다. 모드 없이 실행하려면 게임 폴더의 AstralParty-Vanilla.cmd를 실행하세요. / Installed. Start Astral Party from Steam to play with BetterAstralParty, or run AstralParty-Vanilla.cmd in the game folder to play without it.");
             } catch (Exception error) {
                 if (transaction != null && !registered) {
                     try { Stage("Rollback"); NativeMaintenance.RestoreTransaction(bundle, transaction, targets, rollback); transaction = null; Stage("Rollback", "Completed"); }
@@ -171,12 +181,14 @@ namespace BetterAstralParty.Installation
             if (SetupHost.HasPendingUpdate(bundle.GameRoot)) output("CheckOnly: an interrupted automatic update will be recovered first. / 중단된 자동 업데이트를 먼저 복구합니다.");
             CheckCompatibility(bundle, output, false);
             var generation = NativeReinstallGeneration.Review(bundle.GameRoot, bundle.PackageRoot, bundle.Version, bundle.ManifestHash, NativeMaintenance.JournalRoot(bundle.GameRoot));
+            var takeover = false;
             if (generation != null) {
                 if (updateOnly) throw new InvalidOperationException("Clean reinstall requires normal installation, not UpdateOnly.");
                 output("CheckOnly: verified complete removal; new generation requires confirmation. / 완전 제거 확인: 새 설치 전에 동의가 필요합니다.");
             } else if (LegacyTakeover(bundle, output) != null) {
                 if (updateOnly) throw new InvalidOperationException("Taking over 1.3.x requires a normal installation, not UpdateOnly.");
                 output("CheckOnly: 1.3.x installation will be taken over after confirmation. / 1.3.x 설치는 동의 후 인계합니다.");
+                takeover = true;
             } else {
                 Transition(bundle);
                 // Read-only: the same receipt/channel validation the real installation runs, so CheckOnly reports its refusal.
@@ -185,11 +197,21 @@ namespace BetterAstralParty.Installation
             var existingLoader = ExistingSharedLoader(bundle, output);
             if (updateOnly && (bundle.ReadTarget(InstallReceipt.Path, 16384) == null || bundle.TargetHash(UpdateTrust.PluginPath) == null)) throw new InvalidOperationException("UpdateOnly requires an existing installation.");
             if (!existingLoader) SharedLoaderPlan(bundle, new Dictionary<string, string?>(StringComparer.Ordinal));
-            var shortcut = PlanShortcut(bundle, updateOnly, steamRoot, account, output, out _);
+            var shortcut = PlanShortcut(bundle, takeover, steamRoot, account, output, out _);
             var legacyWork = LegacyWork.Finished(bundle.GameRoot).Count;
             if (legacyWork != 0) output("CheckOnly: 끝난 1.3.x 업데이트 작업 기록 " + legacyWork + "개를 설치 후 정리합니다. / " + legacyWork + " finished 1.3.x update work records will be removed after installation.");
             var archived = UpdateFaults.RemovableArchived(bundle.GameRoot);
             if (archived != 0) output("CheckOnly: 끝난 업데이트 기록 " + archived + "개를 설치 후 정리합니다. / " + archived + " finished update records will be removed after installation.");
+            var history = ReinstallHistory.Move(bundle.GameRoot, null, false);
+            if (history != 0) output("CheckOnly: 이전 재설치 기록 " + history + "개를 설치 후 BetterAstralParty.Update\\history로 옮깁니다. / " + history + " earlier reinstall records will move to BetterAstralParty.Update\\history after installation.");
+            // The install window reads loaderConsole= to offer turning BepInEx's log window off.
+            string console;
+            if (!existingLoader) console = "fresh";
+            else try { var state = ConsoleEnabled(bundle.ReadTarget(Configuration)); console = state == true ? "on" : state == false ? "off" : "unknown"; }
+                catch (Exception error) when (error is IOException || error is UnauthorizedAccessException || error is System.Security.SecurityException || error is ApplySafetyException) { console = "unknown"; }
+            output(console == "fresh" ? "CheckOnly: 새로 설치하는 BepInEx의 로그 창은 꺼 둡니다. / CheckOnly: loaderConsole=fresh; the new BepInEx log window starts off."
+                : console == "on" ? "CheckOnly: 게임을 켤 때 BepInEx 로그 창이 뜹니다. -LoaderConsole Off로 끌 수 있습니다. / CheckOnly: loaderConsole=on; -LoaderConsole Off turns the BepInEx log window off."
+                : "CheckOnly: BepInEx 로그 창 설정은 그대로 둡니다. / CheckOnly: loaderConsole=" + console + ".");
             output("CheckOnly: installation validation complete; shortcutWrite=" + shortcut + ". / 설치 사전 검사가 완료되었습니다.");
         }
         // 1.3.x takeover is allowed only from a finished, unmodified protocol-4 installation.
@@ -280,6 +302,11 @@ namespace BetterAstralParty.Installation
         {
             if (oldReceipt != null) return oldReceipt.LoaderBefore;
             if (!pluginAbsent) return null; if (freshLoader) return false;
+            return LoaderEnabled(loader);
+        }
+        // The shared loader's single enabled value, or null when absent or ambiguous.
+        internal static bool? LoaderEnabled(byte[]? loader)
+        {
             if (loader == null) return null;
             var enabled = Regex.Matches(Decode(loader), @"(?m)^enabled\s*=\s*(true|false)\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
             return enabled.Count == 1 ? (bool?)string.Equals(enabled[0].Groups[1].Value, "true", StringComparison.OrdinalIgnoreCase) : null;
@@ -291,6 +318,71 @@ namespace BetterAstralParty.Installation
                 try { var text = reader.ReadToEnd(); encoding = reader.CurrentEncoding; return text; }
                 catch (DecoderFallbackException) { encoding = Encoding.GetEncoding(28591); return encoding.GetString(bytes); }
             }
+        }
+        // BepInEx.cfg before and after: a BepInEx installed now gets UnityLogListening off, and the log console goes off when
+        // asked and still on. An existing configuration that cannot be read or edited losslessly keeps its bytes.
+        private static (byte[]? Before, byte[]? After, bool ConsoleOff) PlanConfiguration(NativeMaintenanceBundle bundle, bool freshLoader, bool hideConsole, Action<string> output)
+        {
+            byte[]? before = null;
+            if (freshLoader || hideConsole)
+                try { before = bundle.ReadTarget(Configuration); }
+                catch (Exception error) when (!freshLoader && (error is IOException || error is UnauthorizedAccessException || error is System.Security.SecurityException || error is ApplySafetyException)) {
+                    output("BepInEx 설정을 읽지 못해 로그 창 설정은 바꾸지 않습니다. / BepInEx configuration unreadable; the log window setting is left unchanged.");
+                    return (null, null, false);
+                }
+            var after = freshLoader ? DisableUnityListening(before) : null;
+            if (!hideConsole) return (before, after, false);
+            var state = ConsoleEnabled(before);
+            if (state == null) output("BepInEx 로그 창 설정이 여러 줄이라 바꾸지 않습니다. / The BepInEx log window setting is ambiguous; left unchanged.");
+            if (state != true) return (before, after, false);
+            try { return (before, DisableConsole(after ?? before), true); }
+            catch (InvalidDataException) {
+                output("BepInEx 설정의 인코딩을 그대로 지킬 수 없어 로그 창 설정은 바꾸지 않습니다. / BepInEx configuration encoding not lossless; the log window setting is left unchanged.");
+                return (before, after, false);
+            }
+        }
+        // BepInEx's [Logging.Console] Enabled: true when absent (BepInEx's own default shows the console), null when ambiguous.
+        internal static bool? ConsoleEnabled(byte[]? bytes)
+        {
+            if (bytes == null) return true;
+            var text = Decode(bytes); var section = ConsoleSection(text);
+            if (section == null) return true;
+            var lines = ConsoleLine.Matches(text.Substring(section.Value.Start, section.Value.Length));
+            return lines.Count == 0 ? true : lines.Count == 1 ? string.Equals(lines[0].Groups[2].Value, "true", StringComparison.OrdinalIgnoreCase) : (bool?)null;
+        }
+        private static readonly Regex ConsoleLine = new Regex(@"(?m)^([ \t]*Enabled[ \t]*=[ \t]*)(true|false)([ \t]*)(?=\r?$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        // The [Logging.Console] body: from the line after its header to the next section header.
+        private static (int Start, int Length)? ConsoleSection(string text)
+        {
+            var header = Regex.Match(text, @"(?m)^[ \t]*\[Logging\.Console\][ \t]*\r?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            if (!header.Success) return null;
+            var end = header.Index + header.Length; var start = end < text.Length && text[end] == '\n' ? end + 1 : end;
+            var next = Regex.Match(text.Substring(start), @"(?m)^[ \t]*\[", RegexOptions.CultureInvariant);
+            return (start, next.Success ? next.Index : text.Length - start);
+        }
+        // Turns the log console off through that one Enabled line, keeping every other byte as DisableUnityListening does.
+        internal static byte[] DisableConsole(byte[]? bytes)
+        {
+            if (bytes == null) return Utf8.GetBytes("[Logging.Console]\r\nEnabled = false\r\n");
+            Encoding encoding; var content = Decode(bytes, out encoding);
+            var newline = content.Contains("\r\n") || !content.Contains("\n") ? "\r\n" : "\n";
+            var section = ConsoleSection(content); string updated;
+            if (section == null) updated = content + (content.Length == 0 || content.EndsWith("\n", StringComparison.Ordinal) ? "" : newline) + "[Logging.Console]" + newline + "Enabled = false" + newline;
+            else {
+                var lines = ConsoleLine.Matches(content.Substring(section.Value.Start, section.Value.Length));
+                if (lines.Count > 1) throw new InvalidDataException("BepInEx log console setting is ambiguous; original bytes retained.");
+                if (lines.Count == 1) {
+                    var at = section.Value.Start + lines[0].Index;
+                    updated = content.Substring(0, at) + lines[0].Groups[1].Value + "false" + lines[0].Groups[3].Value + content.Substring(at + lines[0].Length);
+                } else {
+                    var start = section.Value.Start;
+                    updated = content.Substring(0, start) + (start == content.Length && !content.EndsWith("\n", StringComparison.Ordinal) ? newline : "") + "Enabled = false" + newline + content.Substring(start);
+                }
+            }
+            if (updated == content) return bytes;
+            var preamble = encoding.GetPreamble(); var prefix = preamble.Length != 0 && bytes.Take(preamble.Length).SequenceEqual(preamble) ? preamble : Array.Empty<byte>();
+            if (!prefix.Concat(encoding.GetBytes(content)).SequenceEqual(bytes)) throw new InvalidDataException("Loader logging configuration encoding is not lossless; original bytes retained.");
+            return prefix.Concat(encoding.GetBytes(updated)).ToArray();
         }
         internal static byte[] DisableUnityListening(byte[]? bytes)
         {

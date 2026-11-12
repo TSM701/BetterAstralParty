@@ -211,8 +211,10 @@ internal static class FieldFreeCamera
         if (!onUi && RuntimeObject.StaticField(settings, "KeyControl")!.Value<bool>())
         {
             var speed = free.Field<float>("CameraSpeed");
+            // The native free camera reads GameSettings.GetAxis since 2026-11-12: the player's rebindable movement keys.
+            float Axis(string axis) => RuntimeObject.StaticCall(settings, "GetAxis", axis)!.Value<float>();
             if (float.IsFinite(speed) && speed > 0 && float.IsFinite(Time.deltaTime) && Time.deltaTime > 0)
-                delta += (transform.forward * Input.GetAxis("Vertical") + transform.right * Input.GetAxis("Horizontal")) * speed * Math.Min(Time.deltaTime, .1f);
+                delta += (transform.forward * Axis("Vertical") + transform.right * Axis("Horizontal")) * speed * Math.Min(Time.deltaTime, .1f);
         }
         delta.y = 0;
         if (!float.IsFinite(delta.x) || !float.IsFinite(delta.z) || delta.sqrMagnitude == 0

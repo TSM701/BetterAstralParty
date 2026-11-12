@@ -21,6 +21,7 @@ namespace BetterAstralParty.Installation
         }).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         private static readonly Regex RecoveryFile = new Regex(@"\ABetterAstralParty\.(?:update-v[345]\.(?:version(?:\.uninstalled-[0-9a-f]{32})?|failure|operation|preferences-failed|failed)|reinstall-v[345]\.(?:pending|completed-[0-9a-f]{32}))\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
         private static readonly Regex RecoveryDirectory = new Regex(@"\A(?:bap-v[345]-(?:stage|txn|helperauto|helper|helperbridge|wholeintent|wholehist)-[0-9a-f]{32}|BetterAstralParty-emergency-[0-9a-f]{32})\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+        private static readonly Regex HistoryFile = new Regex(@"\ABetterAstralParty\.(?:update-v5\.version\.uninstalled|reinstall-v5\.completed)-[0-9a-f]{32}\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
         private static readonly Regex ContainedDirectory = new Regex(@"\Abap-v[45]-(?:stage|txn|helperauto|helper|helperbridge|wholeintent|wholehist)-[0-9a-f]{32}\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
         private static readonly Regex ContainedTransition = new Regex(@"\Abap-v4-transition-[0-9a-f]{32}\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
         private sealed class Scope { internal string Key = "", Root = "", Prefix = ""; }
@@ -119,6 +120,7 @@ namespace BetterAstralParty.Installation
             {
                 if (++scanned > MaxFiles + MaxDirectories) throw Stop("EmergencyWorkInventoryLimitExceeded");
                 var name = WindowsPath.Leaf(WindowsPath.FromIo(childIo)); var relative = UpdateWorkPath.Root + "/" + name;
+                if (relative.Equals(UpdateWorkPath.History, StringComparison.OrdinalIgnoreCase)) { complete &= HistoryFolder(plan, scope, fence, childIo, skipData); continue; }
                 var directory = ContainedDirectory.IsMatch(name); var transition = ContainedTransition.IsMatch(name);
                 if (!directory && !transition) { complete = false; continue; }
                 var attributes = File.GetAttributes(childIo);
@@ -133,6 +135,26 @@ namespace BetterAstralParty.Installation
                 plan.Directories.Add(new DirectoryEntry { Scope = scope.Key, Relative = UpdateWorkPath.Root, Target = fence.Full(UpdateWorkPath.Root), Identity = identity });
             }
             fence.Recheck();
+        }
+        // Clean-reinstall records kept under BetterAstralParty.Update/history; true when every child was selected.
+        private static bool HistoryFolder(Plan plan, Scope scope, WindowsFileFence fence, string io, bool skipData)
+        {
+            var attributes = File.GetAttributes(io);
+            if ((attributes & FileAttributes.ReparsePoint) != 0) throw new ApplySafetyException(ApplyFailure.LinkedFile);
+            if ((attributes & FileAttributes.Directory) == 0) throw new ApplySafetyException(ApplyFailure.UnsafePath);
+            var identity = fence.DirectoryIdentity(UpdateWorkPath.History).Text; fence.AssertPrivateDirectory(UpdateWorkPath.History);
+            var complete = true;
+            foreach (var childIo in Directory.EnumerateFileSystemEntries(io, "*", SearchOption.TopDirectoryOnly))
+            {
+                var name = WindowsPath.Leaf(WindowsPath.FromIo(childIo));
+                if (!HistoryFile.IsMatch(name) || (File.GetAttributes(childIo) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0) { complete = false; continue; }
+                AddFile(plan, scope, fence, UpdateWorkPath.History + "/" + name, skipData);
+            }
+            if (complete) {
+                if (plan.Directories.Count >= MaxDirectories) throw Stop("EmergencyDirectoryLimitExceeded");
+                plan.Directories.Add(new DirectoryEntry { Scope = scope.Key, Relative = UpdateWorkPath.History, Target = fence.Full(UpdateWorkPath.History), Identity = identity });
+            }
+            fence.Recheck(); return complete;
         }
         private static Plan Observe(string gameRoot, bool skipData = false, IDictionary<string, WindowsFileFence>? heldFences = null)
         {
@@ -228,22 +250,28 @@ namespace BetterAstralParty.Installation
             var held = new List<Held>(); var fences = new Dictionary<string, WindowsFileFence>(StringComparer.Ordinal); NativeMaintenance.InstallLock? installLock = null; var legacyLocks = new Dictionary<string, WindowsFileFence.FileLease?>(StringComparer.Ordinal);
             try
             {
-                bundle.AssertRoot(); preview = Observe(bundle.GameRoot); var receipt = ReceiptStatus(preview);
+                bundle.AssertRoot();
+                // As in Uninstall: a running game is shown with recheck/cancel before the list, and a running Steam does not
+                // hide the earlier entry; Steam is asked to close after consent (NativeUninstall.Run).
+                if (!whatIf) NativeSteamMaintenance.WaitGameClosed(bundle.GameRoot, consent, output);
+                preview = Observe(bundle.GameRoot); var receipt = ReceiptStatus(preview);
                 var removeShortcut = false; Exception? shortcutFailure = null;
                 if (steamRoot != null) try { if (account == 0) account = NativeSteamMaintenance.ResolveAccount(steamRoot, 0);
-                    NativeSteamMaintenance.AssertStopped(steamRoot, "UninstallPreflight"); removeShortcut = NativeSteamMaintenance.PlanRemove(steamRoot, account, bundle.GameRoot);
+                    removeShortcut = NativeSteamMaintenance.PlanRemove(steamRoot, account, bundle.GameRoot);
                 } catch (Exception error) { shortcutFailure = error; }
                 output("영구 삭제 대상 / Irreversible emergency deletion: " + bundle.GameRoot); output("설치 기록 / Receipt: " + receipt);
                 foreach (var row in preview.Files) output(row.Existed ? "  " + row.Target + " | bytes=" + row.Bytes.ToString(CultureInfo.InvariantCulture) + " | SHA256=" + row.Hash + " | identity=" + row.Identity + " | 소유 미검증 / ownership unverified" : "  없음 / absent: " + row.Target);
                 foreach (var row in preview.Directories) output("  폴더 삭제 / Remove directory: " + row.Target + " | identity=" + row.Identity);
                 foreach (var scope in preview.Scopes.Where(s => s.Key != "game")) output("  선택한 게임의 복구 백업 삭제 / Selected-game recovery backups: " + scope.Root + "\\" + scope.Prefix);
-                output(removeShortcut ? "Steam 라이브러리에서 일치하는 BetterAstralParty 항목만 제거합니다. / Remove only the exactly matching BetterAstralParty shortcut." : "Steam 라이브러리 항목은 보존합니다. / Steam shortcut retained or absent. " + (shortcutFailure == null ? "" : shortcutFailure.GetType().Name));
+                output(removeShortcut ? "일치하는 BetterAstralParty Steam 외부 게임만 제거합니다. Steam이 켜져 있으면 먼저 종료를 요청합니다. / Remove only the exactly matching BetterAstralParty shortcut; a running Steam is asked to close first." :"Steam 외부 게임은 그대로 둡니다. / Steam shortcut retained or absent. " + (shortcutFailure == null ? "" : shortcutFailure.GetType().Name));
                 output("위 목록과 선택한 게임의 v3/v4/v5 복구 백업을 영구 삭제합니다. BetterAstralParty 파일의 백업·격리 복사본은 만들지 않으며, 중단되면 이미 삭제한 파일은 복원하지 않습니다. 공용 로더·다른 모드·추가 파일·다른 게임의 백업·전역 진단 ZIP은 보존합니다. / Permanently delete the listed files and selected-game v3/v4/v5 recovery backups. No BetterAstralParty payload/recovery copies; partial deletion cannot be rolled back. Shared loader, other mods, extra files, other game backups and global diagnostic ZIPs remain unchanged.");
-                output("Steam의 공용 라이브러리 항목·표지 정보는 기존 안전한 롤백 절차를 사용하므로 해당 정보의 백업이 별도로 남을 수 있습니다. / Shared Steam shortcut/artwork metadata uses the existing safe rollback procedure; its separate metadata backups may remain.");
+                output("Steam 외부 게임 목록·표지 정보는 기존 안전한 롤백 절차를 사용하므로 해당 정보의 백업이 별도로 남을 수 있습니다. / Shared Steam shortcut/artwork metadata uses the existing safe rollback procedure; its separate metadata backups may remain.");
                 if (whatIf) { output("WhatIf: 미리보기만 완료했습니다. / Preview only; nothing changed."); return 0; }
-                if (!preview.Files.Any(row => row.Existed) && preview.Directories.Count == 0 && !removeShortcut) { output("삭제할 파일·확인된 Steam 라이브러리 항목이 없습니다. / No files or verified shortcut to delete."); return 0; }
+                if (!preview.Files.Any(row => row.Existed) && preview.Directories.Count == 0 && !removeShortcut) { output("삭제할 파일·확인된 Steam 외부 게임이 없습니다. / No files or verified shortcut to delete."); return 0; }
                 if (consent("표시한 파일과 복구 백업을 복원 불가능하게 영구 삭제할까요? / Permanently delete every listed unverified file and recovery backup without rollback? [y/N]") != "y") { output("취소했습니다. 아무것도 변경하지 않았습니다. / Cancelled; nothing changed."); return 0; }
-                SetupHost.RecordInstallerStage("Uninstall", "Begin"); phase = "Processes"; NativeSteamMaintenance.AssertGameStopped(bundle.GameRoot);
+                SetupHost.RecordInstallerStage("Uninstall", "Begin"); phase = "Processes";
+                if (removeShortcut) NativeSteamMaintenance.StopSteam(steamRoot!, new SteamSessionState(), consent, output, resume: false);
+                NativeSteamMaintenance.AssertGameStopped(bundle.GameRoot);
                 phase = "Locks"; installLock = NativeMaintenance.AcquireInstallLock(bundle);
                 var game = new WindowsFileFence(bundle.GameRoot); fences.Add("game", game);
                 using (var updateLock = Maybe(game, UpdateLock, true) ?? game.OpenFile(UpdateLock, true, true))

@@ -34,13 +34,14 @@ internal static class AdviceText
 
     internal const float HoverSlide = 8f;
 
-    // Keep the entrance intact; fade out during the last half-second.
-    internal const float DamageLifetime = 3f;
-    internal static bool FinalDamageReady(bool sawArithmetic, bool arithmeticExited,
-        bool attackUpdated, bool defenseUpdated, bool escaped) =>
-        escaped || arithmeticExited || sawArithmetic && attackUpdated && defenseUpdated;
-    internal static float DamageAlpha(float elapsed, bool lethal = false) =>
-        elapsed < 0.5f ? (lethal ? 1f : Reveal(elapsed, 0.12f)) : 1 - Reveal(elapsed - (DamageLifetime - 0.5f), 0.5f);
+    // The figure appears once the server has decided the hit, as the dice show starts, and stays until the result step starts
+    // (user-requested 2026-11-08: in the logged fights that came 2.8-6.2 s later), then fades out in half a second.
+    // DamageLifetime caps a hit whose result step is never seen; resultAfter < 0 means not seen yet.
+    internal const float DamageLifetime = 10f;
+    internal static float DamageEnd(float resultAfter) => resultAfter < 0 ? DamageLifetime : Math.Min(resultAfter + 0.5f, DamageLifetime);
+    // Keep the entrance intact; fade out during the last half-second before end.
+    internal static float DamageAlpha(float elapsed, float end, bool lethal = false) =>
+        elapsed < 0.5f ? (lethal ? 1f : Reveal(elapsed, 0.12f)) : 1 - Reveal(elapsed - (end - 0.5f), 0.5f);
 
     // Anchor is inside the panel: clear the whole panel, including the entrance slide.
     internal static float HoverAbovePanel(float anchorY, float height, float scale) =>

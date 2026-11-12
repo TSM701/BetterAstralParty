@@ -12,7 +12,7 @@ internal static class SetupHost
     // The host's own component version, independent of the release version, so an unchanged host
     // stays byte-identical across releases (a stable hash keeps antivirus clearance and reputation).
     // Bump it whenever this host or anything it compiles changes.
-    public const string SetupVersion = "1.5.0";
+    public const string SetupVersion = "1.6.0";
     internal const string Image = "BetterAstralParty-Setup.exe";
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
@@ -22,9 +22,35 @@ internal static class SetupHost
     private static int Main(string[] args)
     {
         if (args.Length != 0 && args[0] == "--diagnostics") return BetterAstralParty.Installation.NativeDiagnosticEntry.Run(args);
+        // Install.cmd, Uninstall.cmd and Force-Uninstall.cmd start the window with --window when double-clicked without
+        // arguments and close their console right away; a development checkout forwards it to the pinned package without a
+        // console of its own. A window that cannot open falls back to a console, which then waits for Enter itself.
+        if (Array.IndexOf(args, "--window") >= 0) {
+            if (Array.IndexOf(args, "--development") >= 0) return BetterAstralParty.Installation.NativeMaintenanceEntry.RunWindowed(args);
+            var rest = Array.FindAll(args, arg => arg != "--window");
+            var shown = BetterAstralParty.Installation.NativeSetupWindow.Run(rest);
+            int code;
+            if (shown.HasValue) code = shown.Value;
+            else {
+                code = BetterAstralParty.Installation.NativeMaintenanceEntry.Run(rest);
+                try { Console.WriteLine("Enter 키를 누르면 닫힙니다. / Press Enter to close."); Console.ReadLine(); } catch { }
+            }
+            NoteBootstrap(code);
+            return code;
+        }
         if (args.Length != 0) return BetterAstralParty.Installation.NativeMaintenanceEntry.Run(args);
-        MessageBoxW(IntPtr.Zero, "Install.cmd로 설치하고 Steam의 \"Astral Party - BetterAstralParty\"로 실행하세요.\r\nRun Install.cmd, then start \"Astral Party - BetterAstralParty\" from Steam.", "BetterAstralParty", 0x40);
+        MessageBoxW(IntPtr.Zero, "Install.cmd로 설치한 뒤 Steam에서 Astral Party를 실행하세요.\r\nRun Install.cmd, then start Astral Party from Steam.", "BetterAstralParty", 0x40);
         return 2;
+    }
+
+    // The .cmd that started the window has already exited, so the window's exit goes into the bootstrap log it opened.
+    internal static void NoteBootstrap(int code)
+    {
+        try {
+            var path = Environment.GetEnvironmentVariable("BAP_BOOTLOG");
+            if (string.IsNullOrEmpty(path) || !System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(path), @"\ABootstrap-[0-9]{1,5}-[0-9]{1,5}\.log\z") || !File.Exists(path)) return;
+            File.AppendAllText(path, "BAP-BOOTSTRAP-WINDOW: exit " + code + "\r\n");
+        } catch { /* the window's own result stands without the log line */ }
     }
 
     public static IDisposable GuardMaintenance(string root) { return new UpdateLaunchGate.Lease(root); }
@@ -57,7 +83,10 @@ internal static class SetupHost
         public void Dispose() {_sink.Stop(BetterAstralParty.Observability.DiagnosticEndReason.OwnerDisposed);BetterAstralParty.Observability.DiagnosticHub.Unbind(_sink);}
     }
     public static IDisposable BeginInstallerDiagnostics(string root,string version) {return new InstallerDiagnosticLease(root,version);}
+    // The install window follows the stages to show its steps.
+    internal static Action<string,string>? StageObserved;
     public static void RecordInstallerStage(string phase,string outcome) {
+        try { StageObserved?.Invoke(phase,outcome); } catch { }
         BetterAstralParty.Observability.DiagnosticPhase p;BetterAstralParty.Observability.DiagnosticOutcome o;
         if(!Enum.TryParse(phase,out p) || !Enum.IsDefined(typeof(BetterAstralParty.Observability.DiagnosticPhase),p) || !Enum.TryParse(outcome,out o) || !Enum.IsDefined(typeof(BetterAstralParty.Observability.DiagnosticOutcome),o))return;
         BetterAstralParty.Observability.DiagnosticHub.Stage(BetterAstralParty.Observability.DiagnosticFeature.Installer,p,o);

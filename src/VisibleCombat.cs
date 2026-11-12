@@ -4,6 +4,8 @@ public readonly record struct VisibleCombat(int MapType, int Hp, int AttackMin, 
     int AttackDie, int DefenseMin, int DefenseMax, bool DodgeAvailable)
 {
     public HitModifiers Modifiers { get; init; }
+    // The attacker's used Powerful Attack cards, for viewers who know them (ServerFight.Boost).
+    public FinalBoost Boost { get; init; }
 }
 
 public readonly record struct VisibleAdvice(string Defend, string Dodge)
@@ -21,8 +23,9 @@ public static class VisibleCombatAdvisor
 
     public static VisibleAdvice? Calculate(VisibleCombat input)
     {
-        if (!IsPve(input.MapType) || input.Hp is <= 0 or > 10000 || input.AttackDie is < 1 or > 6
-            || !input.Modifiers.Valid || !input.Modifiers.DiceValid
+        if (!IsPve(input.MapType) || input.Hp is <= 0 or > 10000 || input.AttackDie is < 0 or > 6
+            || input.AttackDie == 0 && !input.Modifiers.AttackDice.ZeroOnly
+            || !input.Modifiers.Valid || !input.Modifiers.DiceValid || !input.Boost.Valid
             || input.AttackMin < 0 || input.AttackMax < input.AttackMin || input.AttackMax > 1000
             || input.DefenseMin < -1000 || input.DefenseMax < input.DefenseMin || input.DefenseMax > 1000
             || input.AttackMax - input.AttackMin > 100 || input.DefenseMax - input.DefenseMin > 100)
@@ -33,6 +36,8 @@ public static class VisibleCombatAdvisor
         double defKoLow = 1, dodgeKoLow = 1;
         // Bounds, not an invented probability distribution for random card bonuses.
         for (var atk = input.AttackMin; atk <= input.AttackMax; atk++)
+        // A final-ATK boost raises ATK + die; both candidate rules bound it.
+        for (var rule = 0; rule < (input.Boost.Count > 0 ? 2 : 1); rule++)
         for (var def = input.DefenseMin; def <= input.DefenseMax; def++)
         // A face restriction does not prove equal weights. Bound every allowed defense
         // outcome instead of inventing a distribution; the publicly revealed attack is fixed.
@@ -42,7 +47,8 @@ public static class VisibleCombatAdvisor
             if (face > 0 && !input.Modifiers.DefenseDice.Contains(face)) continue;
             var modifiers = face == 0 ? input.Modifiers : input.Modifiers with
                 { DefenseDice = DiceFaces.Range(face, face), DefenseDistributionUnknown = false };
-            var result = CombatAdvisor.Calculate(new(input.Hp, atk + input.AttackDie, input.AttackDie, def)
+            var boosted = input.Boost.Apply(atk + input.AttackDie);
+            var result = CombatAdvisor.Calculate(new(input.Hp, (int)(rule == 1 ? boosted.High : boosted.Low), input.AttackDie, def)
                 { Modifiers = modifiers }, false);
             allDodge &= result.Recommendation == RecommendedAction.Dodge;
             defLow = Math.Min(defLow, result.Defend.ExpectedDamage);

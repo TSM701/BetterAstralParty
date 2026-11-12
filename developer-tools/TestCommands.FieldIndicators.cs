@@ -40,7 +40,7 @@ internal static partial class TestCommands
     private static void FieldCounter(DevContext context, string stage, Action<string> pin)
     {
         var runtime = context.NativeAssemblyPath; pin(runtime);
-        if (!context.NativeAssemblyExplicit) Check(context.Hash(runtime) == "C20623C300D088FEC7F145BA9E0E636362B6DFC3D5805100B0799C5125EB51F8", "Exact audited historical native runtime SHA-256");
+        if (!context.NativeAssemblyExplicit) Check(context.Hash(runtime) == "BDB19B0CA19E8EF692CC8741CE8DAC9EE36D79C13EF1921EEE14D5B9AE4BADBB", "Exact audited historical native runtime SHA-256");
         using var native = Native(context);
         ExactField(native, "Core.Unit.BattleProperty", "Counter", "Tools.ReadOnlyReactiveProperty`1<System.Boolean>");
         ExactMethod(native, "Tools.ReadOnlyReactiveProperty`1", "get_Value", "T"); ExactMethod(native, "GameLogic.BattlePlayerData", "get_Property", "Core.Unit.BattleProperty");

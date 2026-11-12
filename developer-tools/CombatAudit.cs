@@ -12,18 +12,21 @@ internal static class CombatAudit
     {
         internal string Combat = "";
         internal int Before, Attack, Defense, Die, Logged, Observed = -1;
+        // The server's own damage for the hit (damage.server incHp, since 1.8.1-dev.10): exact, overkill included.
+        internal int? Server;
         internal bool Dodge, MonsterDefeat;
         internal HitModifiers Modifiers;
         internal readonly SortedSet<int> Buffs = new();
         internal int Recomputed => CombatAdvisor.FinalDamage(Before, Attack, Defense, Dodge, Die, Modifiers);
         internal int ExpectedDisplay => MonsterDefeat ? Math.Max(1, Math.Max(0, Before - Recomputed)) : Math.Max(0, Before - Recomputed);
-        // Zero HP (or the native defeat HP 1) hides overkill; only lethality is comparable there.
-        internal bool Exact => Observed > 0 && !(MonsterDefeat && Observed == 1);
-        internal bool Matches => ExpectedDisplay == Observed;
+        // Zero HP (or the native defeat HP 1) hides overkill; only lethality is comparable there, unless the server's damage is logged.
+        internal bool Exact => Server != null || Observed > 0 && !(MonsterDefeat && Observed == 1);
+        internal bool Matches => Server is { } server ? Recomputed == server : ExpectedDisplay == Observed;
     }
 
     private static readonly Regex Line = new(@"\| combat=([^;]+); (.*)$");
     private static readonly Regex Prediction = new(@"^prediction before=(\d+); atk=(\d+); def=(\d+); attackDie=(\d+); dodge=(True|False); damage=(-?\d+); modifiers=(.*)$");
+    private static readonly Regex ServerDamage = new(@"^damage\.server .*?\bincHp=(-?\d+);");
     private static readonly Regex Result = new(@"^damage\.result before=\d+; predictedDamage=-?\d+; expectedHP=\d+; observedHP=(\d+); expectedDisplayHP=\d+; monsterDefeatPresentation=(True|False);");
     private static readonly Regex Effects = new(@"^combatEffects\.(?!resolver\.|source\.|schema\.)[\w.]+=(.*)$");
 
@@ -178,6 +181,12 @@ internal static class CombatAudit
                 };
                 continue;
             }
+            var server = ServerDamage.Match(message);
+            if (server.Success && open.TryGetValue(combat, out var pending))
+            {
+                pending.Server = Math.Max(0, -int.Parse(server.Groups[1].Value, CultureInfo.InvariantCulture));
+                continue;
+            }
             var result = Result.Match(message);
             if (result.Success && open.Remove(combat, out var hit))
             {
@@ -194,12 +203,13 @@ internal static class CombatAudit
     {
         var output = new StringBuilder();
         var exact = hits.Count(hit => hit.Exact); var wrong = hits.Where(hit => !hit.Matches).ToList();
-        output.AppendLine($"Combat audit: {hits.Count} logged hit(s) in {files} log file(s); {exact} exact HP, {hits.Count - exact} lethal; {wrong.Count} mismatch(es) with the current model.");
-        output.AppendLine("Inputs are the public numbers logged in game; an exact match checks HP loss, a lethal one only that the hit was lethal.");
+        output.AppendLine($"Combat audit: {hits.Count} logged hit(s) in {files} log file(s); {exact} exact ({hits.Count(hit => hit.Server != null)} from the server's damage), {hits.Count - exact} lethal; {wrong.Count} mismatch(es) with the current model.");
+        output.AppendLine("Inputs are the numbers logged in game; an exact match checks the server's damage or the HP loss, a lethal one only that the hit was lethal.");
         if (wrong.Count > 0) output.AppendLine().AppendLine("Mismatches:");
         foreach (var hit in wrong)
             output.AppendLine($"  {hit.Combat}: HP {hit.Before}, ATK {hit.Attack}, DEF {hit.Defense}, die {hit.Die}{(hit.Dodge ? " dodge" : "")}, "
-                + $"expected HP {hit.ExpectedDisplay}, observed {hit.Observed}; buffs {(hit.Buffs.Count == 0 ? "none" : string.Join(",", hit.Buffs))}");
+                + (hit.Server is { } server ? $"model damage {hit.Recomputed}, server {server}" : $"expected HP {hit.ExpectedDisplay}, observed {hit.Observed}")
+                + $"; buffs {(hit.Buffs.Count == 0 ? "none" : string.Join(",", hit.Buffs))}");
         var changed = hits.Count(hit => hit.Recomputed != hit.Logged);
         if (changed > 0) output.AppendLine().AppendLine($"{changed} hit(s) compute differently now than when logged (model changed since).");
         output.AppendLine().AppendLine("Shown buffs (exact matches / lethal matches / mismatches):");
@@ -257,6 +267,18 @@ internal static class CombatAudit
         var report = Report(hits, 1);
         check(report.Contains("5007002: 0 / 0 / 1  not counted", StringComparison.Ordinal) && report.Contains("10007: 1 / 0 / 0  neutral", StringComparison.Ordinal)
             && report.Contains("1 mismatch(es)", StringComparison.Ordinal), "Combat audit groups outcomes by buff and audit status");
+        // KO hits with the server's damage logged: overkill becomes exact evidence.
+        var decided = Parse(new[]
+        {
+            "t | combat=d-1; prediction before=3; atk=9; def=1; attackDie=2; dodge=False; damage=8; modifiers=" + modifiers,
+            "t | combat=d-1; damage.server before=3; attackDie=2; defenseDie=1; atk=9; def=1; dodge=False; incHp=-8; model=8; match=True",
+            "t | combat=d-1; damage.result before=3; predictedDamage=8; expectedHP=0; observedHP=0; expectedDisplayHP=0; monsterDefeatPresentation=False; hpMismatch=False",
+            "t | combat=d-2; prediction before=3; atk=9; def=1; attackDie=2; dodge=False; damage=8; modifiers=" + modifiers,
+            "t | combat=d-2; damage.server before=3; attackDie=2; defenseDie=1; atk=9; def=1; dodge=False; incHp=-9; model=8; match=False",
+            "t | combat=d-2; damage.result before=3; predictedDamage=9; expectedHP=0; observedHP=0; expectedDisplayHP=0; monsterDefeatPresentation=False; hpMismatch=False",
+        });
+        check(decided.Count == 2 && decided.All(hit => hit.Exact) && decided[0].Server == 8 && decided[0].Matches && !decided[1].Matches
+            && Report(decided, 1).Contains("model damage 8, server 9", StringComparison.Ordinal), "Combat audit checks KO hits against the server's damage");
         var releaseLines = new[]
         {
             // The 2026-10-23 observation: gold vs a boss, 15 Starlight held, Weakness Mark +1, 83 -> 65.

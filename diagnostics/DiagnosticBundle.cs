@@ -655,6 +655,21 @@ namespace BetterAstralParty.Diagnostics
                             string id = "game/work-v4/transition/" + (++alias).ToString("D2", CultureInfo.InvariantCulture);
                             Observe(id, "transition-marker-observed", File(contained, name, id));
                         }
+                        // Clean-reinstall records (archived high-water and generation record) since 1.8.1-dev.2.
+                        try
+                        {
+                            using (var heldHistory = contained.Open("history", true))
+                            using (var history = new Fence(Path.Combine(contained.Root, "history")))
+                            {
+                                alias = 0;
+                                foreach (string name in Scan(history, RootMarkers, "game/work-v4/history"))
+                                    File(history, name, "game/work-v4/history/" + (name.StartsWith("BetterAstralParty.reinstall-v5.", StringComparison.Ordinal) ? "reinstall-completed" : "archived-version")
+                                        + "/" + (++alias).ToString("D2", CultureInfo.InvariantCulture));
+                            }
+                        }
+                        catch (FileNotFoundException) { RootStatus("game/work-v4/history", "missing"); }
+                        catch (DirectoryNotFoundException) { RootStatus("game/work-v4/history", "missing"); }
+                        catch { RootStatus("game/work-v4/history", "unsafe-or-unreadable"); }
                     }
                 }
                 catch (FileNotFoundException) { RootStatus("game/work-v4", "missing"); }

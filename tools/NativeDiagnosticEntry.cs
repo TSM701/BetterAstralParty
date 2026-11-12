@@ -52,12 +52,16 @@ namespace BetterAstralParty.Installation
             } catch (Exception error) when (error is ArgumentException || error is IOException || error is UnauthorizedAccessException) { }
             return "";
         }
-        internal static int Run(string[] args)
+        // output: the install window's details log. The window has no console since 1.8.1-dev.6, and attaching one
+        // allocated a fresh console that showed the UTF-8 text garbled; only the console route prompts.
+        internal static int Run(string[] args, Action<string>? output = null)
         {
-            NativeMaintenanceEntry.ConsoleReady(); var language = "ko";
-            Action<string, string> say = (ko, en) => Console.WriteLine(language == "ko" ? ko : en);
+            if (output == null) NativeMaintenanceEntry.ConsoleReady();
+            var language = "ko";
+            Action<string, string> say = (ko, en) => { var line = language == "ko" ? ko : en; if (output != null) output(line); else Console.WriteLine(line); };
             try {
                 var options = Parse(args); language = options.Language;
+                if (output != null && options.Action == "menu") throw new ArgumentException("The diagnostics menu needs a console.");
                 var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
                 var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
                 var temporary = Path.GetTempPath();
@@ -83,7 +87,7 @@ namespace BetterAstralParty.Installation
                 if (game.Length == 0 && options.GameRoot.Length == 0)
                     try { var found = NativeSteamMaintenance.FindGameDirectories(NativeSteamMaintenance.ResolveSteamRoot(), deployment); if (found.Count == 1) game = found[0]; }
                     catch (Exception error) when (error is IOException || error is UnauthorizedAccessException || error is InvalidDataException || error is InvalidOperationException || error is ArgumentException || error is System.Security.SecurityException) { }
-                if (game.Length == 0 && options.GameRoot.Length == 0 && !Console.IsInputRedirected) {
+                if (game.Length == 0 && options.GameRoot.Length == 0 && output == null && !Console.IsInputRedirected) {
                     var selected = NativeMaintenanceEntry.Consent(language == "ko" ? "Steam의 설치 폴더 경로를 입력하세요. 비워 두면 설치·런처·Unity 로그만 수집합니다." : "Enter the INT installation folder from Steam. Leave blank for install/launcher/Unity logs only.");
                     if (!string.IsNullOrWhiteSpace(selected)) game = ResolveRoot(selected!, deployment);
                 }

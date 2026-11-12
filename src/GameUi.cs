@@ -117,7 +117,6 @@ internal static class GameUi
                     _observerSummary?.Tick();
                     CardDiceUi.PollResolved();
                     CardUi.Animate();
-                    RemainingHpUi.PollFinalPoints();
                     RemainingHpUi.Animate();
                 }
                 catch (Exception ex) { Compatibility.Block("Enabled", ex, ClearAdvice); }
@@ -734,7 +733,7 @@ internal static class GameUi
             Plugin.Diagnostics.State("combat.inputs", $"hp={hp}; attackMin={atk.Field("minATK")!.Value<int>()}; "
                 + $"attackMax={atk.Field("maxATK")!.Value<int>()}; defenseMin={def!.Field("minDEF")!.Value<int>()}; "
                 + $"defenseMax={def.Field("maxDEF")!.Value<int>()}");
-        RemainingHpUi.Update(fight, ui, attackerUi, defenderUi, step, hp);
+        RemainingHpUi.Update(fight, ui, attackerUi, defenderUi, step, hp, step == 5 ? ServerFight.Decided(director) : null);
         if (Plugin.Diagnostics.IsRecording)
         {
             string PublicNumber(RuntimeObject? label) => Visible(label)
@@ -744,19 +743,30 @@ internal static class GameUi
                 + $"attack_point={PublicNumber(attackerUi.Field("com_Point")?.Field("txt_Point"))}; "
                 + $"defense_point={PublicNumber(defenderUi.Field("com_Point")?.Field("txt_Point"))}");
         }
-        if (step == 6) { CardDiceUi.Hide(); return; } // Observe visible results only; never use future outcome fields.
+        if (step == 6) { CardDiceUi.Hide(); return; }
         var incomingBonus = PublicCombatEffects.Read(fight.Get("defenderData"), "defender", fight.Get("attackerData"));
         if (incomingBonus == null) { CardDiceUi.Clear(); return; }
         var defenderPlayer = fight.Get("defenderData")?.Get<int>("characterType") == 1;
+        // Rolled card values (user-decided 2026-11-11) only for a viewer with nothing left to choose: a spectator, or the local
+        // attacker once its cards are locked (step 4 on). A local defender keeps the public ranges until its choice.
+        var viewer = ui.Field("playerState")!.Get<int>("selectedIndex");
+        var rolled = viewer == 2 || viewer == 0 && step >= 4 ? ServerFight.Rolled(director) : null;
+        if (rolled is { } seen && Plugin.Diagnostics.IsRecording)
+            Plugin.Diagnostics.State("koMinimum.rolled", $"role={viewer}; step={step}; attack={seen.Attack?.ToString() ?? "bounds"}; defense={seen.Defense?.ToString() ?? "bounds"}");
+        // Powerful Attack (card 10010) for the attacker who used it and for spectators (user-requested 2026-11-11); a local
+        // defender sees which cards were used only in the result show, so its views keep the native ATK range.
+        var boost = viewer is 0 or 2 ? ServerFight.Boost(director) : default;
+        if (boost.Count > 0 && Plugin.Diagnostics.IsRecording)
+            Plugin.Diagnostics.State("koMinimum.boost", $"role={viewer}; step={step}; percent={boost.Percent}; count={boost.Count}");
         if (step is 3 or 4 || spectatorCards)
         {
             var counter = fight.Get("defenderData")?.Get("Property")?.Field("Counter");
             int.TryParse(attackerUi.Field("txt_Life")!.Get("text")!.String(), NumberStyles.Integer,
                 CultureInfo.InvariantCulture, out var attackerHp);
-            CardUi.Update(fight, ui, new(mapType, hp, atk.Field("minATK")!.Value<int>(), atk.Field("maxATK")!.Value<int>(),
+            CardUi.Update(fight, ui, CardKoMinimum.WithRolled(new(mapType, hp, atk.Field("minATK")!.Value<int>(), atk.Field("maxATK")!.Value<int>(),
                 def.Field("minDEF")!.Value<int>(), def.Field("maxDEF")!.Value<int>())
-                { Modifiers = incomingBonus.Value,
-                    CounterAvailable = counter?.Get<bool>("Value"), AttackerHp = attackerHp, DefenderPlayer = defenderPlayer },
+                { Modifiers = incomingBonus.Value, Boost = boost,
+                    CounterAvailable = counter?.Get<bool>("Value"), AttackerHp = attackerHp, DefenderPlayer = defenderPlayer }, rolled),
                 attackerUi.Field("com_Point")!);
             return;
         }
@@ -764,17 +774,17 @@ internal static class GameUi
             && Plugin.KoMinimum.Value)
             CardDiceUi.BindResolved(ui, atk, def!, new(mapType, hp, atk.Field("minATK")!.Value<int>(),
                 atk.Field("maxATK")!.Value<int>(), def!.Field("minDEF")!.Value<int>(), def.Field("maxDEF")!.Value<int>())
-                { Modifiers = incomingBonus.Value, DefenderPlayer = defenderPlayer });
+                { Modifiers = incomingBonus.Value, Boost = boost, DefenderPlayer = defenderPlayer }, rolled);
         if (!Plugin.Enabled.Value || !Plugin.DefenseAdvice.Value) return;
         var point = attackerUi.Field("com_Point")!.Field("txt_Point")!;
         if (!Visible(point) || !int.TryParse(point.Get("text")!.String(), NumberStyles.Integer,
                 CultureInfo.InvariantCulture, out var die)) return;
         // The same label later contains ATK + die. A total of 1..6 is not a roll.
         if (!CardKoMinimum.RevealedDie(attackerUi.Field("showPoint")!.Get<int>("selectedIndex"),
-                Visible(point), die)) return;
+                Visible(point), die, incomingBonus.Value.AttackDice.ZeroOnly)) return;
         var input = new VisibleCombat(mapType, hp, atk.Field("minATK")!.Value<int>(), atk.Field("maxATK")!.Value<int>(),
             die, def.Field("minDEF")!.Value<int>(), def.Field("maxDEF")!.Value<int>(), !fight.Field("dodgeNoAvailable")!.Value<bool>())
-            { Modifiers = incomingBonus.Value };
+            { Modifiers = incomingBonus.Value, Boost = boost };
         if (_calculationInput != input)
         {
             _calculationInput = input;

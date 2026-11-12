@@ -43,10 +43,10 @@ fail instead of falling back to an interpreter. Historical PS files remain as
 migration reference, not as commands for the C# driver or distributed payload.
 
 The 1.4.0 generation places no executable in the game folder. The plugin applies
-signed automatic updates in game, and `BetterAstralParty-Mod.cmd` starts the game
-with the mod active. Installation, removal, forced removal, diagnostics and log
-access use the precompiled `artifacts/BetterAstralParty-Setup.exe` inside the
-complete package; it is not copied into the game folder, has no network access
+signed automatic updates in game. The mod runs on every launch from Steam, and
+`AstralParty-Vanilla.cmd` starts one launch without it. Installation, removal,
+forced removal, diagnostics and log access use the precompiled
+`artifacts/BetterAstralParty-Setup.exe` inside the complete package; it is not copied into the game folder, has no network access
 and does not compile C# or start PowerShell.
 Public update descriptors use the signed `release/Public` scope with a canonical
 Stable channel field. Verification resolves the effective channel from the

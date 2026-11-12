@@ -36,7 +36,11 @@ internal static partial class NativeMaintenanceIntegrationFixture
     {
         var root = Full(Scratch, "emergency-cases/" + name + "/game"); steam = Full(Scratch, "emergency-cases/" + name + "/steam");
         Directory.CreateDirectory(WindowsPath.ForIo(root));
-        using (var fence = new WindowsFileFence(root)) fence.CreatePrivateDirectory(UpdateWorkPath.Root);
+        using (var fence = new WindowsFileFence(root)) {
+            fence.CreatePrivateDirectory(UpdateWorkPath.Root);
+            // Copies keep the private folders the product makes; a clean reinstall earlier in the run left a history folder.
+            if (Directory.Exists(WindowsPath.ForIo(Full(Game, UpdateWorkPath.History)))) UpdateWorkPath.EnsureHistory(fence);
+        }
         foreach (var dir in Directory.GetDirectories(WindowsPath.ForIo(Game), "*", SearchOption.AllDirectories)) {
             var relative = NativeMaintenance.Relative(Game, WindowsPath.FromIo(dir)); var target = Full(root, relative);
             Directory.CreateDirectory(WindowsPath.ForIo(target));
@@ -74,6 +78,7 @@ internal static partial class NativeMaintenanceIntegrationFixture
         return EmergencyFiles.Contains(relative, StringComparer.OrdinalIgnoreCase) || relative == "BetterAstralParty.update.lock"
             || Regex.IsMatch(relative, @"\ABetterAstralParty\.Update/bap-v[45]-(?:stage|txn|helperauto|helper|helperbridge|wholeintent|wholehist)-[0-9a-f]{32}/")
             || Regex.IsMatch(relative, @"\ABetterAstralParty\.Update/bap-v4-transition-[0-9a-f]{32}\z")
+            || Regex.IsMatch(relative, @"\ABetterAstralParty\.Update/history/BetterAstralParty\.(?:update-v5\.version\.uninstalled|reinstall-v5\.completed)-[0-9a-f]{32}\z")
             || Regex.IsMatch(first, @"\ABetterAstralParty\.(?:update-v[345]\.(?:version(?:\.uninstalled-[0-9a-f]{32})?|failure|operation|preferences-failed|failed)|reinstall-v[345]\.(?:pending|completed-[0-9a-f]{32}))\z")
             || Regex.IsMatch(first, @"\A(?:bap-v[345]-(?:stage|txn|helperauto|helper|helperbridge|wholeintent|wholehist)-[0-9a-f]{32}|BetterAstralParty-emergency-[0-9a-f]{32})\z");
     }
@@ -142,7 +147,10 @@ internal static partial class NativeMaintenanceIntegrationFixture
             var info = new ProcessStartInfo { FileName = WindowsPath.ForProcess(Full(root, name)), Arguments = NativeMaintenanceEntry.CommandLine(new[] { "emergency-hold", signal }), WorkingDirectory = WindowsPath.ForProcess(root), UseShellExecute = false, CreateNoWindow = true };
             using (var process = Process.Start(info) ?? throw new InvalidOperationException("Inert process start failed")) {
                 try { var watch = Stopwatch.StartNew(); while (!File.Exists(WindowsPath.ForIo(Full(signal, "ready"))) && watch.ElapsedMilliseconds < 10000) Thread.Sleep(50); Check(!process.HasExited && File.Exists(WindowsPath.ForIo(Full(signal, "ready"))), "verified inert process active: " + name);
-                    EmergencyReject(() => EmergencyRun(root, steam), "force cleanup refuses active game/helper/launcher: " + name); Check(!process.HasExited, "force cleanup never kills inert process");
+                    var prompts = new List<string>();
+                    EmergencyReject(() => EmergencyRun(root, steam, consent: prompt => { prompts.Add(prompt); return prompt.Contains("Permanently delete every listed unverified file") ? "y" : prompts.Count == 1 ? "r" : null; }), "force cleanup refuses active game/helper/launcher: " + name); Check(!process.HasExited, "force cleanup never kills inert process");
+                    // As in Uninstall: a running game is shown with recheck/cancel before the deletion question, which never comes.
+                    if (name == "AstralParty_INT.exe") Check(prompts.Count == 2 && prompts.All(prompt => prompt.StartsWith("r: ", StringComparison.Ordinal)), "running game asks recheck, rechecks, then cancels before the deletion question");
                 } finally { Text(Full(signal, "release"), "normal inert process exit"); Check(process.WaitForExit(10000) && process.ExitCode == 0, "inert process exits normally after release"); }
             }
             var after = EmergencyState(root, steam); Check(before.Where(row => row.Value != "directory").All(row => after.TryGetValue(row.Key, out var hash) && hash == row.Value), "busy process stop preserves payload bytes");
@@ -291,9 +299,14 @@ internal static partial class NativeMaintenanceIntegrationFixture
                     var file = UpdateWorkPath.Root + "/bap-v4-" + kind + "-" + Guid.NewGuid().ToString("N") + "/pending.bin"; owned.Add(file); Text(Full(root, file), "inert legacy contained history");
                 }
                 var marker = UpdateWorkPath.Root + "/bap-v4-transition-" + Guid.NewGuid().ToString("N"); owned.Add(marker); Text(Full(root, marker), "inert transition");
+                // Clean-reinstall records kept in the history folder (since 1.8.1-dev.2) are force-removal scope too.
+                UpdateWorkPath.EnsureHistory(fence); var generation = Guid.NewGuid().ToString("N");
+                foreach (var record in new[] { UpdateTransaction.HighWaterPath + ".uninstalled-" + generation, UpdateWorkPath.ReinstallRecordPrefix + generation }) {
+                    var file = UpdateWorkPath.History + "/" + record; owned.Add(file); Text(Full(root, file), "inert reinstall history");
+                }
             }
-            var unknown = Full(root, UpdateWorkPath.Root + "/user-subtree/user.keep");
-            if (name == "unknown-child") Text(unknown, "unrelated namespace child survives");
+            var unknown = Full(root, UpdateWorkPath.Root + "/user-subtree/user.keep"); var historyUnknown = Full(root, UpdateWorkPath.History + "/user.keep");
+            if (name == "unknown-child") { Text(unknown, "unrelated namespace child survives"); Text(historyUnknown, "unrelated history child survives"); }
             var before = Snapshot(root);
             if (name == "interrupted") {
                 NativeEmergencyUninstall.Boundary = phase => { if (phase.StartsWith("Deleted:" + UpdateWorkPath.Root + "/", StringComparison.Ordinal)) throw new IOException("inert contained interruption"); };
@@ -302,7 +315,7 @@ internal static partial class NativeMaintenanceIntegrationFixture
             }
             EmergencyRun(root, steam); EmergencyNoCopies(root); EmergencyPreserved(root, steam, before);
             Check(owned.All(path => !File.Exists(WindowsPath.ForIo(Full(root, path)))), "force removal deletes only selected contained v5/v4 work and transition objects");
-            Check(name == "unknown-child" ? File.Exists(WindowsPath.ForIo(unknown)) && Directory.Exists(WindowsPath.ForIo(Full(root, UpdateWorkPath.Root))) : !Directory.Exists(WindowsPath.ForIo(Full(root, UpdateWorkPath.Root))), "namespace removed only after exact owned children leave it empty: " + name);
+            Check(name == "unknown-child" ? File.Exists(WindowsPath.ForIo(unknown)) && File.Exists(WindowsPath.ForIo(historyUnknown)) && Directory.Exists(WindowsPath.ForIo(Full(root, UpdateWorkPath.Root))) : !Directory.Exists(WindowsPath.ForIo(Full(root, UpdateWorkPath.Root))), "namespace removed only after exact owned children leave it empty: " + name);
         }
         foreach (var kind in new[] { "container-link", "work-link", "transition-hardlink" }) {
             var root = EmergencySeed("contained-" + kind, out var steam); var outside = Full(Scratch, "emergency-cases/contained-" + kind + "/outside"); Text(Full(outside, "user.keep"), "unrelated linked target");

@@ -7,7 +7,7 @@ internal static class CombatBuffAudit
     // Handled by PublicCombatEffects: incoming adjustments, caps, immunity, marks, dice rules and Mind.
     internal static readonly HashSet<int> Modeled = new()
     {
-        10006, 10012, 1071101, 1071102, 1101101, 1140101, 1140102, 1250101, 1250201, 1261101, 1291202,
+        10006, 10012, 1071101, 1071102, 1101101, 1140101, 1140102, 1250101, 1250201, 1251201, 1261101, 1291202,
         2000801, 4000301, 4000401, 5006001, 10141101, 10261101, 10331101, 10531201, 10551101, 10591101, 10671302,
     };
 
@@ -19,6 +19,18 @@ internal static class CombatBuffAudit
     // 3081104, 5008702, 8000101, 10711102, 10711103, 10721101, 10741101; combat-audit replays agree (0 mismatches).
     // 2026-11-07 (user-approved): 1211201 调查发现 / 조사 결과, text only "伤害强化次数" (damage boost count), no Params,
     // a count; 13 logged hits with it shown (10 exact, 3 lethal) and 0 mismatches in combat-audit.
+    // 2026-11-11 (user-approved): Teru's 1240202 신내림 on the target she marks (STRSkill 12402: Teru gains ATK/DEF from
+    // it and pursues after it attacks; nothing for the holder's own hit) and 1241201 여우빛 on Teru ("ATK +1 per stack
+    // on pursuit"; the pursuit is not a dice fight: no Teru fight followed any of the marked hero's six attacks). The
+    // server's damage equalled the model in all 9 hits with 1240202 and all 5 with 1241201 (1 to 4 stacks).
+    // 2026-11-12 tables (the update's standard effect icons, Souri, First Aid Bunny, Autumnwood chips and sword), original
+    // STRBuff text: 20003 交战回避 combat avoidance (now shown for skills 101413/101711 instead of their hidden 10141301 and
+    // 10171101), 1261301 觉醒 a count, 1301202 金鳞 DEF per stack, 1301203 金鲤化龙 ATK per 金鳞 stack, 1301205 葫芦饮 ATK +3,
+    // 1301207 仙酿 ATK +4, 10750101 救急援助 ATK/DEF +2, 5007503 自适应核心 ATK +2, 5009602 超强精力 ATK per stack (a stack
+    // lost when challenged), 8000002 圣剑英雄 end-of-turn damage outside the hit, 3081102 and 3081202 出牌数+1 card plays.
+    // Not here, still not counted: 20000 无敌, 20001 格挡, 20002 坚固, 20004 闪身, 1201302 (damage -1 from monsters beyond
+    // two panels), 3002001 (next hit -10), 5007502/5008202/8000001 (damage taken -1/-1/-2), 8000501 (ignores DEF) and
+    // 3080101/3080102 (no text).
     internal static readonly HashSet<int> Neutral = new()
     {
         10004, 10005, 10007, 10008, 10011, 10013, 10014, 201002, 201102, 210102,
@@ -33,7 +45,8 @@ internal static class CombatBuffAudit
         10131101, 10141301, 10150101, 10170101, 10171101, 10181101, 10250101, 10271101, 10410101, 10441101,
         10470101, 10490101, 10570101, 10581101, 10640101, 10701102, 20271101,
         3081104, 5008702, 8000101, 10711102, 10711103, 10721101, 10741101,
-        1211201,
+        1211201, 1240202, 1241201,
+        20003, 1261301, 1301202, 1301203, 1301205, 1301207, 10750101, 5007503, 5009602, 8000002, 3081102, 3081202,
     };
 
     internal static bool Counted(int id) => Modeled.Contains(id) || Neutral.Contains(id);

@@ -54,6 +54,8 @@ internal static class UpdateNotificationUi
     private static bool _preview;
     internal static string? PreviewMark { get; private set; }
     internal static bool ConsumedInput => _consumedFrame == Time.frameCount;
+    // The notice window is a mod component, not a native Window, so the home's own checks do not see it.
+    internal static bool Open => _target != null;
     internal static bool CanConfirmTransition => _pendingTransition == null && _transition == null && Plugin.Automatic.CanReviewTransition
         && Plugin.Updates.Result.Release is { } release && Plugin.Updates.CurrentRelease(release) && release.ProposalRequest(Plugin.Automatic.Snapshot.InstalledVersion) != null;
 

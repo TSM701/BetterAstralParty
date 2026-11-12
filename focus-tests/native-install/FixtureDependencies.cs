@@ -37,6 +37,9 @@ namespace BetterAstralParty.Updating
     }
     internal static class UpdateTransaction { internal const string HighWaterPath = "BetterAstralParty.update-v5.version"; }
     internal static class UpdateWorkPath { internal const string Root = "BetterAstralParty.Update"; }
+    internal static class ReinstallHistory {
+        internal static int Move(string root,Action<string>? output,bool move=true) { FixtureControl.Events.Add(move?"history-move":"history-count"); return 0; }
+    }
     internal static class LegacyWork {
         internal static List<string> Finished(string game) { FixtureControl.Events.Add("legacy-work-plan"); return new List<string>(); }
         internal static int Remove(string game, Action<string> output) { FixtureControl.Events.Add("legacy-work-clean"); return 0; }
@@ -169,7 +172,7 @@ namespace BetterAstralParty.Installation
         internal static System.Action<System.Exception>? WaitingDiagnostic = null;
         internal static void WaitGameClosed(string root,Func<string,string?> consent,Action<string> output) { FixtureControl.Events.Add("game-stop"); }
         internal static void AssertGameStopped(string root) { FixtureControl.Events.Add("game-recheck"); }
-        internal static bool PlanRegister(string steam,uint account,string game,Action<Exception>? unavailable=null) {
+        internal static bool PlanConvert(string steam,uint account,string game,Action<Exception>? unavailable=null) {
             FixtureControl.Events.Add("shortcut-plan");
             if(FixtureControl.PlanFailure!=null) { if(unavailable==null)throw FixtureControl.PlanFailure; unavailable(FixtureControl.PlanFailure);return false; }
             return FixtureControl.NeedsShortcut;

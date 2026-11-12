@@ -5,13 +5,15 @@ namespace BetterAstralParty;
 public readonly record struct CardBonus(bool Attack, int Min, int Max, int Cost)
 {
     public bool PreventCounter { get; init; }
-    // Card 10010: this fight's final ATK (after the die) +N %. The server's rounding is not observed, so callers bound floor..ceiling.
+    // Card 10010: this fight's final ATK (after the die) +N % (FinalBoost).
     public int FinalPercent { get; init; }
 }
 public readonly record struct PreRollCombat(int MapType, int Hp, int AttackMin, int AttackMax,
     int DefenseMin, int DefenseMax)
 {
     public HitModifiers Modifiers { get; init; }
+    // Boosts the attacker already used, for viewers who know them (ServerFight.Boost); a previewed card adds its own.
+    public FinalBoost Boost { get; init; }
     public bool? CounterAvailable { get; init; }
     public int AttackerHp { get; init; }
     // A player defender: spectators then see that player's own survival view.
@@ -72,7 +74,7 @@ public static class CardAdvisor
 
     public static bool Valid(PreRollCombat input) => VisibleCombatAdvisor.IsPve(input.MapType)
         && input.AttackerHp is >= 0 and <= 10000
-        && input.Modifiers.Valid
+        && input.Modifiers.Valid && input.Boost.Valid
         && input.Hp is > 0 and <= 10000 && input.AttackMin >= 0 && input.AttackMax <= 1000
         && input.AttackMax >= input.AttackMin && input.AttackMax - input.AttackMin <= 100
         && input.DefenseMin >= -1000 && input.DefenseMax <= 1000
@@ -81,10 +83,6 @@ public static class CardAdvisor
     public static bool Dominates(CardBonus cheaper, CardBonus candidate) =>
         cheaper.Attack == candidate.Attack && cheaper.Cost < candidate.Cost && cheaper.Min >= candidate.Max
         && (!candidate.PreventCounter || cheaper.PreventCounter) && cheaper.FinalPercent >= candidate.FinalPercent;
-
-    // Final ATK after a +percent boost, rounded down and up (the server's rounding is not observed yet).
-    internal static (long Floor, long Ceiling) Boost(long attack, int percent) =>
-        percent <= 0 || attack <= 0 ? (attack, attack) : (attack * (100 + percent) / 100, (attack * (100 + percent) + 99) / 100);
 
     public static CardImpact? Calculate(PreRollCombat input, CardBonus card)
     {
@@ -98,29 +96,30 @@ public static class CardAdvisor
         double damageMin = double.PositiveInfinity, damageMax = double.NegativeInfinity;
         double koMin = double.PositiveInfinity, koMax = double.NegativeInfinity;
         double afterKoMin = 1, afterKoMax = 0;
-        var cache = new Dictionary<(int Attack, int Defense, bool Dodge, int Percent, bool RoundUp), ChoiceStats>();
-        ChoiceStats Stats(int attack, int defense, bool dodge, int percent = 0, bool roundUp = false)
+        var cache = new Dictionary<(int Attack, int Defense, bool Dodge, FinalBoost Boost, bool High), ChoiceStats>();
+        ChoiceStats Stats(int attack, int defense, bool dodge, FinalBoost boost, bool high)
         {
-            var key = (attack, defense, dodge, percent, roundUp);
+            var key = (attack, defense, dodge, boost, high);
             if (!cache.TryGetValue(key, out var stats))
             {
-                stats = BeforeRoll(input.Hp, attack, defense, dodge, input.Modifiers, percent, roundUp);
+                stats = BeforeRoll(input.Hp, attack, defense, dodge, input.Modifiers, boost, high);
                 cache[key] = stats;
             }
             return stats;
         }
+        var boosted = input.Boost.Plus(card.FinalPercent);
         for (var attack = input.AttackMin; attack <= input.AttackMax; attack++)
         for (var defense = input.DefenseMin; defense <= input.DefenseMax; defense++)
         // Dodge availability at the later choice phase is not yet public. Bound both scenarios.
         for (var scenario = 0; scenario < 2; scenario++)
+        // Both candidate rules of a final-ATK boost bound the result, each applied before and after the card alike.
+        for (var rule = 0; rule < (boosted.Count > 0 ? 2 : 1); rule++)
         {
             var dodge = scenario != 0;
-            var before = Stats(attack, defense, dodge);
+            var before = Stats(attack, defense, dodge, input.Boost, rule == 1);
             for (var bonus = card.Min; bonus <= card.Max; bonus++)
-            // Both roundings of a final-ATK boost bound the result.
-            for (var rounding = 0; rounding < (card.FinalPercent > 0 ? 2 : 1); rounding++)
             {
-                var after = Stats(attack + (card.Attack ? bonus : 0), defense + (card.Attack ? 0 : bonus), dodge, card.FinalPercent, rounding == 1);
+                var after = Stats(attack + (card.Attack ? bonus : 0), defense + (card.Attack ? 0 : bonus), dodge, boosted, rule == 1);
                 var sign = card.Attack ? 1 : -1;
                 var damage = sign * (after.ExpectedDamage - before.ExpectedDamage);
                 var ko = sign * (after.KnockoutChance - before.KnockoutChance);
@@ -149,15 +148,15 @@ public static class CardAdvisor
 
     // Pure enumeration: no random generator or game state is accessed.
     internal static ChoiceStats BeforeRoll(int hp, int attack, int defense, bool dodgeAvailable, HitModifiers modifiers = default,
-        int finalPercent = 0, bool roundUp = false)
+        FinalBoost boost = default, bool high = false)
     {
         if (!modifiers.PreRollDiceKnown) throw new ArgumentOutOfRangeException(nameof(modifiers), "Unknown pre-roll distribution");
         double damage = 0, ko = 0, noDamage = 0;
-        for (var die = 1; die <= 6; die++)
+        for (var die = 0; die <= 6; die++)
         {
             if (!modifiers.AttackDice.Contains(die)) continue;
-            var boosted = Boost(attack + die, finalPercent);
-            var choices = CombatAdvisor.Calculate(new(hp, (int)(roundUp ? boosted.Ceiling : boosted.Floor), die, defense)
+            var boosted = boost.Apply(attack + die);
+            var choices = CombatAdvisor.Calculate(new(hp, (int)(high ? boosted.High : boosted.Low), die, defense)
                 { Modifiers = modifiers }, false);
             var useDodge = dodgeAvailable && choices.Recommendation == RecommendedAction.Dodge;
             var choice = useDodge ? choices.Dodge : choices.Defend;

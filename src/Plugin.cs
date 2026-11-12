@@ -11,7 +11,7 @@ public sealed class Plugin : BasePlugin
 {
     public const string Guid = "kr.betterastralparty.mod";
     public const string Name = "BetterAstralParty";
-    public const string Version = "1.8.0-dev.1";
+    public const string Version = "1.8.1-dev.17";
     public const int InstallBundleProtocol = 1;
     public const string UpdateProtocol = "5";
     public const string SettingsSchema = "1";
@@ -121,19 +121,20 @@ public sealed class Plugin : BasePlugin
 
     public override void Load()
     {
-        // Steam forwards arguments, not the launcher's environment; both are process-local.
-        // Mod.cmd normally asks Steam to start the owned app without arguments and leaves a short-lived request instead.
-        var launchRequested = StartupGuard.ConsumeLaunchRequest();
-        if (!launchRequested && Environment.GetEnvironmentVariable("BAP_COMPATIBILITY_CHECKED") != "1"
-            && !Environment.GetCommandLineArgs().Contains("--bap-compatibility-checked", StringComparer.Ordinal))
+        // BAP runs on every launch the shared loader makes, so mods that select themselves by their own launch entry can
+        // still run together with it (user-decided 2026-11-07). AstralParty-Vanilla.cmd leaves a short-lived request to
+        // start once without BAP; other mods are never touched. Mod.cmd's request only names the route now.
+        var vanilla = StartupGuard.ConsumeLaunchRequest(StartupGuard.VanillaRequestName);
+        var modRequest = StartupGuard.ConsumeLaunchRequest(StartupGuard.LaunchRequestName);
+        if (vanilla == "request-fresh")
         {
-            StartupGuard.RecordLaunchDecision(false, "none");
-            Log.LogInfo("BAP OFF for this launch (" + StartupGuard.LaunchRequestReason + "); shared loader and other mods are unchanged.");
+            StartupGuard.RecordLaunchDecision(false, "vanilla", vanilla);
+            Log.LogInfo("BAP OFF for this launch (AstralParty-Vanilla.cmd); shared loader and other mods are unchanged.");
             return;
         }
-        var route = launchRequested ? "mod-request"
-            : Environment.GetCommandLineArgs().Contains("--bap-compatibility-checked", StringComparer.Ordinal) ? "arguments" : "environment";
-        StartupGuard.RecordLaunchDecision(true, route);
+        var route = modRequest == "request-fresh" ? "mod-request"
+            : Environment.GetCommandLineArgs().Contains("--bap-compatibility-checked", StringComparer.Ordinal) ? "arguments" : "steam";
+        StartupGuard.RecordLaunchDecision(true, route, modRequest);
         Log.LogInfo("BAP ON for this launch (" + route + ").");
         StartupGuard.Begin(Version, Path.GetDirectoryName(Paths.BepInExRootPath)!, previousSafe => SafeModeNotice.Ask(previousSafe, global::BetterAstralParty.InputAttention.FindWindow()));
         try
@@ -207,7 +208,7 @@ public sealed class Plugin : BasePlugin
         PlayerTabRole = Config.Bind("화면", "플레이어 목록 탭 역할", true, "[설정 창: 플레이어 목록 탭 > 역할 / Settings: Player List Tab > Role] 게임 내부 분류로 캐릭터 역할을 표시합니다. / Shows the character's internal role classification.");
         PlayerTabSkill = Config.Bind("화면", "플레이어 목록 탭 스킬 쿨타임", true, "[설정 창: 플레이어 목록 탭 > 스킬 쿨타임 / Settings: Player List Tab > Skill Cooldown] 액티브 스킬의 남은 턴/전체 턴을 표시합니다. / Shows each active skill's turns left/total.");
         CharacterRoles = Config.Bind("화면", "캐릭터 역할 표시", true, "[설정 창: 역할 표시 / Settings: Role Labels] 게임 내부 분류로 캐릭터 역할을 표시합니다. / Shows characters' internal role classifications.");
-        IndicatorFade = Config.Bind("화면", "줌 아웃 인디케이터 반투명", true, "[설정 창: 줌 아웃 시 반투명 / Settings: Fade When Zoomed Out] 필드 줌 아웃 시 플레이어·몬스터 인디케이터를 반투명하게 합니다. / Fade field player/monster indicators when zoomed out.");
+        IndicatorFade = Config.Bind("화면", "줌 아웃 인디케이터 반투명", true, "[설정 창: 줌 아웃 시 불투명도 / Settings: Opacity When Zoomed Out] 필드 줌 아웃 시 플레이어·몬스터 인디케이터의 불투명도를 낮춥니다. / Lowers field player/monster indicator opacity when zoomed out.");
         IndicatorHide = Config.Bind("화면", "원거리 인디케이터 숨김", true, "[설정 창: 멀면 숨기기 / Settings: Hide When Far] 멀리 줌 아웃하면 필드 인디케이터를 숨기고 확대하면 다시 표시합니다. / Hides far-zoom field indicators and restores them when zooming in.");
         DiceLock = Config.Bind("화면", "주사위 화면 고정", true, "[설정 창: 주사위 화면 고정 / Settings: Pin Dice to Screen] 줌·자유 시점에서도 굴린 주사위를 기본 시점과 같은 화면 위치·크기로 보여줍니다. OFF는 게임 기본처럼 필드 위에 둡니다. / Keeps thrown dice at the default view's screen position and size while zoomed or in free view; OFF leaves them on the field as in the base game.");
         EncounterAdvice = Config.Bind("전투 추천", "인카운트 추천", true, "[설정 창: 인카운트 추천 / Settings: Encounter Advice] 조우 화면에서 공격·놓아주기를 추천합니다. / Recommends Attack or Let Go on the encounter screen.");
@@ -280,8 +281,8 @@ public sealed class Plugin : BasePlugin
         }
         // Keep the saved key so upgrades preserve each user's existing choice.
         IndicatorFadeStrength = Config.Bind("화면", "줌 아웃 반투명 정도", 1f, new ConfigDescription(
-            "[설정 창: 반투명 정도 / Settings: Fade Strength] 줌 아웃 시 인디케이터가 흐려지는 정도입니다. 100%가 기본입니다. / How much field indicators fade when zoomed out; 100% is the default.",
-            new AcceptableValueRange<float>(0f, 1f)));
+            "[설정 창: 줌 아웃 시 불투명도 슬라이더 / Settings: Opacity When Zoomed Out slider] 저장값 0은 가장 멀리서 불투명도 100%, 1은 30%, 1.43은 0%입니다. / Stored value: 0 is 100% opacity at the farthest zoom-out, 1 is 30%, 1.43 is 0%.",
+            new AcceptableValueRange<float>(0f, 100f / 70f)));
         FoldedHandOpacity = Config.Bind("화면", "접힌 손패 불투명도", 0.75f, new ConfigDescription(
             "[설정 창: 접힌 카드 불투명도 / Settings: Folded Card Opacity] 묶여 접힌 카드의 불투명도입니다. / Opacity of folded grouped cards.",
             new AcceptableValueRange<float>(0f, 1f)));

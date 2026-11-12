@@ -787,6 +787,13 @@ internal static class ReleaseUpdateCheck
             Check(!StartupGuard.SafeMode && asked.Count == count, "the home menu clears the failed starts");
             StartupGuard.Healthy(); answer = _ => false; Start("1.6.6");
             Check(asked.Count == count + 1, "the running-time marker counts from the start decision, not from game start");
+            // AstralParty-Vanilla.cmd's request turns BAP off once: honoured only while fresh, and always deleted.
+            var request = Path.Combine(root, StartupGuard.VanillaRequestName);
+            File.WriteAllText(request, "");
+            Check(StartupGuard.ConsumeLaunchRequest(StartupGuard.VanillaRequestName, root) == "request-fresh" && !File.Exists(request), "a fresh launch request is honoured once and deleted");
+            Check(StartupGuard.ConsumeLaunchRequest(StartupGuard.VanillaRequestName, root) == "request-absent", "without a request the launch runs BAP");
+            File.WriteAllText(request, ""); File.SetLastWriteTimeUtc(request, DateTime.UtcNow - StartupGuard.LaunchRequestLifetime - TimeSpan.FromSeconds(1));
+            Check(StartupGuard.ConsumeLaunchRequest(StartupGuard.VanillaRequestName, root) == "request-stale" && !File.Exists(request), "a stale request is deleted without being honoured");
         }
         finally { try { Directory.Delete(root, true); } catch { } }
     }

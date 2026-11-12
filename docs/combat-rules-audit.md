@@ -1,5 +1,56 @@
 # Combat rule audit
 
+## 2026-11-12 — tables of the content update
+
+The update ("Standardized the icons and text descriptions for special effects during
+matches") was compared table by table with the official 2026-10-22 bundle, and every
+`PublicCombatEffects.Parameter` call was replayed on both. One rule broke: skill 104011
+(Candy Piñata, fixed move and dodge face 4) now lists buff 20004 after its own 10401101,
+so its schema guard rejected it and the monster's dice became unsupported; it now expects
+two buffs. All other modeled values (shields, marks, stacks, chips, destiny, Powerful
+Attack, Shooting Star) are unchanged.
+
+New standard effect buffs, attached by the server beside or instead of an effect's own
+icon: 20000 无敌 (no damage, untargetable), 20001 格挡 (no damage, removed when challenged),
+20002 坚固 (at most 1 damage a hit), 20003 交战回避 (no battles when passing) and 20004 闪身
+(always chooses Evade; skills 103011 and 104011, monsters Goldfish and Candy Piñata).
+Only 20003 joins the neutral list; it replaces the shown 10141301/10171101, which are now
+hidden. The others stay not counted until logged hits show their rule: 10331101 also
+reads "takes 0 damage" and is a targeting lock, so no immunity or cap is inferred from text.
+
+Other new shown buffs, by their original text: neutral are 1261301 觉醒 (a count), Souri's
+1301202 金鳞 (DEF per stack), 1301203 金鲤化龙 (ATK per 金鳞 stack), 1301205 葫芦饮 (ATK +3),
+1301207 仙酿 (ATK +4), First Aid Bunny's 10750101 (ATK/DEF +2), 5007503 (ATK +2), 5009602
+超强精力 (ATK per stack), 8000002 圣剑英雄 (damage outside the hit) and 3081102/3081202
+(card plays +1). Not counted, because they change the hit: 1201302 (damage from monsters
+beyond two panels -1), 3002001 (next hit -10, now shown), 5007502 自适应核心 (damage taken
+-1 while Mind is at most 3; Relic 50075 Params [3, -1, 3, 2, 5007502, 5007503]), 5008202
+磨刀石 (ATK +4 and damage taken -1 at half HP; Relic 50082 Params [50, 4, 1060102, -1,
+5008202]), 8000001 圣剑守护 (ATK +2, damage taken -2; Build 30000 Params [1001, 1002, 2, -2,
+4, 1]) and 8000501 多刺 (the next attack ignores the defender's DEF). 3080101/3080102 have
+no text. The three damage-taken buffs carry their values and IDs in one table row, so
+they can be modeled once a logged hit confirms the additive rule.
+
+## 2026-11-11 — the three effects most often not counted
+
+Of 115 hits with the server's own damage logged (1.8.1-dev.10 to dev.14), 24 showed an
+uncounted effect, and the model equalled the server in all 24. Only three buffs were
+involved, and the user chose to count them rather than drop the uncounted-effects view,
+which still covers the views before the server decides a hit.
+
+- 1251201 정밀 기술 (Moses, STRSkill 12512, Params [3, 2, 1]: at most 3 stacks, ATK +2 and
+  a dodge floor +1 per stack) is modeled. The ATK is already in the native total (a
+  one-stack attack, ATK 22, matched the server). The dodge die "always comes out above the
+  current stack count", so the dodge faces are stacks + 1 to 6. No dodge with stacks was
+  logged yet; the faces above the floor are counted equally, which only the shown dodge
+  damage and KO figures depend on. The Defend/Dodge choice uses only which faces exist.
+  A fixed dodge face (skill 104011) together with the floor is unsupported.
+- 1240202 신내림 is on the hero Teru marks: Teru gains ATK/DEF from it and pursues after
+  that hero attacks; it changes nothing in the holder's own hit (9 server-exact hits).
+- 1241201 여우빛 on Teru raises only the pursuit's ATK, and the pursuit is not a dice fight:
+  no Teru fight followed any of the marked hero's six attacks. Teru's ordinary attacks
+  with 1 to 4 stacks matched the server (5 hits). Both join the neutral list.
+
 ## 2026-11-06 — dodge only against a certain KO
 
 User decision: the Defend/Dodge recommendation no longer compares worst-case KO chance and
@@ -1103,3 +1154,25 @@ combat-audit replayed all of them through the current model with 10 exact and
 3 lethal matches and no mismatch. The user approved adding it to
 CombatBuffAudit.Neutral, so it no longer shows as an effect the calculation
 does not count. Whether the count raises damage once it fills is not observed.
+
+## Server-decided hit — 1.8.1-dev
+
+User decision 2026-11-08: after both choices the view uses the server's fight
+data instead of rebuilding the outcome from the screen. The BattleS2C that ends
+a fight (IsEnd) updates FightLogic.battleFightData and starts PlayBattleResult;
+attackerInfo/defenderInfo then hold both raw dice (Point), the totals (Atk,
+Def), the dodge and the defender's HP change (IncHp). The game itself shows
+IncHp as the hit value (HitBehaviour.Play, ShowHitValue) and plays the KO when
+HP + IncHp <= 0 (VictimDead); TutorialLogic's local copy of the server sets it
+to Min(DEF - ATK, -1) and clamps only the new HP, so overkill stays in it.
+
+The final-damage figure is now -IncHp and the KO view fixes both dice from
+Point, as the dice show starts (about 1.3s before the totals in the logged
+fights). The figure first lasted 4.5s instead of 3s; in the first 13 logged
+hits (1.8.1-dev.10) the result step came 2.8-6.2s after the decision, so it now
+stays until the result step starts and fades in half a second, 10s at most. The readings of the previous
+section (the defender's die at showPoint 2, the arithmetic panel, the totals)
+are removed. The prediction line keeps the model's figure, now from the
+server's totals, and a damage.server line adds the server's figure, so
+combat-audit compares the model with the exact damage of every hit, KOs
+included. Nothing of the fight data is read before IsEnd.

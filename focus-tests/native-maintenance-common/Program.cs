@@ -89,6 +89,9 @@ internal static partial class NativeCommonFixture
         var emergency = NativeMaintenanceEntry.Options(new[] { "--force-uninstall", "-GameRoot", "E:\\fixture root", "-AccountId", "1", "-WhatIf" });
         Check(emergency.ContainsKey("force-uninstall") && emergency.ContainsKey("whatif") && emergency["gameroot"] == "E:\\fixture root", "emergency removal is a separate native operation with read-only preview");
         Check(NativeMaintenanceEntry.Options(new[] { "--force-uninstall", "-CheckOnly" }).ContainsKey("checkonly"), "emergency CheckOnly retains the read-only preview alias");
+        Check(NativeMaintenanceEntry.Options(new[] { "--install", "-LoaderConsole", "off" })["loaderconsole"] == "off" && NativeMaintenanceEntry.Options(new[] { "--install", "-LoaderConsole", "Keep", "-CheckOnly" }).ContainsKey("checkonly"), "installation takes the BepInEx log window choice");
+        foreach (var bad in new[] { new[] { "--uninstall", "-LoaderConsole", "Off" }, new[] { "--force-uninstall", "-LoaderConsole", "Off" }, new[] { "--install", "-LoaderConsole", "Maybe" }, new[] { "--install", "-UpdateOnly", "-GameRoot", "E:\\x", "-LoaderConsole", "Off" } })
+            Reject(() => NativeMaintenanceEntry.Options(bad), "the log window choice belongs to a normal installation: " + string.Join(" ", bad));
         foreach (var bad in new[] { "0", "-1", "+1", " 1", "4294967296", "not-an-account" })
             Reject(() => NativeMaintenanceEntry.Options(new[] { "--uninstall", "-AccountId", bad, "-WhatIf" }), "explicit invalid account is not auto-discovery: " + bad);
         foreach (var error in new Exception[] { new UnauthorizedAccessException("FAKE_PRIVATE_REGISTRY_PATH"), new System.Security.SecurityException("FAKE_PRIVATE_REGISTRY_VALUE"), new IOException("FAKE_PRIVATE_REGISTRY_READ"), new ArgumentException("FAKE_PRIVATE_REGISTRY_PATH") })

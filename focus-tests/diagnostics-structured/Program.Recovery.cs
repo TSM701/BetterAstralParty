@@ -70,9 +70,12 @@ internal static partial class Program
         }
         Put(Path.Combine(r.Game,"bap-"+generation+"-txn-not-a-native-name/plan"),"FORBIDDEN_NON_CONTRACT");
         foreach(var pair in new[]{("BetterAstralParty.reinstall-"+generation+".completed-",'d'),("BetterAstralParty.update-"+generation+".version.uninstalled-",'e'),("bap-"+generation+"-transition-",'f')})Put(Path.Combine(r.Game,pair.Item1+new string(pair.Item2,32)),"FORBIDDEN_GENERATION");
-        var i=Inspect(Collect(r));Check(Observations(i,"work-marker-observed")==6&&Observations(i,"work-marker-observed",false)==2,generation+" all native work kinds, cancellation and rollback covered");
+        if(generation=="v5")foreach(var name in new[]{"BetterAstralParty.reinstall-v5.completed-"+new string('7',32),"BetterAstralParty.update-v5.version.uninstalled-"+new string('8',32),"user.keep"})Put(Path.Combine(r.Game,"BetterAstralParty.Update","history",name),"FORBIDDEN_HISTORY");
+        var i=Inspect(Collect(r));
+        if(generation=="v5")Check(RecoveryMatch(i,"files","source","^game/work-v4/history/(reinstall-completed|archived-version)/[0-9]{2}$").Count(row=>Text(row,"status")=="hashed")==2
+            &&!i.Entries["recovery-inventory.json"].Contains("user.keep",StringComparison.Ordinal)&&!i.Entries["recovery-inventory.json"].Contains(new string('7',32),StringComparison.Ordinal),"history-folder reinstall records listed by alias, metadata only");Check(Observations(i,"work-marker-observed")==6&&Observations(i,"work-marker-observed",false)==2,generation+" all native work kinds, cancellation and rollback covered");
         Check(RecoveryMatch(i,"files","source","/helper\\.(attempt|recovery)$").Count(row=>Text(row,"status")=="hashed"&&row.GetProperty("present").GetBoolean())==2,generation+" attempt and recovery markers metadata only");
-        Check(RecoveryMatch(i,"files","source","reinstall-completed|archived-version|game/transition/").Length==3&&!i.Entries["recovery-inventory.json"].Contains("not-a-native-name",StringComparison.Ordinal),generation+" generation aliases hide IDs and exclude non-contract names");MetadataOnly(i);
+        Check(RecoveryMatch(i,"files","source","^game/(reinstall-completed|archived-version|transition)/").Length==3&&!i.Entries["recovery-inventory.json"].Contains("not-a-native-name",StringComparison.Ordinal),generation+" generation aliases hide IDs and exclude non-contract names");MetadataOnly(i);
     }
     private static void RecoveryInputs(string generation)
     {

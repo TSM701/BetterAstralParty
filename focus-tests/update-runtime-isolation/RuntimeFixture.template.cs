@@ -133,6 +133,15 @@ static class InputAttention {
     internal static void Tick() { Probe.Visit("native.attention", true); }
     internal static void Stop() { Probe.Visit("native.attentionStop", true); }
 }
+static class CardChoiceTimer {
+    internal const string Feature = "CardChoiceTimer";
+    internal static void Tick() { Probe.Visit("native.cardChoice", true); }
+    internal static void Clear() { Probe.Visit("native.cardChoiceClear", true); }
+}
+static class HomeEscQuit {
+    internal const string Feature = "HomeEscQuit";
+    internal static void Tick() { Probe.Visit("native.homeEsc", true); }
+}
 static class FieldZoomUi {
     internal static void Clear() {
         Probe.OwnedCleanupAttempts++; Probe.Visit("owned.cameraClear");
@@ -190,7 +199,7 @@ public static class Runner {
             && Probe.Count("native.matchFocus") == 2 && Probe.Count("native.audio") == 2 && Probe.Discovery,
             "Optional notification decoration failure disables only its own feature; other UI, updates, focus and audio continue without retrying failed bindings"); cases++;
         Probe.Reset(); Probe.Pause = Probe.Suspended = true; ModUi.Tick(); Time.frameCount++; ModUi.Tick();
-        Probe.Require(Probe.Count("automatic.tick") == 2 && Probe.Count("native.cleanup") == 1 && Probe.Count("native.audioRestore") == 2 && Probe.Count("native.ping") == 0 && Probe.Count("healthy.tail") == 0, "PvP still suspends gameplay, restores audio and cleans once while backend remains independent"); cases++;
+        Probe.Require(Probe.Count("automatic.tick") == 2 && Probe.Count("native.cleanup") == 1 && Probe.Count("native.audioRestore") == 2 && Probe.Count("native.ping") == 0 && Probe.Count("native.cardChoice") == 0 && Probe.Count("native.homeEsc") == 0 && Probe.Count("healthy.tail") == 0, "PvP still suspends gameplay, restores audio and cleans once while backend remains independent"); cases++;
         Probe.Reset(); Probe.Pause = true; ModUi.Tick();
         Probe.Require(Probe.Count("diagnostics.state.initializing") == 1 && Probe.Count("native.cleanup") == 1 && Probe.Count("healthy.tail") == 0, "Startup pause retains its existing gameplay gate"); cases++;
         Probe.Reset(); Probe.Pause = Probe.ThrowCleanup = true; ModUi.Tick(); Time.frameCount++; ModUi.Tick();

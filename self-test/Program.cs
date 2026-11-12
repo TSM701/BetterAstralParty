@@ -283,6 +283,13 @@ foreach (var action in new[] { "Enabled", "Details", "CardPopups", "BattleStatus
 }
 if (MenuLayout.SliderRange("Scale") != (75, 150) || MenuLayout.SliderRange("Opacity") != (0, 100) || MenuLayout.Percent(75) != "75%")
     throw new Exception("슬라이더 범위·표기 불일치");
+// The zoomed-out slider shows opacity; the file keeps the fade strength (1 = the original curve, 30 % at the far end).
+if (MenuLayout.SliderRange("IndicatorFadeStrength") != (0, 100) || MenuLayout.SliderPercent("IndicatorFadeStrength", 1f) != 30 || MenuLayout.SliderPercent("IndicatorFadeStrength", 100f / 70f) != 0
+    || MenuLayout.SliderPercent("IndicatorFadeStrength", 0f) != 100 || MenuLayout.SliderPercent("IndicatorFadeStrength", .8f) != 44
+    || MenuLayout.SliderStored("IndicatorFadeStrength", 30) != 1f || MenuLayout.SliderStored("IndicatorFadeStrength", 100) != 0f
+    || Enumerable.Range(0, 101).Any(percent => MenuLayout.SliderPercent("IndicatorFadeStrength", MenuLayout.SliderStored("IndicatorFadeStrength", percent)) != percent)
+    || Enumerable.Range(0, 101).Any(percent => MenuLayout.SliderPercent("Opacity", MenuLayout.SliderStored("Opacity", percent)) != percent))
+    throw new Exception("줌 아웃 불투명도 변환 불일치");
 Console.WriteLine("고정 토글 크기·행 간격·좌우 경계·전체 버튼 호버 설명 검증 통과");
 HandLayoutCheck.Run();
 ShapeRasterCheck.Run();
@@ -305,11 +312,37 @@ foreach (var pending in new[] { 0, 1, 3 })
         (bits & 4) != 0, (bits & 8) != 0, (bits & 16) != 0, (bits & 32) != 0, pending);
     if (actual != (bits == 45 && pending > 0)) throw new Exception("Input alert focus/role/room/settings gate");
 }
-foreach (var name in new[] { "RelicWindow", "LoseCardWindow", "LandShopWindow", "AssistVoteWindow" })
+foreach (var name in new[] { "RelicWindow", "LoseCardWindow", "LandShopWindow", "AssistVoteWindow", "LandBuildShopWindow" })
     if (!InputAttentionState.InputWindow(name)) throw new Exception("Untimed input dialog missing");
-foreach (var name in new[] { "SettingWindow", "ChatWindow", "BattlePlayerInfoWindow", "ReplayWindow" })
+foreach (var name in new[] { "SettingWindow", "ChatWindow", "BattlePlayerInfoWindow", "ReplayWindow", "LandBuildingMissionWindow" })
     if (InputAttentionState.InputWindow(name)) throw new Exception("Non-input dialog alerts");
 if (!MenuLayout.GeneralControl("InputAttention")) throw new Exception("Input alert settings tab");
+// CardChoiceTimer: only the closed (or moved-on) window's own timer, and only while that same object is still registered.
+{
+    IntPtr seen = 11, newer = 12;
+    if (InputAttentionState.StaleChoiceTimer(5, seen, 0, seen) != 5 || InputAttentionState.StaleChoiceTimer(5, seen, 6, seen) != 5
+        || InputAttentionState.StaleChoiceTimer(5, seen, 5, seen) != 0 || InputAttentionState.StaleChoiceTimer(5, seen, 0, IntPtr.Zero) != 0
+        || InputAttentionState.StaleChoiceTimer(5, seen, 0, newer) != 0 || InputAttentionState.StaleChoiceTimer(5, IntPtr.Zero, 0, IntPtr.Zero) != 0
+        || InputAttentionState.StaleChoiceTimer(0, seen, 0, seen) != 0)
+        throw new Exception("A card-choice timer is cancelled only when its closed window's own timer is still registered");
+}
+// HomeEscQuit: ask the frame after an Esc, only when the home was idle around the key; an Esc that closes a window, a window
+// opened for that Esc and skipped frames never ask.
+{
+    static int Asks(params (bool Idle, bool Escape)[] frames)
+    {
+        var state = new HomeEscape(); var asks = 0;
+        for (var i = 0; i < frames.Length; i++) if (state.Step(i + 1, frames[i].Idle, frames[i].Escape)) asks++;
+        return asks;
+    }
+    var gap = new HomeEscape();
+    gap.Step(1, true, false);
+    if (Asks((true, false), (true, true), (true, false), (true, false)) != 1 || Asks((true, false), (true, true), (true, true), (true, false)) != 1
+        || Asks((false, false), (true, true), (true, false)) != 0 || Asks((true, false), (true, true), (false, false)) != 0
+        || Asks((true, false), (false, true), (false, false)) != 0 || Asks((true, true), (true, false)) != 0
+        || gap.Step(3, true, true) || gap.Step(4, true, false))
+        throw new Exception("Home Esc asks once, only between idle frames, never for an Esc that closed or opened a window");
+}
 ModText.Select("English");
 foreach (var mode in new[] { "Taskbar", "Windows", "Off" })
     if (ModText.Text(InputAttentionState.Label(mode)).Any(c => c is >= '\uAC00' and <= '\uD7A3'))
@@ -764,14 +797,12 @@ if (CardKoMinimum.Calculate(pairInput, null) != new KoPair(6, 1)
 if (!CardKoMinimum.RevealedDie(1, true, 6) || CardKoMinimum.RevealedDie(1, false, 6)
     || CardKoMinimum.RevealedDie(2, true, 6) || CardKoMinimum.RevealedDie(1, true, 7))
     throw new Exception("Hidden roll/final total mistaken for a revealed die");
-if (!CardKoMinimum.RevealedDefenseDie(0, true, 3) || CardKoMinimum.RevealedDefenseDie(2, true, 3)
-    || CardKoMinimum.RevealedDefenseDie(0, false, 3) || CardKoMinimum.RevealedDefenseDie(0, true, 9))
-    throw new Exception("Defense raw die must be read at showPoint 0, never from its total");
-// FightWindow.RefreshCardList formats "+{0}" per card and "...+{0}" for the rest past the seventh.
-if (CardKoMinimum.CardValue("+2") != 2 || CardKoMinimum.CardValue("...+13") != 13 || CardKoMinimum.CardValue("+-1") != -1
-    || CardKoMinimum.CardValue("2") != null || CardKoMinimum.CardValue("+") != null || CardKoMinimum.CardValue("...") != null
-    || CardKoMinimum.CardValue("+2a") != null || CardKoMinimum.CardValue("+99999") != null || CardKoMinimum.CardValue(null) != null)
-    throw new Exception("Revealed card bonus parsing failed");
+// Rolled card values replace a side's range only from inside it.
+var rangedInput = new PreRollCombat(9, 8, 4, 9, 1, 3) { Modifiers = new(0, 0) };
+if (CardKoMinimum.WithRolled(rangedInput, (6, 2)) != rangedInput with { AttackMin = 6, AttackMax = 6, DefenseMin = 2, DefenseMax = 2 }
+    || CardKoMinimum.WithRolled(rangedInput, (12, 2)) != rangedInput with { DefenseMin = 2, DefenseMax = 2 }
+    || CardKoMinimum.WithRolled(rangedInput, (null, 5)) != rangedInput || CardKoMinimum.WithRolled(rangedInput, null) != rangedInput)
+    throw new Exception("Rolled card values must narrow only from inside the public range");
 Console.WriteLine("KO pairs: exhaustive worst-case outcomes, revealed rolls, caps and visibility guards passed.");
 var shadow = CardAdvisor.FromConfig(10008, 1, 1, new[] { 3, 3, 1 }, 0, 0, 2)!.Value;
 if (!shadow.PreventCounter || shadow.Min != 3 || shadow.Max != 3)
@@ -790,35 +821,54 @@ if (CardAdvisor.FromConfig(10009, 1, 1, new[] { 5, 5, 10010 }, 0, 0, 2) != new C
 foreach (var id in new[] { 10009, 99999 })
     if (CardAdvisor.FromConfig(id, 1, 1, new[] { 3, 3, 1 }, 0, 0, 2) != null)
         throw new Exception("Extra parameter semantics must not be guessed");
-// Card 10010: final ATK (die included) +50 %, bounded by both roundings: 7 x 1.5 = 10.5 -> 10..11.
-if (CardAdvisor.Boost(7, 50) != (10L, 11L) || CardAdvisor.Boost(8, 50) != (12L, 12L) || CardAdvisor.Boost(7, 0) != (7L, 7L)
-    || CardKoMinimum.DamageRange(new PreRollCombat(9, 20, 1, 1, 0, 0), new CardBonus(true, 0, 0, 2) { FinalPercent = 50 }, 6, 1) != (9L, 10L)
+// Card 10010: final ATK (die included) +50 %, a half rounded up as the server did on 2026-11-11 (27 -> 41, 21 -> 32);
+// another percent spans half-up..ceiling, and two boosts span added..one after the other.
+var once = new FinalBoost(50, 1); var twice = once.Plus(50);
+if (once.Apply(27) != (41L, 41L) || once.Apply(21) != (32L, 32L) || once.Apply(8) != (12L, 12L) || default(FinalBoost).Apply(7) != (7L, 7L)
+    || new FinalBoost(30, 1).Apply(11) != (14L, 15L) || twice != new FinalBoost(50, 2) || twice.Apply(10) != (20L, 23L)
+    || default(FinalBoost).Plus(50) != once || once.Plus(0) != once || new FinalBoost(0, 1).Valid || new FinalBoost(50, 4).Valid || !default(FinalBoost).Valid
+    || once.Before(41) != 27 || once.Before(32) != 21 || once.Before(40) != null || twice.Before(30) != null
+    || CardKoMinimum.DamageRange(new PreRollCombat(9, 20, 1, 1, 0, 0), new CardBonus(true, 0, 0, 2) { FinalPercent = 50 }, 6, 1) != (10L, 10L)
+    || CardKoMinimum.DamageRange(new PreRollCombat(9, 20, 1, 1, 0, 0) { Boost = once }, null, 6, 1) != (10L, 10L)
+    || CardKoMinimum.DamageRange(new PreRollCombat(9, 20, 1, 1, 0, 0) { Boost = once }, new CardBonus(true, 0, 0, 2) { FinalPercent = 50 }, 6, 1) != (13L, 16L)
+    || CardKoMinimum.DamageRange(new PreRollCombat(9, 20, 1, 1, 0, 0) { Boost = new(0, 1) }, null, 6, 1) != null
     || CardAdvisor.Dominates(new(true, 6, 6, 1), new CardBonus(true, 6, 6, 2) { FinalPercent = 50 }))
-    throw new Exception("Final-ATK boost bounds or dominance");
+    throw new Exception("Final-ATK boost rounding, bounds or dominance");
+// A rolled value after the thrown die is the one whose boosted total the server sent: 24 + die 3 = 27 -> 41.
+if (CardKoMinimum.WithRolled(new PreRollCombat(9, 52, 22, 27, 2, 2) { Boost = once }, (once.Before(41) - 3, 2)) is not { AttackMin: 24, AttackMax: 24 })
+    throw new Exception("A boosted rolled value must be recovered from the server's total");
 {
-    // Card advice spans both roundings of every public scenario: 3 + 6 + die 6 = 15 -> 22.5, so only the ceiling (23)
-    // can knock out 22 HP, and the card's gains must equal an independent floor/ceiling enumeration.
-    var input = new PreRollCombat(9, 22, 3, 3, 0, 0); var boost = CardAdvisor.Calculate(input, new CardBonus(true, 6, 6, 2) { FinalPercent = 50 })!.Value;
-    double koMin = double.MaxValue, koMax = double.MinValue, damageMin = double.MaxValue, damageMax = double.MinValue, floorKoMax = double.MinValue;
-    foreach (var dodge in new[] { false, true })
-    foreach (var up in new[] { false, true })
+    // Card advice: 3 + 6 + die 6 = 15 -> 22.5 rounds up to 23, which knocks out 22 HP. The gains must equal an independent
+    // enumeration, and a boost already used counts before and after another card alike.
+    var input = new PreRollCombat(9, 22, 3, 3, 0, 0);
+    void Gains(CardImpact impact, FinalBoost before, FinalBoost after)
     {
-        var before = CardAdvisor.BeforeRoll(22, 3, 0, dodge); var after = CardAdvisor.BeforeRoll(22, 9, 0, dodge, default, 50, up);
-        var ko = after.KnockoutChance - before.KnockoutChance; var damage = after.ExpectedDamage - before.ExpectedDamage;
-        koMin = Math.Min(koMin, ko); koMax = Math.Max(koMax, ko); damageMin = Math.Min(damageMin, damage); damageMax = Math.Max(damageMax, damage);
-        if (!up) floorKoMax = Math.Max(floorKoMax, ko);
+        double koMin = double.MaxValue, koMax = double.MinValue, damageMin = double.MaxValue, damageMax = double.MinValue;
+        foreach (var dodge in new[] { false, true })
+        {
+            var from = CardAdvisor.BeforeRoll(22, 3, 0, dodge, default, before); var to = CardAdvisor.BeforeRoll(22, 9, 0, dodge, default, after);
+            var ko = to.KnockoutChance - from.KnockoutChance; var damage = to.ExpectedDamage - from.ExpectedDamage;
+            koMin = Math.Min(koMin, ko); koMax = Math.Max(koMax, ko); damageMin = Math.Min(damageMin, damage); damageMax = Math.Max(damageMax, damage);
+        }
+        if (Math.Abs(impact.KoGainMin - koMin) > 1e-9 || Math.Abs(impact.KoGainMax - koMax) > 1e-9 || Math.Abs(impact.DamageGainMin - damageMin) > 1e-9
+            || Math.Abs(impact.DamageGainMax - damageMax) > 1e-9 || koMax <= 0)
+            throw new Exception("Final-ATK card advice must equal the enumeration, with the rounded-up KO included");
     }
-    if (Math.Abs(boost.KoGainMin - koMin) > 1e-9 || Math.Abs(boost.KoGainMax - koMax) > 1e-9 || Math.Abs(boost.DamageGainMin - damageMin) > 1e-9
-        || Math.Abs(boost.DamageGainMax - damageMax) > 1e-9 || floorKoMax >= koMax)
-        throw new Exception("Final-ATK card advice must equal the floor/ceiling enumeration, with the ceiling's KO included");
+    Gains(CardAdvisor.Calculate(input, new CardBonus(true, 6, 6, 2) { FinalPercent = 50 })!.Value, default, once);
+    Gains(CardAdvisor.Calculate(input with { Boost = once }, new CardBonus(true, 6, 6, 2))!.Value, once, once);
     // The boosted total is the damage, while the dodge roll still compares against the raw die.
     var six = new HitModifiers { AttackDice = DiceFaces.Range(6, 6) };
-    foreach (var (up, total) in new[] { (false, 22), (true, 23) })
+    foreach (var (boost, high, total) in new[] { (once, false, 23), (twice, false, 30), (twice, true, 35) })
     {
         var direct = CombatAdvisor.Calculate(new CombatInput(22, total, 6, 0) { Modifiers = six }, false);
-        if (CardAdvisor.BeforeRoll(22, 9, 0, true, six, 50, up) != (direct.Recommendation == RecommendedAction.Dodge ? direct.Dodge : direct.Defend))
-            throw new Exception("Final-ATK boost must damage with the rounded total and judge the dodge by the raw die: " + total);
+        if (CardAdvisor.BeforeRoll(22, 9, 0, true, six, boost, high) != (direct.Recommendation == RecommendedAction.Dodge ? direct.Dodge : direct.Defend))
+            throw new Exception("Final-ATK boost must damage with the boosted total and judge the dodge by the raw die: " + total);
     }
+    // Defend/dodge advice for viewers who know the boost: 21 + die 6 = 27 -> 41, the same hit as a plain 35 + 6.
+    if (VisibleCombatAdvisor.Calculate(new VisibleCombat(9, 30, 21, 21, 6, 2, 2, true) { Boost = once })
+        != VisibleCombatAdvisor.Calculate(new VisibleCombat(9, 30, 35, 35, 6, 2, 2, true))
+        || VisibleCombatAdvisor.Calculate(new VisibleCombat(9, 30, 21, 21, 6, 2, 2, true) { Boost = new(0, 1) }) != null)
+        throw new Exception("Defend/dodge advice must count a known final-ATK boost");
 }
 if (CardAdvisor.FromConfig(10008, 1, 1, new[] { 3, 3, 1 }, 1, 0, 2) != null
     || CardAdvisor.FromConfig(10008, 1, 1, new[] { 3, 3, 2 }, 0, 0, 2) != null

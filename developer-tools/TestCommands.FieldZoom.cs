@@ -65,6 +65,11 @@ internal static partial class TestCommands
         foreach (var name in new[] { "GetCurPlayerCamera", "GetHostStatus" }) Check(NativeMethod(native, "Core.Camera.CameraManager", name).IsPublic, "Public camera reader: " + name);
         Check(native.MainModule.GetType("UI.UIManager").BaseType.FullName == "Tools.SimpleSingletonProvider`1<UI.UIManager>", "Native UI manager singleton");
         ExactField(native, "UI.UIManager", "propUpWindows", "System.Collections.Generic.Stack`1<UI.BaseWindow>");
+        // Board switch: Magic Academy's controller derives from the one looked up, whose IsPlaying spans the switch.
+        ExactField(native, "GameLogic.SubMapSwitchController", "IsPlaying", "System.Boolean");
+        Check(native.MainModule.GetType("GameLogic.SubMapSwitchController017").BaseType.FullName == "GameLogic.SubMapSwitchController", "Magic Academy board switch controller");
+        Contains(ReadSource(context, "src/FieldZoomUi.cs"), new[] { "var switching = SubMapSwitch.Running(", "var blocked = switching ||", "if (switching) FieldFreeCamera.Clear();" }, "Zoom yields to a board switch");
+        Contains(ReadSource(context, "src/SubMapSwitch.cs"), new[] { "FindClass(\"GameLogic\", \"SubMapSwitchController\")", "FindAnyObjectByType(type)", "Field<bool>(\"IsPlaying\")", "_failed = true;" }, "Board switch detection fails soft");
         foreach (var name in new[] { "ExpressionWindow", "ExpressionListWindow", "OperateTimeWindow", "TipsWindow" }) Check(native.MainModule.GetType("UI." + name).BaseType.FullName == "UI.BaseWindow", "Native passive window: " + name);
         var tips = native.MainModule.GetType("UI.TipsWindow"); Check(!tips.Methods.Any(method => method.Name == "OnShown"), "Passive tips lifetime has no OnShown override");
         Check(tips.NestedTypes.Where(type => type.Name.StartsWith("<TryShowAsync>", StringComparison.Ordinal)).SelectMany(type => type.Methods.Where(method => method.Name == "MoveNext")).SelectMany(Calls).Contains("System.Void FairyGUI.Window::Show()", StringComparer.Ordinal), "Passive tips show native container");

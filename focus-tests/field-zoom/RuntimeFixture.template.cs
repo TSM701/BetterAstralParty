@@ -143,6 +143,7 @@ static class FieldCameraReturnUi {
     public static void Tick(bool visible)=>Visible=visible&&Available;
     public static void Clear(){Visible=false;ConsumedInput=false;}
 }
+static class SubMapSwitch { public static bool Value; public static IntPtr LastLands; internal static bool Running(IntPtr lands){LastLands=lands;return Value;} }
 static class FieldMonsterPlates { public static int Ticks, Clears; public static float LastScale=1f; internal static void Tick(float scale){Ticks++;LastScale=scale;} internal static void Clear(){Clears++;} }
 static class FieldStatePlates { internal static void Tick(float scale){} internal static void Clear(){} }
 static class FieldIndicatorOpacity {
@@ -168,9 +169,9 @@ static class FieldFreeCamera {
 static class VisibleCombatAdvisor { public static bool IsPve(int map)=>map==2; }
 static class Plugin { public static Setting FieldZoom=new(); public static readonly FloatSetting ZoomSensitivity=new(), ZoomOutLimit=new(), FreeCameraSpeed=new(); public static readonly Diagnostics Diagnostics=new(); public sealed class Setting {public bool Value=true;} public sealed class FloatSetting {public float Value=1f;} }
 sealed class Diagnostics {
-    public readonly List<string> States=new();
+    public readonly List<string> States=new(),MapSwitch=new();
     public bool IsRecording; public readonly List<string> Geometry=new();
-    public void State(string key,string value){if(key=="fieldZoom.geometry"){if(!IsRecording)throw new Exception("Geometry recorded while diagnostics off");Geometry.Add(value);return;}if(key!="fieldZoom.wheel")throw new Exception("Unexpected diagnostic key");States.Add(value);}
+    public void State(string key,string value){if(key=="fieldZoom.mapSwitch"){MapSwitch.Add(value);return;}if(key=="fieldZoom.geometry"){if(!IsRecording)throw new Exception("Geometry recorded while diagnostics off");Geometry.Add(value);return;}if(key!="fieldZoom.wheel")throw new Exception("Unexpected diagnostic key");States.Add(value);}
 }
 sealed class CleanupFailure:Exception {}
 static class Compatibility {
@@ -238,7 +239,7 @@ public static class Check {
             if(clear)FieldZoomUi.Clear(); Compatibility.Reset(); GameUi.FightWindowPresent=GameUi.EncounterHidden=false;GameUi.SettingsWindow=null; PvpSafety.Suspended=false; ModUi.IsOpen=false; Plugin.FieldZoom.Value=true; Plugin.FreeCameraSpeed.Value=1f;
             Input.Buttons=new bool[3];Input.Down=new bool[3];Input.Up=new bool[3];Input.touchCount=0;Input.mouseScrollDelta=new();Application.isFocused=true;RuntimeObject.OnUi=false;RuntimeObject.Dragging=false;Time.unscaledTime=0;Time.unscaledDeltaTime=1f/60;
             GameUi.Path.Clear();GameUi.CachedPath.Clear();GameUi.FreshReads=GameUi.CachedReads=0;
-            Plugin.Diagnostics.States.Clear();Plugin.Diagnostics.Geometry.Clear();Plugin.Diagnostics.IsRecording=false;
+            Plugin.Diagnostics.States.Clear();Plugin.Diagnostics.Geometry.Clear();Plugin.Diagnostics.MapSwitch.Clear();Plugin.Diagnostics.IsRecording=false;SubMapSwitch.Value=false;
             FieldFreeCamera.LastBlocked=FieldFreeCamera.PanAllowed=FieldFreeCamera.PanOnUi=FieldFreeCamera.PanIndicator=FieldFreeCamera.Yield=false;
             Active=Obj(("body",Body),("Follow",Follow),("transform",Obj(("rotation",new Quaternion()))));Active.TypeName="CinemachineVirtualCamera";
             Blend=Obj(("IsComplete",true),("CamB",Active),("Duration",0f),("TimeInBlend",0f));Frames=Obj(("Count",1));Frames.Items=new[]{Obj(("blend",Blend))};
@@ -780,6 +781,25 @@ public static class Check {
         s.Free.Dead=true;FieldZoomUi.Tick();Assert(Speed(s)==30);
         Plugin.FreeCameraSpeed.Value=1f;
     }
+    // A board switch (Magic Academy's phase change) runs on the native camera: zoom restored, wheel ignored, plates
+    // native, the free view ended and not taken back afterwards; each start and end is logged once.
+    static void BoardSwitch(){
+        var available=FieldCameraReturnUi.Available;FieldCameraReturnUi.Available=false;
+        var s=new Scene();s.Wheel(-100);s.Finish();Assert(s.Offset.z<-40&&!FieldFreeCamera.Holding);
+        SubMapSwitch.Value=true;FieldZoomUi.Tick();
+        Assert(s.Offset.z==-10&&FieldFreeCamera.LastBlocked&&FieldMonsterPlates.LastScale==1f&&SubMapSwitch.LastLands!=IntPtr.Zero);
+        s.Wheel(-1);s.Finish();Assert(s.Offset.z==-10&&!FieldFreeCamera.PanAllowed);
+        Assert(Plugin.Diagnostics.MapSwitch.Count==1&&Plugin.Diagnostics.MapSwitch[0]=="running; freeView=False");
+        SubMapSwitch.Value=false;FieldZoomUi.Tick();Assert(!FieldFreeCamera.LastBlocked&&Plugin.Diagnostics.MapSwitch.Count==2&&Plugin.Diagnostics.MapSwitch[1]=="done");
+        s.Wheel(-1);Assert(s.Offset.z<-10);FieldZoomUi.Clear();
+        FieldCameraReturnUi.Available=true;
+        s=new Scene();s.Wheel(1);Assert(FieldFreeCamera.Holding&&FieldCameraReturnUi.Visible);
+        var clears=FieldFreeCamera.ClearAttempts;SubMapSwitch.Value=true;FieldZoomUi.Tick();
+        Assert(!FieldFreeCamera.Holding&&FieldFreeCamera.ClearAttempts>clears&&FieldFreeCamera.LastBlocked&&!FieldCameraReturnUi.Visible);
+        Assert(Plugin.Diagnostics.MapSwitch.Count==1&&Plugin.Diagnostics.MapSwitch[0]=="running; freeView=True");
+        SubMapSwitch.Value=false;FieldZoomUi.Tick();Assert(!FieldFreeCamera.Holding&&!FieldFreeCamera.LastBlocked&&s.Body.Writes==0);
+        FieldZoomUi.Clear();FieldCameraReturnUi.Available=available;
+    }
     static void AlreadyOutwardRecovery(){
         FieldCameraReturnUi.Available=true;
         foreach(var local in new[]{false,true})foreach(var interruption in new[]{"encounter","focus","both"}){
@@ -953,7 +973,7 @@ public static class Check {
         GameUi.Path.AddRange(new[]{new RuntimeObject{TypeName="UICom_AttrInfo"},s.Attributes});
         Input.Buttons[0]=Input.Down[0]=RuntimeObject.OnUi=true;FieldZoomUi.Tick();
         Assert(FieldFreeCamera.PanAllowed&&FieldFreeCamera.PanIndicator);
-        IndicatorWheel();WheelUi();HiddenEncounter();Assert(HiddenEncounterCases==2);PanUi();PresentationAndFrames();TurnTransitions();BlendLifetime();BranchGeometryAndOpacity();FocusAndEncounterRecovery();WasdSpeed();
+        IndicatorWheel();WheelUi();HiddenEncounter();Assert(HiddenEncounterCases==2);PanUi();PresentationAndFrames();TurnTransitions();BlendLifetime();BranchGeometryAndOpacity();FocusAndEncounterRecovery();WasdSpeed();BoardSwitch();
         foreach(var cancel in new Action<Scene>[]{a=>Application.isFocused=false,a=>ModUi.IsOpen=true,a=>a.Root.Data["modalWaiting"]=true,a=>RuntimeObject.Dragging=true,a=>Input.touchCount=1,a=>FieldCameraReturnUi.ConsumedInput=true}){
             s=new Scene();s.Wheel(1);Input.Buttons[0]=true;cancel(s);FieldZoomUi.Tick();
             Assert(!FieldFreeCamera.PanAllowed&&FieldFreeCamera.Holding&&FieldCameraReturnUi.Visible);

@@ -50,7 +50,7 @@ static class CharacterNameUi { internal static void Tick(RuntimeObject root) { P
 static class CardDiceUi { internal static void PollResolved() { Probe.Visit("dice.tick"); } }
 static class ShootingStarUi { internal static void Tick() { } internal static void Clear() { } }
 static class CardUi { internal static void Animate() { Probe.Visit("cards.tick"); } }
-static class RemainingHpUi { internal static void PollFinalPoints() { } internal static void Animate() { } }
+static class RemainingHpUi { internal static void Animate() { } }
 static class CardPreviewUi { internal static void Reset() { Probe.LanguageStep("CardPopups"); } }
 static class BattleStatusUi { internal static void Clear() { Probe.LanguageStep("BattleStatus"); } }
 static class FieldBuffUi { internal static void Clear(string reason) { Probe.LanguageStep("FieldBuffs"); } }

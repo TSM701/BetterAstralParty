@@ -310,7 +310,7 @@ namespace BetterAstralParty.Installation
                 && Directory.EnumerateFiles(folder, "shortcuts.vdf.*.tmp").Any();
         }
         private const string InterruptedSwapGuidance = "이전 작업이 Steam 바로가기 파일을 바꾸다 멈춰 백업만 남아 있습니다. 바로가기는 건드리지 않습니다. 같은 폴더의 shortcuts.vdf.BetterAstralParty-*.bak을 shortcuts.vdf로 되돌려 주세요. / A previous shortcut update was interrupted and only its backup remains; shortcuts are left unchanged. Restore shortcuts.vdf from shortcuts.vdf.BetterAstralParty-*.bak in the same folder.";
-        private const string CustomizedGuidance = "실행 옵션을 넣은 BetterAstralParty 항목은 사용자 설정이라 남겨 둡니다. 필요 없으면 Steam에서 직접 제거하세요. / The BetterAstralParty entry with your launch options stays; remove it in Steam if you no longer need it.";
+        private const string CustomizedGuidance = "실행 옵션을 넣은 BetterAstralParty Steam 외부 게임은 사용자 설정이라 남겨 둡니다. 필요 없으면 Steam에서 직접 제거하세요. / The BetterAstralParty entry with your launch options stays; remove it in Steam if you no longer need it.";
         private static bool Skip(Action<Exception>? unavailable, string reason, string guidance)
         {
             if (unavailable != null) try { unavailable(new SteamProfileUnavailableException(reason, guidance)); } catch { }
@@ -331,16 +331,20 @@ namespace BetterAstralParty.Installation
             using (var fence = new WindowsFileFence(WindowsPath.Parent(path))) using (var file = Optional(fence, WindowsPath.Leaf(path)))
                 return file == null ? EmptyShortcuts() : ReadShortcuts(UpdateTicket.Read(file, 16 * 1048576));
         }
-        internal static bool PlanRegister(string steamRoot, uint account, string gameRoot, Action<Exception>? unavailable = null) { return PlanShortcut(steamRoot, account, gameRoot, false, unavailable); }
+        // Installations add no Steam entry since 1.8.1-dev.1. Only a 1.3.x takeover rewrites one: the entry that starts the
+        // launcher the takeover removes, so it does not break. Entries under the former name already start Mod.cmd and stay.
+        internal static bool PlanConvert(string steamRoot, uint account, string gameRoot, Action<Exception>? unavailable = null) { return PlanShortcut(steamRoot, account, gameRoot, false, unavailable); }
         internal static bool PlanRemove(string steamRoot, uint account, string gameRoot, Action<Exception>? unavailable = null) { return PlanShortcut(steamRoot, account, gameRoot, true, unavailable); }
         private static bool PlanShortcut(string steamRoot, uint account, string gameRoot, bool remove, Action<Exception>? unavailable)
         {
             try {
                 var path = ShortcutPath(steamRoot, account); if (InterruptedSwap(path)) return Skip(unavailable, "SteamShortcutSwapInterrupted", InterruptedSwapGuidance);
-                var root = LoadShortcuts(path); bool legacy; var keys = OwnedShortcutKeys(root, gameRoot, out legacy);
-                // Installation accepts the user's customized Mod entry as theirs, so removal leaves it and says so.
+                var root = LoadShortcuts(path); var keys = OwnedShortcutKeys(root, gameRoot);
+                // The user's customized Mod entry is theirs, so removal leaves it and says so.
                 if (keys.Count == 0 && Customized(root, gameRoot)) { if (remove) Skip(unavailable, "SteamShortcutCustomized", CustomizedGuidance); return false; }
-                return remove ? keys.Count == 1 : keys.Count == 0 || legacy;
+                if (remove || keys.Count == 0) return keys.Count == 1;
+                var launcher = "\"" + Join(PathOf(gameRoot), LegacyEntry) + "\"";
+                return string.Equals(((OrderedDictionary)((OrderedDictionary)root["shortcuts"]!)[keys[0]]!)["exe"] as string, launcher, StringComparison.OrdinalIgnoreCase);
             }
             catch (Exception error) when (unavailable != null && (error is ApplySafetyException || error is IOException || error is InvalidDataException
                 || error is UnauthorizedAccessException || error is System.Security.SecurityException || error is InvalidOperationException || error is ArgumentException))
@@ -373,6 +377,8 @@ namespace BetterAstralParty.Installation
                 item["AppName"] = ShortcutName; item["exe"] = "\"" + entry + "\""; item["StartDir"] = "\"" + game + "\"";
             }
             else {
+                // shortcut: only fixtures seed an entry this way since installations add none (1.8.1-dev.1); delete it with the
+                // 1.3.x takeover after 2026-12-15, when Register has no production caller left.
                 var launcher = Join(game, ModEntry); if (!File.Exists(Io(launcher))) throw new FileNotFoundException("Missing installed mod entry.");
                 appId = BitConverter.ToUInt32(Guid.NewGuid().ToByteArray(), 0) | 0x80000000U;
                 while (items.Values.Cast<object>().OfType<OrderedDictionary>().Any(x => x["appid"] is uint id && id == appId)) appId = checked(appId + 1);
@@ -402,9 +408,9 @@ namespace BetterAstralParty.Installation
                 }
             }
             if (remove) recovery.Artwork.AddRange(RemoveHero(WindowsPath.Parent(path), appId, game, output));
-            try { output?.Invoke(remove ? "Removed " + removedName + ". / Steam 라이브러리에서 " + removedName + "를 제거했습니다."
-                : owned.Count == 1 ? "Updated the Steam library entry to " + ShortcutName + ". / Steam 라이브러리 항목을 " + ShortcutName + "로 바꿨습니다."
-                : "Registered " + ShortcutName + ". Restart Steam to load it. / Steam 라이브러리에 " + ShortcutName + "를 추가했습니다. Steam을 다시 실행하면 표시됩니다."); } catch { }
+            try { output?.Invoke(remove ? "Removed " + removedName + ". / Steam 외부 게임 " + removedName + "를 제거했습니다."
+                : owned.Count == 1 ? "Updated the Steam library entry to " + ShortcutName + ". / Steam 외부 게임을 " + ShortcutName + "로 바꿨습니다."
+                : "Registered " + ShortcutName + ". Restart Steam to load it. / Steam 외부 게임 " + ShortcutName + "를 추가했습니다. Steam을 다시 실행하면 표시됩니다."); } catch { }
             return recovery;
         }
         private static IEnumerable<SteamArtworkRecovery> RemoveHero(string config, uint id, string game, Action<string>? output)
@@ -602,6 +608,8 @@ namespace BetterAstralParty.Installation
             }
         }
         private static void Waiting(Exception error) { try { WaitingDiagnostic?.Invoke(error); } catch { } }
+        // Read-only look for the install window's checklist; the run itself still waits in WaitGameClosed.
+        internal static bool GameRunning(string gameRoot) { return GameTargets(gameRoot, false).Count != 0; }
         // The game is never closed for the player: show what runs, then recheck or cancel.
         internal static void WaitGameClosed(string gameRoot, Func<string, string?> consent, Action<string> output)
         {
@@ -686,8 +694,8 @@ namespace BetterAstralParty.Installation
                 state.Root = root; state.Restart = resume; shutdownAttempted = true;
                 Waiting(Failure("SteamRunning", "ShutdownConsent", status));
                 output(resume
-                    ? "Steam 라이브러리의 Astral Party - BetterAstralParty 항목을 바꾸려면 Steam을 종료해야 합니다. Steam 메뉴에서 나가기로 종료한 뒤 재확인하세요. 작업이 끝나면 Steam을 다시 실행합니다. / Steam must be closed to change the Astral Party - BetterAstralParty library entry. Exit Steam from its menu, then recheck. Steam is started again afterwards."
-                    : "Steam 라이브러리의 BetterAstralParty 항목을 지우려면 Steam을 종료해야 합니다. Steam 메뉴에서 나가기로 종료한 뒤 재확인하세요. / Steam must be closed to remove the BetterAstralParty library entry. Exit Steam from its menu, then recheck.");
+                    ? "Steam 외부 게임 Astral Party - BetterAstralParty를 바꾸려면 Steam을 종료해야 합니다. Steam 메뉴에서 나가기로 종료한 뒤 재확인하세요. 작업이 끝나면 Steam을 다시 실행합니다. / Steam must be closed to change the Astral Party - BetterAstralParty library entry. Exit Steam from its menu, then recheck. Steam is started again afterwards."
+                    : "BetterAstralParty Steam 외부 게임을 지우려면 Steam을 종료해야 합니다. Steam 메뉴에서 나가기로 종료한 뒤 재확인하세요. / Steam must be closed to remove the BetterAstralParty library entry. Exit Steam from its menu, then recheck.");
                 string choice; try { choice = Choice(consent, "r: 종료 후 재확인 / recheck after exiting, Enter: 취소 / cancel"); } catch { state.Restart = false; throw; }
                 if (!string.Equals(choice, "r", StringComparison.OrdinalIgnoreCase)) { state.Restart = false; throw Failure("ConsentCancelled", "ShutdownConsent", status); }
             }

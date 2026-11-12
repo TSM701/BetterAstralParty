@@ -23,10 +23,12 @@ internal static class CardDiceLayout
         return "보장 조건 없음";
     }
 
-    internal static (int Die, string Symbol, string Empty) Content(KoPair? pair, int fixedDie, int row, bool survival = false, bool unconditional = false, DiceFaces defenseDice = default, int fixedDefense = 0)
+    internal static (int Die, string Symbol, string Empty) Content(KoPair? pair, int fixedDie, int row, bool survival = false, bool unconditional = false, DiceFaces defenseDice = default, int fixedDefense = 0, DiceFaces attackDice = default)
     {
         if (row == 0 && fixedDie is >= 1 and <= 6) return (fixedDie, "=", "");
         if (row == 1 && fixedDefense is >= 1 and <= 6) return (fixedDefense, "=", "");
+        // Moses's 약점 makes that side's dice 0 in this fight: the row is = 0 whatever the pair holds (CardKoMinimum.ZeroRow).
+        if (row == 0 && attackDice.ZeroOnly || row == 1 && defenseDice.ZeroOnly) return (0, "=", "");
         if (unconditional) return (0, "", "—");
         if (pair == null) return (0, "", "?");
         if (pair.Value.DefenseDie == 0) return (0, "", "—");
