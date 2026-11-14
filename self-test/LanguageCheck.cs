@@ -135,7 +135,7 @@ internal static class LanguageCheck
             Check(CardAdvisor.Parse(text, 1) == null, "Unsafe English card: " + text);
         ModText.Select("한국어"); // Existing calculation/presentation regression tests retain their baseline.
         var booleanActions = new[] { "Enabled", "Details", "KoMinimum", "CardPopups", "BattleStatus", "ShushuShield", "ShushuShieldRestrictions",
-            "FieldBuffs", "FieldZoom", "MatchFocus", "Names", "Diagnostics", "MuteUnfocused", "AutoThanks", "CharacterRoles", "CharacterGuide",
+            "FieldBuffs", "FieldZoom", "MatchFocus", "Names", "Diagnostics", "MuteUnfocused", "AutoThanks", "SendAllLikes", "ShopBulkBuy", "CharacterRoles", "CharacterGuide",
             "IndicatorFade", "IndicatorHide", "DiceLock", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "ShootingStarShow", "KoCardPreview", "KoSpectator", "StatusHand", "StatusEffects", "CounterIcons", "ShushuMaster", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill", "OldReplays" };
         var padding = new[] { "이 기능을 끕니다", "다른 설정", "별도", "independent", "other settings" };
         foreach (var action in booleanActions)

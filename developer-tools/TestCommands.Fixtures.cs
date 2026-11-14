@@ -46,8 +46,8 @@ internal static partial class TestCommands
         var source = File.ReadAllText(Path.Combine(context.Root, "src/CardUi.cs")).Replace("\r\n", "\n", StringComparison.Ordinal);
         var changes = new[] {
             ("internal static class CardUi", "internal static class ReferenceCardUi"),
-            ("            var values = length is >= 2 and <= 3 ? new int[length] : Array.Empty<int>();\n            for (var index = 0; index < values.Length; index++)\n                values[index] = parameters.Call(\"get_Item\", index)!.Value<int>();",
-             "            var values = length is >= 2 and <= 3 ? Enumerable.Range(0, length)\n                .Select(index => parameters.Call(\"get_Item\", index)!.Value<int>()).ToArray() : Array.Empty<int>();"),
+            ("            // Card 10013 has six (CardAdvisor.FromConfig); other lengths above three fail closed there.\n            var values = length is >= 2 and <= 6 ? new int[length] : Array.Empty<int>();\n            for (var index = 0; index < values.Length; index++)\n                values[index] = parameters.Call(\"get_Item\", index)!.Value<int>();",
+             "            var values = length is >= 2 and <= 6 ? Enumerable.Range(0, length)\n                .Select(index => parameters.Call(\"get_Item\", index)!.Value<int>()).ToArray() : Array.Empty<int>();"),
             ("        var hovered = default((RuntimeObject Card, RuntimeObject Face, CardBonus? Bonus, bool Usable));\n        foreach (var candidate in candidates)\n            if (candidate.Card.Pointer == hit?.Pointer) { hovered = candidate; break; }",
              "        var hovered = candidates.FirstOrDefault(item => item.Card.Pointer == hit?.Pointer);"),
             ("            var cheaper = false;\n            if (item.Bonus is { } current)\n                foreach (var other in candidates)\n                    if (other.Usable && other.Bonus is { } otherBonus && CardAdvisor.Dominates(otherBonus, current))\n                    { cheaper = true; break; }",

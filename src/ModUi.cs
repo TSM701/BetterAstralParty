@@ -167,7 +167,7 @@ internal static partial class ModUi
         UpdateNotificationUi.Clear,
         GameUi.Stop, CardPreviewUi.Reset, BattleStatusUi.Clear, EncounterCounterUi.Clear, ShushuShieldUi.Clear,
         CharacterGuideUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, FieldZoomUi.Clear, () => FieldBuffUi.Clear("pvp-safety"), WalkDirectionUi.Clear, PlayerTabUi.Clear,
-        CharacterNameUi.RestoreAll, InputAttention.Stop, PingFocusGuard.Reset, AutoThanksUi.Clear, BattleMenuUi.Clear, FieldDiceUi.Clear, ReplayUi.Clear,
+        CharacterNameUi.RestoreAll, InputAttention.Stop, PingFocusGuard.Reset, AutoThanksUi.Clear, SendAllLikesUi.Clear, ShopBulkUi.Clear, BattleMenuUi.Clear, FieldDiceUi.Clear, ReplayUi.Clear,
         () => Plugin.Diagnostics.EndCombat(),
         () => { ClosePanel(true); GameUi.Dispose(_modal); _modal = null; }
     };
@@ -239,8 +239,10 @@ internal static partial class ModUi
         catch (Exception ex) { Compatibility.Block(UpdateNotificationUi.Feature, ex, UpdateNotificationUi.Clear); }
         try { ShushuShieldUi.PollLoads(); }
         catch (Exception ex) { Compatibility.Block(ShushuShieldUi.Feature, ex, ShushuShieldUi.ClearDisplay); }
-        DiagnosticHub.Gate(DiagnosticFeature.CoreUi, pauseGameplay ? PvpSafety.Suspended ? DiagnosticCode.PvpExcluded : DiagnosticCode.StartupWaiting : !Compatibility.Allowed("CoreUi") ? DiagnosticCode.CompatibilityBlocked : DiagnosticCode.None);
+        DiagnosticHub.Gate(DiagnosticFeature.CoreUi, pauseGameplay ? PvpSafety.Broken ? DiagnosticCode.NativeCallFailed : PvpSafety.Suspended ? DiagnosticCode.PvpExcluded : DiagnosticCode.StartupWaiting : !Compatibility.Allowed("CoreUi") ? DiagnosticCode.CompatibilityBlocked : DiagnosticCode.None);
+        // The state keeps the collector's fixed values; why it suspended is its own line (team mode, room state and map, broken).
         Plugin.Diagnostics.State("pvpSafety", pauseGameplay ? (PvpSafety.Suspended ? "suspended" : "initializing") : "active");
+        if (pauseGameplay && PvpSafety.Suspended) Plugin.Diagnostics.State("pvpSafety.reason", PvpSafety.Reason);
         if (pauseGameplay)
         {
             if (!_pvpCleaned)
@@ -250,6 +252,7 @@ internal static partial class ModUi
                     try { cleanup(); }
                     catch (Exception ex) { _pvpCleaned = false; Plugin.Diagnostics.Error("PvpSafety.cleanup", ex); }
             }
+            if (PvpSafety.Broken) TickHomeOnly();
             return;
         }
         _pvpCleaned = false;
@@ -284,7 +287,7 @@ internal static partial class ModUi
             GameUi.Tick(); Mark(1);
             if (measure) coreEnd = System.Diagnostics.Stopwatch.GetTimestamp();
             BattleMenuUi.Tick(); Mark(2);
-            AutoThanksUi.Tick(); Mark(3);
+            AutoThanksUi.Tick(); SendAllLikesUi.Tick(); ShopBulkUi.Tick(); Mark(3);
             CharacterGuideUi.Tick(); ReplayUi.Tick(); Mark(4);
             ModFont.Tick(); Mark(5);
             if (_languageRevision != ModText.Revision)
@@ -315,7 +318,7 @@ internal static partial class ModUi
             BattleStatusUi.Tick(); Mark(14);
             EncounterCounterUi.Tick(); Mark(15);
             if (measure) fieldStart = System.Diagnostics.Stopwatch.GetTimestamp();
-            FieldBuffUi.Tick(); WalkDirectionUi.Tick(); PlayerTabUi.Tick(); MonsterMoveProbe.Tick(); FightDataProbe.Tick(); Mark(16);
+            FieldBuffUi.Tick(); WalkDirectionUi.Tick(); PlayerTabUi.Tick(); MonsterMoveProbe.Tick(); FightDataProbe.Tick(); NancyProbe.Tick(); Mark(16);
             if (measure) fieldEnd = System.Diagnostics.Stopwatch.GetTimestamp();
             if (measure) statusEnd = System.Diagnostics.Stopwatch.GetTimestamp();
             try { TickSettings(); }
@@ -366,11 +369,25 @@ internal static partial class ModUi
         TickBytes[index] = GC.GetAllocatedBytesForCurrentThread();
     }
 
+    // PvpSafety.Broken: gameplay stays off, but on the home screen, where no match runs, the Mod Settings button, the settings
+    // window and the update notices keep working, so a fixed version can still be found and installed.
+    private static void TickHomeOnly()
+    {
+        try { GameUi.TickHome(); }
+        catch (Exception ex) { FailUi(ex); return; }
+        try { UpdateNotificationUi.Tick(); }
+        catch (Exception ex) { Compatibility.Block(UpdateNotificationUi.Feature, ex, UpdateNotificationUi.Clear); }
+        try { TickSettings(); }
+        catch (Exception ex) { FailSettings(ex); }
+    }
+
     internal static void FailUi(Exception ex) => Compatibility.Block("CoreUi", ex,
         UpdateNotificationUi.Clear,
         GameUi.Stop, CardPreviewUi.Reset, BattleStatusUi.Clear, EncounterCounterUi.Clear, ShushuShieldUi.Clear,
         CharacterGuideUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, FieldZoomUi.Clear,
-        () => FieldBuffUi.Clear("compatibility"), WalkDirectionUi.Clear, PlayerTabUi.Clear, CharacterNameUi.RestoreAll, BattleMenuUi.Clear, FieldDiceUi.Clear, ReplayUi.Clear,
+        () => FieldBuffUi.Clear("compatibility"), WalkDirectionUi.Clear, PlayerTabUi.Clear, CharacterNameUi.RestoreAll, BattleMenuUi.Clear, SendAllLikesUi.Clear, ShopBulkUi.Clear, FieldDiceUi.Clear, ReplayUi.Clear,
+        // As in PvpCleanup: the input-attention tray icon and the latches of features the blocked frame no longer ticks.
+        InputAttention.Stop, AutoThanksUi.Clear, PingFocusGuard.Reset,
         () => { ClosePanel(true); GameUi.Dispose(_modal); _modal = null; });
 
     private static void FailSettings(Exception error) => Compatibility.Block("SettingsUi", error,
@@ -447,7 +464,7 @@ internal static partial class ModUi
         PaintRows();
         UpdateScrollMarker();
         AnimateHelp();
-        var saved = Time.unscaledTime - _changedAt < 1.6f ? ModText.Text("✓ 저장됨") : $"BetterAstralParty {Plugin.Version}";
+        var saved = Time.unscaledTime - _changedAt < 1.6f ? ModText.Text("✓ 저장됨") : $"BetterAstralParty v{Plugin.Version}";
         if (_savedText != saved) { _savedText = saved; Labels["Saved"].Set("text", saved); }
     }
 
@@ -821,6 +838,8 @@ internal static partial class ModUi
         AddToggle("PlayerTabSkill", 440, MenuLayout.ToggleY(34));
         AddToggle("OldReplays", 440, MenuLayout.ToggleY(35));
         AddToggle("WalkDirection", 440, MenuLayout.ToggleY(36));
+        AddToggle("SendAllLikes", 440, MenuLayout.ToggleY(37));
+        AddToggle("ShopBulkBuy", 440, MenuLayout.ToggleY(38));
         TraceSettingsOpen(DiagnosticPhase.SettingsReparent);
         foreach (var (button, action) in Controls.Values)
             if (!MenuLayout.FixedControl(action)) MoveIntoSettings(button, MenuLayout.SettingY(action) + MenuLayout.ChildOffsetY(action));
@@ -1440,6 +1459,8 @@ internal static partial class ModUi
         "ShushuShield" => Plugin.ShushuShield.Value,
         "ShushuShieldRestrictions" => Plugin.ShushuShieldRestrictions.Value,
         "AutoThanks" => Plugin.AutoThanks.Value,
+        "SendAllLikes" => Plugin.SendAllLikes.Value,
+        "ShopBulkBuy" => Plugin.ShopBulkBuy.Value,
         "CharacterRoles" => Plugin.CharacterRoles.Value,
         "CharacterGuide" => Plugin.CharacterGuide.Value,
         "PlayerTab" => Plugin.PlayerTab.Value,
@@ -1787,6 +1808,8 @@ internal static partial class ModUi
             case "ShushuShield": Plugin.ShushuShield.Value = !Plugin.ShushuShield.Value; if (!Plugin.ShushuShield.Value) ShushuShieldUi.ClearDisplay(); break;
             case "ShushuShieldRestrictions": Plugin.ShushuShieldRestrictions.Value = !Plugin.ShushuShieldRestrictions.Value; if (!Plugin.ShushuShieldRestrictions.Value) ShushuShieldUi.ClearRestrictions(); break;
             case "AutoThanks": Plugin.AutoThanks.Value = !Plugin.AutoThanks.Value; break;
+            case "SendAllLikes": Plugin.SendAllLikes.Value = !Plugin.SendAllLikes.Value; break;
+            case "ShopBulkBuy": Plugin.ShopBulkBuy.Value = !Plugin.ShopBulkBuy.Value; break;
             case "CharacterRoles": Plugin.CharacterRoles.Value = !Plugin.CharacterRoles.Value; break;
             case "CharacterGuide": Plugin.CharacterGuide.Value = !Plugin.CharacterGuide.Value; break;
             case "PlayerTab": Plugin.PlayerTab.Value = !Plugin.PlayerTab.Value; break;
@@ -1933,6 +1956,7 @@ internal static partial class ModUi
         parts.Strip = NativeUi.Component(button, width - left - CapsuleWidth - 20, PillHeight);
         parts.Strip.Set("touchable", false);
         parts.Strip.Call("SetXY", left, 34f);
+        parts.Strip.Call("SetPivot", 0f, 0.5f, false); // Shrinks toward its left edge and middle (RowText).
         for (var i = 0; i < 2; i++)
         {
             var fill = Shape(parts.Strip, 0, 0, 40, PillHeight, Color.white, 10f, 10f, 10f, 10f, 1.5f, PillLine);
@@ -1992,6 +2016,11 @@ internal static partial class ModUi
                 x += width + 6;
             }
             parts.Arrow.Set("visible", p.Arrow && p.Second != null);
+            // Date versions in the channel switch role ("비공개 베타 2026.11.1-beta.2 → 릴리즈 2026.11.1", about 355 wide at 14)
+            // can outgrow the strip before the capsule: the pills shrink to fit, as long labels shrink elsewhere.
+            var room = parts.Strip.Get<float>("width");
+            var scale = x - 6 > room ? room / (x - 6) : 1f;
+            if (Math.Abs(parts.Strip.Get<float>("scaleX") - scale) > 0.001f) parts.Strip.Call("SetScale", scale, scale);
         }
         if (mode is { } m)
         {

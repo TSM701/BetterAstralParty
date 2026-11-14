@@ -65,16 +65,45 @@ internal static class GameUi
             && _menuAnchor.Get<float>("scaleY") > 0;
         var blocked = ModUi.IsOpen || WindowsReleaseCredentialInput.PromptInProgress
             || Plugin.UpdateSession?.Status == ReleaseSessionStatus.AwaitingInput
-            || _root.Call("GetTopWindow") != null || _root.Get<bool>("hasModalWindow")
+            || FocusWindow() != null || _root.Get<bool>("hasModalWindow")
             || _root.Get<bool>("modalWaiting") || _root.Get<bool>("hasAnyPopup");
         // Verified native NONE=0; a disposed team has TeamId=0 with stale MatchStatus.
         return new(true, Visible(_home), currentHome, controlsReady, blocked, match.Get<long>("TeamId"),
             room.Field("roomStateType")!.Value<int>(), logic.Get<long>("connectRoomId"));
     }
 
+    // The window that has the keys: the top of UIManager.propUpWindows. BaseWindow.OnShown pushes every window there and hands it
+    // the key events, and OnHide pops it; of the game's windows only the LoadingTipWindow and SystemTipsWindow overlays override
+    // OnShown without that. GRoot.GetTopWindow counted SystemTipsWindow, which the game never hides once a tip, notice or invite
+    // has shown, so after a matching tip every home Esc (and the shop's bulk buttons) stayed blocked for the session
+    // (reproduced 2026-11-14 on 2026.11.0-dev.4: `by=window=SystemTipsWindow`). MatchInfoWindow, the match team's floating widget,
+    // keeps the keys while the team lasts but answers none (no OnKeyDown of its own), so it covers nothing either.
+    internal static RuntimeObject? FocusWindow()
+    {
+        var windows = RuntimeObject.StaticField(RuntimeObject.FindClass("UI", "UIManager"), "_inst")?.Field("propUpWindows");
+        if (windows == null || windows.Get<int>("Count") == 0) return null;
+        var top = windows.Call("Peek");
+        return Visible(top) && top!.TypeName != "MatchInfoWindow" ? top : null;
+    }
+
+    // For diagnostics: what made the home count as covered, by type name only.
+    internal static string HomeBlockers()
+    {
+        if (_root == null) return "";
+        var parts = new List<string>();
+        if (ModUi.IsOpen) parts.Add("settings");
+        if (WindowsReleaseCredentialInput.PromptInProgress || Plugin.UpdateSession?.Status == ReleaseSessionStatus.AwaitingInput) parts.Add("signIn");
+        if (FocusWindow() is { } focus) parts.Add(FormattableString.Invariant($"window={focus.TypeName}(modal={focus.Get<bool>("modal")})"));
+        if (_root.Get<bool>("hasModalWindow")) parts.Add("modal");
+        if (_root.Get<bool>("modalWaiting")) parts.Add("modalWait");
+        if (_root.Get<bool>("hasAnyPopup")) parts.Add("popup");
+        return string.Join(", ", parts);
+    }
+
     internal static void Tick()
     {
         if (!Compatibility.Allowed("CoreUi")) return;
+        var gameplay = !_homeOnly;
         // Do not keep last frame's scene objects alive when no feature needs hit testing.
         if (_hitFrame != Time.frameCount) HitPath.Clear();
         try
@@ -95,19 +124,19 @@ internal static class GameUi
                 RuntimeObject.RequireClasses("CoreUi", ("FairyGUI", "GTextField"), ("FairyGUI", "GComponent"), ("FairyGUI", "GGraph"));
                 try { UpdateHome(); }
                 catch (Exception ex) { FailHomeMenu(ex); }
-                if (Compatibility.Allowed("Enabled"))
+                if (gameplay && Compatibility.Allowed("Enabled"))
                 {
                     try { UpdateFight(); }
                     catch (Exception ex) { Compatibility.Block("Enabled", ex, ClearAdvice); }
                 }
             }
-            if (_root != null) CharacterNameUi.Tick(_root);
+            if (gameplay && _root != null) CharacterNameUi.Tick(_root);
             if (Compatibility.Allowed("HomeMenu"))
             {
                 try { FollowHomeMenu(); HandleMenuInput(); }
                 catch (Exception ex) { FailHomeMenu(ex); }
             }
-            if (Compatibility.Allowed("Enabled"))
+            if (gameplay && Compatibility.Allowed("Enabled"))
             {
                 try
                 {
@@ -141,6 +170,16 @@ internal static class GameUi
             }
         }
     }
+
+    // The home menu alone (root, home detection, the Mod Settings button and its input) while gameplay features stay off
+    // because the PvP reader is broken (PvpSafety.Broken): the home screen runs no match.
+    internal static void TickHome()
+    {
+        _homeOnly = true;
+        try { Tick(); }
+        finally { _homeOnly = false; }
+    }
+    private static bool _homeOnly;
 
     // The native drag in progress, or null when there is none or FairyGUI left a stale one behind (see DragState).
     internal static RuntimeObject? LiveDrag()
@@ -749,15 +788,12 @@ internal static class GameUi
         var incomingBonus = PublicCombatEffects.Read(fight.Get("defenderData"), "defender", fight.Get("attackerData"));
         if (incomingBonus == null) { CardDiceUi.Clear(); return; }
         var defenderPlayer = fight.Get("defenderData")?.Get<int>("characterType") == 1;
-        // Rolled card values (user-decided 2026-11-11) only for a viewer with nothing left to choose: a spectator, or the local
-        // attacker once its cards are locked (step 4 on). A local defender keeps the public ranges until its choice.
+        // Who may see the rolled card values and a played Powerful Attack is CardKoMinimum.SeesRolled / SeesBoost (self-tested).
         var viewer = ui.Field("playerState")!.Get<int>("selectedIndex");
-        var rolled = viewer == 2 || viewer == 0 && step >= 4 ? ServerFight.Rolled(director) : null;
+        var rolled = CardKoMinimum.SeesRolled(viewer, step) ? ServerFight.Rolled(director) : null;
         if (rolled is { } seen && Plugin.Diagnostics.IsRecording)
             Plugin.Diagnostics.State("koMinimum.rolled", $"role={viewer}; step={step}; attack={seen.Attack?.ToString() ?? "bounds"}; defense={seen.Defense?.ToString() ?? "bounds"}");
-        // Powerful Attack (card 10010) for the attacker who used it and for spectators (user-requested 2026-11-11); a local
-        // defender sees which cards were used only in the result show, so its views keep the native ATK range.
-        var boost = viewer is 0 or 2 ? ServerFight.Boost(director) : default;
+        var boost = CardKoMinimum.SeesBoost(viewer) ? ServerFight.Boost(director) : default;
         if (boost.Count > 0 && Plugin.Diagnostics.IsRecording)
             Plugin.Diagnostics.State("koMinimum.boost", $"role={viewer}; step={step}; percent={boost.Percent}; count={boost.Count}");
         if (step is 3 or 4 || spectatorCards)

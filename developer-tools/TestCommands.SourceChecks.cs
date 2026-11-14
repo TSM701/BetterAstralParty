@@ -250,7 +250,7 @@ internal static partial class TestCommands
         var trace = Regex.Match(source, @"(?s)private static void TraceInput\(.*?(?=    private static bool ToggleEnabled)");
         Check(trace.Success && trace.Value.Contains("Plugin.Diagnostics.Write(", StringComparison.Ordinal) && !Regex.IsMatch(trace.Value, @"(?:\.Call\(|\.Get<|\.Get\(|\.Field\()"), "Sampled trace reads no extra native objects");
         var features = new[] { "Enabled", "Details", "KoMinimum", "CardPopups", "BattleStatus", "ShushuShield", "FieldBuffs", "Names", "HandLayout", "FieldZoom",
-            "ShushuShieldRestrictions", "AutoThanks", "CharacterRoles", "CharacterGuide", "IndicatorFade", "IndicatorHide", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "DiceLock", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "ShootingStarShow", "KoCardPreview", "KoSpectator", "StatusHand", "StatusEffects", "CounterIcons", "ShushuMaster", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill", "OldReplays", "WalkDirection" };
+            "ShushuShieldRestrictions", "AutoThanks", "CharacterRoles", "CharacterGuide", "IndicatorFade", "IndicatorHide", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "DiceLock", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "ShootingStarShow", "KoCardPreview", "KoSpectator", "StatusHand", "StatusEffects", "CounterIcons", "ShushuMaster", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill", "OldReplays", "WalkDirection", "SendAllLikes", "ShopBulkBuy" };
         for (var row = 0; row < features.Length; row++) Check(source.Contains($"AddToggle(\"{features[row]}\", 440, MenuLayout.ToggleY({row}));", StringComparison.Ordinal), "Feature right column: " + features[row]);
         var general = new[] { "UpdateChannel", "Update", "UpdateDownload", "AutoUpdate", "UpdateAuth", "UpdateSignOut", "DiagnosticsOpen", "DiagnosticsCollect",
             "SuppressNotices", "UpdateNotifications", "SettingsAutoKeep", "SettingsSave", "SettingsLoad", "SettingsFolder", "SettingsReset" };
@@ -260,7 +260,7 @@ internal static partial class TestCommands
             "if (!MenuLayout.FixedControl(action)) MoveIntoSettings(button, MenuLayout.SettingY(action)", "MoveIntoSettings(Labels[action], MenuLayout.SettingY(action) + MenuLayout.SliderLabelOffsetY(action));", "Labels[\"Saved\"] = NativeUi.Label(_sheet, \"\", 675, MenuLayout.FooterY + 7, 315, 30, 18);",
             "Labels[\"HelpTitle\"] = NativeUi.Label(helpArea, \"\", 18, 14, 324, 40, 27);", "Labels[\"HelpTitle\"].Set(\"singleLine\", true);", "Labels[\"HelpTitle\"].Set(\"autoSize\", 3);",
             "Labels[\"Saved\"].Set(\"singleLine\", true);", "Labels[\"Saved\"].Set(\"autoSize\", 3);",
-            "var saved = Time.unscaledTime - _changedAt < 1.6f ? ModText.Text(\"✓ 저장됨\") : $\"BetterAstralParty {Plugin.Version}\";",
+            "var saved = Time.unscaledTime - _changedAt < 1.6f ? ModText.Text(\"✓ 저장됨\") : $\"BetterAstralParty v{Plugin.Version}\";",
             "if (_savedText != saved) { _savedText = saved; Labels[\"Saved\"].Set(\"text\", saved); }" }, "Settings geometry and footer");
         foreach (var label in new[] { "Saved", "HelpTitle" }) Check(Regex.Matches(source, "Labels\\[\"" + label + "\"\\]\\.Set\\(\"(?:singleLine|autoSize)\"").Count == 2, label + " fitting initialized once");
         Contains(ReadSource(context, "src/MenuLayout.cs"), new[] { "ToggleY(int row) => 125 + 65 * row;", "ToggleHeight = 60;", "Math.Min((width - 48f) / Width, (height - 48f) / windowHeight)" }, "Menu screen fit");
@@ -297,7 +297,7 @@ internal static partial class TestCommands
 
     private static void SettingsPreferenceInventory(DevContext context, string source, string plugin)
     {
-        var added = new[] { "ShushuShieldRestrictions", "AutoThanks", "CharacterRoles", "CharacterGuide", "IndicatorFade", "IndicatorHide", "DiceLock", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications", "PlayerTabSkill", "OldReplays" };
+        var added = new[] { "ShushuShieldRestrictions", "AutoThanks", "CharacterRoles", "CharacterGuide", "IndicatorFade", "IndicatorHide", "DiceLock", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications", "PlayerTabSkill", "OldReplays", "SendAllLikes", "ShopBulkBuy" };
         var layout = ReadSource(context, "src/MenuLayout.cs"); var text = ReadSource(context, "src/ModText.cs");
         var enabled = MethodFragment(source, "private static bool ToggleEnabled"); var apply = MethodFragment(source, "private static void ApplyCore");
         var help = layout[layout.IndexOf("internal static (string Title, string Body) Help(", StringComparison.Ordinal)..];

@@ -292,6 +292,32 @@ internal static class TransactionFixture
         }
         Console.WriteLine("In-process apply: loaded plugin renamed aside and replaced; next launch uses the new version.");
     }
+    // The plugin path is empty only between its own two renames (2026-11-13 review): a second game window that starts
+    // right after the plugin moved aside stops the apply at the next file, with the new plugin already in place, so the
+    // next start still runs BAP and its startup recovery.
+    private static void InProcessGap(string baseDirectory, Package package, byte[] inert)
+    {
+        var root = Install(baseDirectory, "in-process-gap", package, inert); var water = File.ReadAllBytes(Path.Combine(root, UpdateTransaction.HighWaterPath));
+        var plugin = Path.Combine(root, UpdateTrust.PluginPath); var index = Array.IndexOf(InstallReceipt.Owned, UpdateTrust.PluginPath);
+        Process? other = null; ApplySafetyException? stop = null;
+        try {
+            try {
+                using (var fence = new WindowsFileFence(root))
+                    UpdateTransaction.Apply(fence, package.Descriptor, "transaction-fixture", package.Signature, package.Zip, package.Trust, Selection, label => {
+                        if (label == "after:backup-" + index.ToString(CultureInfo.InvariantCulture)) other = Process.Start(new ProcessStartInfo { FileName = Path.Combine(root, "AstralParty_INT.exe"),
+                            Arguments = "--wait-for-release", WorkingDirectory = root, UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true });
+                    }, inProcess: true);
+            }
+            catch (ApplySafetyException error) { stop = error; }
+            Check(other != null && stop?.Failure == ApplyFailure.ProcessBusy, "a second game window that starts mid-apply stops the apply");
+            Check(File.Exists(plugin) && UpdateTrust.Hash(File.ReadAllBytes(plugin)) == UpdateTrust.Hash(package.New[UpdateTrust.PluginPath]),
+                "the plugin is installed right after it moved aside, before the next process check");
+        }
+        finally { if (other != null) { try { other.StandardInput.WriteLine("release"); other.WaitForExit(10000); } finally { other.Dispose(); } } }
+        Check(Recover(root, package) == TransactionResult.RolledBack, "the stopped apply rolls back once the other window has closed");
+        Verify(root, package, false, water);
+        Console.WriteLine("In-process gap: a window started between the plugin renames found the new plugin in place; rollback restored the original.");
+    }
     // Finished operations and acknowledged faults leave nothing in the game root; records earlier versions archived
     // there are removed only when they are this root's v5 records, and anything unverified stays.
     private static void FinishedRecords(string baseDirectory)
@@ -460,7 +486,7 @@ internal static class TransactionFixture
             if (!sharedOnly) { var probe = InstalledPluginMetadata.Read(File.ReadAllBytes(args[4])); Check(probe.UpdateProtocol == 5 && probe.SettingsSchema == 1 && UpdateVersion.Parse(probe.Version).CompareTo(UpdateVersion.Parse("1.4.0-0")) >= 0, "actual compiled supported DLL metadata read only"); }
             using (var package = new Package(oldPlugin, newPlugin, inert)) {
                 SharedLoaderPreservation(directory, package, inert);
-                if (!sharedOnly) { ChannelMatrix(directory, package, inert); SameChannelPublic(directory, package, inert); Boundaries(directory, package, inert); InProcess(directory, package, inert); RecoveryFailures(directory, package, inert); ChildRecovery(directory, package, inert); FinishedRecords(directory); }
+                if (!sharedOnly) { ChannelMatrix(directory, package, inert); SameChannelPublic(directory, package, inert); Boundaries(directory, package, inert); InProcess(directory, package, inert); InProcessGap(directory, package, inert); RecoveryFailures(directory, package, inert); ChildRecovery(directory, package, inert); FinishedRecords(directory); }
             }
             if (!sharedOnly) foreach (var metadata in new[] { new byte[] { 255 }, new byte[65537] }) {
                 using var package = new Package(oldPlugin, newPlugin, inert, metadata);

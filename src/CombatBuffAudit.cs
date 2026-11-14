@@ -9,6 +9,7 @@ internal static class CombatBuffAudit
     {
         10006, 10012, 1071101, 1071102, 1101101, 1140101, 1140102, 1250101, 1250201, 1251201, 1261101, 1291202,
         2000801, 4000301, 4000401, 5006001, 10141101, 10261101, 10331101, 10531201, 10551101, 10591101, 10671302,
+        1201302,
     };
 
     // Description audit (2026-10-21) of the 159 shown buffs in the 2026-09-26 table snapshot: the original STRBuff
@@ -28,9 +29,13 @@ internal static class CombatBuffAudit
     // 10171101), 1261301 觉醒 a count, 1301202 金鳞 DEF per stack, 1301203 金鲤化龙 ATK per 金鳞 stack, 1301205 葫芦饮 ATK +3,
     // 1301207 仙酿 ATK +4, 10750101 救急援助 ATK/DEF +2, 5007503 自适应核心 ATK +2, 5009602 超强精力 ATK per stack (a stack
     // lost when challenged), 8000002 圣剑英雄 end-of-turn damage outside the hit, 3081102 and 3081202 出牌数+1 card plays.
-    // Not here, still not counted: 20000 无敌, 20001 格挡, 20002 坚固, 20004 闪身, 1201302 (damage -1 from monsters beyond
-    // two panels), 3002001 (next hit -10), 5007502/5008202/8000001 (damage taken -1/-1/-2), 8000501 (ignores DEF) and
-    // 3080101/3080102 (no text).
+    // Not here, still not counted: 20000 无敌, 20001 格挡, 20002 坚固, 20004 闪身, 3002001 (next hit -10),
+    // 5007502/5008202/8000001 (damage taken -1/-1/-2), 8000501 (ignores DEF) and 3080101/3080102 (no text). 1201302 (damage
+    // -1 from monsters beyond two panels) is modeled since 2026-11-14.
+    // 2026-11-14 (user-requested): 10460101 孔雀开屏 (copper peacock 1046's skill 104601), "ATK +2 and DEF +2 per stack more
+    // than the peacock's while fighting it". The bonus is in the public totals the mod reads: in the 2026-11-14 logs a hero
+    // with 14 stacks showed ATK 32 against the peacock at 6 stacks and 42 at 1 (+10 for five stacks), and the server's
+    // damage equalled the model in all 9 hits with it shown.
     internal static readonly HashSet<int> Neutral = new()
     {
         10004, 10005, 10007, 10008, 10011, 10013, 10014, 201002, 201102, 210102,
@@ -47,6 +52,7 @@ internal static class CombatBuffAudit
         3081104, 5008702, 8000101, 10711102, 10711103, 10721101, 10741101,
         1211201, 1240202, 1241201,
         20003, 1261301, 1301202, 1301203, 1301205, 1301207, 10750101, 5007503, 5009602, 8000002, 3081102, 3081202,
+        10460101,
     };
 
     internal static bool Counted(int id) => Modeled.Contains(id) || Neutral.Contains(id);

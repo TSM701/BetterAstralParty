@@ -25,13 +25,15 @@ internal static class HomeEscQuit
         if (!Compatibility.Allowed(Feature)) return;
         var escape = Input.GetKeyDown(KeyCode.Escape);
         if (escape && _ok != null && Dismiss()) return;
-        // Idle, not the toast's Eligible: the home's entrance motion (Cut_in, touch lock) runs for seconds after every return
+        // QuitIdle, not the toast's Eligible: the home's entrance motion (Cut_in, touch lock) runs for seconds after every return
         // home, and the message box sits above it. Measured 2026-11-13: an Esc 1.5 and 3.5 s after leaving the card book did nothing.
+        // A match team does not stop it (user-decided 2026-11-14).
         var home = GameUi.NotificationHome();
-        var idle = home.Idle && !UpdateNotificationUi.Open;
+        var idle = home.QuitIdle && !UpdateNotificationUi.Open;
         if (State.Step(Time.frameCount, idle, escape)) Ask();
         // Why an Esc on the home did not ask (a window it closed, a team or room, the update notice); one line per press.
-        else if (escape && !idle && GameUi.HomeAvailable) Plugin.Diagnostics.Write("homeEscQuit.skip " + home.Why + "; notice=" + UpdateNotificationUi.Open);
+        else if (escape && !idle && GameUi.HomeAvailable)
+            Plugin.Diagnostics.Write("homeEscQuit.skip " + home.Why + "; notice=" + UpdateNotificationUi.Open + "; by=" + GameUi.HomeBlockers());
     }
 
     private static RuntimeObject? MessageBox() => RuntimeObject.StaticField(RuntimeObject.FindClass("UI", "UIManager"), "_inst")?.Get("messageBox");

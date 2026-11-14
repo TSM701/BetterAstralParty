@@ -83,6 +83,7 @@ static class GameUi {
     static void ClearAdvice() { Probe.Visit("advice.clear"); Probe.LanguageStep("Enabled"); }
     static void ClearAdviceDisplay() { Probe.Visit("advice.clear"); Probe.LanguageStep("Enabled"); }
     static void HideAdvice() { }
+    static bool _homeOnly = false; // GameUi.TickHome sets it; this fixture runs the gameplay frame only.
 __FAIL_HOME__
 __CLEAR_HOME__
 __REFRESH_LANGUAGE__

@@ -14,6 +14,8 @@ internal static class FieldMonsterPlates
     private const float PlateLift = 200f, MarkerLift = 120f;
     private static readonly List<RuntimeObject> Adopted = new();
     private static readonly List<(RuntimeObject Ui, Vector2 Owner)> Placed = new();
+    // Plates whose touchable or buff mark the mod turned off while the local player moves; Clear turns back only these.
+    private static readonly HashSet<IntPtr> Untouchable = new(), BuffHidden = new();
     // Native pair rule of UpdateAttrInfoPosition (overlapping plates split the vertical overlap) on rectangles read once.
     private static readonly List<(float X, float Y, float Width, float Height)> Rects = new();
     private static readonly List<float> Before = new();
@@ -94,7 +96,11 @@ internal static class FieldMonsterPlates
             // shortcut: native also fades a plate to 0.5 over a movement arrow; here every plate yields input while
             // the local player moves, like the hero plates. Mirror the arrow test if the fade is missed in game.
             var touchable = !shown || !stepping;
-            if (ui.Get<bool>("touchable") != touchable) ui.Set("touchable", touchable);
+            if (ui.Get<bool>("touchable") != touchable)
+            {
+                ui.Set("touchable", touchable);
+                if (touchable) Untouchable.Remove(ui.Pointer); else Untouchable.Add(ui.Pointer);
+            }
             if (ui.Get<float>("alpha") != 1f) ui.Set("alpha", 1f);
             if (!shown) continue;
             ui.Call("UpdateOffset", target);
@@ -109,7 +115,11 @@ internal static class FieldMonsterPlates
         {
             var point = _layer!.Result<Vector2, Vector2>("TransformPoint", owner, ui) - Vector2.up * (MarkerLift * scale);
             ui.Call("UpdateGuideLine", point);
-            if (RuntimeObject.GetOf<bool>(ui.FieldPointer("graph_ShowBuff"), "visible") == stepping) ui.Field("graph_ShowBuff")!.Set("visible", !stepping);
+            if (RuntimeObject.GetOf<bool>(ui.FieldPointer("graph_ShowBuff"), "visible") == stepping)
+            {
+                ui.Field("graph_ShowBuff")!.Set("visible", !stepping);
+                if (stepping) BuffHidden.Add(ui.Pointer); else BuffHidden.Remove(ui.Pointer);
+            }
         }
     }
 
@@ -128,10 +138,16 @@ internal static class FieldMonsterPlates
         var parentAlive = _parent != null && !_parent.Get<bool>("isDisposed");
         foreach (var ui in Adopted)
         {
-            try { if (parentAlive && !ui.Get<bool>("isDisposed")) _parent!.Call("AddChild", ui); }
+            try
+            {
+                if (ui.Get<bool>("isDisposed")) continue;
+                if (Untouchable.Contains(ui.Pointer)) ui.Set("touchable", true);
+                if (BuffHidden.Contains(ui.Pointer)) ui.Field("graph_ShowBuff")?.Set("visible", true);
+                if (parentAlive) _parent!.Call("AddChild", ui);
+            }
             catch (Exception ex) { failure ??= ex; }
         }
-        Adopted.Clear(); Placed.Clear();
+        Adopted.Clear(); Placed.Clear(); Untouchable.Clear(); BuffHidden.Clear();
         try { GameUi.Dispose(_sentinel); } catch (Exception ex) { failure ??= ex; }
         try { GameUi.Dispose(_layer); } catch (Exception ex) { failure ??= ex; }
         _sentinel = _layer = _parent = _battleUi = null;

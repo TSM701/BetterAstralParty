@@ -95,7 +95,10 @@ internal static class NativeCoverage
     internal static IEnumerable<string> RuntimeLogs()
     {
         var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BetterAstralParty", "Runtime", "Logs");
-        return new[] { "previous-4.log", "previous-3.log", "previous-2.log", "previous-overflow.log", "previous.log", "current-overflow.log", "current.log" }
+        // A long session's older chunks: -overflow-7 (oldest) .. -overflow (newest), as DiagnosticLog.OverflowChunks keeps them.
+        IEnumerable<string> Chunks(string session) => Enumerable.Range(1, 7).Reverse().Select(chunk => chunk == 1 ? session + "-overflow.log" : $"{session}-overflow-{chunk}.log");
+        return new[] { "previous-4.log", "previous-3.log", "previous-2.log" }.Concat(Chunks("previous")).Append("previous.log")
+            .Concat(Chunks("current")).Append("current.log")
             .Select(name => Path.Combine(folder, name)).Where(File.Exists);
     }
 

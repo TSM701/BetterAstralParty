@@ -25,6 +25,7 @@ namespace BetterAstralParty
             : key == "get_Item" ? ((RuntimeObject[])Scalar!)[(int)args[0]] : Get(key);
         internal static IntPtr FindClass(string ns, string name) => IntPtr.Zero;
         internal static RuntimeObject? StaticCall(IntPtr type, string name) => Tables.GetValueOrDefault(name);
+        internal static RuntimeObject? StaticField(IntPtr type, string name) => Tables.GetValueOrDefault(name);
     }
 }
 
@@ -322,6 +323,21 @@ internal static class PublicCombatEffectsCheck
                 Check(CombatAdvisor.FinalDamage(hp, 8+a, d, true, a, effect) == expected, "floor all dodge dice");
             }
             Console.WriteLine("QA/local replay: 9 confirmed outcomes, 5 conditional HP-floor outcomes, 648 floor/dodge checks passed.");
+            // Nancy's 防火墙 (1201302): -1 only from a monster beyond two panels, by the game's CheckDistance.
+            RuntimeObject Actor(int type, int? land, params RuntimeObject[] buffs) => RuntimeObject.Node(("characterType", RuntimeObject.Number(type)),
+                ("CharacterInst", land == null ? RuntimeObject.Node() : RuntimeObject.Node(("standLand", RuntimeObject.Node(("Id", RuntimeObject.Number(land.Value)))))),
+                ("buffContainer", RuntimeObject.Node(("GetShowBuffs", RuntimeObject.Node(("Item1", RuntimeObject.List(buffs)), ("Item2", RuntimeObject.List()))))));
+            RuntimeObject.Tables["_inst"] = RuntimeObject.Node(("CheckDistance", RuntimeObject.Number(false)));
+            var nancy = Actor(1, 7, Buff(1201302));
+            Check(PublicCombatEffects.Read(nancy, "test.firewall", Actor(2, 30))!.Value.Bonus == -1, "firewall -1 from a far monster");
+            Check(PublicCombatEffects.Read(nancy, "test.firewall", Actor(2, 7)) == new HitModifiers(), "firewall same land unchanged");
+            Check(PublicCombatEffects.Read(nancy, "test.firewall", Actor(1, 30)) == new HitModifiers(), "firewall ignores players");
+            var unread = PublicCombatEffects.Read(nancy, "test.firewall", Actor(2, null))!.Value;
+            Check(unread.Bonus == 0 && unread.Unknown.Count == 1 && unread.Unknown.First == 1201302, "firewall without lands stays not counted");
+            Check(PublicCombatEffects.Read(Actor(2, 30), "test.firewall", nancy) == new HitModifiers(), "firewall on the attacker changes nothing");
+            RuntimeObject.Tables["_inst"] = RuntimeObject.Node(("CheckDistance", RuntimeObject.Number(true)));
+            Check(PublicCombatEffects.Read(nancy, "test.firewall", Actor(2, 30)) == new HitModifiers(), "firewall within two panels unchanged");
+            RuntimeObject.Tables.Remove("_inst");
             foreach (var stacks in new[] { 0, 1, 2, 6 })
             {
                 Check(ReadFrom(129, Buff(1291202, stacks)) == new HitModifiers(stacks), "Sykes erosion uses existing stacks");

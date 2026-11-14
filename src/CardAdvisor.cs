@@ -7,6 +7,8 @@ public readonly record struct CardBonus(bool Attack, int Min, int Max, int Cost)
     public bool PreventCounter { get; init; }
     // Card 10010: this fight's final ATK (after the die) +N % (FinalBoost).
     public int FinalPercent { get; init; }
+    // Card 10013: the defender's DEF -N for this hit (an attack card's debuff on its target).
+    public int TargetDefense { get; init; }
 }
 public readonly record struct PreRollCombat(int MapType, int Hp, int AttackMin, int AttackMax,
     int DefenseMin, int DefenseMax)
@@ -32,6 +34,13 @@ public static class CardAdvisor
     public static CardBonus? FromConfig(int id, int effectType, int cardType, int[] parameters,
         int buffCount, int cardCount, int cost)
     {
+        // Card 10013 (Mamushi's 龙之咆哮, what 10012 becomes in her dragon form): Params [ATK min, ATK max, counter
+        // prevention, buff 1261203 on the target, its move -9, its DEF -3], STRBuff 1261203 "DEF -3, move -9". Played on
+        // 2026-11-14: ATK 42 -> 45 and the monster's DEF 4 -> 1, and the server's totals agreed (47 = 45 + die 2, 4 = 1 + die 3).
+        if (id == 10013 && effectType == 1 && cardType == 1 && buffCount == 0 && cardCount == 0 && parameters.Length == 6
+            && parameters[2] is 0 or 1 && parameters[3] == 1261203 && parameters[5] is >= -100 and <= 0 && cost is >= 0 and <= 20)
+            return parameters[0] >= 0 && parameters[1] >= parameters[0] && parameters[1] <= 100
+                ? new CardBonus(true, parameters[0], parameters[1], cost) { PreventCounter = parameters[2] == 1, TargetDefense = -parameters[5] } : null;
         if (effectType is not (1 or 2) || cardType != effectType || buffCount != 0 || cardCount != 0
             || parameters.Length is < 2 or > 3 || cost is < 0 or > 20) return null;
         // Native TutorialLogic.CalFightCardValue: first two values are additive min/max.
@@ -82,13 +91,20 @@ public static class CardAdvisor
 
     public static bool Dominates(CardBonus cheaper, CardBonus candidate) =>
         cheaper.Attack == candidate.Attack && cheaper.Cost < candidate.Cost && cheaper.Min >= candidate.Max
-        && (!candidate.PreventCounter || cheaper.PreventCounter) && cheaper.FinalPercent >= candidate.FinalPercent;
+        && (!candidate.PreventCounter || cheaper.PreventCounter) && cheaper.FinalPercent >= candidate.FinalPercent
+        && cheaper.TargetDefense >= candidate.TargetDefense;
+
+    // The defender's DEF after an attack card's debuff. Whether the server stops it at 0 is not observed: clamp gives
+    // the stopped value (never above the DEF before), and both rules bound every outcome.
+    internal static int LoweredDefense(int defense, int lowered, bool clamp) =>
+        clamp ? Math.Max(defense - lowered, Math.Min(defense, 0)) : defense - lowered;
 
     public static CardImpact? Calculate(PreRollCombat input, CardBonus card)
     {
-        if (!Valid(input) || !input.Modifiers.PreRollDiceKnown || card.Min < 0 || card.Max < card.Min || card.Max > 100 || card.Cost is < 0 or > 20)
+        if (!Valid(input) || !input.Modifiers.PreRollDiceKnown || card.Min < 0 || card.Max < card.Min || card.Max > 100 || card.Cost is < 0 or > 20
+            || card.TargetDefense is < 0 or > 100)
             return null;
-        if (card.PreventCounter && !card.Attack) return null;
+        if ((card.PreventCounter || card.TargetDefense > 0) && !card.Attack) return null;
         // ponytail: bounded exhaustive stat ranges; add a closed-form solver if wider ranges are needed.
         if ((long)(input.AttackMax - input.AttackMin + 1) * (input.DefenseMax - input.DefenseMin + 1)
             * (card.Max - card.Min + 1) > 20000) return null;
@@ -114,12 +130,15 @@ public static class CardAdvisor
         for (var scenario = 0; scenario < 2; scenario++)
         // Both candidate rules of a final-ATK boost bound the result, each applied before and after the card alike.
         for (var rule = 0; rule < (boosted.Count > 0 ? 2 : 1); rule++)
+        // A DEF debuff on the target bounds both the stopped-at-0 and the unstopped rule.
+        for (var clamp = 0; clamp < (card.TargetDefense > 0 ? 2 : 1); clamp++)
         {
             var dodge = scenario != 0;
             var before = Stats(attack, defense, dodge, input.Boost, rule == 1);
+            var lowered = LoweredDefense(defense, card.TargetDefense, clamp == 1);
             for (var bonus = card.Min; bonus <= card.Max; bonus++)
             {
-                var after = Stats(attack + (card.Attack ? bonus : 0), defense + (card.Attack ? 0 : bonus), dodge, boosted, rule == 1);
+                var after = Stats(attack + (card.Attack ? bonus : 0), card.Attack ? lowered : defense + bonus, dodge, boosted, rule == 1);
                 var sign = card.Attack ? 1 : -1;
                 var damage = sign * (after.ExpectedDamage - before.ExpectedDamage);
                 var ko = sign * (after.KnockoutChance - before.KnockoutChance);

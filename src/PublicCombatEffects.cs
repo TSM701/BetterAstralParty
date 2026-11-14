@@ -55,8 +55,17 @@ internal static class PublicCombatEffects
             // A stacking buff is one icon with a count. Card 20008 (Berserk) makes a new buff each time it is played, and
             // each adds: 2026-11-06, a hero with two shown took 8 from ATK 14 against DEF 8.
             if (!applied.Add(id) && id != 2000801) continue;
+            var firewall = 0;
+            if (id == 1201302)
+            {
+                // STRBuff 1201302 (Nancy's 防火墙): ATK +2 and DEF +2, already in the native totals, and "damage taken from
+                // monsters more than two panels away -1". Lands that cannot be read keep it not counted.
+                if (FarMonster(player, source) is not { } far) { unknown.Add(id); continue; }
+                firewall = far ? -1 : 0;
+            }
             int? value = id switch
             {
+                1201302 => firewall,
                 2000801 => Parameter("Card", 20008, 3, 4, id),
                 1071101 => Parameter("Skill", 10712, 0, 1, id),
                 // Skill 10711's -3 shield got its own buff in the 2026-10 tables; not the Shushu shield (no Dodge override).
@@ -262,6 +271,21 @@ internal static class PublicCombatEffects
         var shown = ids.Take(4).ToArray();
         int At(int index) => index < shown.Length ? shown[index] : 0;
         return new(At(0), At(1), At(2), At(3), ids.Count);
+    }
+
+    // Whether the actor dealing the hit is a monster more than two panels from the one taking it; a player is never one.
+    // "Within two panels" is the game's own LandManager.CheckDistance(from, to, 2, 0), the range test cards use; it walks
+    // neighbours only, so the same land is checked here. null: a land or the distance cannot be read.
+    private static bool? FarMonster(RuntimeObject? target, RuntimeObject? source)
+    {
+        var type = source?.Get("characterType")?.Value<int>();
+        if (type == null) return null;
+        if (type != 2) return false;
+        static int? Land(RuntimeObject? actor) => actor?.Field("CharacterInst")?.Get("standLand")?.Get<int>("Id");
+        if (Land(target) is not { } from || Land(source) is not { } to) return null;
+        if (from == to) return false;
+        var within = RuntimeObject.StaticField(RuntimeObject.FindClass("Core.Unit", "LandManager"), "_inst")?.Call("CheckDistance", from, to, 2, 0);
+        return within == null ? null : !within.Value<bool>();
     }
 
     private static int? ErosionBonus(RuntimeObject? source, int stacks)

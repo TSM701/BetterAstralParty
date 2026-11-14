@@ -11,7 +11,7 @@ public sealed class Plugin : BasePlugin
 {
     public const string Guid = "kr.betterastralparty.mod";
     public const string Name = "BetterAstralParty";
-    public const string Version = "1.9.1-dev.3";
+    public const string Version = "2026.11.0-dev.5";
     public const int InstallBundleProtocol = 1;
     public const string UpdateProtocol = "5";
     public const string SettingsSchema = "1";
@@ -27,6 +27,8 @@ public sealed class Plugin : BasePlugin
     internal static ConfigEntry<bool> ShushuShield { get; private set; } = null!;
     internal static ConfigEntry<bool> ShushuShieldRestrictions { get; private set; } = null!;
     internal static ConfigEntry<bool> AutoThanks { get; private set; } = null!;
+    internal static ConfigEntry<bool> SendAllLikes { get; private set; } = null!;
+    internal static ConfigEntry<bool> ShopBulkBuy { get; private set; } = null!;
     internal static ConfigEntry<bool> CharacterGuide { get; private set; } = null!;
     internal static ConfigEntry<bool> PlayerTab { get; private set; } = null!;
     internal static ConfigEntry<bool> PlayerTabHand { get; private set; } = null!;
@@ -173,7 +175,7 @@ public sealed class Plugin : BasePlugin
         VisibleCombatAdvisor.PveClassifier = RuntimeObject.IsPve;
         LoadStage(DiagnosticPhase.BootstrapGate);
         Logger = Log;
-        if (!UpdateStartup.Recover(Path.GetDirectoryName(Paths.BepInExRootPath)!, Version, Updating.UpdateTrust.Production())) { StartupGuard.Stage("BootstrapGate", "Failed"); StartupGuard.Stopped(); return; }
+        if (!UpdateStartup.Recover(Path.GetDirectoryName(Paths.BepInExRootPath)!, Version, Updating.UpdateTrust.Production())) { StartupGuard.Stage("BootstrapGate", "Failed"); StartupGuard.Stage("SafeModeNotice", "Recovery" + UpdateStartup.Stop); SafeModeNotice.Tell(SafeModeNotice.Recovery(UpdateStartup.Stop)); StartupGuard.Stopped(); return; }
         DiagnosticHub.Stage(DiagnosticFeature.Loader, DiagnosticPhase.BootstrapGate, DiagnosticOutcome.Completed);
         StartupGuard.Stage("BootstrapGate");
         LoadStage(DiagnosticPhase.Configuration);
@@ -202,6 +204,8 @@ public sealed class Plugin : BasePlugin
         ShushuShield = Config.Bind("화면", "슈슈 쉴드 표시", BattleStatus.Value, "[설정 창: 슈슈 쉴드 효과 / Settings: Shiyu-Shiyu Shield Effect] 전투 중 캐릭터에 슈슈 쉴드 효과를 표시합니다. / Shows Shiyu-Shiyu Shield effects on combat characters.");
         ShushuShieldRestrictions = Config.Bind("화면", "슈슈 쉴드 방어 제한", ShushuShield.Value, "[설정 창: 슈슈 쉴드 방어 잠금 / Settings: Shiyu-Shiyu Shield Defend Lock] 쉴드가 있는 내가 방어자이면 방어 버튼·방어 카드를 잠급니다. / Locks Defend and defense cards when you are the shielded defender.");
         AutoThanks = Config.Bind("편의", "자동 감사합니다", true, "[설정 창: 감사합니다 자동 전송 / Settings: Auto Thanks] 게임 기본 감사합니다 추천을 추천마다 한 번 전송합니다. / Confirm each native Thanks recommendation at most once.");
+        SendAllLikes = Config.Bind("편의", "좋아요 일괄 전송", true, "[설정 창: 좋아요 일괄 전송 / Settings: Send All Likes] 게임 결과 화면의 확인 버튼 위 버튼을 누르면 다른 플레이어 모두에게 좋아요를 보냅니다. / A button above Confirm on the results screen sends likes to every other player when pressed.");
+        ShopBulkBuy = Config.Bind("편의", "스타 코인 상점 일괄 구매", true, "[설정 창: 상점 일괄 구매 / Settings: Shop Bulk Purchase] 스타 코인 상점 카드 아래에 무료 일괄 수령과 일괄 구매 버튼을 둡니다. 일괄 구매는 상품 목록에서 고른 상품을 한 번에 사고, 무료 일괄 수령은 무료 상품을 바로 받습니다. / Adds Claim All Free and Bulk Buy under the Star Coin Shop cards: Bulk Buy buys the goods ticked in its list at once, Claim All Free takes the free goods.");
         CharacterGuide = Config.Bind("화면", "캐릭터 준비 설명", true, "[설정 창: 준비 화면 스킬 설명 / Settings: Skill Info in Preparation] 준비 화면의 초상화 호버에 공개 스킬·잠재력 설명을 표시합니다. / Public character skill and potential descriptions on preparation portraits.");
         PlayerTab = Config.Bind("화면", "플레이어 목록 탭", true, "[설정 창: 플레이어 목록 탭 / Settings: Player List Tab] 필드 플레이어 목록 바 아래 탭에 손패 장수·역할·스킬 쿨타임을 표시합니다. / Shows hand counts, roles and skill cooldowns in a tab under the field player list bars.");
         PlayerTabHand = Config.Bind("화면", "플레이어 목록 탭 손패 장수", true, "[설정 창: 플레이어 목록 탭 > 손패 장수 / Settings: Player List Tab > Hand Count] 플레이어마다 공개 손패 장수를 표시합니다. / Shows each player's public hand count.");
@@ -439,7 +443,7 @@ public sealed class Plugin : BasePlugin
          Diagnostics.State("settings",
         FormattableString.Invariant($"advice={Enabled.Value}; details={ShowDetails.Value}; koMinimum={KoMinimum.Value}; names={UseRealNames.Value}; cardPopups={CardPopups.Value}; battleStatus={BattleStatus.Value}; shushuShield={ShushuShield.Value}; fieldBuffs={FieldBuffs.Value}; fieldZoom={FieldZoom.Value}; matchFocus={MatchFocus.Value}; muteUnfocused={MuteUnfocused.Value}; inputAttention={InputAttention.Value}; scale={UiScale.Value:F2}; opacity={Opacity.Value:F2}"));
         Diagnostics.State("settings.features",
-            FormattableString.Invariant($"autoThanks={AutoThanks.Value}; characterGuide={CharacterGuide.Value}; characterRoles={CharacterRoles.Value}; indicatorFade={IndicatorFade.Value}; indicatorHide={IndicatorHide.Value}; diceLock={DiceLock.Value}; counterSound={CounterSound.Value}; counterAnimation={CounterAnimation.Value}; suppressNotices={SuppressNotices.Value}; pingFocus={PingFocus.Value}; oldReplays={OldReplays.Value}; updateNotifications={UpdateNotifications.Value}; automaticChecks={AutomaticChecks.Value}; shushuShieldRestrictions={ShushuShieldRestrictions.Value}; finalDamage={FinalDamage.Value}; encounterAdvice={EncounterAdvice.Value}; defenseAdvice={DefenseAdvice.Value}; cardAdvice={CardAdvice.Value}; shootingStar={ShootingStarShow.Value}; koCardPreview={KoCardPreview.Value}; koSpectator={KoSpectator.Value}; statusHand={StatusHand.Value}; statusEffects={StatusEffects.Value}; counterIcons={CounterIcons.Value}; shushuMaster={ShushuMaster.Value}; playerTab={PlayerTab.Value}; playerTabHand={PlayerTabHand.Value}; playerTabRole={PlayerTabRole.Value}; playerTabSkill={PlayerTabSkill.Value}; walkDirection={WalkDirection.Value}"));
+            FormattableString.Invariant($"autoThanks={AutoThanks.Value}; sendAllLikes={SendAllLikes.Value}; shopBulkBuy={ShopBulkBuy.Value}; characterGuide={CharacterGuide.Value}; characterRoles={CharacterRoles.Value}; indicatorFade={IndicatorFade.Value}; indicatorHide={IndicatorHide.Value}; diceLock={DiceLock.Value}; counterSound={CounterSound.Value}; counterAnimation={CounterAnimation.Value}; suppressNotices={SuppressNotices.Value}; pingFocus={PingFocus.Value}; oldReplays={OldReplays.Value}; updateNotifications={UpdateNotifications.Value}; automaticChecks={AutomaticChecks.Value}; shushuShieldRestrictions={ShushuShieldRestrictions.Value}; finalDamage={FinalDamage.Value}; encounterAdvice={EncounterAdvice.Value}; defenseAdvice={DefenseAdvice.Value}; cardAdvice={CardAdvice.Value}; shootingStar={ShootingStarShow.Value}; koCardPreview={KoCardPreview.Value}; koSpectator={KoSpectator.Value}; statusHand={StatusHand.Value}; statusEffects={StatusEffects.Value}; counterIcons={CounterIcons.Value}; shushuMaster={ShushuMaster.Value}; playerTab={PlayerTab.Value}; playerTabHand={PlayerTabHand.Value}; playerTabRole={PlayerTabRole.Value}; playerTabSkill={PlayerTabSkill.Value}; walkDirection={WalkDirection.Value}"));
     }
 
     private static ReleaseUpdateResult? _diagnosticRelease;

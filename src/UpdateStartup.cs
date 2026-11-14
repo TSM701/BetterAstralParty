@@ -6,6 +6,9 @@ namespace BetterAstralParty;
 // left unfinished. Without a helper process this is the only in-game recovery point.
 internal static class UpdateStartup
 {
+    // Why the last Recover returned false, for the player's message box (Plugin shows it through SafeModeNotice).
+    internal static SafeModeNotice.RecoveryStop Stop { get; private set; }
+
     // False when this session must not run features (recovery needed or the running image is stale).
     internal static bool Recover(string root, string runningVersion, UpdateTrust trust)
     {
@@ -14,7 +17,7 @@ internal static class UpdateStartup
             using var fence = new WindowsFileFence(root);
             UpdateLaunchGate.AssertNoReinstall(fence);
             var operation = UpdateFaults.ReadFile(fence, UpdateFaults.OperationPath);
-            if (operation != null && UpdateFaults.OwnerAlive(fence, operation)) { Plugin.Logger.LogWarning("다른 게임 창이 업데이트 중이라 이 창에서는 모드를 켜지 않습니다. / Another game instance is updating; BAP stays off here."); return false; }
+            if (operation != null && UpdateFaults.OwnerAlive(fence, operation)) { Plugin.Logger.LogWarning("다른 게임 창이 업데이트 중이라 이 창에서는 모드를 켜지 않습니다. / Another game instance is updating; BAP stays off here."); Stop = SafeModeNotice.RecoveryStop.OtherInstance; return false; }
             var pending = UpdateRecovery.PendingWork(fence);
             if (pending != null)
             {
@@ -39,6 +42,7 @@ internal static class UpdateStartup
             if (installed != runningVersion && pending != null)
             {
                 Plugin.Logger.LogWarning("업데이트 복구가 끝났습니다. 게임을 다시 시작하세요. / Update recovery finished; restart the game.");
+                Stop = SafeModeNotice.RecoveryStop.Restart;
                 return false;
             }
             return true;
@@ -49,6 +53,7 @@ internal static class UpdateStartup
                 nativeCode: error is ApplySafetyException safety ? safety.NativeError : 0, applyCode: error is ApplySafetyException apply ? (int)apply.Failure : 0);
             DiagnosticHub.FlushSoon();
             Plugin.Logger.LogError("업데이트 복구가 필요해 모드 기능을 켜지 않습니다. 게임을 닫고 Install.cmd를 다시 실행하세요. / Update recovery required; BAP stays off. Close the game and run Install.cmd again.");
+            Stop = SafeModeNotice.RecoveryStop.Failed;
             return false;
         }
     }

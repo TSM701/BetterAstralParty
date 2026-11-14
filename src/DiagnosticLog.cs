@@ -88,16 +88,30 @@ internal sealed class DiagnosticLog
             if (File.Exists(older)) File.Copy(older, Path.Combine(_directory, Name(age)), true);
         }
         File.Copy(current, Path.Combine(_directory, "previous.log"), true);
-        // The overflow chunk belongs to previous.log alone; an older session's chunk must not pass as its start.
-        var overflow = Path.Combine(_directory, "current-overflow.log"); var previous = Path.Combine(_directory, "previous-overflow.log");
-        if (File.Exists(overflow)) { File.Copy(overflow, previous, true); File.Delete(overflow); }
-        else File.Delete(previous);
+        // The overflow chunks belong to previous.log alone; an older session's chunk must not pass as its start.
+        for (var chunk = 1; chunk <= OverflowChunks; chunk++)
+        {
+            var overflow = Path.Combine(_directory, Chunk("current", chunk)); var previous = Path.Combine(_directory, Chunk("previous", chunk));
+            if (File.Exists(overflow)) File.Move(overflow, previous, true);
+            else File.Delete(previous);
+        }
     }
-    // A long session keeps its newest 1 MB plus the 1 MB before it; earlier sessions' logs are not pushed out.
+    // A long session keeps its newest 1 MB plus up to seven 1 MB chunks before it (user-requested 2026-11-14, after a 3.6-hour
+    // session kept only its last 53 minutes at about 2.2 MB an hour); earlier sessions' logs are not pushed out. The
+    // collector still takes current.log and current-overflow.log alone (DiagnosticBundle's fixed list and 2 MB file limit).
+    internal const int OverflowChunks = 7;
+    internal static string Chunk(string session, int chunk) => chunk == 1 ? session + "-overflow.log" : $"{session}-overflow-{chunk}.log";
     private void Overflow()
     {
         var current = Path.Combine(_directory, "current.log");
-        if (File.Exists(current)) File.Copy(current, Path.Combine(_directory, "current-overflow.log"), true);
+        if (!File.Exists(current)) return;
+        // Oldest first: chunk N is dropped, N-1 becomes N, ..., the newest chunk is the 1 MB just written.
+        for (var chunk = OverflowChunks; chunk >= 2; chunk--)
+        {
+            var newer = Path.Combine(_directory, Chunk("current", chunk - 1));
+            if (File.Exists(newer)) File.Move(newer, Path.Combine(_directory, Chunk("current", chunk)), true);
+        }
+        File.Copy(current, Path.Combine(_directory, Chunk("current", 1)), true);
     }
 
     internal void Write(string message)

@@ -44,6 +44,20 @@ internal static class SafeModeNotice
         return null;
     }
 
+    internal enum RecoveryStop { OtherInstance, Restart, Failed }
+
+    // UpdateStartup kept BAP off for this start. The BepInEx console is off by default, so without this box the player
+    // would see the game without BAP and no reason (2026-11-13 code review); each start that stops says it again.
+    internal static string Recovery(RecoveryStop stop) => stop switch
+    {
+        RecoveryStop.OtherInstance => "다른 게임 창에서 업데이트가 진행 중이라 이 창에서는 BetterAstralParty를 켜지 않았습니다.\r\n업데이트가 끝나면 게임을 다시 시작하세요.\r\n\r\n"
+            + "Another game window is updating BetterAstralParty, so it stays off in this one.\r\nRestart the game once the update has finished.",
+        RecoveryStop.Restart => "중단된 업데이트를 정리했습니다.\r\n게임을 다시 시작하면 BetterAstralParty가 켜집니다.\r\n\r\n"
+            + "An interrupted update was put in order.\r\nRestart the game to run BetterAstralParty.",
+        _ => "업데이트 복구가 필요해 BetterAstralParty를 켜지 않았습니다.\r\n게임을 닫고 Install.cmd를 다시 실행하세요.\r\n\r\n"
+            + "An update needs recovery, so BetterAstralParty stays off.\r\nClose the game and run Install.cmd again."
+    };
+
     // Its own thread keeps updates running while the box is open. No window owns it, so the game stays usable,
     // and topmost keeps it above the fullscreen game. MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST.
     internal static void Tell(string text) => new Thread(() => { try { MessageBoxW(IntPtr.Zero, text, "BetterAstralParty", 0x40 | 0x10000 | 0x40000); } catch { } })

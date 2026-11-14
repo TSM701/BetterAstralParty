@@ -80,20 +80,32 @@ internal static class CardKoMinimum
     {
         var bonus = card ?? new CardBonus(true, 0, 0, 0);
         if (!CardAdvisor.Valid(input) || !input.Modifiers.DiceValid || bonus.Min < 0 || bonus.Max < bonus.Min || bonus.Max > 100
+            || bonus.TargetDefense is < 0 or > 100 || bonus.TargetDefense > 0 && !bonus.Attack
             || attackDie is < 0 or > 6 || defenseDie is < 0 or > 6
             || attackDie == 0 && !input.Modifiers.AttackDice.Contains(0) || defenseDie == 0 && !input.Modifiers.DefenseDice.Contains(0)) return null;
         // A final-ATK boost (card 10010, played or previewed) applies after the die.
         var boost = input.Boost.Plus(bonus.FinalPercent);
         var low = boost.Apply(input.AttackMin + (bonus.Attack ? bonus.Min : 0) + attackDie).Low;
         var high = boost.Apply(input.AttackMax + (bonus.Attack ? bonus.Max : 0) + attackDie).High;
+        // A DEF debuff (card 10013): the low end keeps a stop at 0, the high end does not (CardAdvisor.LoweredDefense).
+        var strongest = CardAdvisor.LoweredDefense(input.DefenseMax + (bonus.Attack ? 0 : bonus.Max), bonus.TargetDefense, true);
+        var weakest = CardAdvisor.LoweredDefense(input.DefenseMin + (bonus.Attack ? 0 : bonus.Min), bonus.TargetDefense, false);
         return (
-            CombatAdvisor.HitDamage(Math.Max(1, low - input.DefenseMax - (bonus.Attack ? 0 : bonus.Max) - defenseDie), input.Modifiers, input.Hp),
-            CombatAdvisor.HitDamage(Math.Max(1, high - input.DefenseMin - (bonus.Attack ? 0 : bonus.Min) - defenseDie), input.Modifiers, input.Hp));
+            CombatAdvisor.HitDamage(Math.Max(1, low - strongest - defenseDie), input.Modifiers, input.Hp),
+            CombatAdvisor.HitDamage(Math.Max(1, high - weakest - defenseDie), input.Modifiers, input.Hp));
     }
 
     // zero: the attacker's dice are only 0 (Moses's 약점), so its shown 0 is the roll, not an unrevealed label.
     internal static bool RevealedDie(int state, bool visible, int value, bool zero = false) =>
         state == 1 && visible && (value is >= 1 and <= 6 || zero && value == 0);
+
+    // The information boundary by the fight panel's viewer (playerState: 0 local attacker, 1 local defender, 2 spectator).
+    // Rolled card values (user-decided 2026-11-11) go only to a viewer with nothing left to choose: a spectator, or the local
+    // attacker once its cards are locked (step 4 on). A local defender keeps the public ranges until its choice.
+    internal static bool SeesRolled(int viewer, int step) => viewer == 2 || viewer == 0 && step >= 4;
+    // A played Powerful Attack (user-requested 2026-11-11): the attacker who used it and spectators. A local defender sees
+    // the used cards only in the result show, so its views keep the native ATK range.
+    internal static bool SeesBoost(int viewer) => viewer is 0 or 2;
 
     // Rolled card values (ServerFight.Rolled) replace a side's public range when they lie inside it; a value outside means
     // an effect the server counted differently, so that side keeps its range.

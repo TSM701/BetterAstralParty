@@ -136,7 +136,8 @@ try
     diagnostic.Performance(40, 1, 1, 0, 0, 16, 10);
     if (File.ReadAllText(Path.Combine(directory, "previous.log")) != first)
         throw new Exception("직전 진단 세션 보존 실패");
-    for (var i = 0; i < 400; i++) diagnostic.Write(new string('가', 4096));
+    // About 10 MB: more chunks than DiagnosticLog.OverflowChunks keeps, each line numbered to check their order.
+    for (var i = 0; i < 800; i++) diagnostic.Write($"{i:D4} " + new string('가', 4096));
     diagnostic.Flush();
     if (new FileInfo(current).Length > DiagnosticLog.MaxBytes || warnings.Count != 0 || !diagnostic.IsRecording
         || new FileInfo(Path.Combine(directory, "previous.log")).Length > DiagnosticLog.MaxBytes)
@@ -144,11 +145,17 @@ try
     diagnostic.SetEnabled(false, "");
     diagnostic.SetEnabled(true, "third session");
     diagnostic.SetEnabled(false, "");
-    // Five newest sessions are kept (KeptLogs); the long second session also left its previous 1 MB as an overflow chunk.
+    // Five newest sessions are kept (KeptLogs); the long second session also left its seven newest older 1 MB chunks.
     var keptLogs = string.Join(",", Directory.GetFiles(directory).Select(Path.GetFileName).OrderBy(name => name, StringComparer.Ordinal));
-    if (keptLogs != "current.log,previous-2.log,previous-overflow.log,previous.log" || !File.ReadAllText(current).Contains("third session"))
+    if (keptLogs != "current.log,previous-2.log," + string.Concat(Enumerable.Range(2, DiagnosticLog.OverflowChunks - 1).Select(chunk => $"previous-overflow-{chunk}.log,"))
+        + "previous-overflow.log,previous.log" || !File.ReadAllText(current).Contains("third session"))
         throw new Exception("진단 재활성화/보관 개수 제한 실패: " + keptLogs);
-    // A session without overflow drops the older chunk, which must not pass as the start of previous.log; six sessions keep five.
+    // Oldest chunk first: each starts after the one before it, and previous.log holds the newest lines.
+    int FirstLine(string name) => int.Parse(System.Text.RegularExpressions.Regex.Match(File.ReadAllText(Path.Combine(directory, name)), @"\| (\d{4}) 가").Groups[1].Value);
+    var order = Enumerable.Range(1, DiagnosticLog.OverflowChunks).Reverse().Select(chunk => FirstLine(DiagnosticLog.Chunk("previous", chunk))).Append(FirstLine("previous.log")).ToArray();
+    if (order.Zip(order.Skip(1)).Any(pair => pair.First >= pair.Second) || order[0] == 0)
+        throw new Exception("진단 overflow 조각 순서 실패: " + string.Join(",", order));
+    // A session without overflow drops the older chunks, which must not pass as the start of previous.log; six sessions keep five.
     string Kept() => string.Join(",", Directory.GetFiles(directory).Select(Path.GetFileName).OrderBy(name => name, StringComparer.Ordinal));
     diagnostic.SetEnabled(true, "fourth session"); diagnostic.SetEnabled(false, "");
     if (Kept() != "current.log,previous-2.log,previous-3.log,previous.log") throw new Exception("이전 세션 overflow 조각 정리 실패: " + Kept());
@@ -803,6 +810,13 @@ if (CardKoMinimum.WithRolled(rangedInput, (6, 2)) != rangedInput with { AttackMi
     || CardKoMinimum.WithRolled(rangedInput, (12, 2)) != rangedInput with { DefenseMin = 2, DefenseMax = 2 }
     || CardKoMinimum.WithRolled(rangedInput, (null, 5)) != rangedInput || CardKoMinimum.WithRolled(rangedInput, null) != rangedInput)
     throw new Exception("Rolled card values must narrow only from inside the public range");
+// The information boundary: a local defender never gets rolled values or a played Powerful Attack before its choice;
+// a local attacker gets rolled values only once its cards are locked (step 4 on); a spectator always.
+for (var step = 0; step <= 6; step++)
+    if (CardKoMinimum.SeesRolled(0, step) != step >= 4 || CardKoMinimum.SeesRolled(1, step) || !CardKoMinimum.SeesRolled(2, step))
+        throw new Exception("Rolled card values reach only viewers with nothing left to choose, step " + step);
+if (!CardKoMinimum.SeesBoost(0) || CardKoMinimum.SeesBoost(1) || !CardKoMinimum.SeesBoost(2) || CardKoMinimum.SeesRolled(3, 6) || CardKoMinimum.SeesBoost(3))
+    throw new Exception("A played Powerful Attack reaches the attacker and spectators only; an unknown viewer sees neither");
 Console.WriteLine("KO pairs: exhaustive worst-case outcomes, revealed rolls, caps and visibility guards passed.");
 var shadow = CardAdvisor.FromConfig(10008, 1, 1, new[] { 3, 3, 1 }, 0, 0, 2)!.Value;
 if (!shadow.PreventCounter || shadow.Min != 3 || shadow.Max != 3)
@@ -821,6 +835,20 @@ if (CardAdvisor.FromConfig(10009, 1, 1, new[] { 5, 5, 10010 }, 0, 0, 2) != new C
 foreach (var id in new[] { 10009, 99999 })
     if (CardAdvisor.FromConfig(id, 1, 1, new[] { 3, 3, 1 }, 0, 0, 2) != null)
         throw new Exception("Extra parameter semantics must not be guessed");
+// Card 10013 (2026-11-14): ATK +3, no counter, the target's DEF -3; the logged hit, ATK 42 + 3 + die 2 against DEF 4 - 3 +
+// die 3 with a mark (+1), dealt 44. A DEF below the debuff spans the stop at 0 (12) and no stop (14).
+var roar = CardAdvisor.FromConfig(10013, 1, 1, new[] { 3, 3, 1, 1261203, -9, -3 }, 0, 0, 2);
+if (roar != new CardBonus(true, 3, 3, 2) { PreventCounter = true, TargetDefense = 3 }
+    || CardAdvisor.FromConfig(10013, 1, 1, new[] { 3, 3, 1, 1261299, -9, -3 }, 0, 0, 2) != null
+    || CardAdvisor.FromConfig(10013, 1, 1, new[] { 3, 3, 1, 1261203, -9, 3 }, 0, 0, 2) != null
+    || CardAdvisor.FromConfig(10013, 2, 2, new[] { 3, 3, 1, 1261203, -9, -3 }, 0, 0, 2) != null
+    || CardAdvisor.FromConfig(10014, 1, 1, new[] { 3, 3, 1, 1261203, -9, -3 }, 0, 0, 2) != null
+    || CardKoMinimum.DamageRange(new PreRollCombat(9, 40, 42, 42, 4, 4) { Modifiers = new HitModifiers(1) }, roar, 2, 3) != (44L, 44L)
+    || CardKoMinimum.DamageRange(new PreRollCombat(9, 40, 10, 10, 1, 1), roar, 2, 3) != (12L, 14L)
+    || CardKoMinimum.DamageRange(new PreRollCombat(9, 40, 10, 10, 1, 1), new CardBonus(false, 2, 2, 1) { TargetDefense = 3 }, 2, 3) != null
+    || CardAdvisor.Dominates(new(true, 3, 3, 1) { PreventCounter = true }, roar!.Value)
+    || CardAdvisor.Calculate(new PreRollCombat(9, 200, 42, 42, 4, 4), roar!.Value) is not { DamageGainMin: > 5.9, DamageGainMax: < 6.1 })
+    throw new Exception("Card 10013's DEF debuff on its target");
 // Card 10010: final ATK (die included) +50 %, a half rounded up as the server did on 2026-11-11 (27 -> 41, 21 -> 32);
 // another percent spans half-up..ceiling, and two boosts span added..one after the other.
 var once = new FinalBoost(50, 1); var twice = once.Plus(50);

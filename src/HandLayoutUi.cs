@@ -756,24 +756,31 @@ internal static class HandLayoutUi
 
     internal static void Clear()
     {
-        HandClickBinding.Clear();
-        var motions = Entries.Count == 0 ? null : CardTweens();
-        foreach (var e in Entries.Values) Restore(e, motions?.GetValueOrDefault(e.Card.Pointer));
+        // Every step runs even when one fails, so one broken card cannot leave the others or the drop zone in the mod's
+        // layout; a failure then stops the feature for the session instead of failing again each frame (2026-11-13 review).
+        Exception? failed = null;
+        void Step(Action step) { try { step(); } catch (Exception ex) { failed ??= ex; } }
+        Step(HandClickBinding.Clear);
+        Dictionary<IntPtr, List<RuntimeObject>>? motions = null;
+        if (Entries.Count > 0) Step(() => motions = CardTweens());
+        foreach (var e in Entries.Values) Step(() => Restore(e, motions?.GetValueOrDefault(e.Card.Pointer)));
         Entries.Clear();
-        ClearFrame();
+        Step(ClearFrame);
         Live.Clear(); Ready.Clear();
-        foreach (var caption in Captions.Values) GameUi.Dispose(caption);
+        foreach (var caption in Captions.Values) Step(() => GameUi.Dispose(caption));
         Captions.Clear();
-        foreach (var target in PileTargets.Values) GameUi.Dispose(target);
+        foreach (var target in PileTargets.Values) Step(() => GameUi.Dispose(target));
         PileTargets.Clear(); _pressedPile = null; _outsidePress = false;
         CaptionLayout.Clear();
-        ClearDropHint();
+        Step(ClearDropHint);
         _dropBottom = null; // The native zone stays until the next layout frame.
-        if (_hotZone != null && !_hotZone.Get<bool>("isDisposed"))
+        Step(() =>
         {
+            if (_hotZone == null || _hotZone.Get<bool>("isDisposed")) return;
             _hotZone.Call("SetXY", _hotPosition.x, _hotPosition.y);
             _hotZone.Call("SetSize", _hotSize.x, _hotSize.y);
-        }
+        });
+        if (failed != null) Compatibility.Block("HandLayout", failed);
         _ui = _container = _hotZone = null;
         _expanded = null;
         _focused = IntPtr.Zero;

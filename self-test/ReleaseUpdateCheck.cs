@@ -751,6 +751,15 @@ internal static class ReleaseUpdateCheck
             AutomaticUpdateStatus.RetryWaiting, AutomaticUpdateStatus.Failed, AutomaticUpdateStatus.Idle })
             Check(SafeModeNotice.Message(status, "1.6.5", true, true) == null, "no box while an automatic update downloads, applies or stops for the session: " + status);
         Check(SafeModeNotice.Message(AutomaticUpdateStatus.Idle, "1.6.5", false, false) == null, "no box while nothing newer exists");
+        // A start that update recovery kept off says why, in Korean and English, and says what to do.
+        foreach (var stop in Enum.GetValues<SafeModeNotice.RecoveryStop>())
+        {
+            var text = SafeModeNotice.Recovery(stop);
+            Check(text.Any(c => c is >= '가' and <= '힣') && text.Contains("BetterAstralParty") && text.Split("\r\n\r\n").Length == 2,
+                "the recovery stop box has a Korean and an English part: " + stop);
+        }
+        Check(SafeModeNotice.Recovery(SafeModeNotice.RecoveryStop.Failed).Contains("Install.cmd")
+            && SafeModeNotice.Recovery(SafeModeNotice.RecoveryStop.Restart).Contains("Restart the game"), "a failed recovery points to Install.cmd and a finished one to a restart");
     }
     // A failed start asks before the game goes on; the automatic rule decides only without an answer.
     private static void StartupChoice()

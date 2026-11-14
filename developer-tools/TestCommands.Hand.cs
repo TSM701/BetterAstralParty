@@ -94,7 +94,7 @@ internal static partial class TestCommands
         var zone = update.IndexOf("if (_dropBottom is { } dropBottom) UpdateDropZone(root, width, unit, clickMode, dropBottom * height);", StringComparison.Ordinal);
         Check(zone >= 0 && zone < update.IndexOf("if (CardPointerBusy(dragging))", StringComparison.Ordinal)
             && update.Contains("_dropBottom = HandLayout.DropBottom(pileTop, open, unit) / height;", StringComparison.Ordinal), "Drop zone follows a resize through a drag; its bottom follows the resting cards");
-        Contains(source, new[] { "SetGuideDirection(old, false)", "SetGuideDirection(Entries[key], false)", "SetGuideDirection(e, false)", "ClearDropHint();", "if (mode != _mode) { Clear(); _mode = mode; }", "PlayerIsWatcher", "FightWindow", "VisibleCombatAdvisor.IsPve", "_hotPosition", "_hotSize" }, "Submit cleanup/gates");
+        Contains(source, new[] { "SetGuideDirection(old, false)", "SetGuideDirection(Entries[key], false)", "SetGuideDirection(e, false)", "Step(ClearDropHint);", "if (mode != _mode) { Clear(); _mode = mode; }", "PlayerIsWatcher", "FightWindow", "VisibleCombatAdvisor.IsPve", "_hotPosition", "_hotSize" }, "Submit cleanup/gates");
         foreach (var forbidden in new[] { "SetActive", "SetField(", "\"visible\"", "\"alpha\"", "\"touchable\"", "\"SetXY\"", "\"SetSize\"" }) Check(!methods["SetGuideDirection"].Contains(forbidden, StringComparison.Ordinal), "Guide direction does not mutate unrelated state: " + forbidden);
         NoPattern(methods["UpdateDropZone"], @"\.Set\(", "Drop geometry retains native state/controller");
         const string ns = "MigratedHandSubmit";

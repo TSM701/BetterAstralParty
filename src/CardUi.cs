@@ -53,7 +53,8 @@ internal static class CardUi
             var config = card.Get("_config")!;
             var parameters = config.Get("Params")!;
             var length = parameters.Get<int>("Count");
-            var values = length is >= 2 and <= 3 ? new int[length] : Array.Empty<int>();
+            // Card 10013 has six (CardAdvisor.FromConfig); other lengths above three fail closed there.
+            var values = length is >= 2 and <= 6 ? new int[length] : Array.Empty<int>();
             for (var index = 0; index < values.Length; index++)
                 values[index] = parameters.Call("get_Item", index)!.Value<int>();
             var bonus = CardAdvisor.FromConfig(config.Get<int>("Id"), config.Get<int>("EffectType"),

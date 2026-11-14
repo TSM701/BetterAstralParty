@@ -507,8 +507,8 @@ using System.Collections.Generic;
 namespace __NS__ {
 __SOURCE__
 static class VisibleCombatAdvisor { public static bool IsPve(int m)=>m is 4 or 6 or 9 or 10 or 12; }
-static class Plugin { public static Log Diagnostics=new(); }
-sealed class Log { public void Error(string scope,Exception ex) {} }
+static class Plugin { public static Log Diagnostics=new(); public static Log Logger=new(); }
+sealed class Log { public void Error(string scope,Exception ex) {} public void LogWarning(string text) {} }
 sealed class RuntimeObject {
     public static RuntimeObject Manager;
     public Dictionary<string,object> Data=new();
@@ -556,12 +556,17 @@ public static class Check {
             match.Data["MatchMode"]=1; Expect(true,"PvP queue wins over stale PvE room");
             match.Data["TeamId"]=0L; Expect(false,"inactive stale match does not block PvE");
         }
-        room.Data["localRoom"]=null; Expect(true,"active room not yet populated");
+        // RoomController.Dispose (a replay's exit) nulls localRoom and keeps roomStateType: that room is gone.
+        room.Data["roomStateType"]=4; room.Data["localRoom"]=null; Expect(false,"disposed room keeps its state, not PvP");
+        match.Data["TeamId"]=1L; match.Data["MatchMode"]=1; Expect(true,"PvP queue still blocks after a disposed room");
+        match.Data["TeamId"]=0L;
         room.Data.Remove("roomStateType"); Expect(true,"binding failure");
+        if(!PvpSafety.Broken) throw new Exception("binding failure is reported as broken, not as PvP");
         RuntimeObject.Manager=null; Expect(true,"manager unavailable");
         RuntimeObject.Manager=manager;
         room.Data["roomStateType"]=0;
         Expect(false,"recovery after binding failure");
+        if(PvpSafety.Broken) throw new Exception("recovery clears the broken state");
         manager.Data["match"]=null;
         room.Data["roomStateType"]=4; room.Data["localRoom"]=Node("info",Node("MapType",1));
         Expect(true,"known PvP room blocks without match reader");

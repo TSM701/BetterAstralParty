@@ -4,7 +4,7 @@ namespace __NAMESPACE__ {
 public static class Probe {
     public static readonly List<string> Calls = new List<string>();
     public static readonly HashSet<string> Blocked = new HashSet<string>();
-    public static bool Core = true, Home = true, Pause, Suspended, AllowAudio = true;
+    public static bool Core = true, Home = true, Pause, Suspended, Broken, AllowAudio = true;
     public static bool ThrowBackend, ThrowAutomatic, ThrowFrameFailed, ThrowRefresh, ThrowNotice, ThrowShield, ThrowCleanup, ThrowOwnedCleanup;
     public static bool ThrowCatalogWarning, ThrowCatalogStage, ThrowCatalogWrite, ThrowCatalogFailure, ThrowCatalogError;
     public static bool Checking, Discovery;
@@ -14,7 +14,7 @@ public static class Probe {
         if (native) { NativeCalls++; if (!Core) throw new InvalidOperationException("Blocked native call: " + name); }
     }
     public static void Reset() {
-        Calls.Clear(); Blocked.Clear(); Core = Home = AllowAudio = true; Pause = Suspended = false;
+        Calls.Clear(); Blocked.Clear(); Core = Home = AllowAudio = true; Pause = Suspended = Broken = false;
         ThrowBackend = ThrowAutomatic = ThrowFrameFailed = ThrowRefresh = ThrowNotice = ThrowShield = ThrowCleanup = ThrowOwnedCleanup = false;
         ThrowCatalogWarning = ThrowCatalogStage = ThrowCatalogWrite = ThrowCatalogFailure = ThrowCatalogError = false;
         Checking = Discovery = false; HomeReads = NativeCalls = OwnedCleanupAttempts = 0; Time.frameCount = 1; ModUi.Reset(); Plugin.ResetCatalogObserver(); Plugin.AutomaticChecks.Value = true; Plugin.Updates.TransitionCheckPending = false;
@@ -32,7 +32,7 @@ enum AutomaticUpdateStatus { Idle, CheckingInstallation }
 enum DiagnosticFeature { Coordinator, CoreUi, Loader }
 enum DiagnosticPhase { None, Catalog }
 enum DiagnosticOutcome { Partial }
-enum DiagnosticCode { Unknown, CompatibilityBlocked, PvpExcluded, StartupWaiting, None }
+enum DiagnosticCode { Unknown, CompatibilityBlocked, PvpExcluded, StartupWaiting, NativeCallFailed, None }
 static class DiagnosticHub {
     internal static void Failure(DiagnosticFeature feature, DiagnosticPhase phase, DiagnosticCode code, Exception ex) {
         Probe.Visit("diagnostic.failure." + feature);
@@ -122,6 +122,8 @@ static class ShushuShieldUi {
 static class MatchFocus { internal static void Tick() { Probe.Visit("native.matchFocus"); } }
 static class PvpSafety {
     internal static bool Suspended { get { return Probe.Suspended; } }
+    internal static bool Broken { get { return Probe.Broken; } }
+    internal static string Reason { get { return Probe.Broken ? "broken" : "team mode=1"; } }
     internal static bool Poll() { Probe.Visit("native.pvp"); return Probe.Pause; }
 }
 static class FocusAudio {
@@ -154,6 +156,7 @@ static class ModUi {
     static readonly Action[] PvpCleanup = { () => { Probe.Visit("native.cleanup", true); if (Probe.ThrowCleanup) throw new Exception("inert cleanup failure"); } };
     internal static void Reset() { _lastFrame = -1; _pvpCleaned = false; }
     static void FailUi(Exception ex) { Probe.Visit("ui.failed"); Probe.Core = false; }
+    static void TickHomeOnly() { Probe.Visit("home.only"); }
     static bool? _sliderSave;
     static void FlushSliderSave() { _sliderSave = null; }
 __PREFIX__
@@ -200,6 +203,12 @@ public static class Runner {
             "Optional notification decoration failure disables only its own feature; other UI, updates, focus and audio continue without retrying failed bindings"); cases++;
         Probe.Reset(); Probe.Pause = Probe.Suspended = true; ModUi.Tick(); Time.frameCount++; ModUi.Tick();
         Probe.Require(Probe.Count("automatic.tick") == 2 && Probe.Count("native.cleanup") == 1 && Probe.Count("native.audioRestore") == 2 && Probe.Count("native.ping") == 0 && Probe.Count("native.cardChoice") == 0 && Probe.Count("native.homeEsc") == 0 && Probe.Count("healthy.tail") == 0, "PvP still suspends gameplay, restores audio and cleans once while backend remains independent"); cases++;
+        Probe.Reset(); Probe.Pause = Probe.Suspended = true; ModUi.Tick();
+        Probe.Require(Probe.Count("home.only") == 0 && Probe.Count("diagnostic.gate.PvpExcluded") == 1, "A known PvP state keeps the home-only path closed"); cases++;
+        Probe.Reset(); Probe.Pause = Probe.Suspended = Probe.Broken = true; ModUi.Tick(); Time.frameCount++; ModUi.Tick();
+        Probe.Require(Probe.Count("home.only") == 2 && Probe.Count("native.cleanup") == 1 && Probe.Count("native.ping") == 0 && Probe.Count("native.cardChoice") == 0
+            && Probe.Count("healthy.tail") == 0 && Probe.Count("diagnostic.gate.NativeCallFailed") == 2 && Probe.Count("diagnostic.gate.PvpExcluded") == 0,
+            "A broken PvP reader keeps gameplay off but runs the home menu, settings and update notices, recorded apart from PvP"); cases++;
         Probe.Reset(); Probe.Pause = true; ModUi.Tick();
         Probe.Require(Probe.Count("diagnostics.state.initializing") == 1 && Probe.Count("native.cleanup") == 1 && Probe.Count("healthy.tail") == 0, "Startup pause retains its existing gameplay gate"); cases++;
         Probe.Reset(); Probe.Pause = Probe.ThrowCleanup = true; ModUi.Tick(); Time.frameCount++; ModUi.Tick();

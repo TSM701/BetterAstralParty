@@ -313,19 +313,22 @@ namespace BetterAstralParty.Updating
         }
         private static WindowsFileFence.FileLease Original(Item item)
         { return (item.State == 0 ? item.Target : item.Backup) ?? throw Bad(); }
-        private static void Move(WindowsFileFence fence, WindowsFileFence.FileLease file, string path, string label, Action<string>? hook)
-        { Processes(fence); Hit(hook, "before:" + label); file.RenameTo(fence, path); file.Flush(); Hit(hook, "after:" + label); }
+        // checkedBefore: the second rename of one target, right after the first. Its process check ran before the first, so the
+        // target path is empty only for the two renames and a flush (2026-11-13 review: a check in between widened the time
+        // the plugin DLL is missing, and a game that ends then starts without BAP until Install.cmd recovers it).
+        private static void Move(WindowsFileFence fence, WindowsFileFence.FileLease file, string path, string label, Action<string>? hook, bool checkedBefore = false)
+        { if (!checkedBefore) Processes(fence); Hit(hook, "before:" + label); file.RenameTo(fence, path); file.Flush(); Hit(hook, "after:" + label); }
         private static void Install(WindowsFileFence fence, Plan plan, int index, Action<string>? hook)
         {
-            var item = plan.Items[index]; if (item.State == 2) return;
-            if (item.State == 0 && item.Target != null) { Move(fence, item.Target, Slot(plan.Work, "old-", index), "backup-" + index, hook); item.Backup = item.Target; item.Target = null; item.State = 1; }
-            var file = item.New ?? throw Bad(); Move(fence, file, item.Path, "install-" + index, hook); item.Target = file; item.New = null; item.State = 2;
+            var item = plan.Items[index]; if (item.State == 2) return; var moved = false;
+            if (item.State == 0 && item.Target != null) { Move(fence, item.Target, Slot(plan.Work, "old-", index), "backup-" + index, hook); item.Backup = item.Target; item.Target = null; item.State = 1; moved = true; }
+            var file = item.New ?? throw Bad(); Move(fence, file, item.Path, "install-" + index, hook, moved); item.Target = file; item.New = null; item.State = 2;
         }
         private static void Rollback(WindowsFileFence fence, Plan plan, int index, Action<string>? hook)
         {
-            var item = plan.Items[index]; if (item.State == 0) return;
-            if (item.State == 2) { var file = item.Target ?? throw Bad(); Move(fence, file, Slot(plan.Work, "new-", index), "undo-new-" + index, hook); item.New = file; item.Target = null; item.State = item.OldId == "-" ? 0 : 1; }
-            if (item.State == 1) { var file = item.Backup ?? throw Bad(); Move(fence, file, item.Path, "restore-old-" + index, hook); item.Target = file; item.Backup = null; item.State = 0; }
+            var item = plan.Items[index]; if (item.State == 0) return; var moved = false;
+            if (item.State == 2) { var file = item.Target ?? throw Bad(); Move(fence, file, Slot(plan.Work, "new-", index), "undo-new-" + index, hook); item.New = file; item.Target = null; item.State = item.OldId == "-" ? 0 : 1; moved = true; }
+            if (item.State == 1) { var file = item.Backup ?? throw Bad(); Move(fence, file, item.Path, "restore-old-" + index, hook, moved); item.Target = file; item.Backup = null; item.State = 0; }
         }
         private static bool Marker(WindowsFileFence fence, string path, string planHash, Leases leases)
         {

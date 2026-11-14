@@ -72,7 +72,19 @@ internal static partial class TestCommands
             Check(call.Name is not ("Approve" or "ConfirmTransition") || method.Name == "HandleInput", "Only explicit native input approves a transition"); Check(call.DeclaringType.FullName != "BetterAstralParty.Updating.WindowsFileFence", "Transition filesystem review stays on worker");
         }
         var home = NativeMethod(plugin, "BetterAstralParty.GameUi", "NotificationHome").Body.Instructions;
-        foreach (var name in new[] { "currentPanel", "TeamId", "roomStateType", "connectRoomId", "GetTopWindow", "hasModalWindow", "modalWaiting", "hasAnyPopup", "Cut_in", "playing" }) Check(Strings(home, name).Length != 0, "Home eligibility blocker: " + name);
+        foreach (var name in new[] { "currentPanel", "TeamId", "roomStateType", "connectRoomId", "hasModalWindow", "modalWaiting", "hasAnyPopup", "Cut_in", "playing" }) Check(Strings(home, name).Length != 0, "Home eligibility blocker: " + name);
+        // A window covers the home while it holds the keys (2026-11-14: GRoot's top window was the SystemTipsWindow overlay).
+        Check(IlCalls(home, "BetterAstralParty.GameUi", "FocusWindow").Length == 1, "Home eligibility blocker: the window holding the keys");
+        var focus = NativeMethod(plugin, "BetterAstralParty.GameUi", "FocusWindow").Body.Instructions;
+        foreach (var name in new[] { "propUpWindows", "Count", "Peek" }) Check(Strings(focus, name).Length != 0, "Focus window reads UIManager.propUpWindows: " + name);
+        var baseWindow = native.MainModule.GetType("UI.BaseWindow");
+        foreach (var (method, op) in new[] { ("OnShown", "Push"), ("OnHide", "Pop") })
+        {
+            var body = baseWindow.Methods.Single(row => row.Name == method && row.Parameters.Count == 0).Body.Instructions;
+            Check(body.Any(row => row.Operand is FieldReference field && field.Name == "propUpWindows" && field.DeclaringType.FullName == "UI.UIManager")
+                && body.Any(row => row.Operand is MethodReference call && call.Name == op), "Native BaseWindow." + method + " calls " + op + " on UIManager.propUpWindows");
+        }
+        Check(native.MainModule.GetType("UI.MatchInfoWindow").Methods.All(method => method.Name != "OnKeyDown"), "Native MatchInfoWindow answers no keys, so the focus window passes over it");
         var current = native.MainModule.GetType("UI.UIManager").Methods.Where(method => method.Name == "get_currentPanel").ToArray(); Check(current.Length == 1 && current[0].ReturnType.FullName == "UI.IBasePanel" && current[0].Parameters.Count == 0, "Native current panel ABI");
         Check(native.MainModule.GetType("UI.BasePanel`1").Methods.Count(method => method.Name == "get_ui" && method.Parameters.Count == 0) == 1, "Native home UI getter ABI");
         Check(native.MainModule.GetType("FairyGUI.Transition").Methods.Count(method => method.Name == "get_playing" && method.ReturnType.FullName == "System.Boolean" && method.Parameters.Count == 0) == 1, "Native home transition playing ABI");

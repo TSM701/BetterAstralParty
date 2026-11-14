@@ -120,6 +120,8 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 
 편의 기능
 - 감사합니다 자동 전송: 기본 ON. 게임 기본 감사합니다 추천이 전송 가능할 때 추천 한 건당 한 번 전송합니다. PvP·관전·재생에서는 전송하지 않습니다.
+- 좋아요 일괄 전송: 기본 ON. PvE 게임 결과 화면의 확인 버튼 위에 좋아요 버튼을 둡니다. 누르면 아직 좋아요를 보내지 않은 다른 플레이어 모두에게 게임의 좋아요 버튼을 차례로 눌러 보냅니다. 자동으로는 보내지 않고, 보낼 사람이 없으면 회색으로 바뀝니다. 버튼이 보이는 동안 채팅 말풍선은 버튼 왼쪽으로 비켜 납니다. PvP·관전·재생에서는 나오지 않습니다.
+- 상점 일괄 구매: 기본 ON. 스타 코인 상점 카드 아래 오른쪽에 무료 일괄 수령과 일괄 구매 버튼을 둡니다. 무료 일괄 수령은 누르면 무료 상품을 바로 받고, 받을 것이 없으면 회색으로 바뀝니다. 일괄 구매는 살 수 있는 상품 목록을 열고, 무료·배지·50% 이상 할인·전부 버튼으로 해당 상품을 한꺼번에 넣고 빼거나 상품마다 체크한 뒤 합계와 남을 스타 코인을 보고 구매를 누르면 그 상품만 삽니다. 구매는 목록 창 안에서 하나씩 진행되며 중간에 중지할 수 있고, 끝나면 목록으로 돌아갑니다. 구매가 실패로 멈췄을 때만 그 결과를 잠깐 보여 줍니다. 여러 개를 사도 획득 창은 한 번에 모아서 뜹니다.
 - Alt+Tab 핑 모드 해제: 기본 ON. Alt+Tab 후 남은 핑 선택 모드를 전송 없이 해제합니다.
 - 홈 화면에서 Esc를 누르면 게임의 종료 확인 창이 열립니다.
 
@@ -337,6 +339,8 @@ Characters
 
 Convenience
 - Auto Thanks: ON by default. Sends the game's Thanks suggestion once each time it appears. Never sends in PvP, spectating or replays.
+- Send All Likes: ON by default. Adds a like button above Confirm on the PvE results screen. Pressing it presses the game's own like button for every other player you have not liked yet. It never sends on its own and turns gray when no one is left. While it shows, chat bubbles move to its left. Hidden in PvP, spectating and replays.
+- Shop Bulk Purchase: ON by default. Adds Claim All Free and Bulk Buy under the right of the Star Coin Shop cards. Claim All Free takes the free goods at once and turns gray when there is nothing to claim. Bulk Buy opens a list of the goods you can buy; tick them one by one or add and remove a group at once with the Free, Badges, 50%+ Off and All buttons, check the total and the Star Coins left, and press Buy to buy only those. The purchase runs one item at a time inside the list, Stop ends it before the next item, and the list then comes back. Only a purchase stopped by a failure shows its result for a moment. Several items bought at once share one reward window.
 - Clear Ping Mode on Alt+Tab: ON by default. Cancels lingering ping selection after Alt+Tab without sending a ping.
 - Press Esc on the home screen to open the game's exit confirmation.
 
