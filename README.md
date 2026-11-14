@@ -78,7 +78,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 
 ### 설정
 
-로비의 모드 설정 버튼이나 F8, 또는 전투 중 ESC 메뉴의 모드 설정 버튼으로 열고 모드 기능·일반 설정 탭에서 조절하세요. 변경 사항은 자동 저장되며, 업데이트해도 기존 저장값은 유지합니다. 목록 위 검색창에 단어를 입력하면 두 탭에서 이름·위치·설명에 그 단어가 들어간 설정만 모아 보여 줍니다. 목록 오른쪽 스크롤바에 마우스를 올리면 모든 카테고리 이름이 스크롤바 옆에 뜨고, 점이나 이름을 누르면 그 카테고리로 이동합니다. 각 줄 오른쪽 스위치로 켜고 끄며, 맨 위 줄은 그 기능 전체를 켜고 끄고, 아래 트레이의 줄로 세부 표시를 따로 켜고 끕니다. 아래는 처음 설치했을 때의 기본값입니다.
+로비의 모드 설정 버튼이나 F8, 또는 전투 중 ESC 메뉴의 모드 설정 버튼으로 열고 모드 기능·일반 설정 탭에서 조절하세요. 변경 사항은 자동 저장되며, 업데이트해도 기존 저장값은 유지합니다. 로비의 모드 설정 버튼은 게임의 배경 조정 모드(홈 화면 오른쪽 아래의 이동 버튼)에서 끌어 다른 자리로 옮길 수 있습니다. 확인을 누르면 그 자리가 저장되고, 모드 설정 위치 초기화를 누르면 처음 자리로 돌아갑니다. 목록 위 검색창에 단어를 입력하면 두 탭에서 이름·위치·설명에 그 단어가 들어간 설정만 모아 보여 줍니다. 목록 오른쪽 스크롤바에 마우스를 올리면 모든 카테고리 이름이 스크롤바 옆에 뜨고, 점이나 이름을 누르면 그 카테고리로 이동합니다. 각 줄 오른쪽 스위치로 켜고 끄며, 맨 위 줄은 그 기능 전체를 켜고 끄고, 아래 트레이의 줄로 세부 표시를 따로 켜고 끕니다. 아래는 처음 설치했을 때의 기본값입니다.
 
 <details>
 <summary>모드 기능 탭</summary>
@@ -174,7 +174,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 
 - 릴리즈와 프리 릴리즈는 공개 저장소에서 로그인 없이 확인하며, 공개 채널에서는 1.4.0 이상만 자동 업데이트 대상으로 선택합니다. 지원 버전이 없으면 현재 설치를 유지합니다.
 - 채널 전환은 선택한 채널의 지원되는 최신 릴리스를 확인합니다. 설치된 버전보다 낮아도 전환할 수 있습니다. 업데이트 버튼을 누르면 대상 버전을 보여주고, `전환 시작`을 눌러야 받기 시작합니다. 받기와 적용은 게임 안에서 진행되니 끝날 때까지 게임을 끄지 마세요. 끝나면 `종료 및 전환` 버튼이 켜지고, 누르면 게임이 종료되며 다음 실행부터 새 버전을 사용합니다. 같은 버전만 있으면 `채널 전환 대기`로 표시합니다. 업데이트 채널을 다시 바꾸면 승인이 취소됩니다. 같은 채널의 일반 업데이트는 버전 역행을 허용하지 않습니다.
-- 업데이트나 채널 전환을 받고 적용하는 동안 홈 화면의 모드 설정 버튼 아래에 진행 캡슐이 나타납니다. 받은 용량에 따라 채워지는 막대와 퍼센트를 보여주고, 누르면 진행 창이 다시 열립니다. 진행 창에도 같은 막대와 받은 용량이 표시됩니다.
+- 업데이트나 채널 전환을 받고 적용하는 동안 홈 화면의 모드 설정 버튼 아래에 진행 캡슐이 나타납니다(버튼을 화면 아래쪽으로 옮겼으면 버튼 위에 나타납니다). 받은 용량에 따라 채워지는 막대와 오른쪽 둥근 버튼의 상태 아이콘(받는 중, 완료, 오류)을 보여주고, 누르면 진행 창이 다시 열립니다. 진행 창에는 같은 막대와 퍼센트, 받은 용량이 표시됩니다.
 - 업데이트 중 오류가 나면 캡슐에 "오류"와 함께 이유와 오류 코드(예: `BAP-UPD-DOWNLOAD-TIMEOUT`)가 표시되고, 진행 창에서 할 일 안내와 `다시 시도` 버튼을 볼 수 있습니다. 문의할 때는 오류 코드와 진단 ZIP을 함께 보내 주세요.
 - 받는 도중 게임을 끄거나 인터넷 연결 문제로 받지 못해도 자동 업데이트는 꺼지지 않고 다음 실행 때 다시 받습니다. 파일을 바꾸는 적용 도중에 끊긴 경우에만 자동 업데이트가 꺼지고, 업데이트 설정에서 `다시 사용`을 눌러야 합니다.
 - 같은 공개 버전이 프리 릴리즈↔릴리즈로 바뀌어도 설치된 파일과 저장한 채널은 그대로 둡니다.
@@ -297,7 +297,7 @@ BetterAstralParty 자체 코드는 [MIT 라이선스](LICENSE)로 제공합니�
 
 ### Settings
 
-Open Mod Settings in the lobby using its button or F8, or from the Mod Settings button in the in-battle Esc menu, then select Mod Features or General. Changes are saved automatically, and updates keep your saved values. Type in the search box above the list to show only the settings from both tabs whose name, location or description contains your words. Hover the scroll bar to the right of the list to see every category name beside it; click a dot or name to jump there. Each row has its switch on the right; a top row turns its whole feature on or off, and the rows in its tray control the individual parts. Defaults below apply to a first installation.
+Open Mod Settings in the lobby using its button or F8, or from the Mod Settings button in the in-battle Esc menu, then select Mod Features or General. Changes are saved automatically, and updates keep your saved values. To move the lobby's Mod Settings button, drag it in the game's background adjustment mode (the move button at the lower right of the home screen); Confirm keeps the new place, and Reset Mod Settings Position returns it to its first place. Type in the search box above the list to show only the settings from both tabs whose name, location or description contains your words. Hover the scroll bar to the right of the list to see every category name beside it; click a dot or name to jump there. Each row has its switch on the right; a top row turns its whole feature on or off, and the rows in its tray control the individual parts. Defaults below apply to a first installation.
 
 <details>
 <summary>Mod Features tab</summary>
@@ -393,7 +393,7 @@ Updates
 
 - Release and Pre-release are checked in the public repository without login, and public channels select only 1.4.0 or newer. If no supported release exists, the current installation stays unchanged.
 - Channel switching checks the latest supported release in the selected channel. It can be lower than the installed version. The Update button shows the target, and the download starts only after `Start Switch`. Downloading and applying happen inside the game, so keep it open until they finish. Then `Exit and Switch` turns on; it closes the game, and the new version is used from the next launch. If only the same version exists, the status shows `Channel Switch Waiting`. Changing the update channel again cancels the approval. Ordinary updates within the same channel reject downgrades.
-- While an update or channel switch downloads and applies, a progress capsule appears under the Mod Settings button on the home screen. Its bar and percentage follow the downloaded size; clicking it reopens the progress window, which shows the same bar with the downloaded size.
+- While an update or channel switch downloads and applies, a progress capsule appears under the Mod Settings button on the home screen (above it when the button was moved to the lower part of the screen). Its bar follows the downloaded size and the round button on its right shows the state (downloading, ready or error); clicking it reopens the progress window, which shows the same bar with the percentage and downloaded size.
 - If an update hits an error, the capsule shows "Error" with the reason and an error code (for example `BAP-UPD-DOWNLOAD-TIMEOUT`); the progress window also explains what to do and offers `Try Again`. When asking for help, include the error code and a diagnostics ZIP.
 - Closing the game during a download, or a download that fails on the network, does not turn automatic updates off; the next start downloads again. Only an apply cut off while it replaces files turns them off, and then `Re-enable Updates` in Update Settings is needed.
 - Reclassifying the same public version between Pre-release and Release leaves installed files and your saved channel unchanged.

@@ -21,9 +21,13 @@ internal static unsafe class HomePortrait
     // put it and the hat stays on screen (top-drafts A, user-chosen 2026-11-01).
     private const float ArtX = -160f, ArtY = -37f, ArtWidth = 549.44f;
     private static readonly Rect Bounds = new(2f, -37f, 343f, 209f);
-    private static RuntimeObject? _art, _portrait, _loader, _native;
+    private static RuntimeObject? _art, _portrait, _loader, _native, _hat;
     private static Texture2D? _texture;
     private static bool _pending;
+    // The head and hat above the plate are part of the button too (user-requested 2026-11-14, after a click there missed it):
+    // the top of the baked art per HatStep-wide column, in portrait units, the plate's top where nothing rises above it.
+    private const float HatStep = 4f, PlateTop = 6f - -37f, HatBottom = PlateTop + 2f;
+    private static float[]? _hatTops;
 
     // Draft A's clip, as coverage at a point in button units; the left ear's line moves down with the art.
     internal static float Clip(float x, float y) => Math.Max(ShapeRaster.RoundRect(x, y, 2f, 6f, 343f, 166f, 12f),
@@ -50,7 +54,7 @@ internal static unsafe class HomePortrait
     internal static void Build(RuntimeObject art)
     {
         Release(); // A rebuilt home menu.
-        _art = art;
+        _art = art; _hat = null; _hatTops = null;
         _portrait = NativeUi.Component(art, Bounds.width, Bounds.height);
         var mask = RuntimeObject.New(RuntimeObject.FindClass("FairyGUI", "GGraph"));
         mask.Call("SetSize", Bounds.width, Bounds.height);
@@ -93,6 +97,8 @@ internal static unsafe class HomePortrait
             _pending = false;
             Show(Bake(source));
             Plugin.Diagnostics.State("home.portrait", "baked");
+            try { BuildHat(); }
+            catch (Exception ex) { _hat = null; Plugin.Diagnostics.Error("HomePortrait.hat", ex); } // The plate alone stays the button.
         }
         catch (Exception ex)
         {
@@ -148,7 +154,68 @@ internal static unsafe class HomePortrait
             }
         fixed (byte* data = pixels) texture.LoadRawTextureData((IntPtr)data, pixels.Length);
         texture.Apply(false, true);
+        _hatTops = HatTops(pixels, width, height);
         return texture;
+    }
+
+    // Per column, the highest visible texel (alpha at least half) above the plate; rows are bottom-up.
+    private static float[] HatTops(byte[] pixels, int width, int height)
+    {
+        var tops = new float[(int)MathF.Ceiling(Bounds.width / HatStep)];
+        for (var i = 0; i < tops.Length; i++)
+        {
+            tops[i] = PlateTop;
+            int first = (int)(i * HatStep * ShapeRaster.Density), last = Math.Min(width, (int)((i + 1) * HatStep * ShapeRaster.Density));
+            for (var down = 0; down < PlateTop * ShapeRaster.Density && tops[i] == PlateTop; down++)
+                for (var column = first; column < last; column++)
+                    if (pixels[((height - 1 - down) * width + column) * 4 + 3] >= 128) { tops[i] = (float)down / ShapeRaster.Density; break; }
+        }
+        return tops;
+    }
+
+    // The head and hat as hit areas: a staircase polygon over the plate's top, one copy in the tilting artwork and one in the
+    // button, which does not tilt, so the hover holds while the drawn head tilts away from the pointer, as the button's own
+    // rectangle does for the plate. FairyGUI's PolygonMesh tests a point against the polygon (Shape.HitTest through IHitTest).
+    private static void BuildHat()
+    {
+        var tops = _hatTops;
+        var button = _art?.Get("parent");
+        if (tops == null || button == null) return;
+        _hat = HatArea(_art!, Bounds.x, Bounds.y, tops);
+        HatArea(button, _art!.Get<float>("xMin") + Bounds.x, _art.Get<float>("yMin") + Bounds.y, tops);
+    }
+
+    private static RuntimeObject HatArea(RuntimeObject parent, float x, float y, float[] tops)
+    {
+        var mesh = RuntimeObject.New(RuntimeObject.FindClass("FairyGUI", "PolygonMesh"));
+        mesh.Call("Add", new Vector2(0f, HatBottom));
+        for (var i = 0; i < tops.Length; i++)
+        {
+            if (i > 0 && tops[i] == tops[i - 1]) continue;
+            mesh.Call("Add", new Vector2(i * HatStep, tops[i]));
+            var end = i + 1;
+            while (end < tops.Length && tops[end] == tops[i]) end++;
+            mesh.Call("Add", new Vector2(Math.Min(Bounds.width, end * HatStep), tops[i]));
+        }
+        mesh.Call("Add", new Vector2(Bounds.width, HatBottom));
+        var area = RuntimeObject.New(RuntimeObject.FindClass("FairyGUI", "GGraph"));
+        area.Call("SetSize", Bounds.width, HatBottom);
+        var graphics = area.Get("shape")!.Get("graphics")!;
+        graphics.Set("meshFactory", mesh);
+        graphics.Set("color", new Color(0f, 0f, 0f, 0f)); // A hit area only.
+        graphics.Call("SetMeshDirty");
+        parent.Call("AddChild", area);
+        area.Call("SetXY", x, y);
+        return area;
+    }
+
+    // Whether the pointer is on the drawn head or hat, in the tilting copy's own coordinates.
+    internal static bool OnHat()
+    {
+        if (_hat == null || _hatTops == null || _hat.Get<bool>("isDisposed")) return false;
+        var (x, y) = GameUi.PointerIn(_hat);
+        if (x < 0f || x >= Bounds.width || y > HatBottom) return false;
+        return y >= _hatTops[Math.Min(_hatTops.Length - 1, (int)(x / HatStep))];
     }
 
     // The baked art and its shadow replace the stencilled portrait at the same place.

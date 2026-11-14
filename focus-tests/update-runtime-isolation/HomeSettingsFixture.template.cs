@@ -60,6 +60,7 @@ static class UpdateNotificationUi {
     static void TickCore() { Probe.Visit("notice.tick"); }
 __NOTICE_TICK__
 }
+static class HomeMenuPlacement { internal static void Clear() { Probe.Visit("home.placement.clear"); } }
 static class GameUi {
     internal static IntPtr _rootClass, _textClass, _logicClass, _battleClass;
     internal static RuntimeObject? _root, _menu, _pressed;

@@ -7,15 +7,22 @@ internal static class GameUi
 {
     private static IntPtr _rootClass, _textClass, _logicClass, _battleClass;
     private static RuntimeObject? _root, _home, _menu, _pressed, _fight;
+    private static Vector3 _pressedAt;
     private static AdviceBadge? _defBadge, _dodgeBadge;
     private static RuntimeObject? _settingsHome;
     private static bool _settingsHomeTouchable;
-    private static RuntimeObject? _menuAnchor;
+    private static RuntimeObject? _menuAnchor, _menuPlate;
     private static float _menuOffsetX;
+    // Development builds only (user-requested 2026-11-14): Ctrl+Shift+F11 on the home steps the progress capsule through
+    // downloading, done and stopped, then off, from a private UpdateProgress; no update state changes and its clicks do nothing.
+    private static readonly bool DevelopmentBuild = Plugin.Version.Contains("-dev.", StringComparison.Ordinal);
+    private static UpdateProgress? _previewProgress;
+    private static int _previewStep;
     private static int _menuLanguageRevision = -1;
     private static (IntPtr Menu, int Language, string? Version)? _releaseNotice;
     // Progress capsule hung under the Mod Settings button while an update runs; it moves and fades with the button.
-    private static RuntimeObject? _progressCap, _progressLabel, _progressPercent, _progressFill, _progressDoor, _progressReason, _progressCode;
+    private static RuntimeObject? _progressCap, _progressLabel, _progressFill, _progressDoor, _progressShadow, _progressReason, _progressCode;
+    private static RuntimeObject? _progressIconLoad, _progressIconDone, _progressIconStop;
     private static float _progressTrackWidth;
     private static bool _progressStoppedLayout, _progressHover;
     private static (IntPtr Menu, int Progress, int Language)? _progressShown;
@@ -373,6 +380,13 @@ internal static class GameUi
             art.Call("GetChildAt", 2)!.Call("SetXY", 2f, 6f);
             // The portrait inherits the plate's hover transform; its clip is baked once the art loads.
             HomePortrait.Build(art);
+            // The click area turns with the drawn plate (user-requested 2026-11-14, after a click on the hovered button's
+            // tilted lower edge missed it): the plate takes hits through the tilting artwork, as the native button's image
+            // does, and the button's own rectangle keeps the hover steady while the plate tilts away from it.
+            _menuPlate = art.Call("GetChildAt", 2)!;
+            _menuPlate.Set("touchable", true);
+            art.Set("touchable", true);
+            nativeButton.Set("opaque", true);
             var title = nativeButton.Call("GetChild", "n8")!;
             title.Set("text", ModText.Text("모드 설정"));
             title.Set("autoSize", 3);
@@ -423,11 +437,12 @@ internal static class GameUi
         UpdateProgress.Shared.Observe(Plugin.Automatic.Status, snapshot.TargetVersion, snapshot.IsTransition, download.Read, download.Total,
             fault == null ? "" : UpdateProgress.FaultCode(fault.Phase.ToString(), fault.Reason.ToString()), fault?.Reason.ToString().ToLowerInvariant() ?? UpdateProgress.StatusReason(Plugin.Automatic.Status));
         if (!Compatibility.Allowed("HomeMenu") || _menu == null || _menu.Get<bool>("isDisposed")) return;
-        var progress = UpdateProgress.Shared;
+        var progress = _previewProgress ?? UpdateProgress.Shared;
         var shown = (_menu.Pointer, progress.Revision, ModText.Revision);
         if (_progressShown == shown) return;
         _progressShown = shown;
-        if (!progress.Visible) { _progressCap?.Set("visible", false); return; }
+        // A shown or hidden capsule moves a toast stacked beyond it (PlaceAttachments).
+        if (!progress.Visible) { _progressCap?.Set("visible", false); PlaceAttachments(); return; }
         // A stopped update needs a second row for the reason and code, so its capsule is rebuilt taller.
         if (_progressCap == null || _progressCap.Get<bool>("isDisposed") || _progressStoppedLayout != progress.Stopped)
         {
@@ -435,13 +450,17 @@ internal static class GameUi
             CreateProgressCapsule(progress.Stopped);
         }
         _progressCap!.Set("visible", true);
+        PlaceAttachments();
         var accent = progress.Stopped ? new Color(0.88f, 0.29f, 0.29f) : progress.Done ? new Color(0.49f, 0.78f, 0.42f) : new Color(1f, 0.76f, 0.05f);
         _progressLabel!.Set("text", ModText.UpdateProgressCapsule(progress.Version, progress.Status, progress.Step, progress.Stopped, progress.Done));
-        _progressPercent!.Set("text", progress.Percent + "%");
-        _progressFill!.Call("SetSize", Math.Max(10f, _progressTrackWidth * progress.Percent / 100f), 10f);
+        _progressFill!.Call("SetSize", Math.Max(6f, _progressTrackWidth * progress.Percent / 100f), 6f);
         SmoothShape.Fill(_progressFill, accent);
         SmoothShape.Fill(_progressDoor!, accent);
-        ModFont.Track(_progressLabel); ModFont.Track(_progressPercent);
+        SmoothShape.Fill(_progressShadow!, new Color(accent.r * 0.62f, accent.g * 0.62f, accent.b * 0.62f));
+        _progressIconDone!.Set("visible", progress.Done && !progress.Stopped);
+        _progressIconStop!.Set("visible", progress.Stopped);
+        _progressIconLoad!.Set("visible", !progress.Done && !progress.Stopped);
+        ModFont.Track(_progressLabel);
         if (_progressReason != null)
         {
             _progressReason.Set("text", ModText.UpdateStopReason(progress.Reason));
@@ -454,13 +473,15 @@ internal static class GameUi
         float topLeft, float topRight, float bottomLeft, float bottomRight, float line = 0f)
         => SmoothShape.Create(parent, x, y, width, height, fill, topLeft, topRight, bottomLeft, bottomRight, line);
 
-    // Cream capsule as wide as the button: title, one continuous bar, percent, and a coloured door section on the
-    // right carrying an open-outward arrow. The whole capsule is the click target.
+    // Cream capsule as wide as the button (draft B with the round state button, user-chosen 2026-11-14 in
+    // artifacts/cc/progress-capsule-drafts, after "2026.11.0 적용 완료" was cut at the old 42% title box): the title over the
+    // whole width before the door, a thin bar under it that keeps one place and length whatever the title, and a coloured door
+    // with a raised white disc carrying the state (download arrow, check, exclamation). The whole capsule is the click target.
     private static void CreateProgressCapsule(bool stopped)
     {
-        var width = _menu!.Get<float>("width"); const float row = 44f, door = 50f;
-        // Stopped: row 1 status and bar, row 2 the reason, row 3 the error code on its own full-width line.
-        var height = stopped ? row + 26f + 26f : row;
+        var width = _menu!.Get<float>("width"); const float head = 54f, door = 50f;
+        // Stopped: the title and bar, then the reason, then the error code on its own full-width line.
+        var height = stopped ? head + 26f + 26f : head;
         _progressStoppedLayout = stopped; _progressHover = false;
         _progressCap = NativeUi.Component(_menu, width, height);
         _progressCap.Call("SetXY", 0f, _menu.Get<float>("height") + 8f);
@@ -468,43 +489,50 @@ internal static class GameUi
         _progressCap.Set("opaque", true);
         ProgressShape(_progressCap, 0, 0, width, height, stopped ? new Color(1f, 0.914f, 0.902f) : new Color(1f, 0.985f, 0.95f), 22, 22, 22, 22, 3f);
         _progressDoor = ProgressShape(_progressCap, width - door, 0, door, height, new Color(1f, 0.76f, 0.05f), 0, 22, 0, 22, 3f);
-        // Open-outward arrow: an open frame with a diagonal arrow leaving its top-right corner.
-        float x0 = width - door / 2f - 11f, y0 = row / 2f - 11f;
-        var ink = new Color(0.067f, 0.067f, 0.067f);
-        ProgressShape(_progressCap, x0, y0 + 5, 3, 17, ink, 1, 1, 1, 1);
-        ProgressShape(_progressCap, x0, y0 + 19, 17, 3, ink, 1, 1, 1, 1);
-        ProgressShape(_progressCap, x0, y0 + 5, 7, 3, ink, 1, 1, 1, 1);
-        ProgressShape(_progressCap, x0 + 14, y0 + 12, 3, 10, ink, 1, 1, 1, 1);
-        ProgressShape(_progressCap, x0 + 11, y0, 11, 3, ink, 1, 1, 1, 1);
-        ProgressShape(_progressCap, x0 + 19, y0, 3, 11, ink, 1, 1, 1, 1);
-        var shaft = ProgressShape(_progressCap, 0, 0, 14, 3, ink, 1, 1, 1, 1);
-        shaft.Call("SetPivot", 0.5f, 0.5f, true);
-        shaft.Call("SetXY", x0 + 14f, y0 + 8f);
-        shaft.Set("rotation", -45f);
-        var titleWidth = width * 0.42f;
-        _progressLabel = NativeUi.Label(_progressCap, "", 14f, 4f, titleWidth, row - 8f, 22);
+        // The round button: a darker disc 3 below as its shadow, the white disc with a black rim, and the state icon on it.
+        float cx = width - door / 2f + 1f, cy = height / 2f - 1f; const float r = 15f;
+        _progressShadow = ProgressShape(_progressCap, cx - r, cy - r + 3f, r * 2, r * 2, new Color(0.62f, 0.47f, 0.03f), r, r, r, r);
+        ProgressShape(_progressCap, cx - r, cy - r, r * 2, r * 2, Color.white, r, r, r, r, 3f);
+        _progressIconLoad = ProgressIcon(cx, cy, (0f, -8f, 0f, 3.6f), (-5f, -0.7f, 0f, 4.3f), (5f, -0.7f, 0f, 4.3f), (-7.2f, 8.6f, 7.2f, 8.6f));
+        _progressIconDone = ProgressIcon(cx, cy, (-7.2f, 0f, -2.2f, 5f), (-2.2f, 5f, 7.2f, -5.8f));
+        _progressIconStop = ProgressIcon(cx, cy, (0f, -8f, 0f, 2.2f));
+        ProgressShape(_progressIconStop, cx - 2.2f, cy + 5f, 4.4f, 4.4f, new Color(0.067f, 0.067f, 0.067f), 2.2f, 2.2f, 2.2f, 2.2f);
+        var inner = width - door - 10f - 14f;
+        _progressLabel = NativeUi.Label(_progressCap, "", 14f, 4f, inner, 34f, 22);
         _progressLabel.Set("touchable", false);
         StyleText(_progressLabel, 22, align: 0);
-        const float percentWidth = 58f;
-        var trackX = 14f + titleWidth + 6f;
-        var percentX = width - door - 8f - percentWidth;
-        _progressTrackWidth = Math.Max(20f, percentX - 6f - trackX);
-        ProgressShape(_progressCap, trackX, (row - 14f) / 2f, _progressTrackWidth + 4f, 14f, new Color(0.9f, 0.875f, 0.8f), 7, 7, 7, 7, 2.5f);
-        _progressFill = ProgressShape(_progressCap, trackX + 2f, (row - 10f) / 2f, 10f, 10f, new Color(1f, 0.76f, 0.05f), 5, 5, 5, 5);
-        _progressPercent = NativeUi.Label(_progressCap, "", percentX, 6f, percentWidth, row - 12f, 18, dark: true);
-        _progressPercent.Set("touchable", false);
-        StyleText(_progressPercent, 18, align: 2);
+        _progressLabel.Set("autoSize", 3); // Shrink only a title longer than the whole row, e.g. a long beta version.
+        _progressTrackWidth = inner - 4f;
+        ProgressShape(_progressCap, 14f, 35f, inner, 10f, new Color(0.9f, 0.875f, 0.8f), 5, 5, 5, 5, 2f);
+        _progressFill = ProgressShape(_progressCap, 16f, 37f, 6f, 6f, new Color(1f, 0.76f, 0.05f), 3, 3, 3, 3);
         _progressReason = _progressCode = null;
         if (!stopped) return;
         var rowWidth = width - door - 14f - 8f;
-        _progressReason = NativeUi.Label(_progressCap, "", 14f, row - 2f, rowWidth, 26f, 16, dark: true);
-        _progressCode = NativeUi.Label(_progressCap, "", 14f, row + 24f, rowWidth, 24f, 15, dark: true);
+        _progressReason = NativeUi.Label(_progressCap, "", 14f, head - 4f, rowWidth, 26f, 16, dark: true);
+        _progressCode = NativeUi.Label(_progressCap, "", 14f, head + 22f, rowWidth, 24f, 15, dark: true);
         foreach (var label in new[] { _progressReason, _progressCode })
         {
             label.Set("touchable", false);
             StyleText(label, label == _progressCode ? 15 : 16, align: 0);
             label.Set("autoSize", 3); // Shrink to fit instead of cutting off a long reason or code.
         }
+    }
+
+    // One state icon on the round button: rounded strokes in a component of their own, shown only for its state.
+    private static RuntimeObject ProgressIcon(float cx, float cy, params (float X0, float Y0, float X1, float Y1)[] strokes)
+    {
+        var icon = NativeUi.Component(_progressCap!, _progressCap!.Get<float>("width"), _progressCap.Get<float>("height"));
+        icon.Set("touchable", false);
+        const float thick = 3.6f;
+        foreach (var (x0, y0, x1, y1) in strokes)
+        {
+            float dx = x1 - x0, dy = y1 - y0, length = (float)Math.Sqrt(dx * dx + dy * dy) + thick;
+            var bar = ProgressShape(icon, 0, 0, length, thick, new Color(0.067f, 0.067f, 0.067f), thick / 2, thick / 2, thick / 2, thick / 2);
+            bar.Call("SetPivot", 0.5f, 0.5f, true);
+            bar.Call("SetXY", cx + (x0 + x1) / 2f, cy + (y0 + y1) / 2f);
+            bar.Set("rotation", (float)(Math.Atan2(dy, dx) * 180.0 / Math.PI));
+        }
+        return icon;
     }
 
     // Follows UpdateNotificationUi.Toast: built per release (a language change rebuilds the whole menu), sliding in over
@@ -523,10 +551,11 @@ internal static class GameUi
             if (_toastView != null && !_toastView.Get<bool>("isDisposed")) Dispose(_toastView);
             CreateUpdateToast(toast.Release.Version);
             _toastKey = toast.Key; _toastHover = false;
+            PlaceAttachments();
         }
         var reveal = AdviceText.Reveal(Time.unscaledTime - UpdateNotificationUi.ToastShownAt, 0.25f);
         var left = UpdateNotificationUi.ToastRemaining;
-        _toastView!.Call("SetXY", -ToastWidth - 24f, -12f - (1 - reveal) * 24f);
+        _toastView!.Call("SetXY", _toastAt.X, _toastAt.Y - (1 - reveal) * 24f);
         _toastView.Set("alpha", reveal * Math.Min(1f, left * UpdateNotificationUi.ToastSeconds / 0.25f));
         _toastTimer!.Call("SetSize", Math.Max(4f, (ToastWidth - 44f) * left), 4f);
     }
@@ -597,6 +626,7 @@ internal static class GameUi
     private static void ClearHomeMenu()
     {
         _menuState = null; _pressed = null;
+        HomeMenuPlacement.Clear();
         if (_menu == null) return;
         var menu = _menu;
         try { menu.Set("touchable", false); }
@@ -617,6 +647,7 @@ internal static class GameUi
         var visible = Visible(_menuAnchor);
         if (!visible)
         {
+            if (HomeMenuPlacement.Active) HomeMenuPlacement.Clear();
             if (_menuState != null) _menu.Set("visible", false);
             _menuState = null; _pressed = null;
             return;
@@ -625,14 +656,87 @@ internal static class GameUi
         // Sample native Cut in/Hide/BGset motion every frame, including reverse/re-entry.
         // Move only our wrapper so its child's own hover/press transform is untouched.
         // xMin/yMin handle both pivot modes; native centre pivots are NOT necessarily anchors.
-        var state = (X: anchor.Get<float>("xMin") - _menuOffsetX, Y: anchor.Get<float>("yMin"),
-            Alpha: anchor.Get<float>("alpha"), Visible: visible, Touchable: anchor.Get<bool>("touchable"));
+        float x = anchor.Get<float>("xMin") - _menuOffsetX, y = anchor.Get<float>("yMin");
+        // The game's background-adjust mode also moves the button (issue #18); there it stays opaque and draggable.
+        var placing = HomeMenuPlacement.Tick(_home!, _menu, _menuButton!, x, y);
+        var (dx, dy) = HomeMenuPlacement.Offset;
+        var state = (X: x + dx, Y: y + dy, Alpha: placing ? 1f : anchor.Get<float>("alpha"), Visible: visible,
+            Touchable: placing || anchor.Get<bool>("touchable"));
         if (_menuState == state) return;
         _menuState = state;
         _menu.Call("SetXY", state.X, state.Y);
         _menu.Set("alpha", state.Alpha);
         _menu.Set("visible", state.Visible);
         _menu.Set("touchable", state.Touchable);
+        PlaceAttachments();
+    }
+
+    // The capsule and the toast follow the button's zone wherever it was moved (issue #18, user-chosen 2026-11-14: 3 x 3 zones,
+    // v10 in artifacts/cc/home-button-drafts). The home above the bottom menu bar is cut into thirds both ways, and the zone of
+    // the button's centre decides: top and middle rows put the capsule under the button, the bottom row above its hat; the left
+    // column puts the toast right of the button, the right column left of it, the centre column centred on the button beyond
+    // the capsule. Both stay Edge inside that area. A zone changes only once the centre is ZoneSlack past its line, so a button
+    // resting on a line does not flip them back and forth.
+    private static void PlaceAttachments()
+    {
+        if (_menu == null || _home == null || _menu.Get<bool>("isDisposed")) return;
+        float scale = _menu.Get<float>("scaleX"), x = _menu.Get<float>("x"), y = _menu.Get<float>("y");
+        float width = _menu.Get<float>("width"), height = _menu.Get<float>("height");
+        float areaWidth = _home.Get<float>("width"), areaHeight = _home.Get<float>("height") - BottomBar;
+        _zone = (Zone(y + height * scale / 2, areaHeight, _zone.Row), Zone(x + width * scale / 2, areaWidth, _zone.Column));
+        var above = _zone.Row == 2;
+        // Local units under the button; the clamps keep each attachment inside the area in home units.
+        float LocalX(float local, float size) => (Math.Clamp(x + local * scale, Edge, Math.Max(Edge, areaWidth - Edge - size * scale)) - x) / scale;
+        float LocalY(float local, float size) => (Math.Clamp(y + local * scale, Edge, Math.Max(Edge, areaHeight - Edge - size * scale)) - y) / scale;
+        var cap = _progressCap != null && !_progressCap.Get<bool>("isDisposed") ? _progressCap : null;
+        float capHeight = cap?.Get<float>("height") ?? 0f, capY = above ? -HatHeight - 8f - capHeight : height + 8f;
+        if (cap != null) { capY = LocalY(capY, capHeight); cap.Call("SetXY", 0f, capY); }
+        var stacked = cap != null && cap.Get<bool>("visible");
+        float toastX, toastY;
+        if (_zone.Column == 1)
+        {
+            toastX = width / 2 - ToastWidth / 2;
+            toastY = above ? (stacked ? capY : -HatHeight) - 8f - ToastHeight : (stacked ? capY + capHeight : height) + 8f;
+        }
+        else { toastX = _zone.Column == 0 ? width + 24f : -ToastWidth - 24f; toastY = -12f; }
+        _toastAt = (LocalX(toastX, ToastWidth), LocalY(toastY, ToastHeight));
+    }
+
+    private static int Zone(float centre, float size, int previous)
+    {
+        var zone = Math.Clamp((int)(centre / (size / 3f)), 0, 2);
+        if (previous is >= 0 and <= 2 && zone != previous
+            && centre >= previous * size / 3f - ZoneSlack && centre < (previous + 1) * size / 3f + ZoneSlack) return previous;
+        return zone;
+    }
+
+    // The portrait's hat rises this far above the plate (HomePortrait's visible rectangle starts 43 above it).
+    private const float HatHeight = 43f;
+    // The bottom menu bar (its own BottomMenu package, not readable here) covers the home's lowest 122 units: its top sat at
+    // y 958 of the 1920 x 1080 home in the user's capture of 2026-11-14 (capture-24 in artifacts/cc/home-button-drafts).
+    private const float BottomBar = 122f, ZoneSlack = 20f, Edge = 8f;
+    private static (int Row, int Column) _zone = (-1, -1);
+    private static (float X, float Y) _toastAt = (-ToastWidth - 24f, -12f);
+
+    private static bool PreviewKey() => DevelopmentBuild && Input.GetKeyDown(KeyCode.F11)
+        && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))
+        && (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift));
+
+    // Downloading at 45 %, then done, then stopped on the network (BAP-UPD-FAILED), then the real state again.
+    private static void PreviewProgress()
+    {
+        _previewStep = (_previewStep + 1) % 4;
+        _previewProgress = null;
+        if (_previewStep > 0)
+        {
+            var preview = new UpdateProgress();
+            preview.Observe(AutomaticUpdateStatus.Downloading, Plugin.Version, false, 45, 100);
+            if (_previewStep == 2) preview.Observe(AutomaticUpdateStatus.Committed, "", false);
+            if (_previewStep == 3) preview.Observe(AutomaticUpdateStatus.Failed, "", false, 0, 0, "", UpdateProgress.StatusReason(AutomaticUpdateStatus.Failed));
+            _previewProgress = preview;
+        }
+        _progressShown = null;
+        Plugin.Diagnostics.Write("homeMenu.capsulePreview step=" + _previewStep.ToString(CultureInfo.InvariantCulture));
     }
 
     internal static void SetSettingsModal(bool visible)
@@ -657,6 +761,8 @@ internal static class GameUi
     {
         if (!HomeAvailable || !Visible(_menu) || _root == null || !_menu!.Get<bool>("touchable")
             || _menu.Get<float>("alpha") <= 0) { _pressed = null; return; }
+        if (HomeMenuPlacement.Active) { _pressed = null; HomeMenuPlacement.Press(_home!, _menu, _menuPlate!); return; }
+        if (PreviewKey()) PreviewProgress();
         // Hover feedback like native buttons: a slight lift. The pointer path is read only while the capsule or the toast
         // shows; the toast and its close disc are children of the menu, so they are hit-tested before it.
         var capsule = _progressCap != null && Visible(_progressCap);
@@ -671,23 +777,26 @@ internal static class GameUi
             _toastHover = onToast;
         }
         else _toastHover = false;
-        if (!Input.GetMouseButtonDown(0) && !Input.GetMouseButtonUp(0)) return;
-        var path = PointerPath().ToList();
-        var hit = (capsule ? path.FirstOrDefault(item => item.Pointer == _progressCap!.Pointer) : null)
-            ?? (toast ? path.FirstOrDefault(item => item.Pointer == _toastClose!.Pointer) ?? path.FirstOrDefault(item => item.Pointer == _toastView!.Pointer) : null)
-            ?? path.FirstOrDefault(item => item.Pointer == _menu.Pointer);
-        if (Input.GetMouseButtonDown(0)) _pressed = hit;
-        if (Input.GetMouseButtonUp(0))
+        // The native click rule (FairyGUI TouchInfo.ClickTest): the press picks the target, and the release clicks it unless the
+        // pointer strayed past 50 pixels on an axis. A second hit test at the release missed the button's edge, because its
+        // native down effect shrinks it to 80 % while it is held (Home_Button_Activity, downEffect 2, 0.8; 2026-11-14).
+        if (Input.GetMouseButtonDown(0))
         {
-            if (hit != null && _pressed?.Pointer == hit.Pointer)
-            {
-                if (hit.Pointer == _progressCap?.Pointer) UpdateNotificationUi.ShowProgress();
-                else if (hit.Pointer == _toastClose?.Pointer) UpdateNotificationUi.CloseToast();
-                else if (hit.Pointer == _toastView?.Pointer) UpdateNotificationUi.OpenToast();
-                else ModUi.TogglePanel();
-            }
-            _pressed = null;
+            var path = PointerPath().ToList();
+            _pressed = (capsule ? path.FirstOrDefault(item => item.Pointer == _progressCap!.Pointer) : null)
+                ?? (toast ? path.FirstOrDefault(item => item.Pointer == _toastClose!.Pointer) ?? path.FirstOrDefault(item => item.Pointer == _toastView!.Pointer) : null)
+                ?? (path.Any(item => item.Pointer == _menu.Pointer) && (HomeMenuPlacement.OnPlate(_menuPlate!) || HomePortrait.OnHat()) ? _menu : null);
+            _pressedAt = Input.mousePosition;
         }
+        if (!Input.GetMouseButtonUp(0)) return;
+        var hit = _pressed;
+        _pressed = null;
+        var moved = Input.mousePosition - _pressedAt;
+        if (hit == null || Math.Abs(moved.x) > 50f || Math.Abs(moved.y) > 50f) return;
+        if (hit.Pointer == _progressCap?.Pointer) { if (_previewProgress == null) UpdateNotificationUi.ShowProgress(); }
+        else if (hit.Pointer == _toastClose?.Pointer) UpdateNotificationUi.CloseToast();
+        else if (hit.Pointer == _toastView?.Pointer) UpdateNotificationUi.OpenToast();
+        else ModUi.TogglePanel();
     }
 
     private static bool _fightEnded;

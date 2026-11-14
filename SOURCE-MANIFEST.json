@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "version": "2026.11.0",
-  "buildSourceManifestSha256": "CADA84C9DE91C9D5E5B41EF50FFC864C9779CB9D786151C262C381A3420E7571",
+  "version": "2026.11.1",
+  "buildSourceManifestSha256": "EF83E95E5596CD612E2629A5E33BD6EC7145DFC780AD8CED467886F6828F5F31",
   "files": [
     {
       "path": "Create-Diagnostics.cmd",
@@ -45,8 +45,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 51250,
-      "sha256": "EDF154BFB67D172EF47A215E85F4889C8703B21CFB0128F5D732D78A751E9FD1"
+      "bytes": 52081,
+      "sha256": "9A79679D9E3D09EE8CE4723BB96501E12E7B3901240F5C2C1B761F54AD70E856"
     },
     {
       "path": "THIRD-PARTY-NOTICES/AsmResolver-LICENSE.txt",
@@ -445,8 +445,8 @@
     },
     {
       "path": "developer-tools/TestCommands.UpdateNotification.cs",
-      "bytes": 18736,
-      "sha256": "D227C42C19D772D650D2CF1FF4C55F1C0ED1B8E940E6C544668A471254578A5C"
+      "bytes": 20875,
+      "sha256": "917EDD1527F0248E40162A9D9AD22B245291D657A26C7966C1B3B508C07E0894"
     },
     {
       "path": "developer-tools/TestCommands.UpdatePending.cs",
@@ -1160,8 +1160,8 @@
     },
     {
       "path": "focus-tests/update-runtime-isolation/HomeSettingsFixture.template.cs",
-      "bytes": 13703,
-      "sha256": "224792C9CBC2AAF0A9DA152AED72A4EFCDAAEDF5A0F4EC4C0C8844AF560C6134"
+      "bytes": 13808,
+      "sha256": "C24E71E7802EB239F9415CC69719B384D99B75F05EE83C4767FFCBEE37BCE76F"
     },
     {
       "path": "focus-tests/update-runtime-isolation/RuntimeFixture.template.cs",
@@ -1525,8 +1525,8 @@
     },
     {
       "path": "src/GameUi.cs",
-      "bytes": 58818,
-      "sha256": "1B51D70951F2305C844320F1EA83A1ACCAC8B7A4DBB1761DE14101F4BBAD5E46"
+      "bytes": 67063,
+      "sha256": "448462F106851853E8DA4F0B1F0CBC11123F1DA887FA9B23D66F28EE0F963F6F"
     },
     {
       "path": "src/HandClickBinding.cs",
@@ -1554,9 +1554,14 @@
       "sha256": "4829CE21375957A7833E12DDF89C5F6C0AFD17E566BE210C7D1E98CE1238DE54"
     },
     {
+      "path": "src/HomeMenuPlacement.cs",
+      "bytes": 21043,
+      "sha256": "1BD8015AC046E4BA6C18C8CDD359D682BD11097457D1F152A5D1628DE2E67D8C"
+    },
+    {
       "path": "src/HomePortrait.cs",
-      "bytes": 9391,
-      "sha256": "0F55E79DEE433A3D2E5C77A0FA61165F7A633F1C164C8F617610BAC784CAB94C"
+      "bytes": 13144,
+      "sha256": "446F377B332B0E82FF5627EF4E0A660D31AEA5F38D1BD60C984F6D0772154982"
     },
     {
       "path": "src/InputAttention.cs",
@@ -1590,8 +1595,8 @@
     },
     {
       "path": "src/ModText.cs",
-      "bytes": 64428,
-      "sha256": "785C3A91947771731BCF57F5660A40DE30589B56044528D651CDBD7FF0D33C4F"
+      "bytes": 64679,
+      "sha256": "7847847BF4004466989645CF43C582455E60CDB05F720115B046150294508B9A"
     },
     {
       "path": "src/ModUi.Search.cs",
@@ -1680,8 +1685,8 @@
     },
     {
       "path": "src/Plugin.cs",
-      "bytes": 47966,
-      "sha256": "5AC8FF3C0CB4CE3EE304E8D15D93427A1E16CEA6B72D9F4D32516690346092E5"
+      "bytes": 48604,
+      "sha256": "2436D11D3166972B6BCAD5820696F7DC89509A1EBC60EB1AFD6634145CC72CAB"
     },
     {
       "path": "src/PrivateReleaseSession.cs",

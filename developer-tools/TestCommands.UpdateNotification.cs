@@ -48,6 +48,22 @@ internal static partial class TestCommands
             && IlCalls(NativeMethod(native, "UI.HomePanel", "RefreshActivity").Body.Instructions, "FairyGUI.Controller", "set_selectedIndex").Length != 0, "Native activity red point controller the home switches");
         Check(IlCalls(NativeMethod(plugin, "BetterAstralParty.GameUi", "HandleMenuInput").Body.Instructions, "BetterAstralParty.UpdateNotificationUi", "OpenToast").Length == 1
             && IlCalls(NativeMethod(plugin, "BetterAstralParty.GameUi", "HandleMenuInput").Body.Instructions, "BetterAstralParty.UpdateNotificationUi", "CloseToast").Length == 1, "The home toast's click opens the notes and its close only closes");
+        // Issue #18 and the tilted click area (2026-11-14): the button's click follows the drawn plate, the background-adjust mode
+        // moves it, and the capsule preview key exists only in development builds.
+        var menuInput = NativeMethod(plugin, "BetterAstralParty.GameUi", "HandleMenuInput").Body.Instructions;
+        Check(IlCalls(menuInput, "BetterAstralParty.HomeMenuPlacement", "OnPlate").Length == 1 && IlCalls(menuInput, "BetterAstralParty.HomeMenuPlacement", "Press").Length == 1,
+            "The Mod Settings button opens only from its drawn plate and is dragged in the background-adjust mode");
+        Check(IlCalls(NativeMethod(plugin, "BetterAstralParty.GameUi", "FollowHomeMenu").Body.Instructions, "BetterAstralParty.HomeMenuPlacement", "Tick").Length == 1
+            && IlCalls(NativeMethod(plugin, "BetterAstralParty.GameUi", "ClearHomeMenu").Body.Instructions, "BetterAstralParty.HomeMenuPlacement", "Clear").Length == 1,
+            "The button follows its saved place and a cleared menu undoes the adjust mode's changes");
+        Check(NativeMethod(plugin, "BetterAstralParty.GameUi", "PreviewKey").Body.Instructions.Any(row => row.Operand is FieldReference field && field.Name == "DevelopmentBuild"),
+            "The capsule preview key answers only in development builds");
+        ExactField(native, "UI.UIHomePanel", "BGset", "FairyGUI.Controller"); ExactField(native, "UI.UIHomePanel", "Com_Tip", "UI.UIHome_Com_TipBGSet");
+        foreach (var name in new[] { "Btn_Reset", "Btn_Cancel", "Btn_Confirm" }) ExactField(native, "UI.UIHome_Com_TipBGSet", name, "UI.UIHero_Button_Set");
+        ExactField(native, "UI.UIHero_Button_Set", "Type", "FairyGUI.Controller");
+        Check(IlCalls(NativeMethod(native, "UI.HomePanel", "RevertToLastSavedParameters").Body.Instructions, "FairyGUI.Controller", "set_selectedIndex").Length == 1
+            && IlCalls(NativeMethod(native, "UI.HomePanel", "BeginDrag").Body.Instructions, "FairyGUI.EventContext", "CaptureTouch").Length == 1,
+            "The adjust mode's Cancel leaves it and its background drag starts only from the background's own touch");
         Check(!notice.Any(row => row.Operand is MethodReference method && method.Name == "TogglePanel"), "Notice opens no repeated popups");
         var toggle = NativeMethod(plugin, ui.FullName, "TogglePanel").Body.Instructions;
         var toggleCore = NativeMethod(plugin, ui.FullName, "TogglePanelCore").Body.Instructions;

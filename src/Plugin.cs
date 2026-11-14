@@ -11,7 +11,7 @@ public sealed class Plugin : BasePlugin
 {
     public const string Guid = "kr.betterastralparty.mod";
     public const string Name = "BetterAstralParty";
-    public const string Version = "2026.11.0-dev.5";
+    public const string Version = "2026.11.1-dev.4";
     public const int InstallBundleProtocol = 1;
     public const string UpdateProtocol = "5";
     public const string SettingsSchema = "1";
@@ -39,6 +39,7 @@ public sealed class Plugin : BasePlugin
     internal static ConfigEntry<bool> IndicatorHide { get; private set; } = null!;
     internal static ConfigEntry<bool> DiceLock { get; private set; } = null!;
     internal static ConfigEntry<bool> UnknownHelpSeen { get; private set; } = null!;
+    internal static ConfigEntry<string> HomeMenuPosition { get; private set; } = null!;
     internal static ConfigEntry<bool> EncounterAdvice { get; private set; } = null!;
     internal static ConfigEntry<bool> DefenseAdvice { get; private set; } = null!;
     internal static ConfigEntry<bool> CardAdvice { get; private set; } = null!;
@@ -226,6 +227,7 @@ public sealed class Plugin : BasePlugin
         CounterIcons = Config.Bind("화면", "반격 아이콘", true, "[설정 창: 반격 아이콘 / Settings: Counter Icons] 인카운트·전투에서 반격 가능 여부를 아이콘으로 보여줍니다. / Shows whether a counterattack is possible in encounters and combat.");
         ShushuMaster = Config.Bind("화면", "슈슈 쉴드 전체", true, "[설정 창: 슈슈 쉴드 / Settings: Shiyu-Shiyu Shield] 슈슈 쉴드 효과와 방어 잠금을 사용합니다. / Uses the Shiyu-Shiyu Shield effect and Defend Lock.");
         UnknownHelpSeen = Config.Bind("화면", "미반영 효과 도움말 확인함", false, "[내부 / Internal] 미반영 효과 도움말을 한 번 저절로 보여 줬는지 기록합니다. 모든 설정 초기화 때 처음 상태로 돌아갑니다. / Records that the uncounted-effects help has opened once by itself; Reset All Settings clears it.");
+        HomeMenuPosition = Config.Bind("화면", "모드 설정 버튼 위치", "", "[내부 / Internal] 홈 화면 배경 조정 모드에서 옮긴 모드 설정 버튼의 자리(기본 자리에서 떨어진 거리, 홈 화면 단위 x,y)입니다. 비어 있으면 기본 자리입니다. 모든 설정 초기화 때 기본 자리로 돌아갑니다. / Where the home Mod Settings button was moved in the background-adjust mode, as its x,y offset from the default place in home units; empty is the default place. Reset All Settings clears it.");
         CounterSound = Config.Bind("화면", "반격 표시 소리", true, "[설정 창: 반격 아이콘 > 소리 / Settings: Counter Icons > Sound] 인카운트·전투 반격 아이콘에 알림음을 재생합니다. / Plays sounds for encounter and combat counter icons.");
         CounterAnimation = Config.Bind("화면", "반격 표시 애니메이션", true, "[설정 창: 반격 아이콘 > 애니메이션 / Settings: Counter Icons > Animation] 반격 아이콘을 애니메이션으로 표시합니다. OFF는 정적인 아이콘입니다. / Animates counter icons; OFF shows static icons.");
         SuppressNotices = Config.Bind("편의", "시작 공지 자동 열기 방지", true, "[설정 창: 시작 공지 끄기 / Settings: Skip Startup Notice] 로그인 공지가 자동으로 열리지 않게 합니다. / Prevents login notices from opening automatically.");
