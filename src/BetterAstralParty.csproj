@@ -103,6 +103,10 @@
       <HintPath>$(GameRoot)\BepInEx\interop\UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>$(GameRoot)\BepInEx\interop\UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.TextRenderingModule">
       <HintPath>$(GameRoot)\BepInEx\interop\UnityEngine.TextRenderingModule.dll</HintPath>
       <Private>false</Private>

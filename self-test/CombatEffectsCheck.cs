@@ -40,7 +40,6 @@ internal static class CombatEffectsCheck
             var advice = VisibleCombatAdvisor.Calculate(forced)!.Value;
             var baseline = VisibleCombatAdvisor.Calculate(normal)!.Value;
             Require(advice.Recommendation == RecommendedAction.Dodge
-                && advice.Summary == "방어자 기준 · 회피 추천"
                 && !advice.Defend.Contains("추천") && advice.Dodge.Contains("회피 추천"), "Shushu always recommends dodge");
             Require(advice.DefendQuick == baseline.DefendQuick && advice.DodgeQuick == baseline.DodgeQuick,
                 "recommendation override preserves probabilities and availability facts");

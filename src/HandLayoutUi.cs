@@ -26,8 +26,13 @@ internal static class HandLayoutUi
         internal bool CenterLocked;
         internal bool AlphaOwned;
         internal float OwnedAlpha; // The folded alpha this mod last wrote.
-        internal float? GuideRotation;
+        internal OffsetKey? CornerKey; // The face and card values CornerOffset was read with.
+        internal Vector2 CornerOffset;
+        internal int CornerChecks;
     }
+    // Everything the face corner's place inside its card follows from: the face's own transform and the card's anchor.
+    private readonly record struct OffsetKey(float X, float Y, float Width, float Height, float ScaleX, float ScaleY, float Rotation,
+        float PivotX, float PivotY, float CardWidth, float CardHeight, float CardPivotX, float CardPivotY);
     private static readonly Dictionary<IntPtr, Entry> Entries = new();
     private static readonly Dictionary<HandGroup, RuntimeObject> Captions = new();
     private static readonly Dictionary<HandGroup, RuntimeObject> PileTargets = new();
@@ -45,9 +50,6 @@ internal static class HandLayoutUi
     private static readonly Stack<List<RuntimeObject>> MotionPool = new();
     private static readonly string[] EffectFields = { "effectOutline", "effectOutline_Suggest_Bottom", "effectTempCard" };
     private static RuntimeObject? _ui, _container, _hotZone;
-    private static NativeUi.Surface? _dropHighlight;
-    private static RuntimeObject? _dropHint;
-    private static (Vector2 Size, float Unit, bool Korean)? _dropHintLayout;
     private static Vector2 _hotPosition, _hotSize;
     private static float? _dropBottom; // From the last layout frame, as a share of the root height.
     private static float _scanAt, _diagnosticAt;
@@ -55,7 +57,6 @@ internal static class HandLayoutUi
     private static HandGroup? _expanded;
     private static IntPtr _focused;
     private static bool _cardPress;
-    private static int _mode;
     private static HandGroup? _pressedPile;
     private static bool _outsidePress;
     private static Vector2 _pilePressAt;
@@ -64,9 +65,9 @@ internal static class HandLayoutUi
     {
         // Do not register managed delegates with hot-loaded FairyGUI: 0.28.1's native crash
         // followed that new path, outside the managed exception/circuit-breaker boundary.
-        if (!Compatibility.Allowed("HandLayout")) return;
+        if (!Compatibility.Allowed("GroupHand")) return;
         try { Update(); }
-        catch (Exception ex) { Compatibility.Block("HandLayout", ex, Clear); }
+        catch (Exception ex) { Compatibility.Block("GroupHand", ex, Clear); }
         finally { ClearFrame(); }
     }
 
@@ -74,25 +75,23 @@ internal static class HandLayoutUi
     {
         HandClickBinding.Clear(); // One input frame only; never retain snapshots through drag/use.
         var root = GameUi.Root;
-        var mode = HandLayout.Mode(Plugin.GroupHand.Value, Plugin.HandExpandMode.Value);
-        if (mode != _mode) { Clear(); _mode = mode; }
-        var clickMode = mode == 2;
         if (!Plugin.GroupHand.Value || root == null) { Clear(); return; }
         if (_tween == IntPtr.Zero) _tween = RuntimeObject.FindClass("FairyGUI", "GTween");
         if (_tweenManager == IntPtr.Zero) _tweenManager = RuntimeObject.FindClass("FairyGUI", "TweenManager");
         if (_cardClass == IntPtr.Zero) _cardClass = RuntimeObject.FindClass("UI", "UIHandCard_Button_Card");
         if (_pool == IntPtr.Zero) _pool = RuntimeObject.FindClass("GameLogic", "CardPool");
+        var lap = RuntimeObject.LapStart();
         if (Time.unscaledTime >= _scanAt)
         {
             if (_logic == IntPtr.Zero) _logic = RuntimeObject.FindClass("GameLogic", "GameLogicManager");
             var manager = RuntimeObject.StaticField(_logic, "_inst");
             var room = manager?.Get("room")?.Get("curRoomInfo");
             // The fight starts at step 2. The window's opening (0) and the encounter screen (1, also with its UI hidden)
-            // keep the field hand grouped (user-requested 2026-11-01).
+            // keep the field hand grouped (user-requested 2026-11-01), and so does a fight Fight PiP shows beside the field.
             var fightStep = GameUi.Find(root, "FightWindow")?.Get("contentPane")?.Field("step")?.Get<int>("selectedIndex") ?? 0;
             var eligible = VisibleCombatAdvisor.IsPve(room?.Field("info")?.Get<int>("MapType") ?? 0)
                 && manager?.Get("watch")?.Call("PlayerIsWatcher")?.Value<bool>() == false
-                && fightStep < 2;
+                && (fightStep < 2 || FightPip.ShowsHand);
             var ui = eligible ? GameUi.Find(root, "UIHandCardPanel") : null;
             if (ui?.Pointer != _ui?.Pointer)
             {
@@ -125,7 +124,7 @@ internal static class HandLayoutUi
         var width = root.Get<float>("width"); var height = root.Get<float>("height");
         var unit = Math.Min(width / 1920f, height / 1080f);
         // The destination stays current during a native drag, including a resize; the last layout frame sets its bottom.
-        if (_dropBottom is { } dropBottom) UpdateDropZone(root, width, unit, clickMode, dropBottom * height);
+        if (_dropBottom is { } dropBottom) UpdateDropZone(root, width, height, dropBottom * height);
         var dragging = GameUi.LiveDrag();
         if (CardPointerBusy(dragging))
         {
@@ -139,9 +138,11 @@ internal static class HandLayoutUi
         if (ModUi.IsOpen) { _pressedPile = null; _outsidePress = false; Report("settings-busy"); return; }
         // ForbidOperate locks input during normal actions/timeouts, not the visible hand layout.
         var inputLocked = !_container!.Get<bool>("touchable");
+        RuntimeObject.Lap("hand.gates", ref lap);
         var live = Live; live.Clear();
         var ready = Ready; ready.Clear();
         var motions = CardTweens();
+        RuntimeObject.Lap("hand.tweens", ref lap);
         var hidden = 0; var distributing = 0; var foreign = 0; var pending = 0;
         var childCount = _container!.Get<int>("numChildren");
         for (var i = 0; i < childCount; i++)
@@ -154,7 +155,7 @@ internal static class HandLayoutUi
             var guid = data.Field<int>("Guid");
             if (Entries.TryGetValue(card.Pointer, out var old) && old.Guid != guid)
             {
-                SetGuideDirection(old, false); RestoreZoom(old);
+                RestoreZoom(old);
                 Entries.Remove(card.Pointer); // Recycled object is now owned by a new native lifecycle.
             }
             if (!Entries.TryGetValue(card.Pointer, out var entry))
@@ -165,7 +166,6 @@ internal static class HandLayoutUi
                     Scale = new(card.Get<float>("scaleX"), card.Get<float>("scaleY")),
                     Id = config.Get<int>("Id"), Group = HandLayout.Classify(config.Get<int>("Id"), config.Get<int>("CardType")) };
             }
-            SetGuideDirection(entry, !clickMode);
             var resting = card.Field<Vector2>("CustomPosition");
             var displayReset = DisplayZoomReset(entry, resting);
             if (!displayReset && (!entry.Owned || resting != entry.Applied))
@@ -179,7 +179,7 @@ internal static class HandLayoutUi
             var foreignMotion = active?.Any(t => !LayoutMotion(entry, t, resting, show)) == true;
             // The container ancestry was checked once above; only inspect each remaining branch.
             var shown = Shown(card, _container) && Shown(entry.Face, card);
-            var waiting = card.Result<bool>("IsDistribute");
+            var waiting = Distributing(card);
             var usePending = UsePending(card, inputLocked);
             if (!shown) hidden++;
             if (waiting) distributing++;
@@ -201,10 +201,11 @@ internal static class HandLayoutUi
             entry.LastShow = show;
             ready.Add(entry);
         }
+        RuntimeObject.Lap("hand.cards", ref lap);
         RemovedCards.Clear();
         foreach (var key in Entries.Keys) if (!live.Contains(key)) RemovedCards.Add(key);
         foreach (var key in RemovedCards)
-        { SetGuideDirection(Entries[key], false); RestoreZoom(Entries[key]); Entries.Remove(key); }
+        { RestoreZoom(Entries[key]); Entries.Remove(key); }
         // Keep temporarily hovered/animated cards in their slots; neighbouring piles must not jump.
         var cards = FrameCards; cards.Clear();
         foreach (var entry in Entries.Values) { entry.FrameOrder = cards.Count; cards.Add(entry); }
@@ -232,39 +233,18 @@ internal static class HandLayoutUi
         foreach (var group in PileTargets.Keys) if (!groups.Contains(group)) RemovedGroups.Add(group);
         foreach (var group in RemovedGroups)
         { GameUi.Dispose(PileTargets[group]); PileTargets.Remove(group); }
+        RuntimeObject.Lap("hand.group", ref lap);
         var path = GameUi.PointerPath(refresh: true);
-        var hovered = path.FirstOrDefault(item => Entries.ContainsKey(item.Pointer));
         var mouse = RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "Stage"), "get_inst")!.Get<Vector2>("touchPosition");
         var pointer = root.Result<Vector2, Vector2>("GlobalToLocal", mouse);
-        if (clickMode)
-        {
-            // Monster cancel can leave an empty CardWindow on stage; only its actual hit owns the click.
-            var usingCard = (Input.GetMouseButtonDown(0) || Input.GetMouseButtonUp(0))
-                && path.Any(item => item.TypeName == "CardWindow");
-            PollPileClick(path, pointer, unit, inputLocked || pending > 0 || usingCard || FieldCameraReturnUi.ConsumedInput);
-        }
-        var hoverLocked = inputLocked || (!clickMode && Input.GetMouseButton(0));
-        if (hoverLocked) { _expanded = null; _focused = IntPtr.Zero; }
-        else if (!clickMode && _expanded is { } selected)
-        {
-            var column = groups.IndexOf(selected);
-            var pile = column < 0 ? null : piles[column];
-            var slot = column < 0 ? default : HandLayout.Focus(HandLayout.Place(width, height, groups.Count, column, pile!.Count, 0, aspects[column], true));
-            if (column >= 0)
-            {
-                var folded = HandLayout.Place(width, height, groups.Count, column, pile!.Count, 0, aspects[column]);
-                slot = slot with { X = folded.X, Width = folded.Width };
-            }
-            // Keep the column open through the gaps and while moving down to its original footprint.
-            if (column < 0 || !HandLayout.InColumn(pointer.x, pointer.y, slot, height, 12 * unit)) _expanded = null;
-        }
-        // Stable column geometry wins over transient native hit paths during hover movement.
-        if (!clickMode && !hoverLocked && _expanded == null && hovered != null)
-        {
-            _expanded = Entries[hovered.Pointer].Group;
-            _focused = hovered.Pointer; // Border entry must not shrink before reaching the card interior.
-        }
+        // Monster cancel can leave an empty CardWindow on stage; only its actual hit owns the click.
+        var usingCard = (Input.GetMouseButtonDown(0) || Input.GetMouseButtonUp(0))
+            && path.Any(item => item.TypeName == "CardWindow");
+        PollPileClick(path, pointer, unit, inputLocked || pending > 0 || usingCard || FieldCameraReturnUi.ConsumedInput);
+        // A native input lock folds the open row.
+        if (inputLocked) { _expanded = null; _focused = IntPtr.Zero; }
         if (_expanded is { } missing && !groups.Contains(missing)) _expanded = null;
+        RuntimeObject.Lap("hand.pointer", ref lap);
         if (_expanded == null || !Entries.TryGetValue(_focused, out var focused) || focused.Group != _expanded)
             _focused = IntPtr.Zero;
         var pileTop = height;
@@ -279,25 +259,23 @@ internal static class HandLayoutUi
             var group = groups[column];
             var pile = piles[column];
             var aspect = aspects[column];
-            if (_expanded == group) open = clickMode ? HandLayout.ClickRow(width, height, pile.Count, 0, aspect, pileTop)
-                : HandLayout.Place(width, height, groups.Count, column, pile.Count, 0, aspect, true);
+            if (_expanded == group) open = HandLayout.ClickRow(width, height, pile.Count, 0, aspect, pileTop);
             if (_expanded == group)
             {
-                // Click keeps the group open, not the last card enlarged after pointer exit.
-                if (clickMode) _focused = IntPtr.Zero;
+                // The row stays open, not the last card enlarged after pointer exit.
+                _focused = IntPtr.Zero;
                 for (var row = 0; row < pile.Count; row++)
                 {
-                    var hit = clickMode ? HandLayout.ClickRow(width, height, pile.Count, row, aspect, pileTop)
-                        : HandLayout.Place(width, height, groups.Count, column, pile.Count, row, aspect, true);
+                    var hit = HandLayout.ClickRow(width, height, pile.Count, row, aspect, pileTop);
                     if (ready.Contains(pile[row]) && HandLayout.InFocus(pointer.x, pointer.y, hit, 3 * unit))
                         _focused = pile[row].Card.Pointer;
                 }
             }
-            // Hover mode retains focus through gaps; Click mode returns unhovered cards to base size.
+            // Only the hovered card of the open row is enlarged; the others keep their base size.
             for (var row = 0; row < pile.Count; row++)
             {
-                var slot = clickMode && _expanded == group ? HandLayout.ClickRow(width, height, pile.Count, row, aspect, pileTop)
-                    : HandLayout.Place(width, height, groups.Count, column, pile.Count, row, aspect, _expanded == group);
+                var slot = _expanded == group ? HandLayout.ClickRow(width, height, pile.Count, row, aspect, pileTop)
+                    : HandLayout.Place(width, height, groups.Count, column, pile.Count, row, aspect);
                 if (_expanded == group && _focused == pile[row].Card.Pointer) slot = HandLayout.Focus(slot);
                 if (ready.Contains(pile[row]))
                 {
@@ -317,7 +295,7 @@ internal static class HandLayoutUi
                 caption.Set("touchable", false);
             }
             var captionSlot = HandLayout.Place(width, height, groups.Count, column, pile.Count, 0, aspect);
-            var pos = ToLocal(_container, root, captionSlot.X, height - 37 * unit);
+            var pos = ToContainer(root, captionSlot.X, height - 37 * unit);
             var captionLayout = (pos, captionSlot.Width, 28 * unit, HandLayout.Label(group, ModText.Korean));
             if (!CaptionLayout.TryGetValue(group, out var previous) || previous != captionLayout)
             {
@@ -326,8 +304,9 @@ internal static class HandLayoutUi
                 CaptionLayout[group] = captionLayout;
             }
             if (!caption.Get<bool>("visible")) caption.Set("visible", true);
-            if (clickMode) UpdatePileTarget(group, captionSlot, root, height, unit, !inputLocked && pile.All(ready.Contains));
+            UpdatePileTarget(group, captionSlot, root, height, unit, !inputLocked && pile.All(ready.Contains));
         }
+        RuntimeObject.Lap("hand.place", ref lap);
         _dropBottom = HandLayout.DropBottom(pileTop, open, unit) / height;
         if (Plugin.Diagnostics.IsRecording && Time.unscaledTime >= _diagnosticAt)
             Report($"layout; tracked={cards.Count}; ready={ready.Count}; hidden={hidden}; distributing={distributing}; foreign={foreign}; inputLocked={inputLocked}; pending={pending}; motions={motions.Values.Sum(v => v.Count)}; expanded={_expanded}; nativeZoom={RuntimeObject.StaticField(_pool, "ShowCardStatus")!.Value<int>()}");
@@ -340,68 +319,19 @@ internal static class HandLayoutUi
                 ready.Select(e => e.Card));
     }
 
-    private static void UpdateDropZone(RuntimeObject root, float width, float unit, bool clickMode, float bottom)
+    private static void UpdateDropZone(RuntimeObject root, float width, float height, float bottom)
     {
         // Native drop checks and artwork use this same object; leave its visibility alone.
         var parent = _hotZone!.Get("parent")!;
-        // From the screen top down to the cards, 10-90 % wide: Click (user-requested 2026-10-31) and Hover (2026-11-01).
+        // From above the screen top down to the cards, 10-90 % wide (user-requested 2026-10-31 and 2026-11-15).
         // The native zone shows only while a card is dragged, so it never covers the turn bar otherwise.
-        var start = ToLocal(parent, root, width * .1f, 0);
+        var start = ToLocal(parent, root, width * .1f, -height * HandLayout.DropOverhang);
         var dropEnd = ToLocal(parent, root, width * .9f, bottom);
         if (_hotZone.Get<float>("x") != start.x || _hotZone.Get<float>("y") != start.y)
             _hotZone.Call("SetXY", start.x, start.y);
         var dropSize = dropEnd - start;
         if (_hotZone.Get<float>("width") != dropSize.x || _hotZone.Get<float>("height") != dropSize.y)
             _hotZone.Call("SetSize", dropSize.x, dropSize.y);
-        if (!clickMode) UpdateDropHint(dropSize, unit);
-    }
-
-    private static void UpdateDropHint(Vector2 size, float unit)
-    {
-        if (_dropHighlight == null)
-        {
-            // Children inherit the native drag controller's visibility/fade; they never own input.
-            _dropHighlight = new NativeUi.Surface(_hotZone!, size.x, size.y, fixedOpacity: true,
-                fill: new Color(1f, .83f, .14f, .18f));
-            SmoothShape.Restyle(_dropHighlight.Graph, new Color(1f, .83f, .14f, .18f), 4f, new Color(1f, .83f, .14f, 1f));
-            _dropHint = NativeUi.Label(_hotZone!, "", 0, 0, 1, 1, 26);
-            _dropHint.Set("touchable", false);
-        }
-        var layout = (size, unit, ModText.Korean);
-        if (_dropHintLayout == layout) return;
-        _dropHighlight.Resize(size.x, size.y);
-        // The zone starts at the screen top, where the turn bar sits; the hint sits just above the cards instead.
-        _dropHint!.Call("SetXY", 12 * unit, Math.Max(0, size.y - 90 * unit));
-        _dropHint.Call("SetSize", Math.Max(1, size.x - 24 * unit), 72 * unit);
-        _dropHint.Set("text", HandLayout.DropHint(ModText.Korean));
-        GameUi.StyleText(_dropHint, Math.Max(12, (int)(26 * unit)));
-        _dropHintLayout = layout;
-    }
-
-    private static void SetGuideDirection(Entry entry, bool hover)
-    {
-        if (hover && entry.GuideRotation != null || !hover && entry.GuideRotation == null) return;
-        if (entry.Card.Get<bool>("isDisposed")) { entry.GuideRotation = null; return; }
-        var guide = entry.Card.Field("effectGuide")!;
-        if (guide.Get<bool>("isDisposed")) { entry.GuideRotation = null; return; }
-        var rotation = guide.Get<float>("rotation");
-        if (hover && entry.GuideRotation == null)
-        {
-            // Effect 22 points up; FairyGUI +90 is clockwise. SetNativeObject keeps this angle on late loads.
-            entry.GuideRotation = rotation;
-            guide.Set("rotation", rotation + HandLayout.GuideRightRotation);
-        }
-        else if (!hover && entry.GuideRotation is { } original)
-        {
-            if (rotation == original + HandLayout.GuideRightRotation) guide.Set("rotation", original);
-            entry.GuideRotation = null;
-        }
-    }
-
-    private static void ClearDropHint()
-    {
-        GameUi.Dispose(_dropHint); _dropHint = null;
-        GameUi.Dispose(_dropHighlight?.Graph); _dropHighlight = null; _dropHintLayout = null;
     }
 
     private static void PollPileClick(IReadOnlyList<RuntimeObject> path, Vector2 pointer, float unit, bool locked)
@@ -439,8 +369,8 @@ internal static class HandLayoutUi
         }
         // Once open only its caption is a toggle; the vacated card footprint must
         // not become an invisible wall over the field.
-        var a = ToLocal(_container!, root, slot.X, _expanded == group ? height - 37 * unit : slot.Y);
-        var b = ToLocal(_container!, root, slot.X + slot.Width, height - 8 * unit);
+        var a = ToContainer(root, slot.X, _expanded == group ? height - 37 * unit : slot.Y);
+        var b = ToContainer(root, slot.X + slot.Width, height - 8 * unit);
         target.Call("SetXY", a.x, a.y); target.Call("SetSize", b.x - a.x, b.y - a.y);
         target.Set("visible", enabled);
     }
@@ -486,6 +416,62 @@ internal static class HandLayoutUi
     }
     private static Vector2 ToLocal(RuntimeObject parent, RuntimeObject root, float x, float y) =>
         parent.Result<Vector2, Vector2>("RootToLocal", new Vector2(x, y), root);
+    // RootToLocal into the card container is affine: a screen-space FairyGUI point goes through the stage transform, the
+    // container's inverse transform and a fixed-direction plane projection. Three calls a frame map every slot, caption and
+    // pile point (about 30 interpreted calls a frame with eight cards before, 2026-11-17 call log); a fourth, the far corner,
+    // checks the map, and a frame whose corner misses it goes through the call for each point.
+    private static int _mapFrame = -1;
+    private static IntPtr _mapParent;
+    private static bool _mapHolds;
+    private static Vector2 _mapOrigin, _mapX, _mapY;
+    private static Vector2 ToContainer(RuntimeObject root, float x, float y)
+    {
+        var parent = _container!;
+        if (_mapFrame != Time.frameCount || _mapParent != parent.Pointer)
+        {
+            _mapFrame = Time.frameCount; _mapParent = parent.Pointer;
+            var w = root.Get<float>("width"); var h = root.Get<float>("height");
+            _mapHolds = false;
+            if (w > 0 && h > 0)
+            {
+                _mapOrigin = ToLocal(parent, root, 0, 0);
+                _mapX = (ToLocal(parent, root, w, 0) - _mapOrigin) / w;
+                _mapY = (ToLocal(parent, root, 0, h) - _mapOrigin) / h;
+                var miss = ToLocal(parent, root, w, h) - (_mapOrigin + _mapX * w + _mapY * h);
+                _mapHolds = Math.Abs(miss.x) < .05f && Math.Abs(miss.y) < .05f;
+            }
+        }
+        return _mapHolds ? _mapOrigin + _mapX * x + _mapY * y : ToLocal(parent, root, x, y);
+    }
+    // UIHandCard_Button_Card.IsDistribute() is `x == 0 && Math.Abs(y - Screen.height) == 0` (hand-layout checks its IL): read
+    // through the plain x and y getters instead of an interpreted call per card each frame (2026-11-17 call log).
+    private static bool Distributing(RuntimeObject card) =>
+        card.Get<float>("x") == 0f && Math.Abs(card.Get<float>("y") - (float)Screen.height) == 0f;
+    // The face corner in card space, card.GlobalToLocal(face.LocalToGlobal(corner)), depends only on the face's transform inside
+    // its card and the card's anchor, not on where the card is: read again only when one of those values changes (two
+    // interpreted calls per card each frame before). Every 64th frame per card it is read again and compared; a miss turns
+    // the cache off for the session and is logged.
+    private static bool _cornerCacheOff;
+    private static Vector2 CornerOffset(Entry e, RuntimeObject card, Vector2 corner, float faceWidth, float faceHeight)
+    {
+        var face = e.Face;
+        Vector2 Read() => card.Result<Vector2, Vector2>("GlobalToLocal", face.Result<Vector2, Vector2>("LocalToGlobal", corner));
+        if (_cornerCacheOff || RuntimeObject.GetPointerOf(face.Pointer, "parent") != card.Pointer) return Read();
+        var key = new OffsetKey(face.Get<float>("x"), face.Get<float>("y"), faceWidth, faceHeight, face.Get<float>("scaleX"),
+            face.Get<float>("scaleY"), face.Get<float>("rotation"), face.Get<float>("pivotX"), face.Get<float>("pivotY"),
+            card.Get<float>("width"), card.Get<float>("height"), card.Get<float>("pivotX"), card.Get<float>("pivotY"));
+        if (e.CornerKey == key && (++e.CornerChecks & 63) != 0) return e.CornerOffset;
+        var offset = Read();
+        if (e.CornerKey == key && (Math.Abs(offset.x - e.CornerOffset.x) > .05f || Math.Abs(offset.y - e.CornerOffset.y) > .05f))
+        {
+            _cornerCacheOff = true;
+            Plugin.Diagnostics.Write(FormattableString.Invariant($"hand.cornerCache off: cached=({e.CornerOffset.x:F2},{e.CornerOffset.y:F2}); read=({offset.x:F2},{offset.y:F2})"));
+        }
+        // A card scaled to zero maps to NaN; keep reading until the result is finite.
+        e.CornerKey = float.IsFinite(offset.x) && float.IsFinite(offset.y) ? key : null;
+        e.CornerOffset = offset;
+        return offset;
+    }
     private static bool Near(Vector2 a, Vector2 b) => HandLayout.Resting(a.x, a.y, b.x, b.y);
     // A loop, not a capturing lambda: this runs for every pile every frame.
     private static bool AnyOwnedReady(List<Entry> pile, HashSet<Entry> ready)
@@ -514,16 +500,16 @@ internal static class HandLayoutUi
         var faceHeight = e.Face.Get<float>("height");
         var scale = slot.Width / (faceWidth * zoom.x);
         // Actual card artwork, hit area and native effects move together. Visibility stays native.
-        var target = ToLocal(_container!, root, slot.X, slot.Y);
+        var target = ToContainer(root, slot.X, slot.Y);
         var corner = e.Face.Field<bool>("_pivotAsAnchor")
             ? new Vector2(-faceWidth * e.Face.Get<float>("pivotX"),
                 -faceHeight * e.Face.Get<float>("pivotY")) : Vector2.zero;
-        // Every card every frame, folded or opened by hover: value results without wrappers (2026-11-13).
-        var offset = card.Result<Vector2, Vector2>("GlobalToLocal", e.Face.Result<Vector2, Vector2>("LocalToGlobal", corner));
+        // Every card every frame, folded or in the open row: value results without wrappers (2026-11-13).
+        var offset = CornerOffset(e, card, corner, faceWidth, faceHeight);
         var pos = target - offset * scale;
         var actual = new Vector2(card.Get<float>("x"), card.Get<float>("y"));
         var centerOffset = offset + new Vector2(faceWidth * zoom.x, faceHeight * zoom.y) * .5f;
-        var center = ToLocal(_container!, root, slot.X + slot.Width * .5f, slot.Y + slot.Height * .5f);
+        var center = ToContainer(root, slot.X + slot.Width * .5f, slot.Y + slot.Height * .5f);
         e.CenterLocked = (e.CenterLocked && Near(e.Center, center))
             || Near(actual + centerOffset * card.Get<float>("scaleX"), center);
         e.Center = center;
@@ -672,7 +658,6 @@ internal static class HandLayoutUi
 
     private static void Restore(Entry e, List<RuntimeObject>? motions)
     {
-        SetGuideDirection(e, false);
         RestoreZoom(e);
         var card = e.Card;
         if (!e.Owned || card.Get<bool>("isDisposed") || card.Field<bool>("IsRelease")
@@ -772,7 +757,6 @@ internal static class HandLayoutUi
         foreach (var target in PileTargets.Values) Step(() => GameUi.Dispose(target));
         PileTargets.Clear(); _pressedPile = null; _outsidePress = false;
         CaptionLayout.Clear();
-        Step(ClearDropHint);
         _dropBottom = null; // The native zone stays until the next layout frame.
         Step(() =>
         {
@@ -780,7 +764,7 @@ internal static class HandLayoutUi
             _hotZone.Call("SetXY", _hotPosition.x, _hotPosition.y);
             _hotZone.Call("SetSize", _hotSize.x, _hotSize.y);
         });
-        if (failed != null) Compatibility.Block("HandLayout", failed);
+        if (failed != null) Compatibility.Block("GroupHand", failed);
         _ui = _container = _hotZone = null;
         _expanded = null;
         _focused = IntPtr.Zero;

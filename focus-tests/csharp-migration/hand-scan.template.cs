@@ -4,10 +4,10 @@ namespace HandScanTest {
 struct Vector2 { public Vector2(float x,float y){} }
 static class Time { public static float unscaledTime; }
 sealed class Setting<T> { public T Value; public Setting(T value){Value=value;} }
-static class Plugin { public static Setting<bool> GroupHand=new(true); public static Setting<string> HandExpandMode=new("Hover"); }
-static class HandLayout { public static int Mode(bool enabled,string mode)=>!enabled?0:mode=="Click"?2:1; }
+static class Plugin { public static Setting<bool> GroupHand=new(true); }
 static class HandClickBinding { public static void Clear(){} }
 static class VisibleCombatAdvisor { public static bool IsPve(int map)=>map==9; }
+static class FightPip { public static bool ShowsHand; }
 sealed class RuntimeObject {
     static int next;
     public IntPtr Pointer=(IntPtr)(++next);
@@ -15,6 +15,8 @@ sealed class RuntimeObject {
     public static int Scans, Map=9, Step=3;
     public static bool Watcher;
     public static IntPtr FindClass(string ns,string name)=>(IntPtr)1;
+    public static long LapStart()=>0; // Development lap timing (RuntimeObject.Lap); inert here.
+    public static void Lap(string label,ref long start){}
     public static RuntimeObject Shared=new();
     public static RuntimeObject StaticField(IntPtr type,string name){Scans++;return Shared;}
     public RuntimeObject Get(string name)=>this;
@@ -34,7 +36,7 @@ public static class Check {
     static Vector2 _hotPosition,_hotSize;
     static float _scanAt;
     static IntPtr _tween,_tweenManager,_gobject,_logic,_pool,_cardClass,_focused;
-    static int _mode,Layouts,Clears;
+    static int Layouts,Clears;
     static int? _expanded;
     static bool _cardPress;
     static void Report(string state){}
@@ -60,7 +62,11 @@ __PREFIX__
             Time.unscaledTime+=1; Update(); Assert(_ui==GameUi.Panel && Layouts>0);
             RuntimeObject.Step=2; Time.unscaledTime+=.21f; Update(); Assert(_ui==null);
         }
-        Console.WriteLine("PASS: encounter screen and window opening keep the field hand; fight steps release it.");
+        // A fight the PiP shows beside the field keeps it; full screen (ShowsHand false) releases it again.
+        Clear(); Layouts=0; GameUi.Fight=true; RuntimeObject.Step=3; FightPip.ShowsHand=true; GameUi.Panel=new();
+        Time.unscaledTime+=1; Update(); Assert(_ui==GameUi.Panel && Layouts>0);
+        FightPip.ShowsHand=false; Time.unscaledTime+=.21f; Update(); Assert(_ui==null);
+        Console.WriteLine("PASS: encounter screen, window opening and the PiP keep the field hand; fight steps release it.");
         RuntimeObject.Step=3;
         Clear(); GameUi.Fight=false; RuntimeObject.Watcher=false; RuntimeObject.Map=9; GameUi.Panel=null;
         Time.unscaledTime=20;Update(); GameUi.Panel=new();

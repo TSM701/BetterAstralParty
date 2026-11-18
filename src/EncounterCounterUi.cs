@@ -6,7 +6,8 @@ internal static class EncounterCounterUi
 {
     private static RuntimeObject? _fight, _anchor, _effect;
     private static IntPtr _logicClass, _defender;
-    // Hidden only by the settings window or lost focus: the same defender returns without reveal motion or sound.
+    // Hidden only by the settings window: the same defender returns without reveal motion or sound. Lost focus keeps it
+    // (2026-11-15), as the fight icons do.
     private static IntPtr _quietDefender;
     private static float _scanAt;
 
@@ -15,7 +16,7 @@ internal static class EncounterCounterUi
         if (!Compatibility.Allowed(BattleStatusUi.CounterFeature)) return;
         try
         {
-            if (!Plugin.BattleStatus.Value || !Plugin.CounterIcons.Value || ModUi.IsOpen || !Application.isFocused)
+            if (!Plugin.BattleStatus.Value || !Plugin.CounterIcons.Value || ModUi.IsOpen)
             {
                 _quietDefender = Plugin.BattleStatus.Value && Plugin.CounterIcons.Value && _effect != null ? _defender : IntPtr.Zero;
                 Clear(); return;
@@ -49,7 +50,7 @@ internal static class EncounterCounterUi
                 (anchor.Get<float>("height") - size) / 2);
             _effect.Set("visible", true);
             _anchor = anchor; _defender = defender.Pointer;
-            if (_defender != _quietDefender) NativeUi.Play(_effect, "MaxPoint");
+            if (_defender != _quietDefender) NativeUi.PlayCounter(_effect);
             _quietDefender = IntPtr.Zero;
         }
         catch (Exception ex)

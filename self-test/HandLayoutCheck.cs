@@ -5,10 +5,6 @@ static class HandLayoutCheck
     internal static void Run()
     {
         void Check(bool value) { if (!value) throw new Exception("Grouped hand classification/layout regression"); }
-        Check(HandLayout.Mode(false, "Click") == 0 && HandLayout.Mode(true, "Hover") == 1
-            && HandLayout.Mode(true, "Click") == 2 && HandLayout.Mode(true, "invalid") == 1);
-        Check(HandLayout.NextMode(false, "Hover") == 2 && HandLayout.NextMode(false, "Click") == 2
-            && HandLayout.NextMode(true, "Click") == 1 && HandLayout.NextMode(true, "Hover") == 0);
         foreach (var h in new[] { 720f, 900f, 1080f, 1440f, 2160f })
         foreach (var aspect in new[] { 1.3f, 1.5f, 2f })
         for (var count = 1; count <= 24; count++)
@@ -17,19 +13,19 @@ static class HandLayoutCheck
             var w = h * 16 / 9;
             var unit = h / 1080f;
             var pileTop = HandLayout.Place(w, h, columns, 0, count, 0, aspect).Y;
-            // Drops end 12 px above every resting card: Click above its open row as before, Hover above the open column.
+            // Drops end 12 px above every resting card, above the open row when one is open.
             var clickBottom = HandLayout.DropBottom(pileTop, HandLayout.ClickRow(w, h, count, 0, aspect, pileTop), unit);
-            var hoverBottom = HandLayout.DropBottom(pileTop, HandLayout.Place(w, h, columns, 0, count, 0, aspect, true), unit);
-            Check(HandLayout.DropBottom(pileTop, null, unit) == pileTop - 12 * unit && hoverBottom > 0 && hoverBottom <= pileTop - 12 * unit
+            Check(HandLayout.DropBottom(pileTop, null, unit) == pileTop - 12 * unit
                 && Math.Abs(clickBottom - (HandLayout.Focus(HandLayout.ClickRow(w, h, count, 0, aspect, pileTop)).Y - 12 * unit)) < .01f);
+            // A card held at its bottom edge on the screen top keeps its centre inside the zone's part above the screen.
+            Check(HandLayout.DropOverhang * h >= HandLayout.Focus(HandLayout.ClickRow(w, h, count, 0, aspect, pileTop)).Height / 2);
             HandLayout.Slot? previous = null;
             for (var i = 0; i < count; i++)
             {
                 var slot = HandLayout.Focus(HandLayout.ClickRow(w, h, count, i, aspect, pileTop));
                 Check(slot.Width > 0 && slot.Height > 0 && slot.X >= w * .25f - .01f
                     && slot.X + slot.Width <= w * .75f + .01f);
-                Check(slot.Y - 12 * unit > h * .08f && slot.Y - 12 * unit >= clickBottom - .01f
-                    && HandLayout.Focus(HandLayout.Place(w, h, columns, 0, count, i, aspect, true)).Y - 12 * unit >= hoverBottom - .01f);
+                Check(slot.Y - 12 * unit > h * .08f && slot.Y - 12 * unit >= clickBottom - .01f);
                 Check(Math.Abs(pileTop - slot.Y - slot.Height - 16 * unit) < .01f);
                 if (previous is { } p) Check(slot.X > p.X + p.Width && Math.Abs(slot.Y - p.Y) < .01f);
                 previous = slot;
@@ -58,44 +54,20 @@ static class HandLayoutCheck
             Check(first.Y > h * .5f && last.Y + last.Height < h);
             Check(first.Width > 0 && first.Step > 0 && first.Step < first.Height);
             if (rows > 1) Check(HandLayout.Place(w,h,columns,0,rows,1).Y < first.Y + first.Height);
-            var expanded = HandLayout.Place(w,h,columns,0,rows,0, expanded: true);
-            var expandedLast = HandLayout.Place(w,h,columns,0,rows,rows-1, expanded: true);
-            Check(expanded.Step >= first.Step && expanded.Y >= h * .18f - 1);
             var foldedLast = HandLayout.Place(w,h,columns,0,rows,rows-1);
-            var focusedLast = HandLayout.Focus(expandedLast);
             var unit = Math.Min(w / 1920f, h / 1080f);
             Check(Math.Abs(foldedLast.Y + foldedLast.Height - (h - 44 * unit)) < .01f);
-            Check(focusedLast.Y + focusedLast.Height + 3 * unit < h - 37 * unit);
-            Check(Math.Abs(focusedLast.Y + focusedLast.Height - foldedLast.Y - foldedLast.Height) < .01f);
-            Check(expanded.Width > 0 && expanded.Height > 0 && expanded.Step > expanded.Height);
-            Check(Math.Abs(expanded.X + expanded.Width / 2 - first.X - first.Width / 2) < .01f);
-            Check(expandedLast.Y + expandedLast.Height < h);
-            for (var row = 1; row < rows; row++)
-            {
-                var previous = HandLayout.Place(w,h,columns,0,rows,row-1, expanded: true);
-                var current = HandLayout.Place(w,h,columns,0,rows,row, expanded: true);
-                Check(current.Y > previous.Y + previous.Height);
-                Check(current.Width == expanded.Width && current.Height == expanded.Height);
-                Check(HandLayout.InColumn(current.X + current.Width / 2,
-                    (previous.Y + previous.Height + current.Y) / 2, expanded, h, 12));
-                var focusPrevious = HandLayout.Focus(previous);
-                var focusCurrent = HandLayout.Focus(current);
-                Check(focusPrevious.Y + focusPrevious.Height < focusCurrent.Y);
-            }
-            var focusFirst = HandLayout.Focus(expanded);
-            Check(Math.Abs(focusFirst.X + focusFirst.Width / 2 - expanded.X - expanded.Width / 2) < .01f);
-            Check(Math.Abs(focusFirst.Y + focusFirst.Height / 2 - expanded.Y - expanded.Height / 2) < .01f);
-            // Every visible edge/corner of the enlarged artwork and its 3px outline is a focus hit.
-            var border = 3 * Math.Min(w / 1920f, h / 1080f);
+            // The open row's hovered card: enlarged around its own centre, every visible edge and 3px outline a hit.
+            var cell = HandLayout.ClickRow(w, h, rows, 0, 1.5f, first.Y);
+            var focusFirst = HandLayout.Focus(cell);
+            Check(Math.Abs(focusFirst.X + focusFirst.Width / 2 - cell.X - cell.Width / 2) < .01f);
+            Check(Math.Abs(focusFirst.Y + focusFirst.Height / 2 - cell.Y - cell.Height / 2) < .01f);
+            var border = 3 * unit;
             foreach (var x in new[] { focusFirst.X - border, focusFirst.X, focusFirst.X + focusFirst.Width / 2, focusFirst.X + focusFirst.Width + border })
             foreach (var y in new[] { focusFirst.Y - border, focusFirst.Y, focusFirst.Y + focusFirst.Height / 2, focusFirst.Y + focusFirst.Height + border })
-                Check(HandLayout.InFocus(x,y,expanded,border));
-            Check(!HandLayout.InFocus(focusFirst.X-border-1, focusFirst.Y, expanded,border));
-            Check(focusFirst.Width > expanded.Width && focusFirst.Height > expanded.Height);
-            Check(focusFirst.X >= first.X - .01f && focusFirst.X + focusFirst.Width <= first.X + first.Width + .01f);
-            Check(focusFirst.Y >= h * .18f - .01f);
-            Check(HandLayout.InColumn(expanded.X + 5, expanded.Y + 5, expanded, h, 12));
-            Check(!HandLayout.InColumn(expanded.X - 13, expanded.Y, expanded, h, 12));
+                Check(HandLayout.InFocus(x,y,cell,border));
+            Check(!HandLayout.InFocus(focusFirst.X-border-1, focusFirst.Y, cell,border));
+            Check(focusFirst.Width > cell.Width && focusFirst.Height > cell.Height);
             if (columns > 1) Check(first.X + first.Width < HandLayout.Place(w,h,columns,1,rows,0).X);
         }
         Check(HandLayout.Resting(100, 200, 100, 200));
@@ -114,9 +86,9 @@ static class HandLayoutCheck
             Check(Math.Abs(start + (end-start)-end) < .01f);
         }
         ModText.Select("English");
-        Check(ModText.Text(MenuLayout.Help("HandLayout").Title) == "Group Hand");
-        Check(!ModText.Text(MenuLayout.Help("HandLayout").Body).Contains("필드"));
+        Check(ModText.Text(MenuLayout.Help("GroupHand").Title) == "Group Hand");
+        Check(!ModText.Text(MenuLayout.Help("GroupHand").Body).Contains("필드"));
         ModText.Select("한국어");
-        Console.WriteLine("Grouped hand: classification, KO/EN, non-overlapping equal-size unfolded cards, fixed bottom/column centre and gap hover; 1-7 groups and 1-11 rows across seven resolutions (including HD through 4K) passed.");
+        Console.WriteLine("Grouped hand: classification, KO/EN, folded piles, the open row and its focus hits; 1-7 groups and 1-11 rows across seven resolutions (including HD through 4K) passed.");
     }
 }

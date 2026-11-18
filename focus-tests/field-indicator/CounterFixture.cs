@@ -56,7 +56,7 @@ internal sealed class RuntimeObject {
     internal RuntimeObject? Field(string name) {
         bool ok=Kind switch {
             "Room"=>name=="info","Battle"=>name is "battleInfo" or "PlayerDatas","Ui"=>name is "com_AttrInfos" or "com_PlayerAttrInfos",
-            "Player"=>name is "player" or "CharacterInst","Property"=>name is "Counter" or "HP" or "maxHP" or "ATK" or "DEF",
+            "Player"=>name is "player" or "CharacterInst","Property"=>name is "Counter" or "CounterCount" or "HP" or "maxHP" or "ATK" or "DEF","Stacks"=>name=="property",
             "Tuple"=>name is "Item1" or "Item2","Attr"=>name is "txt_Name" or "txt_Number" or "txt_HP" or "graph_Line" or "graph_Guide" or "graph_Sign" or "list_Buff" or "graph_ShowBuff",
             "PlayerAttr"=>name=="loader_State","Fight"=>name=="fightStatus",_=>false};
         if(!ok)throw new Exception("Unexpected native field "+Kind+"."+name);
@@ -73,6 +73,9 @@ internal sealed class RuntimeObject {
         Data["PlayerData"]=World.Owners[id];Writes++;
     }
     internal T Value<T>() where T:unmanaged=>Kind=="Box"&&Data["value"] is T v?v:throw new Exception("Strict boxed value");
+    internal T Result<T>(string name) where T:unmanaged=>Call(name)!.Value<T>();
+    internal T Result<T,A>(string name,A arg) where T:unmanaged where A:unmanaged=>Call(name,arg)!.Value<T>();
+    internal T Result<T,A>(string name,A arg,RuntimeObject other) where T:unmanaged where A:unmanaged=>Call(name,arg,other)!.Value<T>();
     internal string String()=>Kind=="Box"&&(Data["value"] is string text)?text:throw new Exception("Strict string value");
     internal RuntimeObject? Call(string name,params object?[] args) {
         if(Kind=="Parent"&&name=="AddChild"&&args is [RuntimeObject child]){child.Parent=this;Children.Add(child);return child;}
@@ -104,7 +107,8 @@ internal static class NativeUi {
     // Owned hero-plate layer: an empty mod component inside the native parent.
     internal static RuntimeObject Component(RuntimeObject parent,float width,float height){if(width!=0||height!=0)throw new Exception("Unexpected layer size");var layer=new RuntimeObject("Parent");parent.Call("AddChild",layer);return layer;}
 }
-internal static class FieldZoomUi {internal static float IndicatorScale=>1f;}
+internal static class FieldZoomUi {internal static float IndicatorScale=>1f; internal static UnityEngine.Camera CameraOf(RuntimeObject camera)=>new(camera.Pointer);}
+internal static class UnityMath {internal static UnityEngine.Vector2 V2(float x,float y)=>new(x,y); internal static bool IsZero(UnityEngine.Vector3 v)=>v.x*v.x+v.y*v.y+v.z*v.z<1e-5f*1e-5f;}
 internal static class FieldMonsterPlates { internal static readonly List<RuntimeObject> Adopted=new(); internal static IReadOnlyList<RuntimeObject> Plates=>Adopted; }
 internal static class FieldStatePlates { internal static readonly List<RuntimeObject> Adopted=new(); internal static IReadOnlyList<RuntimeObject> Players=>Adopted; }
 internal sealed class FloatSetting {internal float Value=1f;}
@@ -114,13 +118,13 @@ internal static class FieldNameFont {internal static bool Apply(RuntimeObject la
 internal static class VisibleCombatAdvisor {internal static bool IsPve(int map)=>map==2;}
 internal sealed class Setting {internal bool Value=true;}
 internal sealed class Diagnostics {internal bool IsRecording=>false;internal void State(string key,string value){}internal void Write(string value){}internal void Error(string key,Exception ex)=>throw ex;}
-internal static class Plugin {internal static readonly Setting FieldBuffs=new();internal static readonly FloatSetting FieldIndicatorHeight=new();internal static readonly Diagnostics Diagnostics=new();}
+internal static class Plugin {internal static readonly Setting PlayerIndicators=new();internal static readonly FloatSetting IndicatorHeight=new();internal static readonly Diagnostics Diagnostics=new();}
 internal static class Compatibility {internal static bool Allowed(string feature)=>true;internal static void Block(string feature,Exception ex,Action cleanup){cleanup();throw new Exception("Unexpected production failure",ex);}}
 
 internal sealed class World {
     internal static World? Current;internal static readonly Dictionary<long,RuntimeObject> Owners=new();
     internal readonly RuntimeObject Root=new("Parent"),AttrParent=new("Parent"),PlayerParent=new("Parent"),Ui=new("Ui"),Players=new("List"),Info=new("Info"),Fight=new("Fight"),Logic=new("Logic");
-    internal World(){FieldBuffUi.Clear("fixture-reset");foreach(var pair in new[]{("_scanAt",(object)0f),("_plateClass",(object)(IntPtr)3),("_logicClass",(object)(IntPtr)2)})typeof(FieldBuffUi).GetField(pair.Item1,BindingFlags.NonPublic|BindingFlags.Static)!.SetValue(null,pair.Item2);Current=this;Owners.Clear();NativeUi.Created.Clear();GameUi.Root=Root;GameUi.HomeAvailable=false;Plugin.FieldBuffs.Value=true;ModUi.IsOpen=false;FieldIndicatorOpacity.Hidden=false;Application.isFocused=true;Input.Down=Input.Up=Input.Held=false;Time.unscaledTime+=1;GameUi.Path=Array.Empty<RuntimeObject>();AttrParent.Parent=PlayerParent.Parent=Root;
+    internal World(){PlayerIndicatorUi.Clear("fixture-reset");foreach(var pair in new[]{("_scanAt",(object)0f),("_plateClass",(object)(IntPtr)3),("_logicClass",(object)(IntPtr)2)})typeof(PlayerIndicatorUi).GetField(pair.Item1,BindingFlags.NonPublic|BindingFlags.Static)!.SetValue(null,pair.Item2);Current=this;Owners.Clear();NativeUi.Created.Clear();GameUi.Root=Root;GameUi.HomeAvailable=false;Plugin.PlayerIndicators.Value=true;ModUi.IsOpen=false;FieldIndicatorOpacity.Hidden=false;Application.isFocused=true;Input.Down=Input.Up=Input.Held=false;Time.unscaledTime+=1;GameUi.Path=Array.Empty<RuntimeObject>();AttrParent.Parent=PlayerParent.Parent=Root;
         Info.Data["MapType"]=2;var room=new RuntimeObject("Room"){Data={{"info",Info}}};Logic.Data["room"]=new RuntimeObject("RoomLogic"){Data={{"curRoomInfo",room}}};Fight.Data["fightStatus"]=RuntimeObject.Box(false);Logic.Data["fight"]=Fight;Ui.Data["com_AttrInfos"]=AttrParent;Ui.Data["com_PlayerAttrInfos"]=PlayerParent;Logic.Data["battle"]=new RuntimeObject("Battle"){Data={{"battleInfo",new RuntimeObject("BattleInfo"){Data={{"ui",Ui}}}},{"PlayerDatas",Players}}};}
     internal static RuntimeObject Player(long id,bool counter,int type=2) {
         var property=new RuntimeObject("Property");
@@ -137,13 +141,13 @@ internal sealed class World {
     internal RuntimeObject Add(string kind,RuntimeObject owner,RuntimeObject? parent=null){var ui=Plate(kind,owner);(parent??(kind=="Attr"?AttrParent:PlayerParent)).Call("AddChild",ui);return ui;}
 }
 public static class Check {
-    private static int checks;private static readonly Type Product=typeof(FieldBuffUi);
+    private static int checks;private static readonly Type Product=typeof(PlayerIndicatorUi);
     private static readonly MethodInfo Refresh=Product.GetMethod("RefreshCounters",BindingFlags.NonPublic|BindingFlags.Static)!;
     private static void Assert(bool good,string name){checks++;if(!good)throw new Exception(name);}
     private static void Scan(World w)=>Refresh.Invoke(null,new object[]{w.Ui});
     private static RuntimeObject Icon(RuntimeObject plate)=>NativeUi.Created.Single(x=>!x.Disposed&&x.Parent==plate);
     private static int Shown=>NativeUi.Created.Count(x=>!x.Disposed&&GameUi.Visible(x));
-    private static void Frame(){Time.unscaledTime+=.21f;FieldBuffUi.Tick();}
+    private static void Frame(){Time.unscaledTime+=.21f;PlayerIndicatorUi.Tick();}
     public static int Run(){checks=0;
         var w=new World();var monster=World.Player(1,true);var m=w.Add("Attr",monster);var hero=World.Player(2,true,1);var h=w.Add("PlayerAttr",hero);Scan(w);
         Assert(Shown==2,"Both public hero and monster counter owners are shown");Assert(Icon(m).Data["touchable"] is false&&Icon(h).Data["touchable"] is false,"Counter icons never intercept input");Assert((float)Icon(m).Data["x"]! ==207f&&(float)Icon(m).Data["y"]! ==13f,"Attribute header anchor");Assert((float)Icon(h).Data["x"]! ==186f&&(float)Icon(h).Data["y"]! ==76f,"Native player state anchor");Assert(m.Writes==0&&h.Writes==0,"Native plate state is untouched");
@@ -153,14 +157,15 @@ public static class Check {
         ((RuntimeObject)m.Data["graph_Guide"]!).Data["xMin"]=220f;Scan(w);Assert((float)icon.Data["x"]! ==228f,"Native responsive header geometry followed");((RuntimeObject)m.Data["graph_Guide"]!).Data["xMin"]=float.NaN;Scan(w);Assert(!icon.Visible,"Nonfinite anchor fails closed");((RuntimeObject)m.Data["graph_Guide"]!).Data["xMin"]=199f;Scan(w);
         var replacement=World.Player(3,true);m.Data["PlayerData"]=replacement;Scan(w);Assert(icon.Disposed&&Icon(m)!=icon,"Reused plate with different owner replaces private badge");icon=Icon(m);m.Data["PlayerData"]=null;Scan(w);Assert(icon.Disposed,"Missing owner disposes stale badge");
         w=new World();hero=World.Player(4,true,1);h=w.Add("PlayerAttr",hero);var clone=w.Add("Attr",hero);var plates=(IDictionary)Product.GetField("Plates",BindingFlags.NonPublic|BindingFlags.Static)!.GetValue(null)!;var plate=Activator.CreateInstance(Product.GetNestedType("Plate",BindingFlags.NonPublic)!,BindingFlags.NonPublic|BindingFlags.Instance,null,new object[]{hero,w.AttrParent},null)!;var mod=(RuntimeObject)plate.GetType().GetField("Ui",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(plate)!;mod.Visible=true;plates.Add(mod.Pointer,plate);Scan(w);Assert(Shown==1&&Icon(mod).Visible,"Mod hero HP clone wins over duplicate native player/attribute plates");Assert(NativeUi.Created.Count==1,"No duplicate counter created for same visible owner");mod.Visible=false;Scan(w);Assert(Shown==1,"Hidden clone permits native visible owner fallback without double display");mod.Visible=true;Scan(w);Assert(Shown==1&&Icon(mod).Visible,"Returning clone suppresses duplicate fallback");
-        Product.GetField("_scanAt",BindingFlags.NonPublic|BindingFlags.Static)!.SetValue(null,float.PositiveInfinity);GameUi.Path=new[]{mod};Input.mousePosition=new Vector3(10,10,0);Input.Down=Input.Held=true;FieldBuffUi.Tick();Input.Down=false;Scan(w);Input.Up=true;Input.Held=false;GameUi.Path=new[]{Icon(mod),mod};FieldBuffUi.Tick();Assert(mod.Opens==1,"Badge refresh does not cancel pending buff click or steal hit ancestry");Input.Up=false;
-        foreach(var gate in new[]{"setting","settings","root","pvp","combat","parent"}){w=new World();m=w.Add("Attr",World.Player(5,true));var nativeArt=new RuntimeObject("NativeState"){Parent=m};m.Children.Add(nativeArt);Frame();icon=Icon(m);var nativeChildren=m.Children.Count;switch(gate){case "setting":Plugin.FieldBuffs.Value=false;break;case "settings":ModUi.IsOpen=true;break;case "root":GameUi.Root=null;break;case "pvp":w.Info.Data["MapType"]=1;break;case "combat":w.Fight.Data["fightStatus"]=RuntimeObject.Box(true);break;case "parent":w.AttrParent.Visible=false;break;}Frame();Assert(icon.Disposed&&!m.Disposed&&m.Writes==0,"Cleanup preserves native owner: "+gate);Assert(m.Children.Count==nativeChildren-1&&!nativeArt.Disposed&&nativeArt.Writes==0,"Only private badge removed, native state art unchanged: "+gate);}
+        Product.GetField("_scanAt",BindingFlags.NonPublic|BindingFlags.Static)!.SetValue(null,float.PositiveInfinity);GameUi.Path=new[]{mod};Input.mousePosition=new Vector3(10,10,0);Input.Down=Input.Held=true;PlayerIndicatorUi.Tick();Input.Down=false;Scan(w);Input.Up=true;Input.Held=false;GameUi.Path=new[]{Icon(mod),mod};PlayerIndicatorUi.Tick();Assert(mod.Opens==1,"Badge refresh does not cancel pending buff click or steal hit ancestry");Input.Up=false;
+        foreach(var gate in new[]{"setting","settings","root","pvp","combat","parent"}){w=new World();m=w.Add("Attr",World.Player(5,true));var nativeArt=new RuntimeObject("NativeState"){Parent=m};m.Children.Add(nativeArt);Frame();icon=Icon(m);var nativeChildren=m.Children.Count;switch(gate){case "setting":Plugin.PlayerIndicators.Value=false;break;case "settings":ModUi.IsOpen=true;break;case "root":GameUi.Root=null;break;case "pvp":w.Info.Data["MapType"]=1;break;case "combat":w.Fight.Data["fightStatus"]=RuntimeObject.Box(true);break;case "parent":w.AttrParent.Visible=false;break;}Frame();Assert(icon.Disposed&&!m.Disposed&&m.Writes==0,"Cleanup preserves native owner: "+gate);Assert(m.Children.Count==nativeChildren-1&&!nativeArt.Disposed&&nativeArt.Writes==0,"Only private badge removed, native state art unchanged: "+gate);}
         w=new World();m=w.Add("Attr",World.Player(6,true));Frame();icon=Icon(m);FieldIndicatorOpacity.Hidden=true;w.AttrParent.Visible=false;Frame();Assert(!icon.Disposed&&!GameUi.Visible(icon),"Large zoom hide uses inherited parent ownership, not repeated disposal");FieldIndicatorOpacity.Hidden=false;w.AttrParent.Visible=true;Frame();Assert(Icon(m)==icon&&GameUi.Visible(icon),"Zoom reveal preserves same badge");
         w=new World();m=w.Add("Attr",World.Player(7,true));Scan(w);icon=Icon(m);m.Parent!.Children.Remove(m);m.Parent=null;Scan(w);Assert(icon.Disposed&&!m.Disposed,"Detached native plate removes only private badge");
         w=new World();m=w.Add("Attr",World.Player(8,true));Scan(w);icon=Icon(m);m.Disposed=true;Scan(w);Assert(icon.Disposed,"Disposed native plate cleans badge safely");
         w=new World();m=w.Add("Attr",World.Player(9,true));Scan(w);icon=Icon(m);w.Ui.Data["com_AttrInfos"]=new RuntimeObject("Parent"){Parent=w.Root};Scan(w);Assert(icon.Disposed&&!m.Disposed,"Replaced parent removes old owned icon only");
+        w=new World();var stacked=World.Player(11,false,1);var stacks=new RuntimeObject("Reactive"){Data={{"Value",2}}};stacked.Get("Property")!.Data["CounterCount"]=new RuntimeObject("Stacks"){Data={{"property",stacks}}};h=w.Add("PlayerAttr",stacked);Scan(w);Assert(Shown==1,"A hero's counter stacks show the badge without CanCounter");stacks.Data["Value"]=0;Scan(w);Assert(Shown==0,"Zero counter stacks hide it");
         w=new World();m=w.Add("Attr",World.Player(10,false));Scan(w);Assert(NativeUi.Created.Count==0,"Counter false never fabricates artwork");m.Get("PlayerData")!.Get("Property")!.Data["Counter"]=null;Scan(w);Assert(NativeUi.Created.Count==0,"Unknown public counter is no icon");w.AttrParent.Children.Add(new RuntimeObject("Unknown"));Scan(w);Assert(NativeUi.Created.Count==0,"Unknown field children are never inspected as units");
-        FieldBuffUi.Clear("fixture-end");Console.WriteLine("PASS "+checks+" actual-source field-counter assertions; no native/game/RPC executed.");return checks;
+        PlayerIndicatorUi.Clear("fixture-end");Console.WriteLine("PASS "+checks+" actual-source field-counter assertions; no native/game/RPC executed.");return checks;
     }
 }
 }

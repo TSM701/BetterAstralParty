@@ -189,7 +189,7 @@ internal static class PublicCombatEffects {
 internal static class Plugin {
     internal sealed class Setting<T>(T value) { internal T Value = value; }
     internal static readonly Setting<float> UiScale = new(1);
-    internal static readonly Setting<bool> ShowDetails = new(true), EncounterAdvice = new(true), ShootingStarShow = new(true);
+    internal static readonly Setting<bool> AdviceDetails = new(true), EncounterAdvice = new(true), ShootingStarShow = new(true);
     internal static readonly SilentLogger Logger = new();
     internal sealed class SilentLogger { internal void LogInfo(string value) { } internal void LogWarning(string value) { } }
     internal static readonly SilentDiagnostics Diagnostics = new();

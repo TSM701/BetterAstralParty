@@ -50,7 +50,7 @@ internal static partial class TestCommands
         // The encounter scan offers the star every 0.2 s; a per-frame expiry removed it right after creation.
         Check(ReadSource(context, "src/ShootingStarUi.cs").Contains("if (Time.unscaledTime - _offeredAt > 0.35f", StringComparison.Ordinal),
             "Shooting Star indicator outlives the 0.2 s encounter scan");
-        var guide = ReadSource(context, "src/CharacterGuideUi.cs"); var damage = ReadSource(context, "src/RemainingHpUi.cs");
+        var guide = ReadSource(context, "src/PrepSkillInfoUi.cs"); var damage = ReadSource(context, "src/FinalDamageUi.cs");
         Contains(guide, new[] { "labelHeight, 19, dark: true", ": (width - textWidth) / 2f;", "badge.Text.Call(\"SetXY\", textLeft + 4, 0f)" }, "Native role text style and centering");
         Contains(damage, new[] { "28, 22, dark: true", "NativeUi.CopyTextFormat(_point!.Field(name)!, source.Field(name)!)" }, "Native dice style");
         foreach (var name in new[] { "faceDilate", "outline", "outlineSoftness", "underlaySoftness", "outlineColor", "shadowColor", "shadowOffset" })
@@ -58,12 +58,12 @@ internal static partial class TestCommands
         Check(ReadSource(context, "src/ModUi.cs").Contains("_helpFontRevision != ModFont.Revision", StringComparison.Ordinal), "Font change invalidates help measurements");
         Check(!Regex.IsMatch(ReadSource(context, "src/BetterAstralParty.csproj"), @"assets[/\\]fonts"), "No font resources bundled in plugin");
         Check(context.Hash(Path.Combine(context.Root, "src/FieldNameFont.cs")) == "144F4ECECEC714BA7CAB04A67685E4F17E16DCCF9C6E1E7CC58125A028BD1E8A", "Excluded field nickname font implementation unchanged");
-        Check(ReadSource(context, "src/FieldBuffUi.cs").Contains("FieldNameFont", StringComparison.Ordinal), "Current player indicators retain the excluded nickname font path");
+        Check(ReadSource(context, "src/PlayerIndicatorUi.cs").Contains("FieldNameFont", StringComparison.Ordinal), "Current player indicators retain the excluded nickname font path");
     }
 
-    private static void CharacterGuide(DevContext context, string stage, Action<string> pin)
+    private static void PrepSkillInfo(DevContext context, string stage, Action<string> pin)
     {
-        RunGeneralFixture(context, stage, GeneralWithoutNamespace(ReadSource(context, "src/CharacterRole.cs")) + "\n" + GeneralCharacterGuide0, "CharacterRoleCheck.Run()", pin);
+        RunGeneralFixture(context, stage, GeneralWithoutNamespace(ReadSource(context, "src/CharacterRole.cs")) + "\n" + GeneralPrepSkillInfo0, "CharacterRoleCheck.Run()", pin);
         using var native = Native(context); var types = native.MainModule.GetTypes().ToDictionary(type => type.FullName, StringComparer.Ordinal);
         foreach (var (name, value) in new[] { ("Attack", 2), ("Support", 4), ("Card", 3), ("Tank", 5) }) Check((int)types["CharacterTagType"].Fields.Single(field => field.Name == name).Constant == value, "Native character role " + name);
         foreach (var (type, name) in new[] {
@@ -74,10 +74,10 @@ internal static partial class TestCommands
             ("UI.UIHero_Com_FileBreakThrough", "com_Desc"), ("UI.UIHero_Com_FileBreakThrough", "language"), ("UI.UIRoomHero_Com_Player", "YOU"),
             ("UI.UIRoomHero_Com_Player", "com_PlayerLabel"), ("UI.UIRoomHero_Com_Player", "com_ChangeSlot"), ("UI.UIRoomHero_Com_ChangeSlot", "btn_ChangeSlot") })
             Check(types[type].Fields.Any(field => field.Name == name), "Native guide field " + type + "." + name);
-        var source = ReadSource(context, "src/CharacterGuideUi.cs");
+        var source = ReadSource(context, "src/PrepSkillInfoUi.cs");
         var settingTemplate = Template(context, "focus-tests/csharp-migration/character-guide-settings.template.cs", pin);
         RunEmbedded(context, stage, "character-guide-settings", settingTemplate.Replace("__SOURCE__", WithoutNamespace(source).Replace("using UnityEngine;", "", StringComparison.Ordinal), StringComparison.Ordinal), "BetterAstralParty.GuideSettingsCheck.Run()", pin, true);
-        Contains(source, new[] { "Plugin.CharacterGuide.Value && Compatibility.Allowed(\"CharacterGuide\")", "Plugin.CharacterRoles.Value && Compatibility.Allowed(\"CharacterRoles\")", "ClearGuide(); } catch (Exception ex) { BlockGuide(ex); }", "ClearRoles(); } catch (Exception ex) { BlockRoles(ex); }", "Hover(root); } catch (Exception ex) { BlockGuide(ex); }", "ScanRoles(root); } catch (Exception ex) { BlockRoles(ex); }", "chosen != 0 && _rolesEnabled" }, "Independent guide and role settings preserve their own lifecycle and compatibility breakers");
+        Contains(source, new[] { "Plugin.PrepSkillInfo.Value && Compatibility.Allowed(\"PrepSkillInfo\")", "Plugin.CharacterRoles.Value && Compatibility.Allowed(\"CharacterRoles\")", "ClearGuide(); } catch (Exception ex) { BlockGuide(ex); }", "ClearRoles(); } catch (Exception ex) { BlockRoles(ex); }", "Hover(root); } catch (Exception ex) { BlockGuide(ex); }", "ScanRoles(root); } catch (Exception ex) { BlockRoles(ex); }", "chosen != 0 && _rolesEnabled" }, "Independent guide and role settings preserve their own lifecycle and compatibility breakers");
         foreach (var category in new[] { "Character", "PVENurturance" }) Check(types["UI.UIStringType"].Fields.Single(field => field.Name == category).IsLiteral, "Native guide string category " + category);
         Contains(source, new[] { "RuntimeObject.EnumValue(\"UI\", \"UIStringType\", \"Character\")", "RuntimeObject.EnumValue(\"UI\", \"UIStringType\", \"PVENurturance\")", "\"GetLocal\", potential.Get<int>(\"DescriptionID\"), potentialStrings", "\"GetLocal\", config.Get<int>(\"NameID\"), characterStrings" }, "Guide potential and character text use their native enum names");
         Check(!Regex.IsMatch(source, "\"GetLocal\"[^\\r\\n]*,\\s*[0-9]+\\s*\\)"), "Guide localization has no ordinal fallback");
@@ -85,7 +85,7 @@ internal static partial class TestCommands
         Check(source.Contains(guard, StringComparison.Ordinal) && source.IndexOf(guard, StringComparison.Ordinal) < source.IndexOf("var overPopup =", StringComparison.Ordinal), "Native swap hit ancestry precedes popup retention");
         Check(!source.Contains("ready ? top.x - left", StringComparison.Ordinal) && !source.Contains("if (ready) textLeft +=", StringComparison.Ordinal), "Role labels do not inherit grade or readiness drift");
         Contains(source, new[] { "(portrait.Get<float>(\"width\") * portrait.Get<float>(\"scaleX\") - textWidth) / 2f", "AlignSwapButton(player, root);", "container.Set(\"x\", target);", "RestoreSwapPositions();",
-            "Compatibility.Block(\"CharacterGuide\"", "VisibleCombatAdvisor.IsPve", "quality.Call(\"LocalToRoot\"", "frame.Get(\"texture\")", "Hero_Com_FileBreakThrough",
+            "Compatibility.Block(\"PrepSkillInfo\"", "VisibleCombatAdvisor.IsPve", "quality.Call(\"LocalToRoot\"", "frame.Get(\"texture\")", "Hero_Com_FileBreakThrough",
             "\"AddPackageAsync\", \"Hero\"", "load.Call(\"GetResult\")", "owner.Field(\"YOU\")", "portrait.Get<float>(\"width\") * portrait.Get<float>(\"scaleX\")", "top.y - labelHeight - lift",
             "width += bleed * 2", "portraitIndex + 1", "ready ? 0f : labelHeight * 0.25f", "panel.Set(\"mask\", mask.Get(\"displayObject\")!)", "Color.white, radius, radius, 0f, 0f",
             "Math.Max(end.y, profileMiddle.y)", "\"GetChildIndex\", owner.Field(\"com_PlayerLabel\")", "\"MatchSkillTextContent\", entry.Description, 0", "RefreshReadyBadges();", "previous == state",
@@ -137,7 +137,7 @@ internal static partial class TestCommands
         foreach (var name in new[] { "get_asButton", "get_pivotX", "get_pivotY" }) Check(obj.Methods.Count(method => method.Name == name) == 1, "Native pivot accessor " + name);
         Contains(ReadSource(context, "src/NativeUi.cs"), new[] { "button?.Field(\"_downEffect\")?.Value<int>() == 2 ? 0.5f : 0f", "obj?.Call(\"SetPivot\", pivot, pivot, true)",
             "x + obj.Get<float>(\"width\") * obj.Get<float>(\"pivotX\") * restingScale", "y + obj.Get<float>(\"height\") * obj.Get<float>(\"pivotY\") * restingScale", "Position(icon, x, y, scale)", "Position(native, 0f, 0f, 1f)" }, "Common pivot placement");
-        foreach (var (file, call) in new[] { ("GameUi", "NativeUi.Position(nativeButton"), ("ModUi", "NativeUi.Position(button"), ("BattleStatusUi", "NativeUi.Position(icon"), ("CardPreviewUi", "NativeUi.Position(_card") })
+        foreach (var (file, call) in new[] { ("GameUi", "NativeUi.Position(nativeButton"), ("ModUi", "NativeUi.Position(button"), ("BattleStatusUi", "NativeUi.Position(icon"), ("PingDetailsUi", "NativeUi.Position(_card") })
             Check(ReadSource(context, "src/" + file + ".cs").Contains(call, StringComparison.Ordinal), "Common pivot caller " + file);
         Contains(ReadSource(context, "src/ModUi.cs"), new[] { "toggle.SetField(\"_downEffect\", 1)", "toggle.Call(\"SetPivot\", 0f, 0f, true)", "toggle.Call(\"SetSize\", width, height)", "toggle.Call(\"SetXY\", x, y)" }, "Fixed-size native settings toggle");
         foreach (var dimensions in new[] { (298d, 101d), (298d, 102d), (180d, 107d), (64d, 64d), (86d, 86d) }) foreach (var scale in new[] { .25, .6875, .75, 1, 1.5 }) foreach (var down in new[] { .75, .8, .95, 1 }) foreach (var length in new[] { dimensions.Item1, dimensions.Item2 }) {
@@ -229,30 +229,7 @@ internal static partial class TestCommands
         Contains(notification, new[] { "Shell_NotifyIcon(0,", "Shell_NotifyIcon(1,", "Shell_NotifyIcon(2,", "0x20 | 0x10 | 0x40", "0x1 | 0x10 | 0x80", "ProcessExit", "if (!_added) return;" }, "Bounded Windows notification lifecycle");
         var clear = notification.IndexOf("_data.Flags = 0x20 | 0x10; _data.Info = \"\";", StringComparison.Ordinal);
         Check(clear >= 0 && clear < notification.IndexOf("Shell_NotifyIcon(2,", StringComparison.Ordinal), "Hide empties the shown balloon before removing the icon, so refocus takes the toast down");
-        // CardChoiceTimer (2026-11-12): the card-choice window's request no longer cancels its input timer.
         MethodDefinition Method(string type, string name) => types[type].Methods.Single(method => method.Name == name);
-        var operation = types["GameLogic.OperationTimer"];
-        Check(operation.Methods.Count(method => method.Name == "GetOperateTimer" && method.IsStatic && method.ReturnType.FullName == "UnityTimer.Timer" && method.Parameters.Count == 1 && method.Parameters[0].ParameterType.FullName == "System.Int64") == 1
-            && operation.Methods.Count(method => method.Name == "CancelOperatTimer" && method.IsStatic && method.ReturnType.FullName == "System.Void" && method.Parameters.Count == 1 && method.Parameters[0].ParameterType.FullName == "System.Int64") == 1, "Native input timer reader and cancel by action Sn");
-        var downtime = Il(Method("GameLogic.OperationTimer", "ActionDownTime"));
-        var refuse = Regex.Match(downtime, @"::ContainsKey\([^)]*\)\nIL_[0-9a-f]+: brtrue(?:\.s)? (IL_[0-9a-f]+)");
-        Check(refuse.Success && Regex.IsMatch(downtime, refuse.Groups[1].Value + @": ldnull\nIL_[0-9a-f]+: ret"), "Native ActionDownTime starts no second timer under a registered Sn");
-        Check(types["UI.ChooseRoundCardWindow"].Fields.Single(field => field.Name == "_sn").FieldType.FullName == "System.Int64"
-            && Regex.IsMatch(Il(Method("UI.ChooseRoundCardWindow", "OnHide")), @"ldc.i4.0\nIL_[0-9a-f]+: conv.i8\nIL_[0-9a-f]+: stfld System.Int64 UI.ChooseRoundCardWindow::_sn")
-            && Regex.IsMatch(Il(Method("UI.ChooseRoundCardWindow", "ChooseRoundCard")), @"^IL_0000: ldarg.0\nIL_0001: ldfld System.Int64 UI.ChooseRoundCardWindow::_sn\nIL_[0-9a-f]+: brtrue")
-            && Il(Method("UI.ChooseRoundCardWindow", "AutoChooseRoundCard")).Contains("ChooseRoundCardWindow::ChooseRoundCard()", StringComparison.Ordinal),
-            "A closed card-choice window clears its Sn, and its auto choice then sends nothing");
-        foreach (var name in new[] { "ShowBuildShopCard", "ShowRoundCard" })
-            Check(types.Values.Where(type => type.FullName.StartsWith("UI.ChooseRoundCardWindow/<" + name + ">", StringComparison.Ordinal)).SelectMany(type => type.Methods)
-                .Any(method => Il(method) is var body && body.Contains("OperationTimer::ActionDownTime", StringComparison.Ordinal) && body.Contains("ChooseRoundCardWindow::AutoChooseRoundCard", StringComparison.Ordinal)), "Card-choice timer auto-picks through the window: " + name);
-        // The bug itself; when the game cancels the timer again this fails, and CardChoiceTimer can be retired (it is a no-op then).
-        Check(Il(Method("UI.ChooseRoundCardWindow", "ChooseRoundCard")).Contains("CardLogic::RequestBuildingCardS2C", StringComparison.Ordinal)
-            && !Il(Method("GameLogic.CardLogic", "RequestBuildingCardS2C")).Contains("CancelOperatTimer", StringComparison.Ordinal)
-            && Il(Method("GameLogic.CardLogic", "RequestRoundCard")).Contains("OperationTimer::CancelOperatTimer", StringComparison.Ordinal),
-            "Native card choice still leaves its input timer (2026-11-12 game bug); CardChoiceTimer is still needed");
-        var choice = ReadSource(context, "src/CardChoiceTimer.cs");
-        Contains(choice, new[] { "\"GetOperateTimer\", _sn", "\"CancelOperatTimer\", due", "InputAttentionState.StaleChoiceTimer(", "IsPVE", "IsReplay", "\"ChooseRoundCardWindow\", maxDepth: 1", "Field<long>(\"_sn\")" }, "Card-choice timer workaround cancels only the closed window's own timer, PvE only");
-        Check(!Regex.IsMatch(Regex.Replace(choice, @"//[^\n]*", ""), @"Request\w*C2S|ActionDownTime|Call\(""(ChooseRoundCard|AutoChooseRoundCard|Hide)""|SetField\(|\.Set\("), "Card-choice timer workaround sends nothing and changes no window");
         // HomeEscQuit (2026-11-12): Esc on the idle home asks the game's own quit question.
         var box = types["UI.MessageBoxWindow"];
         var ask = box.Methods.FirstOrDefault(method => method.Name == "ShowOKCancel" && method.Parameters.Count == 4); // RuntimeObject takes the first by name and count
@@ -313,7 +290,7 @@ internal static partial class TestCommands
         foreach (var (name, value) in new[] { ("Pve", 4), ("CampaignPve", 6), ("PracticePve", 9), ("Pvenovice", 10), ("MutatorPve", 12) }) Check((int)types["MapModeType"].Fields.Single(field => field.Name == name).Constant == value, "Native PvE mode " + name);
         Check(Il(types["GameLogic.MatchData"].Methods.Single(method => method.Name == "Dispose")).Contains("_teamId", StringComparison.Ordinal), "Disposed matchmaking clears native team identity");
         var source = GeneralWithoutNamespace(ReadSource(context, "src/PvpSafety.cs")); var driver = ReadSource(context, "src/ModUi.cs"); var gate = driver.IndexOf("PvpSafety.Poll()", StringComparison.Ordinal);
-        foreach (var name in new[] { "PingFocusGuard.Tick()", "InputAttention.Tick()", "CardChoiceTimer.Tick()", "HomeEscQuit.Tick()", "FocusAudio.Tick()", "GameUi.Tick()", "CharacterGuideUi.Tick()", "ModFont.Tick()", "CardPreviewUi.Tick()", "HandLayoutUi.Tick()", "BattleStatusUi.Tick()", "EncounterCounterUi.Tick()", "FieldBuffUi.Tick()", "ShushuShieldUi.Tick()", "MonsterMoveProbe.Tick()", "FightDataProbe.Tick()", "NancyProbe.Tick()", "WalkDirectionUi.Tick()", "SendAllLikesUi.Tick()", "ShopBulkUi.Tick()" })
+        foreach (var name in new[] { "PingFocusGuard.Tick()", "InputAttention.Tick()", "HomeEscQuit.Tick()", "FocusAudio.Tick()", "GameUi.Tick()", "PrepSkillInfoUi.Tick()", "ModFont.Tick()", "PingDetailsUi.Tick()", "HandLayoutUi.Tick()", "BattleStatusUi.Tick()", "EncounterCounterUi.Tick()", "PlayerIndicatorUi.Tick()", "ShushuShieldUi.Tick()", "MonsterMoveProbe.Tick()", "FightDataProbe.Tick()", "NancyProbe.Tick()", "NativePassProbe.Tick()", "JitWarmup.Tick()", "FightPip.Tick()", "WalkDirectionUi.Tick()", "SendAllLikesUi.Tick()", "ReceivedLikesUi.Tick()", "ShopBulkUi.Tick()" })
             Check(gate >= 0 && driver.IndexOf(name, StringComparison.Ordinal) > gate, "Feature after PvP gate " + name);
         foreach (var name in new[] { "Request", "SetField(", ".Set(", ".Call(" }) Check(!source.Contains(name, StringComparison.Ordinal), "Read-only PvP gate " + name);
         Check(driver.Contains("if (PvpSafety.Suspended) FocusAudio.Restore(); else FocusAudio.Tick();", StringComparison.Ordinal) && driver.IndexOf("FocusAudio.Tick()", StringComparison.Ordinal) < driver.IndexOf("if (pauseGameplay)", StringComparison.Ordinal), "Startup audio independent of gameplay readiness");

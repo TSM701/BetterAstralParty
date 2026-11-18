@@ -191,7 +191,7 @@ static class Probe {
 }
 static class Plugin {
     public static FloatSetting UiScale=new(); public sealed class FloatSetting{public float Value=1;}
-    public static BoolSetting ShushuShield=new(), ShushuShieldRestrictions=new(), BattleStatus=new(), ShushuMaster=new();public sealed class BoolSetting{public bool Value=true;}
+    public static BoolSetting ShushuShield=new(), ShushuDefendLock=new(), BattleStatus=new(), ShushuMaster=new();public sealed class BoolSetting{public bool Value=true;}
 }
 static class ModUi { public static bool IsOpen=>false; }
 static class VisibleCombatAdvisor { public static bool IsPve(int map)=>map==9; }
@@ -206,23 +206,37 @@ static class Compatibility {
 static class BattleStatusUi {
     public static int Clears;
     public static void Clear(){Clears++;}
-    static RuntimeObject? _counterParent, _counterHeader, _counterIcon;
-    static IntPtr _counterDefender;
-    static bool _counterAvailable;
-    static void ClearCounter(){_counterIcon=_counterParent=_counterHeader=null;_counterDefender=IntPtr.Zero;_counterAvailable=false;}
 __COUNTER__
     public static void CheckPlayers(){
+        foreach(var attacker in new[]{false,true})
         foreach(var type in new[]{1,2}){
+            var mark=new CounterMark(attacker);
             var value=new RuntimeObject{Data={{"Value",true}}};
             var player=new RuntimeObject{Data={{"characterType",type},{"Property",new RuntimeObject{Data={{"Counter",value}}}}}};
-            var actor=new RuntimeObject{Data={{"isDisposed",false},{"defenderData",player},
-                {"com_Defend",new RuntimeObject{Data={{"header",new RuntimeObject()}}}}}};
-            RefreshCounter(actor);
-            if(!_counterAvailable||_counterIcon==null)throw new Exception("Player/monster counter omitted");
-            value.Set("Value",false);RefreshCounter(actor);
-            if(_counterAvailable)throw new Exception("Removed counter still available");
+            var actor=new RuntimeObject{Data={{"isDisposed",false},{attacker?"attackerData":"defenderData",player},
+                {attacker?"com_Attack":"com_Defend",new RuntimeObject{Data={{"header",new RuntimeObject()}}}}}};
+            mark.Refresh(actor);
+            if(!mark._available||mark._icon==null)throw new Exception("Player/monster counter omitted, attacker="+attacker);
+            value.Set("Value",false);mark.Refresh(actor);
+            if(mark._available)throw new Exception("Removed counter still available");
+            // The other role's data and panel never light this side.
+            var other=new RuntimeObject{Data={{"isDisposed",false},{attacker?"defenderData":"attackerData",player},
+                {attacker?"com_Defend":"com_Attack",new RuntimeObject{Data={{"header",new RuntimeObject()}}}}}};
+            value.Set("Value",true);mark.Refresh(other);
+            if(mark._available||mark._icon!=null)throw new Exception("Counter read from the other fight role, attacker="+attacker);
+            mark.Refresh(null);if(mark._available||mark._icon!=null)throw new Exception("Counter cleanup");
+            // A hero's counter stacks (property 10008) count without CanCounter; zero stacks do not.
+            var stacks=new RuntimeObject{Data={{"Value",2}}};
+            var stacked=new RuntimeObject{Data={{"characterType",type},{"Property",new RuntimeObject{Data={{"Counter",new RuntimeObject{Data={{"Value",false}}}},
+                {"CounterCount",new RuntimeObject{Data={{"property",stacks}}}}}}}}};
+            var stackedActor=new RuntimeObject{Data={{"isDisposed",false},{attacker?"attackerData":"defenderData",stacked},
+                {attacker?"com_Attack":"com_Defend",new RuntimeObject{Data={{"header",new RuntimeObject()}}}}}};
+            mark.Refresh(stackedActor);
+            if(!mark._available||mark._icon==null)throw new Exception("Counter stacks omitted, attacker="+attacker);
+            stacks.Set("Value",0);mark.Refresh(stackedActor);
+            if(mark._available)throw new Exception("Zero counter stacks still available, attacker="+attacker);
+            mark.Refresh(null);
         }
-        RefreshCounter(null);if(_counterAvailable||_counterIcon!=null)throw new Exception("Counter cleanup");
     }
 }
 static class NativeUi {
@@ -230,9 +244,11 @@ static class NativeUi {
         return new(){Data={{"isDisposed",false},{"visible",false}}};
     }
     public static void Play(RuntimeObject obj,string name){if(name!="MaxPoint")throw new Exception("Wrong transition");}
+    public static void PlayCounter(RuntimeObject obj)=>Play(obj,"MaxPoint");
 }
 static class BattleStatusLayout {
     public static bool CounterReady(bool visible,float now,ref float since){if(!visible){since=-1;return false;}if(since<0)since=now;return now-since>=.75f;}
+    public static (float X,float Y) CounterAnchor(float x,float y,float width,float size,bool attacker)=>(x,y);
 }
 static class GameUi {
     public static RuntimeObject? Root=new(), Window;
@@ -347,11 +363,11 @@ public static class Check {
         Probe.Logic=logic;Probe.Scene=new RuntimeObject{Data={{"directorManager",director}}};
         Plugin.BattleStatus.Value=false;ShushuShieldUi.Tick();
         Assert(!defend.Get<bool>("touchable"),"Shield setting must work independently of Battle Info");
-        Plugin.ShushuShield.Value=false;Plugin.ShushuShieldRestrictions.Value=false;ShushuShieldUi.Tick();
+        Plugin.ShushuShield.Value=false;Plugin.ShushuDefendLock.Value=false;ShushuShieldUi.Tick();
         Assert(defend.Get<bool>("touchable")&&defend.Get<float>("alpha")==1,"Both settings OFF remove native button lock");
         Probe.Loads[^1].Set("IsCompleted",true);ShushuShieldUi.PollLoads();
         Assert(Probe.Loads[^1].Get("result")!.Releases==1,"OFF drains late effects");
-        Plugin.ShushuShield.Value=true;Plugin.ShushuShieldRestrictions.Value=true;Time.unscaledTime=8;ShushuShieldUi.Tick();
+        Plugin.ShushuShield.Value=true;Plugin.ShushuDefendLock.Value=true;Time.unscaledTime=8;ShushuShieldUi.Tick();
         Assert(!defend.Get<bool>("touchable"),"Setting ON restores shield feature");
         info.Set("MapType",1);ShushuShieldUi.Tick();
         Assert(defend.Get<bool>("touchable"),"Independent shield retains PvE gate");
@@ -365,9 +381,9 @@ public static class Check {
         Assert(!defenseCard.Get<bool>("touchable")&&defenseCard.Get<float>("alpha")==.45f&&Probe.Dragging==null,"Shield locks/dims defense card and cancels live drag");
         Assert(otherCard.Writes==3&&nativeLocked.Writes==3&&ready.Get<bool>("touchable"),"Other cards/native locks/Ready untouched");
         writes=defenseCard.Writes;ShushuShieldUi.Tick();Assert(writes==defenseCard.Writes,"No idle card writes");
-        Plugin.ShushuShieldRestrictions.Value=false;ShushuShieldUi.Tick();
+        Plugin.ShushuDefendLock.Value=false;ShushuShieldUi.Tick();
         Assert(defenseCard.Get<bool>("touchable")&&defenseCard.Get<float>("alpha")==1,"OFF restores cards");
-        Plugin.ShushuShieldRestrictions.Value=true;Time.unscaledTime=10;ShushuShieldUi.Tick();
+        Plugin.ShushuDefendLock.Value=true;Time.unscaledTime=10;ShushuShieldUi.Tick();
         defBuffs.Clear();Time.unscaledTime=10.2f;ShushuShieldUi.Tick();
         Assert(defenseCard.Get<bool>("touchable"),"Buff removal unlocks cards");
         defBuffs.Add(Buff(ShushuShieldUi.BuffId,100));Time.unscaledTime=10.4f;
@@ -388,28 +404,28 @@ public static class Check {
         // Each user-visible part must retain its own setting and compatibility breaker.
         Compatibility.Blocked.Clear();role.Set("selectedIndex",1);step.Set("selectedIndex",5);
         defend.Set("touchable",true);dodge.Set("touchable",true);Time.unscaledTime=20;
-        Plugin.ShushuShield.Value=false;Plugin.ShushuShieldRestrictions.Value=false;
+        Plugin.ShushuShield.Value=false;Plugin.ShushuDefendLock.Value=false;
         var loadCount=Probe.Loads.Count;ShushuShieldUi.Tick();
         Assert(Probe.Loads.Count==loadCount&&defend.Get<bool>("touchable"),"Display OFF restrictions OFF has no effect or lock");
-        Plugin.ShushuShieldRestrictions.Value=true;Probe.FailPlay=true;var configReads=Probe.ConfigReads;ShushuShieldUi.Tick();
+        Plugin.ShushuDefendLock.Value=true;Probe.FailPlay=true;var configReads=Probe.ConfigReads;ShushuShieldUi.Tick();
         Assert(Probe.Loads.Count==loadCount&&Probe.ConfigReads==configReads&&!defend.Get<bool>("touchable")&&Compatibility.Blocked.Count==0,"Display OFF restrictions ON does not read effect/configuration or start a load");
-        Plugin.ShushuShield.Value=true;Plugin.ShushuShieldRestrictions.Value=false;Probe.FailPlay=false;Time.unscaledTime=21;ShushuShieldUi.Tick();
+        Plugin.ShushuShield.Value=true;Plugin.ShushuDefendLock.Value=false;Probe.FailPlay=false;Time.unscaledTime=21;ShushuShieldUi.Tick();
         Assert(Probe.Loads.Count==loadCount+1&&defend.Get<bool>("touchable"),"Display ON restrictions OFF draws without a button lock");
-        var pendingOff=Probe.Loads[^1];Plugin.ShushuShield.Value=false;Plugin.ShushuShieldRestrictions.Value=true;ShushuShieldUi.Tick();
+        var pendingOff=Probe.Loads[^1];Plugin.ShushuShield.Value=false;Plugin.ShushuDefendLock.Value=true;ShushuShieldUi.Tick();
         pendingOff.Set("IsCompleted",true);ShushuShieldUi.PollLoads();
         Assert(pendingOff.Get("result")!.Releases==1&&!defend.Get<bool>("touchable"),"Display OFF drains a pending effect without releasing restriction ownership");
         Plugin.ShushuShield.Value=true;Time.unscaledTime=22;ShushuShieldUi.Tick();
         Assert(Probe.Loads.Count==loadCount+2&&!defend.Get<bool>("touchable"),"Display ON restrictions ON operates both parts");
-        Plugin.ShushuShieldRestrictions.Value=false;ShushuShieldUi.ClearRestrictions();
+        Plugin.ShushuDefendLock.Value=false;ShushuShieldUi.ClearRestrictions();
         Assert(defend.Get<bool>("touchable")&&Probe.Loads[^1].Get("result")!.Releases==0,"Restrictions OFF restores only its lock and retains the pending display");
         Probe.Loads[^1].Set("IsCompleted",true);ShushuShieldUi.PollLoads();
-        Plugin.ShushuShieldRestrictions.Value=true;ShushuShieldUi.Tick();
+        Plugin.ShushuDefendLock.Value=true;ShushuShieldUi.Tick();
         Plugin.ShushuShield.Value=false;ShushuShieldUi.ClearDisplay();
         Assert(!defend.Get<bool>("touchable"),"Display toggle cleanup never restores restriction-owned inputs");
         Plugin.ShushuShield.Value=true;Time.unscaledTime=23;Probe.FailPlay=true;ShushuShieldUi.Tick();
         Assert(Compatibility.Blocked.Contains(ShushuShieldUi.Feature)&&Compatibility.Allowed(ShushuShieldUi.RestrictionsFeature)&&!defend.Get<bool>("touchable"),"Display failure is isolated from restrictions");
         Probe.FailPlay=false;Compatibility.Blocked.Clear();ShushuShieldUi.Clear();
-        Plugin.ShushuShieldRestrictions.Value=true;step.Set("selectedIndex",3);Time.unscaledTime=24;
+        Plugin.ShushuDefendLock.Value=true;step.Set("selectedIndex",3);Time.unscaledTime=24;
         var invalidHand=new List<RuntimeObject>();for(var i=0;i<12;i++)invalidHand.Add(Card());
         GameUi.Window!.Set("cardItemList",new RuntimeObject{Data={{"items",invalidHand}}});
         loadCount=Probe.Loads.Count;ShushuShieldUi.Tick();
@@ -417,11 +433,11 @@ public static class Check {
         ShushuShieldUi.Clear();foreach(var load in Probe.Loads)load.Set("IsCompleted",true);ShushuShieldUi.PollLoads();Compatibility.Blocked.Clear();
         step.Set("selectedIndex",3);Time.unscaledTime=25;defenseCard=Card();nativeLocked=Card(touch:false);
         GameUi.Window!.Set("cardItemList",new RuntimeObject{Data={{"items",new List<RuntimeObject>{defenseCard,nativeLocked}}}});
-        Plugin.ShushuShield.Value=false;Plugin.ShushuShieldRestrictions.Value=true;ShushuShieldUi.Tick();
+        Plugin.ShushuShield.Value=false;Plugin.ShushuDefendLock.Value=true;ShushuShieldUi.Tick();
         Assert(!defenseCard.Get<bool>("touchable")&&!nativeLocked.Get<bool>("touchable"),"Restrictions-only mode locks only available defense cards");
-        Plugin.ShushuShieldRestrictions.Value=false;ShushuShieldUi.Tick();
+        Plugin.ShushuDefendLock.Value=false;ShushuShieldUi.Tick();
         Assert(defenseCard.Get<bool>("touchable")&&!nativeLocked.Get<bool>("touchable"),"Restrictions OFF restores owned card locks but leaves native restrictions");
-        Plugin.ShushuShieldRestrictions.Value=true;ShushuShieldUi.Tick();info.Set("MapType",1);ShushuShieldUi.Tick();
+        Plugin.ShushuDefendLock.Value=true;ShushuShieldUi.Tick();info.Set("MapType",1);ShushuShieldUi.Tick();
         Assert(defenseCard.Get<bool>("touchable")&&!nativeLocked.Get<bool>("touchable"),"Restrictions-only PvP cleanup preserves native card restrictions");
         info.Set("MapType",9);Plugin.ShushuShield.Value=true;Time.unscaledTime=26;ShushuShieldUi.Tick();
         var pvpPending=Probe.Loads[^1];info.Set("MapType",1);ShushuShieldUi.Tick();pvpPending.Set("IsCompleted",true);ShushuShieldUi.PollLoads();
@@ -436,12 +452,12 @@ public static class Check {
 public static class SpectatorKoProbe {
     static int shown, cleared;
     static class Plugin {
-        internal static class ShowDetails { internal static bool Value=true; }
-        internal static class Enabled { internal static bool Value=true; }
-        internal static class KoMinimum { internal static bool Value=true; }
+        internal static class AdviceDetails { internal static bool Value=true; }
+        internal static class ActionAdvice { internal static bool Value=true; }
+        internal static class KoDiceTarget { internal static bool Value=true; }
         internal static class FinalDamage { internal static bool Value=true; }
         internal static class KoSpectator { internal static bool Value=true; }
-        internal static class KoCardPreview { internal static bool Value=true; }
+        internal static class KoCardHover { internal static bool Value=true; }
         internal static class CardAdvice { internal static bool Value=true; }
     }
     static class CardDiceUi {
@@ -464,16 +480,16 @@ __OBSERVER__
         foreach (var details in new[] { false, true })
         foreach (var conditions in new[] { false, true })
         foreach (var damage in new[] { false, true }) {
-            Plugin.Enabled.Value = advice;
-            Plugin.ShowDetails.Value = details;
-            Plugin.KoMinimum.Value = conditions;
+            Plugin.ActionAdvice.Value = advice;
+            Plugin.AdviceDetails.Value = details;
+            Plugin.KoDiceTarget.Value = conditions;
             Plugin.FinalDamage.Value = damage;
             int beforeShown = shown, beforeCleared = cleared;
             Update(2);
             if (shown - beforeShown != (conditions ? 1 : 0) || cleared - beforeCleared != (conditions ? 0 : 1))
                 throw new System.Exception("Independent spectator indicator setting failed");
         }
-        Plugin.Enabled.Value=Plugin.ShowDetails.Value=Plugin.KoMinimum.Value=Plugin.FinalDamage.Value=true;
+        Plugin.ActionAdvice.Value=Plugin.AdviceDetails.Value=Plugin.KoDiceTarget.Value=Plugin.FinalDamage.Value=true;
     }
 }
 """"""";
@@ -481,16 +497,16 @@ __OBSERVER__
     private const string GeneralRemainingHp1 = """""""
 public static class CombatSettingEntryProbe {
     static class Plugin {
-        internal static class Enabled { internal static bool Value=true; }
-        internal static class KoMinimum { internal static bool Value=true; }
+        internal static class ActionAdvice { internal static bool Value=true; }
+        internal static class KoDiceTarget { internal static bool Value=true; }
         internal static class FinalDamage { internal static bool Value=true; }
         internal static class KoSpectator { internal static bool Value=true; }
-        internal static class KoCardPreview { internal static bool Value=true; }
+        internal static class KoCardHover { internal static bool Value=true; }
         internal static class CardAdvice { internal static bool Value=true; }
         internal static class Diagnostics { internal static void EndCombat() { ended++; } }
     }
     static class CardUi { internal static void Clear() { cardCleared++; } }
-    static class RemainingHpUi { internal static void Clear() { damageCleared++; } }
+    static class FinalDamageUi { internal static void Clear() { damageCleared++; } }
     static int reached, ended, cardCleared, damageCleared;
     static void Update() {
 __ENTRY__
@@ -498,11 +514,11 @@ __ENTRY__
     }
     public static void Run() {
         reached=ended=cardCleared=damageCleared=0;
-        Plugin.Enabled.Value=Plugin.KoMinimum.Value=Plugin.FinalDamage.Value=true;
+        Plugin.ActionAdvice.Value=Plugin.KoDiceTarget.Value=Plugin.FinalDamage.Value=true;
         foreach (var advice in new[] { false, true })
         foreach (var conditions in new[] { false, true })
         foreach (var damage in new[] { false, true }) {
-            Plugin.Enabled.Value = advice; Plugin.KoMinimum.Value = conditions; Plugin.FinalDamage.Value = damage;
+            Plugin.ActionAdvice.Value = advice; Plugin.KoDiceTarget.Value = conditions; Plugin.FinalDamage.Value = damage;
             int before = reached, beforeEnded=ended, beforeCards=cardCleared, beforeDamage=damageCleared;
             Update();
             var active=advice || conditions || damage;
@@ -510,7 +526,7 @@ __ENTRY__
                 || cardCleared-beforeCards != (active ? 0 : 1) || damageCleared-beforeDamage != (active ? 0 : 1))
                 throw new System.Exception("Independent combat entry failed");
         }
-        Plugin.Enabled.Value=Plugin.KoMinimum.Value=Plugin.FinalDamage.Value=true;
+        Plugin.ActionAdvice.Value=Plugin.KoDiceTarget.Value=Plugin.FinalDamage.Value=true;
     }
 }
 """"""";
@@ -542,11 +558,11 @@ static class GameUi {
     internal static void Dispose(RuntimeObject? value) { if(value!=null && !value.Get<bool>("isDisposed")){value.Data["isDisposed"]=true;Disposed++;} }
 }
 static class Plugin {
-    internal static class Enabled { internal static bool Value=true; }
-    internal static class KoMinimum { internal static bool Value=true; }
+    internal static class ActionAdvice { internal static bool Value=true; }
+    internal static class KoDiceTarget { internal static bool Value=true; }
     internal static class FinalDamage { internal static bool Value=true; }
     internal static class KoSpectator { internal static bool Value=true; }
-    internal static class KoCardPreview { internal static bool Value=true; }
+    internal static class KoCardHover { internal static bool Value=true; }
     internal static class CardAdvice { internal static bool Value=true; }
     internal static class Logger { internal static void LogWarning(string value)=>throw new Exception(value); }
     internal static class Diagnostics {
@@ -567,11 +583,11 @@ __SERVER__
 static class CardDiceUi {
     internal static int Calls,Damage;
     internal static void ShowFinal(RuntimeObject parent,RuntimeObject attack,int hp,int damage,HitModifiers modifiers,int die,int defenseDie=0) {
-        if(!Plugin.KoMinimum.Value)return;
+        if(!Plugin.KoDiceTarget.Value)return;
         Calls++;Damage=damage;
     }
 }
-internal static class RemainingHpUi {
+internal static class FinalDamageUi {
 __FIELDS__
     internal static int Rendered;
 __UPDATE__
@@ -584,7 +600,7 @@ __CLEAR__
         internal readonly RuntimeObject Fight=new(),Parent=new(),Attack=new(),Defense=new(),Attacker=new(),Defender=new();
         internal World() {
             Clear(); _failed=false; Rendered=0;
-            Plugin.Enabled.Value=Plugin.KoMinimum.Value=Plugin.FinalDamage.Value=true;
+            Plugin.ActionAdvice.Value=Plugin.KoDiceTarget.Value=Plugin.FinalDamage.Value=true;
             Plugin.Diagnostics.Events=Plugin.Diagnostics.Results=0; Plugin.Diagnostics.LastResult=default;
             CardDiceUi.Calls=CardDiceUi.Damage=GameUi.Disposed=0;PublicCombatEffects.Fail=false;
             GameUi.Root=new();GameUi.HomeAvailable=false;
@@ -643,7 +659,7 @@ __CLEAR__
         Plugin.FinalDamage.Value=true;Update(w.Fight,w.Parent,w.Attack,w.Defense,6,5,null);
         Check(Plugin.Diagnostics.Results==1 && Plugin.Diagnostics.Events==2 && CardDiceUi.Calls==1,"ON cannot duplicate consumed evidence/results");
         Clear();Check(_hp==0 && _prediction==-1 && !_captured && !_resultLogged && _parent==null,"native scene clear resets the capture");
-        w=new World();Plugin.Enabled.Value=false;Plugin.FinalDamage.Value=false;w.Capture();w.Decide(12);
+        w=new World();Plugin.ActionAdvice.Value=false;Plugin.FinalDamage.Value=false;w.Capture();w.Decide(12);
         Check(_prediction==12 && CardDiceUi.Calls==1 && CardDiceUi.Damage==12 && Rendered==0 && Plugin.Diagnostics.Events==2,"KO view settles from the server while advice and damage art are OFF");
         Update(w.Fight,w.Parent,w.Attack,w.Defense,6,0,null);
         Check(Plugin.Diagnostics.LastResult==(10,12,0) && Plugin.Diagnostics.Results==1,"overkill stays in the frozen figure");
@@ -657,7 +673,7 @@ __CLEAR__
         Check(!_captured && _prediction==-1 && Rendered==0,"no figure without a captured pre-hit state");
         w=new World();w.Capture();w.Decide(4);Display();GameUi.HomeAvailable=true;Plugin.FinalDamage.Value=true;Animate();
         Check(_prediction==-1 && !_captured && _parent==null && _point==null,"scene exit still performs full cleanup");
-        GameUi.HomeAvailable=false;Clear();Plugin.Enabled.Value=Plugin.KoMinimum.Value=Plugin.FinalDamage.Value=true;
+        GameUi.HomeAvailable=false;Clear();Plugin.ActionAdvice.Value=Plugin.KoDiceTarget.Value=Plugin.FinalDamage.Value=true;
     }
 }
 """"""";

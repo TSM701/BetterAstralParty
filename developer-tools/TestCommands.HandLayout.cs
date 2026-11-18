@@ -29,6 +29,12 @@ internal static partial class TestCommands
         foreach (var (type, name) in new[] { ("FairyGUI.GTweener", "get_endValue"), ("FairyGUI.TweenValue", "set_vec2"), ("FairyGUI.GObject", "TweenMove"), ("FairyGUI.GObject", "TweenScale"), ("FairyGUI.GTweener", "get_startValue"), ("FairyGUI.GTweener", "get_normalizedTime"), ("FairyGUI.GTweener", "get_target"), ("UI.UIHandCard_Button_Card", "get__ShowPosition") }) Check(types[type].Methods.Any(method => method.Name == name), "Native animation binding: " + type + "." + name);
         var query = types["FairyGUI.GTween"].Methods.Where(method => method.Name == "IsTweening" && method.Parameters.Count == 1).ToArray(); Check(query.Length == 1 && query[0].Parameters[0].ParameterType.FullName == "System.Object", "Exact native tween query overload");
         foreach (var (name, pattern) in new[] { ("PlayTransition", "Retain"), ("TranslateCard", "OnComplete"), ("Release", "set_visible"), ("IsDistribute", "get_height") }) Pattern(Operands(NativeMethod(native, "UI.UIHandCard_Button_Card", name)), pattern, "Native lifecycle: " + name);
+        // Distributing(card) rebuilds IsDistribute from the plain x and y getters: its whole body must stay this comparison.
+        var distribute = string.Join(" ", NativeMethod(native, "UI.UIHandCard_Button_Card", "IsDistribute").Body.Instructions
+            .Where(row => row.OpCode.Code != Mono.Cecil.Cil.Code.Nop)
+            .Select(row => row.OpCode.Code + (row.Operand switch { MethodReference called => ":" + called.DeclaringType.Name + "." + called.Name, float value => ":" + value.ToString(System.Globalization.CultureInfo.InvariantCulture), _ => "" })));
+        Check(distribute == "Ldarg_0 Call:GObject.get_x Ldc_R4:0 Bne_Un_S Ldarg_0 Call:GObject.get_y Call:Screen.get_height Conv_R4 Sub Call:Math.Abs Ldc_R4:0 Ceq Ret Ldc_I4_0 Ret",
+            "IsDistribute is x == 0 && Math.Abs(y - Screen.height) == 0: " + distribute);
         Pattern(Operands(NativeAsyncMoveNext(native, "UI.HandCardPanel", "DragEndEvent")), "UIHandCardPanel::hotZone", "Native drop target path");
         foreach (var (type, name, pattern) in new[] { ("UI.BasePanel`1", "Show", "set_fairyBatching"), ("FairyGUI.GComponent", "set_fairyBatching", "set_fairyBatching"), ("FairyGUI.Container", "UpdateBatchingFlags", "InvalidateBatchingState"),
             ("FairyGUI.Container", "DoFairyBatching", "get_material"), ("FairyGUI.Container", "CollectChildren", "DoFairyBatching"), ("FairyGUI.Container", "SetRenderingOrder", "SetRenderingOrder") }) Pattern(Operands(NativeMethod(native, type, name)), pattern, "Native batching: " + type + "." + name);
@@ -40,7 +46,12 @@ internal static partial class TestCommands
             "FightWindow",
             "GameUi.LiveDrag()",
             "Input.GetMouseButton(0)",
-            "\"IsDistribute\"",
+            "var waiting = Distributing(card);",
+            "card.Get<float>(\"x\") == 0f && Math.Abs(card.Get<float>(\"y\") - (float)Screen.height) == 0f",
+            "_mapHolds = Math.Abs(miss.x) < .05f && Math.Abs(miss.y) < .05f;",
+            "return _mapHolds ? _mapOrigin + _mapX * x + _mapY * y : ToLocal(parent, root, x, y);",
+            "if (_cornerCacheOff || RuntimeObject.GetPointerOf(face.Pointer, \"parent\") != card.Pointer) return Read();",
+            "e.CornerKey = float.IsFinite(offset.x) && float.IsFinite(offset.y) ? key : null;",
             "\"IsTweening\"",
             "HandLayout.Resting",
             "\"ShowCardStatus\"",
@@ -50,16 +61,13 @@ internal static partial class TestCommands
             "HandLayout.CanResume(shown, waiting, usePending, foreignMotion)",
             "HandLayout.RetargetStart",
             "\"_activeTweens\"",
-            "HandLayout.InColumn",
             "var inputLocked = !_container!.Get<bool>(\"touchable\");",
-            "if (hoverLocked) { _expanded = null;",
+            "if (inputLocked) { _expanded = null; _focused = IntPtr.Zero; }",
             "if (CardPointerBusy(dragging))",
-            "var hoverLocked = inputLocked || (!clickMode && Input.GetMouseButton(0));",
             "HoldHover(e, motion, pos)",
             "HandLayout.Focus(slot)",
             "FitEffects(e, true)",
             "GameUi.PointerPath(refresh: true)",
-            "_focused = hovered.Pointer;",
             "HandLayout.InFocus",
             "if (e.CenterLocked)",
             "card.SetField(\"zoomInScale\", zoom)",
@@ -71,7 +79,7 @@ internal static partial class TestCommands
         Check(!source.Contains("_drawAt", StringComparison.Ordinal), "Hand render correction not frame-throttled");
         Check(!source.Contains("Input.GetMouseButton(0) || ModUi.IsOpen", StringComparison.Ordinal) && !source.Contains("if (dragging != null)", StringComparison.Ordinal), "Unrelated mouse/drag does not stop layout");
         foreach (var forbidden in new[] { "DelegateSupport", "Il2CppSystem.Action", "add_beforeUpdate", "remove_beforeUpdate", "ClassInjector" }) Check(!source.Contains(forbidden, StringComparison.Ordinal), "No native crash binding: " + forbidden);
-        Contains(MethodFragment(source, "internal static void Tick"), new[] { "try { Update(); }", "Compatibility.Block(\"HandLayout\", ex, Clear)" }, "Managed driver/circuit breaker");
+        Contains(MethodFragment(source, "internal static void Tick"), new[] { "try { Update(); }", "Compatibility.Block(\"GroupHand\", ex, Clear)" }, "Managed driver/circuit breaker");
         var fragments = new Dictionary<string, string> {
             ["RETARGET"] = MethodFragment(source, "private static void Retarget"), ["CLASSIFY"] = MethodFragment(source, "private static bool LayoutMotion"), ["PENDING"] = MethodFragment(source, "private static bool UsePending"),
             ["HOLD"] = MethodFragment(source, "private static bool HoldHover"), ["DISPLAYRESET"] = MethodFragment(source, "private static bool DisplayZoomReset"), ["EFFECTS"] = MethodFragment(source, "private static void FitEffects"),
@@ -81,7 +89,7 @@ internal static partial class TestCommands
             ["LAYOUT"] = WithoutNamespace(ReadSource(context, "src/HandLayout.cs")), ["NS"] = "MigratedHandMotion"
         };
         Contains(source, new[] { "finally { ClearFrame(); }", "SetCardBatching(e, false)", "SetCardBatching(e, true)", "SetStackOrder(card, row, _expanded != null && _focused == card.Pointer)" }, "Frame scratch/batching/order restore");
-        Contains(fragments["FOCUS_BLOCK"], new[] { "if (clickMode) _focused = IntPtr.Zero;" }, "Click focus exit reset");
+        Contains(fragments["FOCUS_BLOCK"], new[] { "_focused = IntPtr.Zero;", "HandLayout.ClickRow(width, height, pile.Count, row, aspect, pileTop)" }, "Click focus exit reset");
         var harness = Template(context, "focus-tests/csharp-migration/hand-layout.template.cs", pin); foreach (var row in fragments) harness = harness.Replace("__" + row.Key + "__", row.Value, StringComparison.Ordinal);
         RunEmbedded(context, stage, "hand-layout-motion", harness, "MigratedHandMotion.MotionCheck.Run()", pin);
         NoPattern(source, "HandTargetUi|_targetCeiling|BattlePreMonsterWindow|BattleSelectMonsterWindow", "Grouped hand leaves native target windows unchanged"); NoPattern(fragments["LAYOUT"], "TargetPanel", "Hand layout adds no target panel");

@@ -53,11 +53,11 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 > [!WARNING]
 > 1.2.x 이하 사용자는 사용하던 패키지의 `Uninstall.cmd`로 먼저 제거한 뒤 새로 설치하세요. 제거에 실패하면 새 패키지의 `Force-Uninstall.cmd`를 시도하고, 그래도 해결되지 않으면 보관할 데이터를 백업한 뒤 게임을 클린 설치하고 다시 시도해주세요.
 
-1. [다운로드](https://github.com/TSM701/BetterAstralParty/releases)에서 `BetterAstralParty-<버전>.zip`을 받으세요. 소스 ZIP은 설치용이 아닙니다.
+1. [다운로드](https://github.com/TSM701/BetterAstralParty/releases)에서 `BetterAstralParty-<버전>-install.zip`을 받으세요. 소스 ZIP은 설치용이 아닙니다.
 2. Steam에서 Astral Party INT(Global)를 한 번 실행해 업데이트와 데이터 다운로드를 마친 뒤 정상 종료하세요.
 3. 쓰기 가능한 별도 폴더에 ZIP 전체를 압축 해제하세요. 게임 폴더에 직접 덮어쓰거나 ZIP 안에서 실행하지 마세요.
 4. 압축을 푼 폴더의 `Install.cmd`를 실행하면 설치 창이 열립니다. 게임 폴더를 확인한 뒤 설치를 누르세요. 게임 폴더를 찾지 못하면 Steam의 설치된 파일 → 찾아보기로 연 `Astral Party` 폴더를 고르세요.
-5. Steam에서 Astral Party를 실행하세요. 첫 실행은 로더 초기화와 파일 다운로드로 시간이 걸리고 인터넷 연결이 필요할 수 있습니다.
+5. Steam에서 Astral Party를 실행하세요. 첫 실행은 로더 초기화와 파일 다운로드로 몇 분 걸리고 인터넷 연결이 필요할 수 있습니다. 그동안 창이 멈추거나 ‘응답 없음’이 떠도 닫지 말고 기다려 주세요.
 
 > [!TIP]
 > 모드 없이 실행하려면 게임 폴더의 `AstralParty-Vanilla.cmd`를 실행하세요. 그 실행에서만 BetterAstralParty가 꺼지고 다른 BepInEx 모드는 그대로 유지합니다. 전환 전 게임을 종료하고 Steam의 실행 옵션은 바꾸지 마세요.
@@ -84,7 +84,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 <summary>모드 기능 탭</summary>
 
 전투 추천
-- 행동 추천: 기본 ON. 공개 정보를 바탕으로 공격·놓아주기, 방어·회피, 카드 사용을 추천합니다. 방어·회피는 방어를 추천하고, 방어해도 반드시 쓰러질 때는 회피를 추천합니다. 선택을 자동 입력하지 않으며, 모드 전체를 끄는 스위치가 아닙니다. 슈팅 스타 칩이 있으면 놓아주기 버튼에 놓아줄 때 몬스터에게 주는 피해와 얻는 스타라이트를 표시합니다.
+- 행동 추천: 기본 ON. 공개 정보를 바탕으로 공격·놓아주기, 방어·회피, 카드 사용을 추천합니다. 방어·회피는 방어를 추천하고, 방어해도 반드시 쓰러질 때는 회피를 추천합니다. 다른 플레이어나 몬스터가 방어할 때는 화면 아래 패널에 방어와 회피 각각의 전투불능 확률과 피해를 보여 주고, 방어자가 고르면 고른 쪽을 표시합니다. 선택을 자동 입력하지 않으며, 모드 전체를 끄는 스위치가 아닙니다. 슈팅 스타 칩이 있으면 놓아주기 버튼에 놓아줄 때 몬스터에게 주는 피해와 얻는 스타라이트를 표시합니다.
 - 추천 상세 수치: 기본 ON. 행동 추천에 마우스를 올리면 피해와 전투불능 확률을 표시합니다. OFF는 수치만 숨기고 추천 아이콘은 유지합니다.
 - KO 주사위 조건: 기본 ON. 공격하거나 다른 사람 전투에서 몬스터가 방어할 때는 KO 주사위 조건, 내가 방어하거나 다른 사람 전투에서 플레이어가 방어할 때는 생존 주사위 조건을 표시합니다. 조건은 카드 보너스가 가장 낮게 나와도 결과가 확정되는 주사위이고, 그런 주사위 조합을 가장 많이 담는 조건을 보여 줍니다. 관전 중이거나, 내가 공격하고 카드 선택이 끝나면 카드 보너스는 실제로 나온 값으로 계산합니다. 양쪽 선택이 끝나면 서버가 정한 주사위로 확정 KO 또는 KO 불가를 바로 표시합니다. 카드 호버 조건도 포함합니다. 계산에 반영되지 않은 효과가 전투에 있으면 아래에 그 효과 아이콘과 "미반영 효과"를 표시하고, 물음표에 마우스를 올리면 설명이 뜹니다.
 - 최종 피해: 기본 ON. 양쪽 선택이 끝나 주사위 연출이 시작되면 서버가 정한 피해량을 표시합니다.
@@ -94,6 +94,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 - 슈슈 쉴드 효과: 기본 ON. 전투 캐릭터의 활성 쉴드 효과를 표시합니다.
 - 슈슈 쉴드 방어 잠금: 기본 ON. 쉴드가 있는 내가 방어자일 때 방어 버튼·방어 카드를 잠급니다. 회피 가능 여부는 바꾸지 않고 회피를 자동 입력하지 않습니다.
 - 반격 아이콘 애니메이션·소리: 각각 기본 ON. 애니메이션 OFF는 정적인 반격 아이콘을 표시합니다.
+- 전투 PIP: 기본 ON. 내가 구경만 하는 전투를 작은 창으로 띄워 두고 필드를 그대로 보면서 드래그·확대·클릭할 수 있습니다. 관전 전투는 게임 기본 전체 화면으로 시작하고, 왼쪽 위 "PIP 모드"를 누르면 작은 창이 됩니다. 창은 끌어서 옮기고 모서리를 끌어 크기를 바꿀 수 있으며, 자리와 크기는 기억됩니다. 창을 누르면 다시 전체 화면이 되고, "PIP 모드"나 Esc로 돌아옵니다. 경기를 시작할 때의 화면은 "시작 화면"에서 고르며 기본은 전체 화면입니다. 경기 중에 바꾸면 그 경기의 다음 관전 전투도 그 화면으로 시작합니다. 작은 창 안 전투 장면의 불투명도는 "PIP 불투명도"에서 20~100%로 정합니다. 이모지·채팅 창을 열면 작게 비켜나고, 위에 겹친 채팅 말풍선은 흐리게 보입니다. 내 전투는 원래대로 전체 화면입니다. 처음 전체 화면으로 관전 전투를 볼 때 한 번 안내가 나오며, "확인"을 누르거나 "PIP 모드"·Esc로 작은 창을 띄우면 닫힙니다.
 
 필드·카메라
 - 플레이어 인디케이터: 기본 ON. 필드에 플레이어 이름·HP·공개 효과와 추가 반격 아이콘을 표시합니다. 효과 아이콘을 짧게 클릭하면 게임 기본 설명을 엽니다. 휠 줌으로 확대·축소해도 캐릭터 옆 위치를 유지합니다.
@@ -105,23 +106,26 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 - 줌 감도: 기본 100%, 10~300%. 휠 한 칸에 확대·축소되는 양입니다.
 - 최대 줌 아웃: 기본 100%, 0~100%. 휠로 멀어질 수 있는 최대 거리이며, 100%는 필드 전체가 보이는 거리이고 0%는 기본 시점보다 멀어지지 않습니다.
 - WASD 속도: 기본 100%, 10~300%. WASD로 자유 시점을 움직이는 속도입니다.
-- 숨김 거리: 기본 25%, 0~100%. 멀면 숨기기에서 인디케이터가 숨고 다시 나타나는 줌 아웃 거리입니다.
+- 숨김 거리: 기본 20%, 0~100%. 멀면 숨기기에서 인디케이터가 숨고 다시 나타나는 줌 아웃 거리입니다.
+- 미니 슬라임 불투명도: 기본 100%, 20~100%. 루루의 잠재력으로 칸 위에 생기는 미니 슬라임의 불투명도입니다.
 
 손패·카드
-- 손패 묶기: 기본·클릭 펼치기·호버 펼치기 중 선택하며 처음에는 기본입니다. 내 PvE 필드 손패를 기능별로 묶고 클릭은 가로로, 호버는 위로 펼칩니다. 두 방식 모두 카드 위쪽의 제출 영역으로 드래그하며, 호버에서는 이 영역이 강조됩니다.
+- 손패 묶기: 기본·클릭 펼치기 중 선택하며 처음에는 기본입니다. 내 PvE 필드 손패를 기능별로 묶고, 묶음을 클릭하면 가로로 펼칩니다. 카드는 위쪽 제출 영역으로 드래그해서 냅니다.
 - 접힌 카드 불투명도: 기본 75%, 0~100%. 손패 묶기를 켰을 때 접혀 있는 카드의 불투명도입니다.
 - 핑 상세 보기: 기본 ON. 게임의 카드·칩 핑 말풍선을 클릭하면 원본 이미지와 설명을 추가 팝업으로 엽니다.
 - 카드 대상 선택의 확인·취소 버튼은 항상 카드보다 앞에 표시됩니다.
 
 캐릭터
-- 이름 표기: 본명·이명 중 선택하며 기본은 본명입니다.
+- 이름 표기: 본명·이명 중 선택하며 기본은 본명입니다. 본명을 고르면 업적·아이템·이모티콘·배너처럼 이명이 들어간 게임 문장도 본명으로 바뀝니다. 캐릭터 상세처럼 본명과 이명을 함께 보여 주는 곳은 그대로 둡니다.
 - 역할 표시·준비 화면 스킬 설명: 각각 기본 ON. 준비 초상화 호버에 공개 스킬·재사용 대기시간·잠재력을 표시합니다.
 - 플레이어 목록 탭: 기본 ON. 필드 왼쪽 플레이어 목록의 코인·별 바 아래 탭에 공개 손패 장수, 역할, 스킬 쿨타임을 표시합니다. 스킬 쿨타임은 게임 정보 창처럼 스톱워치와 남은 턴/전체 턴으로 보여주며, 0이면 액티브 스킬을 바로 쓸 수 있습니다. 다른 플레이어의 쿨타임은 정보 창처럼 게임 서버에서 받아 옵니다. 손패 장수, 역할, 스킬 쿨타임은 각각 끌 수 있습니다.
 
 편의 기능
 - 감사합니다 자동 전송: 기본 ON. 게임 기본 감사합니다 추천이 전송 가능할 때 추천 한 건당 한 번 전송합니다. PvP·관전·재생에서는 전송하지 않습니다.
 - 좋아요 일괄 전송: 기본 ON. PvE 게임 결과 화면의 확인 버튼 위에 좋아요 버튼을 둡니다. 누르면 아직 좋아요를 보내지 않은 다른 플레이어 모두에게 게임의 좋아요 버튼을 차례로 눌러 보냅니다. 자동으로는 보내지 않고, 보낼 사람이 없으면 회색으로 바뀝니다. 버튼이 보이는 동안 채팅 말풍선은 버튼 왼쪽으로 비켜 납니다. PvP·관전·재생에서는 나오지 않습니다.
+- 받은 좋아요 표시: 기본 ON. PvE 게임 결과 화면의 각 카드 오른쪽 위에 그 플레이어가 받은 좋아요를 하나에 도장 하나씩 찍습니다. 도장은 보낸 사람의 캐릭터 아이콘에 작은 좋아요 배지를 붙인 모양입니다. 내가 이모티콘을 차단한 플레이어가 보낸 좋아요는 게임이 받지 않아 세지 않고, 그 플레이어의 카드에 "보낸 좋아요 미표시"를 붙입니다. 마우스를 올리면 이유가 나옵니다. 친구 목록에서 차단한 플레이어는 게임이 경기마다 이모티콘을 자동으로 차단합니다.
 - 상점 일괄 구매: 기본 ON. 스타 코인 상점 카드 아래 오른쪽에 무료 일괄 수령과 일괄 구매 버튼을 둡니다. 무료 일괄 수령은 누르면 무료 상품을 바로 받고, 받을 것이 없으면 회색으로 바뀝니다. 일괄 구매는 살 수 있는 상품 목록을 열고, 무료·배지·50% 이상 할인·전부 버튼으로 해당 상품을 한꺼번에 넣고 빼거나 상품마다 체크한 뒤 합계와 남을 스타 코인을 보고 구매를 누르면 그 상품만 삽니다. 구매는 목록 창 안에서 하나씩 진행되며 중간에 중지할 수 있고, 끝나면 목록으로 돌아갑니다. 구매가 실패로 멈췄을 때만 그 결과를 잠깐 보여 줍니다. 여러 개를 사도 획득 창은 한 번에 모아서 뜹니다.
+- 리플레이 저장 한도 해제: 기본 ON. 전적의 리플레이를 개수 제한 없이 저장하고, 저장한 리플레이의 사본을 `%LOCALAPPDATA%\BetterAstralParty\Replays`에 따로 둡니다. 로그인 화면의 캐시 정리는 저장한 리플레이도 함께 지우는데, 지워진 리플레이는 다음 실행 때 사본에서 되살립니다. 스위치 왼쪽 폴더 버튼은 사본 폴더를 엽니다. 게임에서 리플레이를 하나 지우면 그 사본도 지웁니다. 끄거나 모드를 제거해도 저장한 리플레이와 사본은 남고, 게임 기본 개수보다 많으면 그보다 적어질 때까지 새로 저장할 수 없습니다.
 - Alt+Tab 핑 모드 해제: 기본 ON. Alt+Tab 후 남은 핑 선택 모드를 전송 없이 해제합니다.
 - 홈 화면에서 Esc를 누르면 게임의 종료 확인 창이 열립니다.
 
@@ -145,12 +149,11 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 - 시작 공지 끄기: 기본 ON. 로그인 공지가 자동으로 열리는 것만 막습니다.
 
 진단
-- 진단 로그: 기본 OFF. 오류·성능·공개 전투 계산의 상세 진단을 기록하고, 최근 다섯 개의 로그를 보관합니다.
+- 진단 로그: 기본 OFF. 오류·성능·공개 전투 계산의 상세 진단을 기록하고, 최근 다섯 개의 로그를 보관합니다. 스위치 왼쪽 폴더 버튼은 진단 ZIP이 저장된 폴더를 엽니다.
 
 설정 보관
-- 자동 보관: 기본 ON. 설정을 바꿀 때마다 `%LOCALAPPDATA%\BetterAstralParty\Settings`에 보관합니다. 제거·재설치나 게임 폴더를 새로 받아 설정 파일이 없을 때만 다음 실행에서 되살리고, 이미 있는 설정은 덮어쓰지 않습니다.
+- 자동 보관: 기본 ON. 설정을 바꿀 때마다 `%LOCALAPPDATA%\BetterAstralParty\Settings`에 보관합니다. 제거·재설치나 게임 폴더를 새로 받아 설정 파일이 없을 때만 다음 실행에서 되살리고, 이미 있는 설정은 덮어쓰지 않습니다. 스위치 왼쪽 폴더 버튼은 보관 폴더를 열고, 보관 파일을 다른 PC로 옮길 때 씁니다.
 - 지금 보관·보관본 불러오기: 원하는 시점의 설정을 따로 남기고, 두 번 눌러 그 설정으로 되돌립니다. 자동 보관은 이 보관본을 덮어쓰지 않습니다.
-- 보관 폴더 열기: 보관 파일을 다른 PC로 옮길 때 씁니다.
 - 모든 설정 초기화: 두 번 누르면 모든 설정을 처음 설치한 상태로 되돌립니다. 되돌리기 전에 지금 보관으로 남겨 두면 보관본 불러오기로 복구할 수 있습니다.
 
 업데이트
@@ -159,7 +162,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 - 업데이트 알림 팝업: 기본 ON. 새 버전이 나오면 홈 화면 위쪽에 잠깐 알림을 띄우고, 누르면 변경 내역이 열립니다. OFF는 알림 없이 모드 설정 버튼에만 표시합니다. 새 버전이 있으면 모드 설정 버튼에 빨간 점이 붙고, 그 뒤 처음 열면 업데이트 항목으로 이동합니다.
 - 다운로드 페이지: 선택한 채널의 GitHub 릴리스 목록을 엽니다.
 - 업데이트 채널: 릴리즈·프리 릴리즈·비공개 베타 중 선택하며 기본은 릴리즈입니다. 프리 릴리즈는 더 새로운 릴리즈 버전도 함께 받습니다. 비공개 베타를 고르면 그 아래에 토큰 인증·로그아웃이 나타납니다.
-- 진단 폴더 열기·진단 ZIP 만들기는 실행 버튼입니다.
+- 진단 ZIP 만들기는 실행 버튼입니다.
 
 </details>
 
@@ -190,7 +193,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 
 ### 제거
 
-최신 전체 패키지의 `Uninstall.cmd`를 실행하면 제거 창이 열립니다. 지울 파일 수를 확인한 뒤 제거를 누르세요. 모드 파일과 설정은 `%LOCALAPPDATA%/BetterAstralParty/Backups/v5`에 백업한 뒤 제거합니다. 공용 BepInEx 파일과 로더 설정, 다른 모드, 한국어 패치는 유지합니다. 1.2.x 이하 버전은 사용하던 패키지의 제거기를 사용하세요.
+최신 전체 패키지의 `Uninstall.cmd`를 실행하면 제거 창이 열립니다. 지울 파일 수를 확인한 뒤 제거를 누르세요. 모드 파일과 설정은 `%LOCALAPPDATA%/BetterAstralParty/Backups/v5`에 백업한 뒤 제거합니다. 공용 BepInEx 파일과 로더 설정, 다른 모드, 한국어 패치는 유지합니다. `%LOCALAPPDATA%\BetterAstralParty`의 설정·리플레이 사본도 남습니다. 1.2.x 이하 버전은 사용하던 패키지의 제거기를 사용하세요.
 
 > [!CAUTION]
 > 정상 제거가 실패하면 `Force-Uninstall.cmd`를 실행하세요. 강제 제거 창에서 지울 파일 수를 확인하고, 전체 목록은 자세히 보기에서 볼 수 있습니다. 되돌릴 수 없다는 확인란을 선택한 뒤 영구 삭제를 누르면 BetterAstralParty 파일·설정·해당 설치의 복구 백업을 백업 없이 삭제합니다. 공용 로더와 다른 모드는 보존합니다.
@@ -206,6 +209,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 
 ### 문제 해결과 제보
 
+- 설치 뒤 첫 실행이나 게임 클라이언트 업데이트 뒤 첫 실행에서 창이 몇 분 멈추거나 ‘응답 없음’이 뜨면 BepInEx가 게임에 맞는 파일을 만드는 중입니다. 닫지 말고 기다려 주세요. 도중에 끄면 다음 실행에서 처음부터 다시 만듭니다.
 - `Install.cmd`가 버전 때문에 설치를 거부하면, 화면에 막은 버전과 할 일이 함께 나옵니다. 그 버전 이상을 받거나 `Uninstall.cmd`로 제거한 뒤 새로 설치하세요. 설정은 보관된 사본으로 다시 불러올 수 있습니다.
 - 설치·실행 오류는 `Open-Logs.cmd`로 로그를 확인하세요. 계산 문제는 모드 설정에서 진단 로그를 켠 뒤 재현하세요.
 - 진단 ZIP은 패키지의 `Create-Diagnostics.cmd` 또는 F8 → 일반 설정 → 진단 ZIP 만들기로 만들며, 바탕 화면의 `BetterAstralParty-Diagnostics` 폴더에 저장됩니다.
@@ -272,11 +276,11 @@ BetterAstralParty 자체 코드는 [MIT 라이선스](LICENSE)로 제공합니�
 > [!WARNING]
 > If you use 1.2.x or earlier, uninstall with your previous package's `Uninstall.cmd` first, then install fresh. If removal fails, try `Force-Uninstall.cmd` from the new package. If that still does not help, back up any data you want to keep, perform a clean installation of the game and try again.
 
-1. Download `BetterAstralParty-<version>.zip` from [Download](https://github.com/TSM701/BetterAstralParty/releases). Source ZIPs are not installation packages.
+1. Download `BetterAstralParty-<version>-install.zip` from [Download](https://github.com/TSM701/BetterAstralParty/releases). Source ZIPs are not installation packages.
 2. Start Astral Party INT(Global) once from Steam, let game and data updates finish, then exit normally.
 3. Extract the entire ZIP to a separate writable folder. Do not overwrite the game folder directly or run inside the ZIP.
 4. Run `Install.cmd` from the extracted folder. An install window opens; check the game folder, then press Install. If it cannot find the game, choose the `Astral Party` folder Steam opens from Installed Files → Browse.
-5. Start Astral Party from Steam. First-time loader initialization and file downloads may take time and require internet access.
+5. Start Astral Party from Steam. First-time loader initialization and file downloads may take a few minutes and require internet access. If the window freezes or shows Not Responding meanwhile, keep it open and wait.
 
 > [!TIP]
 > To play without the mod, run `AstralParty-Vanilla.cmd` in the game folder. Only that launch runs without BetterAstralParty; other BepInEx mods stay available. Close the game before switching and leave Astral Party's Steam launch options unchanged.
@@ -303,7 +307,7 @@ Open Mod Settings in the lobby using its button or F8, or from the Mod Settings 
 <summary>Mod Features tab</summary>
 
 Battle Advice
-- Action Advice: ON by default. Recommends Attack/Let Go, Defend/Dodge and cards from public information without selecting actions. Defend/Dodge recommends Defend, or Dodge when defending is a sure KO. It is not a master switch for the whole mod. With a Shooting Star chip, the Let Go button shows the damage dealt to the monster and the Starlight gained when you let it go.
+- Action Advice: ON by default. Recommends Attack/Let Go, Defend/Dodge and cards from public information without selecting actions. Defend/Dodge recommends Defend, or Dodge when defending is a sure KO. When another player or a monster defends, a panel at the bottom shows the KO chance and damage of each choice and marks the choice once it is made. It is not a master switch for the whole mod. With a Shooting Star chip, the Let Go button shows the damage dealt to the monster and the Starlight gained when you let it go.
 - Advice Details: ON by default. Hover over action advice to see damage and KO probabilities. OFF hides the numbers but keeps recommendation icons.
 - KO Dice Target: ON by default. Shows the KO dice target when you attack or a monster defends in another player's combat, and the survival dice target when you defend or a player defends in another player's combat. A target is the roll that decides the outcome even at the lowest card bonus, chosen to cover the most such dice combinations. While spectating, or once your attack cards are locked, card bonuses count at the values actually rolled. Once both sides have chosen, it shows the certain or impossible KO from the dice the server decided. Includes card-hover conditions. When the combat has effects the calculation does not count, their icons appear below with "Effects not counted"; hover the question mark for an explanation.
 - Final Damage: ON by default. Shows the damage the server decided as soon as both sides have chosen and the dice show starts.
@@ -313,6 +317,7 @@ Battle Display
 - Shiyu-Shiyu Shield Effect: ON by default. Shows active Shiyu-Shiyu Shield effects on combat characters.
 - Shiyu-Shiyu Shield Defend Lock: ON by default. Locks Defend and defense cards for the shielded local defender. Does not change Dodge availability or choose it automatically.
 - Counter Icon Animation / Sound: both ON by default. Animation OFF keeps a static counter icon.
+- Fight PiP: ON by default. A fight you only watch can show in a small window while the field stays in view, and you can still drag, zoom and click the field. Watched fights start as the game's full-screen fight, and "PiP Mode" at the top left turns them into the small window. Drag the window to move it and drag a corner to size it; it remembers where you left it. Click the window for full screen again and use "PiP Mode" or Esc to bring it back. "Start View" sets how each match starts, Full Screen by default, and a switch during a match carries to that match's later watched fights. "PiP Opacity" sets how opaque the fight inside the small window is, from 20% to 100%. While the emoji or chat panel is open it steps aside, and chat bubbles over it turn faint. Your own fights stay full screen. The first watched fight you see full screen shows a short guide once; "OK", "PiP Mode" or Esc closes it.
 
 Field / Camera
 - Player Indicators: ON by default. Shows field player names, HP, public effects and added counter icons. A short click on an effect opens its native description. It stays beside the character when you zoom with wheel zoom.
@@ -324,23 +329,26 @@ Field / Camera
 - Zoom Sensitivity: 100% by default, 10–300%. How far one wheel tick zooms.
 - Max Zoom-Out: 100% by default, 0–100%. How far the wheel can zoom out; 100% shows the whole field and 0% stays at the default view.
 - WASD Speed: 100% by default, 10–300%. How fast WASD moves the Free Camera.
-- Hide Distance: 25% by default, 0–100%. The zoom-out distance at which Hide When Far hides indicators and shows them again.
+- Hide Distance: 20% by default, 0–100%. The zoom-out distance at which Hide When Far hides indicators and shows them again.
+- Mini Slime Opacity: 100% by default, 20–100%. Opacity of the Mini Slimes Lulu's Potential puts on panels.
 
 Hand and Cards
-- Group Hand: Native, Click or Hover; the default is Native. Groups your PvE field hand by function; Click expands horizontally and Hover upward. In both modes, drag cards to the submission area above the cards; Hover highlights it.
+- Group Hand: Native or Click; the default is Native. Groups your PvE field hand by function, and a clicked group expands horizontally. Drag cards to the submission area above the cards to play them.
 - Folded Card Opacity: 75% by default, 0–100%. Opacity of folded cards while Group Hand is on.
 - Ping Details: ON by default. Click a native card/chip ping bubble to open a popup with its original image and description.
 - Target Confirm/Cancel buttons always appear above cards.
 
 Characters
-- Name Style: Name or Title; the default is Name.
+- Name Style: Name or Title; the default is Name. With Name, game text that uses a title, such as achievements, items, emojis and banners, shows the name too. Places that show both, such as character details, stay as they are.
 - Role Labels / Skill Info in Preparation: both ON by default. Preparation portrait hover shows public skills, cooldowns and Potential.
 - Player List Tab: ON by default. A tab under each coin/star bar of the field player list shows the public hand count, the role and the skill cooldown. The skill cooldown shows a stopwatch with turns left/total, as the game's info window does; 0 means the active skill is ready. Other players' cooldowns come from the game server, as in the info window. Hand Count, Role and Skill Cooldown can each be turned off.
 
 Convenience
 - Auto Thanks: ON by default. Sends the game's Thanks suggestion once each time it appears. Never sends in PvP, spectating or replays.
 - Send All Likes: ON by default. Adds a like button above Confirm on the PvE results screen. Pressing it presses the game's own like button for every other player you have not liked yet. It never sends on its own and turns gray when no one is left. While it shows, chat bubbles move to its left. Hidden in PvP, spectating and replays.
+- Received Likes: ON by default. Stamps one stamp per received like at the top right of each card on the PvE results screen: its sender's character icon with a small like badge. Likes from players whose emojis you blocked are not counted, since the game drops their messages, and that player's card shows "Sent Likes Hidden"; hover it for why. The game blocks the emojis of players blocked in your friend list in every match.
 - Shop Bulk Purchase: ON by default. Adds Claim All Free and Bulk Buy under the right of the Star Coin Shop cards. Claim All Free takes the free goods at once and turns gray when there is nothing to claim. Bulk Buy opens a list of the goods you can buy; tick them one by one or add and remove a group at once with the Free, Badges, 50%+ Off and All buttons, check the total and the Star Coins left, and press Buy to buy only those. The purchase runs one item at a time inside the list, Stop ends it before the next item, and the list then comes back. Only a purchase stopped by a failure shows its result for a moment. Several items bought at once share one reward window.
+- Remove Replay Save Limit: ON by default. Saves match record replays without a count limit and keeps copies of the saved replays in `%LOCALAPPDATA%\BetterAstralParty\Replays`. The login screen's cache cleanup also deletes saved replays; those come back from the copies on the next start. The folder button left of its switch opens the copies folder. Deleting a replay in the game deletes its copy too. Turned off or with the mod removed, saved replays and copies stay, and with more than the game allows, new replays cannot be saved until there are fewer.
 - Clear Ping Mode on Alt+Tab: ON by default. Cancels lingering ping selection after Alt+Tab without sending a ping.
 - Press Esc on the home screen to open the game's exit confirmation.
 
@@ -364,12 +372,11 @@ Alerts / Audio
 - Skip Startup Notice: ON by default. Only stops login notices from opening automatically.
 
 Diagnostics
-- Diagnostic Log: OFF by default. Records detailed errors, performance and public combat calculations, keeping the five most recent logs.
+- Diagnostic Log: OFF by default. Records detailed errors, performance and public combat calculations, keeping the five most recent logs. The folder button left of its switch opens the folder diagnostics ZIPs are saved in.
 
 Settings Backup
-- Automatic Backup: ON by default. Backs up settings to `%LOCALAPPDATA%\BetterAstralParty\Settings` whenever settings change. It is restored at the next launch only when the settings file is missing, such as after removal, reinstallation or a fresh game folder; existing settings are never overwritten.
+- Automatic Backup: ON by default. Backs up settings to `%LOCALAPPDATA%\BetterAstralParty\Settings` whenever settings change. It is restored at the next launch only when the settings file is missing, such as after removal, reinstallation or a fresh game folder; existing settings are never overwritten. The folder button left of its switch opens the backup folder, to move the backup files to another PC.
 - Back Up Now / Load Backup: keep the settings of a chosen moment and return to them with two presses. Automatic backups never overwrite this copy.
-- Open Backup Folder: use it to move the backup files to another PC.
 - Reset All Settings: two presses return every setting to its first-install value. Use Back Up Now first to be able to restore them with Load Backup.
 
 Updates
@@ -378,7 +385,7 @@ Updates
 - Update Notification Popups: ON by default. A new version shows a short notice at the top of the home screen; click it to see the release notes. OFF shows no notice, only a mark on the Mod Settings button. While a new version is available, the Mod Settings button shows a red dot, and the first open after it appears jumps to the update rows.
 - Download Page: opens the GitHub release list for the selected channel.
 - Update Channel: Release, Pre-release or Private Beta; the default is Release. Pre-release also receives newer Release versions. Choosing Private Beta shows Connect and Sign Out below it.
-- Open Diagnostics Folder and Create Diagnostics ZIP are action buttons.
+- Create Diagnostics ZIP is an action button.
 
 </details>
 
@@ -409,7 +416,7 @@ Updates
 
 ### Uninstall
 
-Run `Uninstall.cmd` from the latest complete package; a removal window opens. Check how many files it removes, then press Uninstall. Mod files and settings are backed up under `%LOCALAPPDATA%/BetterAstralParty/Backups/v5` before removal. Shared BepInEx files and loader settings, other mods and Korean patches are preserved. Installations of 1.2.x or earlier must use their previous package's uninstaller.
+Run `Uninstall.cmd` from the latest complete package; a removal window opens. Check how many files it removes, then press Uninstall. Mod files and settings are backed up under `%LOCALAPPDATA%/BetterAstralParty/Backups/v5` before removal. Shared BepInEx files and loader settings, other mods and Korean patches are preserved. Settings and replay copies under `%LOCALAPPDATA%\BetterAstralParty` stay as well. Installations of 1.2.x or earlier must use their previous package's uninstaller.
 
 > [!CAUTION]
 > If normal removal fails, run `Force-Uninstall.cmd`. The force-uninstall window shows how many files it deletes, and Details shows the full list. Tick the box confirming that deleted files cannot be restored, then press Delete permanently; it deletes the BetterAstralParty files, settings and recovery backups for that installation without a backup. Shared loader files and other mods are preserved.
@@ -425,6 +432,7 @@ Run `Uninstall.cmd` from the latest complete package; a removal window opens. Ch
 
 ### Troubleshooting and reports
 
+- If the window freezes for a few minutes or shows Not Responding at the first start after installing or after a game client update, BepInEx is building files for the game. Keep it open and wait; closing it makes the next start build them again from the beginning.
 - If `Install.cmd` refuses a version, it shows the version that blocks it and what to do: install that version or newer, or remove the mod with `Uninstall.cmd` and install again. Settings can be restored from the kept copy.
 - Installation or launch errors: open logs with `Open-Logs.cmd`. For calculation issues, turn on Diagnostic Log in mod settings and reproduce the issue.
 - Create a diagnostics ZIP with the package's `Create-Diagnostics.cmd` or F8 → General → Create Diagnostics ZIP. It is saved to the `BetterAstralParty-Diagnostics` folder on the Desktop.

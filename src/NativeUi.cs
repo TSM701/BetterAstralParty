@@ -15,7 +15,13 @@ internal static class NativeUi
         var root = GameUi.Root;
         var projected = BattleStatusLayout.Project(point.x, point.y, point.z,
             rect.x, rect.y, rect.width, rect.height, root.Get<float>("width"), root.Get<float>("height"));
-        return projected is { } p ? parent.Call("RootToLocal", new Vector2(p.X, p.Y), root)!.Value<Vector2>() : null;
+        if (projected is not { } p) return null;
+        var at = new Vector2(p.X, p.Y);
+        // Fight PiP: the camera draws into a screen-sized texture that the fight window shows full size at its own origin and
+        // then shrinks, so the point is the window's own point, not the root's (2026-11-17: the Combat Status rows fell off the
+        // PIP and hid).
+        if (camera.targetTexture != null && FightPip.Picture is { } picture) at = picture.Call("LocalToRoot", at, root)!.Value<Vector2>();
+        return parent.Call("RootToLocal", at, root)!.Value<Vector2>();
     }
 
     private static readonly HashSet<string> Missing = new();
@@ -96,7 +102,7 @@ internal static class NativeUi
     }
 
     private static readonly Dictionary<string, RuntimeObject> PackageLoads = new(StringComparer.Ordinal);
-    // On-demand native package load (as CharacterGuideUi does for Hero); false until the package is registered.
+    // On-demand native package load (as PrepSkillInfoUi does for Hero); false until the package is registered.
     internal static bool PackageReady(string package)
     {
         var type = RuntimeObject.FindClass("FairyGUI", "UIPackage");
@@ -162,16 +168,6 @@ internal static class NativeUi
     internal static readonly Color DarkFill = new(0.17f, 0.17f, 0.16f, 1f);
 
     // Mod-owned dark "?" disc; marks effects the combat model does not count.
-    internal static RuntimeObject QuestionMark(RuntimeObject parent, float size, int fontSize = 15)
-    {
-        var marker = Component(parent, size, size);
-        marker.Set("touchable", false);
-        _ = new Surface(marker, size, size, fixedOpacity: true, fill: DarkFill);
-        var mark = Label(marker, "?", 0, 0, size, size, fontSize);
-        mark.Set("align", 1); mark.Set("verticalAlign", 1);
-        return marker;
-    }
-
     // Stage pointer and a rendered-rectangle test that neither hit-tests nor takes input from native UI.
     internal static Vector2 Pointer() =>
         RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "Stage"), "get_inst")!.Get<Vector2>("touchPosition");
@@ -261,6 +257,48 @@ internal static class NativeUi
             return point;
         }
         catch { GameUi.Dispose(point); throw; }
+    }
+
+    // A counter icon's MaxPoint (CounterIndicator). Its sound actions keep their native IDs, read at its first play; a pop
+    // too close to the last sounded one plays with them at 0, the same silent ID the Sound setting writes.
+    private static readonly Dictionary<IntPtr, (RuntimeObject Point, (RuntimeObject Value, int Sound)[] Items)> CounterSounds = new();
+    private static float _counterSoundAt = float.NegativeInfinity;
+
+    internal static void PlayCounter(RuntimeObject point)
+    {
+        if (!CounterSounds.TryGetValue(point.Pointer, out var entry) || entry.Point.Get<bool>("isDisposed"))
+        {
+            foreach (var key in CounterSounds.Where(pair => pair.Value.Point.Get<bool>("isDisposed")).Select(pair => pair.Key).ToList())
+                CounterSounds.Remove(key);
+            CounterSounds[point.Pointer] = entry = (point, CounterSoundItems(point));
+        }
+        var free = BattleStatusLayout.CounterSoundFree(Time.unscaledTime, _counterSoundAt);
+        foreach (var (value, sound) in entry.Items) value.SetField("sound", free ? sound : 0);
+        if (free && entry.Items.Any(item => item.Sound > 0)) _counterSoundAt = Time.unscaledTime;
+        Play(point, "MaxPoint");
+    }
+
+    // The transition's sound actions, from the typed TransitionItem[] CounterIndicator checked (or its sound-only copy).
+    private static (RuntimeObject Value, int Sound)[] CounterSoundItems(RuntimeObject point)
+    {
+        var source = point.Call("GetTransition", "MaxPoint")?.Field("_items");
+        if (source == null) return Array.Empty<(RuntimeObject, int)>();
+        var arrayClass = Il2CppInterop.Runtime.IL2CPP.il2cpp_object_get_class(source.Pointer);
+        if (arrayClass == IntPtr.Zero || Il2CppInterop.Runtime.IL2CPP.il2cpp_class_get_rank(arrayClass) != 1
+            || Il2CppInterop.Runtime.IL2CPP.il2cpp_class_get_element_class(arrayClass) != RuntimeObject.FindClass("FairyGUI", "TransitionItem"))
+            throw new InvalidOperationException("Invalid private counter transition array");
+        var items = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<Il2CppSystem.Object>(source.Pointer);
+        if (items.Length is < 0 or > 256) throw new InvalidOperationException("Invalid private counter transition item count");
+        var soundType = RuntimeObject.EnumValue("FairyGUI", "TransitionActionType", "Sound");
+        var sounds = new List<(RuntimeObject, int)>();
+        for (var i = 0; i < items.Length; i++)
+        {
+            var item = new RuntimeObject(items[i].Pointer);
+            if (item.Field("type")!.Value<int>() != soundType) continue;
+            var value = item.Field("value")!;
+            sounds.Add((value, value.Field("sound")!.Value<int>()));
+        }
+        return sounds.ToArray();
     }
 
     internal static void Play(RuntimeObject obj, string name, int times = 1)

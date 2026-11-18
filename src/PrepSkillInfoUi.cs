@@ -3,7 +3,7 @@ using UnityEngine;
 namespace BetterAstralParty;
 
 // Presentation only: do not invoke native selection, ready, swap or network actions.
-internal static class CharacterGuideUi
+internal static class PrepSkillInfoUi
 {
     private sealed record Badge(RuntimeObject Owner, RuntimeObject Panel, RuntimeObject Text, RuntimeObject Image, RuntimeObject? Mask);
     private static readonly Dictionary<IntPtr, Badge> Badges = new();
@@ -30,7 +30,7 @@ internal static class CharacterGuideUi
                 if (load.Call("GetResult") == null) throw new InvalidOperationException("Hero UI package load failed");
                 _scanAt = 0; // Consume newly available UI resources this frame.
             }
-            var guide = Plugin.CharacterGuide.Value && Compatibility.Allowed("CharacterGuide");
+            var guide = Plugin.PrepSkillInfo.Value && Compatibility.Allowed("PrepSkillInfo");
             var roles = Plugin.CharacterRoles.Value && Compatibility.Allowed("CharacterRoles");
             if (_rolesEnabled != roles)
             {
@@ -58,7 +58,7 @@ internal static class CharacterGuideUi
         }
     }
 
-    private static void BlockGuide(Exception error) { _guideEnabled = false; Compatibility.Block("CharacterGuide", error, ClearGuide); }
+    private static void BlockGuide(Exception error) { _guideEnabled = false; Compatibility.Block("PrepSkillInfo", error, ClearGuide); }
     private static void BlockRoles(Exception error) { _rolesEnabled = false; Compatibility.Block("CharacterRoles", error, ClearRoles); }
 
     internal static RuntimeObject? Config(int id)

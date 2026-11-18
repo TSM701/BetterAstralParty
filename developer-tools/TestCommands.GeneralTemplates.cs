@@ -34,10 +34,13 @@ static class Plugin {
     public static readonly Log Logger = new();
     public class Log { public void LogInfo(string value) {} }
 }
+static class CharacterNameTables { public static int Restores; public static void Restore() => Restores++; }
 __NAMES__
 public static class Check {
     private static readonly Dictionary<IntPtr, (RuntimeObject Label, string Property, string Original, string Applied)> Changed = new();
     private static readonly Dictionary<string, string> _names = new() { ["시장의 지배자"] = "파루난" };
+    private static readonly Dictionary<string, string> _sentences = new() { ["시장의 지배자"] = "파루난" };
+    private static int _language;
     private static bool _loggedApplied;
     private static readonly Stack<int> Pending = new();
 __METHODS__
@@ -64,6 +67,19 @@ __METHODS__
         var missing = new RuntimeObject(); Replace(missing, "data");
         missing.Set("templateVars", new RuntimeObject()); Replace(missing, "data");
         Assert(missing.Flushes == 0 && Changed.Count == 0);
+        // The assist vote's tip fills its epithet as template variable "target".
+        var tip = new RuntimeObject(); var tipVars = new RuntimeObject();
+        tip.Set("text", "{target} 지원"); tip.Set("templateVars", tipVars); tipVars.Set("target", "시장의 지배자");
+        Replace(tip, "target"); Assert(ReadLabel(tip, "target") == "파루난" && tip.Get("text")!.String() == "{target} 지원");
+        RestoreAll(); Assert(ReadLabel(tip, "target") == "시장의 지배자");
+        // A sentence slot replaces the epithet inside the sentence and restores the whole sentence; a name slot leaves it.
+        var desc = new RuntimeObject(); desc.Set("text", "시장의 지배자(으)로 50회 플레이하기");
+        Replace(desc, "text"); Assert(ReadLabel(desc, "text") == "시장의 지배자(으)로 50회 플레이하기");
+        Replace(desc, "text", true); Assert(ReadLabel(desc, "text") == "파루난(으)로 50회 플레이하기");
+        Replace(desc, "text", true); Assert(ReadLabel(desc, "text") == "파루난(으)로 50회 플레이하기");
+        var restores = CharacterNameTables.Restores;
+        _language = 23; RestoreAll();
+        Assert(ReadLabel(desc, "text") == "시장의 지배자(으)로 50회 플레이하기" && CharacterNameTables.Restores == restores + 1 && _language == -1);
     }
 }
 }
@@ -81,6 +97,7 @@ namespace UnityEngine {
 }
 public struct NullableRect { public bool HasValue; public UnityEngine.Rect Value; }
 public unsafe class RuntimeObject {
+    private static void Counted(IntPtr method) { }
     private static readonly Dictionary<IntPtr, Type> Types = new();
     public IntPtr Class { get; }
     public IntPtr Pointer { get; }
@@ -256,6 +273,15 @@ public unsafe class RuntimeObject {
         if (Types[type].IsValueType ? value is not null : value is not null and not RuntimeObject) throw new InvalidCastException("argument");
     }
     private static RuntimeObject? Wrap(IntPtr pointer) => pointer == IntPtr.Zero ? null : new(pointer);
+    // Plain and computed getters and GetChildAt (RuntimeObject.PlainOffset, ComputedKind): none of this fixture's methods.
+    private const int ChildAt = 6;
+    private static int ComputedKind(IntPtr method, string name) => 0;
+    private static IntPtr ChildAtOf(IntPtr component, int index) => IntPtr.Zero;
+    private static int PlainOffset(IntPtr method, string property) => -1;
+    private static void Counted(IntPtr method) { }
+    private static int ChainOffset(IntPtr method, string property, out string next) { next = ""; return -1; }
+    private static (int First, int Second) GuardOffset(IntPtr method, string name) => (-1, -1);
+    private static bool Computed<T>(IntPtr method, string property, IntPtr instance, out T value) where T : unmanaged { value = default; return false; }
     // The params form: reached only for Nullable<Rect> and calls the generic forms do not take.
     public RuntimeObject? Call(string method, params object?[] args) { Fallback = method; return null; }
     private static string S(float value) => value.ToString(CultureInfo.InvariantCulture);
@@ -416,7 +442,21 @@ public unsafe class GetterProbe {
     static bool Fail, Missing;
     static int Calls;
     IntPtr Class => (IntPtr)1;
-    IntPtr Pointer => (IntPtr)2;
+    // Plain getters read their field at an offset from the object (RuntimeObject.PlainOffset); here the object is Storage.
+    static bool PlainMode;
+    IntPtr Pointer => PlainMode ? Storage : (IntPtr)2;
+    static int PlainOffset(IntPtr method, string property) {
+        if (method != (IntPtr)3 || property != "Value") throw new Exception("Wrong plain getter lookup");
+        return PlainMode ? 0 : -1;
+    }
+    // Computed getters (onStage, internalVisible, numChildren) are FairyGUI's own; this probe's getter is not one.
+    static void Counted(IntPtr method) { } // RuntimeObject counts native calls for the development call log.
+    static int ChainOffset(IntPtr method, string property, out string next) { next = ""; return -1; }
+    static T GetOf<T>(IntPtr instance, string property) where T : unmanaged => throw new Exception("No chained getter here");
+    static bool Computed<T>(IntPtr method, string property, IntPtr instance, out T value) where T : unmanaged {
+        value = default;
+        return false;
+    }
     static IntPtr MethodInfo(IntPtr c, string name, int count) {
         if (name != "get_Value" || count != 0) throw new Exception("Wrong accessor");
         return (IntPtr)3;
@@ -496,6 +536,23 @@ __FIELD_GETTER__
             bytes = GC.GetAllocatedBytesForCurrentThread() - start;
             if (bytes != 0) throw new Exception("Hot field getter managed allocations: " + bytes);
             Console.WriteLine("Typed field getter: primitives/structs, instance, missing/type guards, live changes passed; 10000 warm reads = 0 managed bytes (native substitute).");
+            // A plain getter reads the field without invoking it, after the same type guard.
+            PlainMode = true;
+            ReturnType = typeof(int); *(int*)Storage = 41;
+            before = Calls;
+            if (probe.Get<int>("Value") != 41) throw new Exception("Plain getter value");
+            *(float*)Storage = 2.5f; ReturnType = typeof(float);
+            if (probe.Get<float>("Value") != 2.5f) throw new Exception("Plain getter float");
+            ReturnType = typeof(string);
+            try { probe.Get<int>("Value"); throw new Exception("Plain mismatch accepted"); }
+            catch (InvalidCastException) { }
+            if (Calls != before) throw new Exception("Plain getter invoked the native getter");
+            ReturnType = typeof(int);
+            start = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 10000; i++) { *(int*)Storage = i; if (probe.Get<int>("Value") != i) throw new Exception("Stale plain value"); }
+            if (GC.GetAllocatedBytesForCurrentThread() != start) throw new Exception("Plain getter managed allocations");
+            PlainMode = false;
+            Console.WriteLine("Plain getter: field read at its offset, type guard first, no native invoke, live values, 0 managed bytes.");
         } finally { Marshal.FreeHGlobal(Storage); }
     }
 }
@@ -591,7 +648,7 @@ public static class FightReadinessProbe {
     static readonly IntPtr _logicClass = IntPtr.Zero;
     static class ReleaseWatch { internal static void Poll(RuntimeObject logic, int step) {} }
     static class CardUi { internal static void Clear() {} }
-    static class RemainingHpUi {
+    static class FinalDamageUi {
         internal static void Clear() {}
         internal static void ResetCapture() {}
     }
@@ -817,7 +874,7 @@ public static class FontCoverageCheck {
 }
 """"""";
 
-    private const string GeneralCharacterGuide0 = """""""
+    private const string GeneralPrepSkillInfo0 = """""""
 public static class CharacterRoleCheck {
     public static void Run() {
         if (CharacterRole.Label(2, true) != "딜러" || CharacterRole.Label(4, true) != "서포터") throw new System.Exception("Role-only labels");

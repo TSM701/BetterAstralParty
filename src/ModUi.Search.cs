@@ -215,6 +215,9 @@ internal static partial class ModUi
     private static string[] Descriptions(string action)
     {
         var texts = new List<string> { ModText.Text(MenuLayout.Help(action).Body), ModText.Text(MenuLayout.StateHelp(action, ToggleEnabled(action), "")) };
+        // A button inside the row (a folder to open) finds its row.
+        foreach (var (row, inline) in MenuLayout.InlineButtons)
+            if (row == action) { texts.Add(ModText.Text(MenuLayout.Help(inline).Title)); texts.Add(ModText.Text(MenuLayout.Help(inline).Body)); }
         foreach (var option in MenuLayout.Options(action))
         {
             texts.Add(ModText.Text(MenuLayout.OptionLabel(action, option)));

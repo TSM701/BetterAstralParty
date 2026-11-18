@@ -91,14 +91,14 @@ namespace BetterAstralParty
         {
             var cleanups = 0;
             var revision = Compatibility.Revision;
-            Compatibility.Block("FieldBuffs", new MissingFieldException("test"), () => cleanups++);
-            Compatibility.Block("FieldBuffs", new Exception("again"), () => cleanups++);
-            if (cleanups != 1 || Compatibility.Revision != revision + 1 || Compatibility.Allowed("FieldBuffs")
-                || !Compatibility.Allowed("Enabled")) throw new Exception("Feature isolation/dedup failed");
-            Compatibility.Block("Enabled", new Exception("test"), () => throw new Exception("cleanup"), () => cleanups++);
-            if (Compatibility.Allowed("Details") || cleanups != 2) throw new Exception("Dependency/cleanup isolation failed");
+            Compatibility.Block("PlayerIndicators", new MissingFieldException("test"), () => cleanups++);
+            Compatibility.Block("PlayerIndicators", new Exception("again"), () => cleanups++);
+            if (cleanups != 1 || Compatibility.Revision != revision + 1 || Compatibility.Allowed("PlayerIndicators")
+                || !Compatibility.Allowed("ActionAdvice")) throw new Exception("Feature isolation/dedup failed");
+            Compatibility.Block("ActionAdvice", new Exception("test"), () => throw new Exception("cleanup"), () => cleanups++);
+            if (Compatibility.Allowed("AdviceDetails") || cleanups != 2) throw new Exception("Dependency/cleanup isolation failed");
             Compatibility.Block("CoreUi", new Exception("test"));
-            if (Compatibility.Allowed("CardPopups") || !Compatibility.Allowed("Diagnostics") || !Compatibility.Allowed("Notices"))
+            if (Compatibility.Allowed("PingDetails") || !Compatibility.Allowed("Diagnostics") || !Compatibility.Allowed("Notices"))
                 throw new Exception("Common UI dependency failed");
             Console.WriteLine("호환성 기능 격리·의존 기능 차단·중복 방지·정리 실패 격리·설정 보존 검사 통과");
         }

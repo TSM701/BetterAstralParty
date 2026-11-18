@@ -9,7 +9,7 @@ internal static class CombatBuffAudit
     {
         10006, 10012, 1071101, 1071102, 1101101, 1140101, 1140102, 1250101, 1250201, 1251201, 1261101, 1291202,
         2000801, 4000301, 4000401, 5006001, 10141101, 10261101, 10331101, 10531201, 10551101, 10591101, 10671302,
-        1201302,
+        1201302, 8000001, 8000501,
     };
 
     // Description audit (2026-10-21) of the 159 shown buffs in the 2026-09-26 table snapshot: the original STRBuff
@@ -30,8 +30,8 @@ internal static class CombatBuffAudit
     // 1301207 仙酿 ATK +4, 10750101 救急援助 ATK/DEF +2, 5007503 自适应核心 ATK +2, 5009602 超强精力 ATK per stack (a stack
     // lost when challenged), 8000002 圣剑英雄 end-of-turn damage outside the hit, 3081102 and 3081202 出牌数+1 card plays.
     // Not here, still not counted: 20000 无敌, 20001 格挡, 20002 坚固, 20004 闪身, 3002001 (next hit -10),
-    // 5007502/5008202/8000001 (damage taken -1/-1/-2), 8000501 (ignores DEF) and 3080101/3080102 (no text). 1201302 (damage
-    // -1 from monsters beyond two panels) is modeled since 2026-11-14.
+    // 5007502/5008202 (damage taken -1/-1) and 3080101/3080102 (no text). 1201302 (damage -1 from monsters beyond two
+    // panels) is modeled since 2026-11-14, 8000001 (damage taken -2) and 8000501 (ignores DEF) since 2026-11-15.
     // 2026-11-14 (user-requested): 10460101 孔雀开屏 (copper peacock 1046's skill 104601), "ATK +2 and DEF +2 per stack more
     // than the peacock's while fighting it". The bonus is in the public totals the mod reads: in the 2026-11-14 logs a hero
     // with 14 stacks showed ATK 32 against the peacock at 6 stacks and 42 at 1 (+10 for five stacks), and the server's

@@ -209,7 +209,10 @@ internal static class FieldZoomUi {
     public static int Clears; public static bool BoundsAvailable=true; public static Bounds Bounds=new(){min=new(-10,-10,-10),max=new(10,10,10)};
     internal static bool TryPanBounds(out Bounds bounds) { bounds=Bounds; return BoundsAvailable; }
     internal static void Clear() { Clears++; FieldFreeCamera.Clear(); }
+    public static int HoldReturns;
+    internal static bool ReturnInHold() { HoldReturns++; return true; }
 }
+internal static class FightPip { internal static bool HoldsField; }
 internal static class GameUi { public static readonly List<RuntimeObject> Path=new(); public static IReadOnlyList<RuntimeObject> PointerPath(bool refresh=false,bool hitTest=false)=>Path; }
 internal static class Plugin { public static readonly Diagnostic Diagnostics=new(); public sealed class Diagnostic { public readonly List<string> Lines=new(); public void Write(string line)=>Lines.Add(line); } }
 __PRODUCTION_SOURCE__
@@ -254,6 +257,12 @@ public static class Check {
         public void DownAt(float x,float y) { Point(x,y);Input.Buttons[0]=Input.Down[0]=true; }
         public void Pan(bool allowed=true,bool onUi=false,bool fieldIndicator=false) { FieldFreeCamera.Pan(Free,allowed,onUi,fieldIndicator);Array.Clear(Input.Down); }
         public void Release() { Input.Buttons[0]=false;Pan(); }
+    }
+    // A camera caught walking (damping 0, CharacterCamera.SetMoveDamping) gives the free view the resting damping (2026-11-18).
+    static void WalkingDamping() {
+        var walking=new Scene();walking.Body.m_XDamping=walking.Body.m_YDamping=walking.Body.m_ZDamping=0;walking.Enter();
+        Assert(walking.OwnBody.m_XDamping==FieldFreeCamera.RestingDamping && walking.OwnBody.m_YDamping==FieldFreeCamera.RestingDamping && walking.OwnBody.m_ZDamping==FieldFreeCamera.RestingDamping);
+        FieldFreeCamera.Clear();
     }
     static void Ownership() {
         var s=new Scene();s.Enter();var own=s.Own;var anchor=s.Anchor;int id=s.Id;
@@ -460,6 +469,23 @@ public static class Check {
         Input.Up[0]=true;Assert(!s.Update() && !FieldFreeCamera.Holding && FieldZoomUi.Clears==1);
         Input.Up[0]=false;GameUi.Path.Clear();s.Brain.mFrameStack.Remove(foreign);
     }
-    public static void Run() { FocusRelease();SuspendedFocusClick();MovedFocusClick();Ownership();ReturnAndCleanup();Pan();RenderedOrientation();Console.WriteLine("Free-camera production assertions: "+assertions); }
+    // Fight PiP (2026-11-17): while a PIP shows the field, the free view's override outlasts a full-screen fight (the field
+    // camera off), the return button and a focus click; without it the field followed the fight's own cameras.
+    static void FightHold() {
+        var s=new Scene();s.Enter();Assert(s.Update());var id=s.Id;FightPip.HoldsField=true;
+        try {
+            Assert(s.Update(blocked:true) && s.Id==id && s.Brain.mFrameStack.Count==2 && s.Brain.Releases.Count==0);
+            FieldZoomUi.HoldReturns=0;FieldFreeCamera.Return();Assert(FieldZoomUi.HoldReturns==1 && s.Update() && s.Brain.mFrameStack.Count==2 && RuntimeObject.Calls.Count==0);
+            GameUi.Path.Clear();GameUi.Path.Add(Obj("UIButton_MonsterItem",("name",null),("draggable",false)));Array.Clear(Input.Up);
+            Input.Down[0]=true;Assert(s.Update());Input.Down[0]=false;
+            Input.Up[0]=true;Assert(s.Update() && FieldFreeCamera.Holding && FieldZoomUi.Clears==0);Input.Up[0]=false;
+            var foreign=new CinemachineBrain.BrainFrame{id=900,blend=new(){CamB=s.NativeCamera.Cast<ICinemachineCamera>()}};
+            s.Brain.mFrameStack.Add(foreign);Assert(!s.Update() && FieldFreeCamera.Holding && s.Brain.Releases.SequenceEqual(new[]{id}));
+            s.Brain.mFrameStack.Remove(foreign);
+        } finally { FightPip.HoldsField=false;GameUi.Path.Clear(); }
+        Assert(!s.Update(blocked:true) && FieldFreeCamera.Holding && s.Brain.mFrameStack.Count==1);
+        FieldFreeCamera.Clear();
+    }
+    public static void Run() { FocusRelease();SuspendedFocusClick();MovedFocusClick();Ownership();WalkingDamping();ReturnAndCleanup();FightHold();Pan();RenderedOrientation();Console.WriteLine("Free-camera production assertions: "+assertions); }
 }
 }

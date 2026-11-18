@@ -13,6 +13,11 @@ internal static class FieldCameraReturnUi
     private static (float X, float Y, float Scale)? _layout;
     private static int _language = -1, _fontRevision = -1, _fontSize = -1, _consumedFrame = -1;
     internal static bool ConsumedInput => _consumedFrame == Time.frameCount;
+    // The box reaches this far below the native button's face, at the same scale, so the title (in the native title's own
+    // margins: 10 above, 18 over the button's lower rim) sits centred on a taller face (user-requested 2026-11-18: the
+    // title ran into the rim, centred on the whole button 4 units low).
+    internal const float Below = 14f;
+    private static Vector2 _titleOrigin;
     internal static bool Visible => _button != null && GameUi.Visible(_button);
 
     internal static void Tick(bool visible)
@@ -53,6 +58,7 @@ internal static class FieldCameraReturnUi
                 _nativeSize = new Vector2(_button.Get<float>("width"), _button.Get<float>("height"));
                 _titlePadding = new Vector2(_nativeSize.x - title.Get<float>("width"),
                     _nativeSize.y - title.Get<float>("height"));
+                _titleOrigin = new Vector2(title.Get<float>("xMin"), title.Get<float>("yMin"));
                 // The original rollover image lacks the size relation of its normal background.
                 _button.Call("GetChild", "n48")!.Get("relations")!.Call("Add", _button, 24);
                 root.Call("AddChild", _button);
@@ -70,7 +76,7 @@ internal static class FieldCameraReturnUi
                 NativeUi.StyleTitle(button, ModText.Text("자유 시점 카메라 종료"), fontSize);
                 titleLabel.Set("autoSize", 0); // Measure unshrunk native glyphs before fitting the owned background.
                 _size = new Vector2(Math.Max(_nativeSize.x, titleLabel.Get<float>("textWidth") + _titlePadding.x),
-                    Math.Max(_nativeSize.y, titleLabel.Get<float>("textHeight") + _titlePadding.y));
+                    Math.Max(_nativeSize.y, titleLabel.Get<float>("textHeight") + _titlePadding.y) + Below);
                 titleLabel.Set("autoSize", 3);
                 _language = ModText.Revision; _fontRevision = ModFont.Revision; _fontSize = fontSize;
             }
@@ -83,7 +89,7 @@ internal static class FieldCameraReturnUi
             var anchorHeight = bottom.y - top.y;
             // Preserve the prefab's 9-slice borders; shrink the whole control, not its image height.
             var x = Math.Max(top.x, bottom.x) + anchorHeight / 2;
-            var scale = Math.Min(anchorHeight * 1.25f / buttonHeight, (width - x) / buttonWidth);
+            var scale = Math.Min(anchorHeight * 1.25f / (buttonHeight - Below), (width - x) / buttonWidth);
             var y = Math.Min(top.y, bottom.y); // Grow below the row, never into the turn bar above it.
             if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(scale) || scale <= 0
                 || x < 0 || y < 0 || y + buttonHeight * scale > height) { Hide("invalid-layout"); return; }
@@ -101,7 +107,7 @@ internal static class FieldCameraReturnUi
                 button.Call("SetScale", buttonScale, buttonScale);
                 NativeUi.Position(button, x, y, scale);
                 titleLabel.Call("SetSize", titleWidth, titleHeight);
-                NativeUi.Position(titleLabel, _titlePadding.x / 2, _titlePadding.y / 2, 1f);
+                NativeUi.Position(titleLabel, _titleOrigin.x, _titleOrigin.y, 1f);
             }
             button.Set("visible", true);
             // Input locks cancel a click, not the exit surface of an already owned free view.

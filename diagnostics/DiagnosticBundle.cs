@@ -1323,7 +1323,7 @@ namespace BetterAstralParty.Diagnostics
         private static readonly Regex Number = Pattern(@"\A-?[0-9]{1,7}(?:\.[0-9]{1,6})?\z");
         private static readonly Regex Version = Pattern(MinimalDiagnosticProjection.VersionPattern + @"|\A[0-9]{1,5}(?:\.[0-9]{1,5}){3}\z");
         private static readonly string[] ErrorTypes = { "System.NullReferenceException", "System.InvalidOperationException", "System.InvalidCastException", "System.ArgumentException", "System.ArgumentNullException", "System.IO.IOException", "System.IO.FileNotFoundException", "System.IO.DirectoryNotFoundException", "System.UnauthorizedAccessException", "System.TypeLoadException", "System.MissingFieldException", "System.MissingMethodException", "System.TimeoutException", "System.Security.SecurityException", "System.NotSupportedException", "System.ObjectDisposedException" };
-        private static readonly string[] Actions = { "Close", "Features", "General", "Language", "Diagnostics", "DiagnosticsOpen", "DiagnosticsCollect", "MuteUnfocused", "InputAttention", "UpdateAuth", "UpdateSignOut", "UpdateChannel", "UpdateCheck", "UpdateDownload", "AutoDownload", "AfterExit", "UpdateGet", "UpdateCancel", "Enabled", "Details", "KoMinimum", "Names", "CardPopups", "BattleStatus", "ShushuShield", "FieldBuffs", "HandLayout", "ScaleMinus", "ScalePlus", "OpacityMinus", "OpacityPlus", "FieldZoom", "MatchFocus", "AutoThanks", "CardTargetButtons", "CharacterGuide", "CharacterRoles", "IndicatorFade", "IndicatorHide", "CounterSound", "CounterAnimation", "SuppressNotices", "PingFocus", "UpdateNotifications", "AutomaticChecks", "ShushuShieldRestrictions", "FinalDamage" };
+        private static readonly string[] Actions = { "Close", "Features", "General", "Language", "Diagnostics", "DiagnosticsOpen", "DiagnosticsCollect", "MuteUnfocused", "InputAttention", "UpdateAuth", "UpdateSignOut", "UpdateChannel", "UpdateCheck", "UpdateDownload", "AutoDownload", "AfterExit", "UpdateGet", "UpdateCancel", "Enabled", "Details", "KoMinimum", "Names", "CardPopups", "BattleStatus", "ShushuShield", "FieldBuffs", "HandLayout", "ScaleMinus", "ScalePlus", "OpacityMinus", "OpacityPlus", "FieldZoom", "MatchFocus", "AutoThanks", "CardTargetButtons", "CharacterGuide", "CharacterRoles", "IndicatorFade", "IndicatorHide", "CounterSound", "CounterAnimation", "SuppressNotices", "PingFocus", "UpdateNotifications", "AutomaticChecks", "ShushuShieldRestrictions", "FinalDamage", "ActionAdvice", "AdviceDetails", "KoDiceTarget", "NameStyle", "PingDetails", "PlayerIndicators", "GroupHand", "PrepSkillInfo", "ShushuDefendLock" };
         private static bool In(string value, string[] values) { return Array.IndexOf(values, value) >= 0; }
         private static string Fields(string eventName, string body, string numericKeys, string booleanKeys)
         {
@@ -1445,7 +1445,7 @@ namespace BetterAstralParty.Diagnostics
                 "combatSnapshot|PublicCombat|CombatSnapshot", "UpdateNotification.cleanup|Notices|UpdateNotificationCleanup",
                 "PvpSafety|PublicCombat|PvpSafety", "PvpSafety.cleanup|PublicCombat|PvpSafetyCleanup",
                 "nativeCrashScan|Loader|NativeCrashScan", "patches|Loader|Patches", "CardDiceUi.Final|PublicCombat|CardDiceFinal",
-                "RemainingHpUi|PublicCombat|RemainingHp", "DamageUi.Animate|PublicCombat|DamageAnimate", "DamageUi.PollFinalPoints|PublicCombat|DamagePoll" })
+                "RemainingHpUi|PublicCombat|RemainingHp", "FinalDamageUi|PublicCombat|RemainingHp", "DamageUi.Animate|PublicCombat|DamageAnimate", "DamageUi.PollFinalPoints|PublicCombat|DamagePoll" })
             {
                 var parts = pair.Split('|'); if (label == parts[0]) { feature = parts[1]; legacy = parts[2]; }
             }
@@ -1466,7 +1466,14 @@ namespace BetterAstralParty.Diagnostics
                 "PingFocus|CoreUi|CompatibilityPingFocus",
                 "CoreUi|CoreUi|CompatibilityCoreUi",
                 "UpdateNotification|Notices|CompatibilityUpdateNotification",
-                "Notices|Notices|CompatibilityNotices"
+                "Notices|Notices|CompatibilityNotices",
+                // The same breakers under their 2026.11.2-dev.45 names; the old names stay for earlier logs.
+                "ActionAdvice|PublicCombat|CompatibilityEnabled",
+                "PlayerIndicators|PublicCombat|CompatibilityFieldBuffs",
+                "GroupHand|HandLayout|CompatibilityHandLayout",
+                "PingDetails|CoreUi|CompatibilityCardPopups",
+                "PrepSkillInfo|CoreUi|CompatibilityCharacterGuide",
+                "NameStyle|CoreUi|CompatibilityNames"
             })
             {
                 var parts = code.Split('|');

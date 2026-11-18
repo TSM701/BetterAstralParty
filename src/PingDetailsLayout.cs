@@ -1,6 +1,6 @@
 namespace BetterAstralParty;
 
-internal static class CardPreviewLayout
+internal static class PingDetailsLayout
 {
     internal const float Width = 440, Height = 644;
 

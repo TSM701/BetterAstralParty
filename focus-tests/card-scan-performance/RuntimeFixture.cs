@@ -44,7 +44,7 @@ namespace BetterAstralParty
     internal sealed class Setting<T>(T value) { internal T Value = value; }
     internal static class Plugin
     {
-        internal static readonly Setting<bool> Enabled = new(true), KoMinimum = new(true), CardAdvice = new(true), KoSpectator = new(true), KoCardPreview = new(true);
+        internal static readonly Setting<bool> ActionAdvice = new(true), KoDiceTarget = new(true), CardAdvice = new(true), KoSpectator = new(true), KoCardHover = new(true);
         internal static readonly Setting<float> UiScale = new(1);
         internal static Diagnostics? MinimalDiagnostics;
     }
@@ -169,15 +169,15 @@ namespace BetterAstralParty
             for (var count = 0; count <= 12; count++)
             for (var role = 0; role <= 3; role++)
             for (var variant = 0; variant < 12; variant++)
-            { Plugin.Enabled.Value = true; Plugin.KoMinimum.Value = true; Equivalent(new(count, role, variant)); }
+            { Plugin.ActionAdvice.Value = true; Plugin.KoDiceTarget.Value = true; Equivalent(new(count, role, variant)); }
             foreach (var advice in new[] { false, true })
             foreach (var dice in new[] { false, true })
             foreach (var ready in new[] { false, true })
             {
-                Plugin.Enabled.Value = advice; Plugin.KoMinimum.Value = dice;
+                Plugin.ActionAdvice.Value = advice; Plugin.KoDiceTarget.Value = dice;
                 var world = new World(11, 0, 0); world.Ready.Visible = ready; Equivalent(world);
             }
-            Plugin.Enabled.Value = Plugin.KoMinimum.Value = true;
+            Plugin.ActionAdvice.Value = Plugin.KoDiceTarget.Value = true;
             var invalid = new World(11, 0, 0); invalid.Input = invalid.Input with { MapType = 0 }; Equivalent(invalid);
             var unsupported = new World(11, 0, 0); unsupported.Input = unsupported.Input with { Modifiers = new HitModifiers { AttackDistributionUnknown = true } }; Equivalent(unsupported);
             foreach (var role in new[] { 0, 1 })

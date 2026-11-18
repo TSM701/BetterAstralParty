@@ -66,19 +66,18 @@ namespace Check {
             var nativeCalls=0;
             var other=new Il2CppSystem.Delegate(()=>nativeCalls++);
             touchBridge.Data["_callback0"]=new RuntimeObject(other.Pointer);
-            foreach(var mode in new[]{"Click","Hover"})
-                foreach(var shift in new[]{0f,100f,-100f}) {
-                    HandClickBinding.Arm(stage,new[]{worldCard}); // Update snapshot
-                    worldCard.Data["y"]=700f+shift; worldCard.Data["_scaleX"]=worldCard.Data["_scaleY"]=1f; // LateUpdate callback1
-                    new Il2CppSystem.Delegate(touchBridge.Field("_callback0")!.Pointer).Invoke(); // native callback0 before render
-                    Assert((float)worldCard.Data["y"]! ==700f && worldCard.Get<float>("scaleX")==.73f);
-                    HandClickBinding.Clear(); // Next frame, or lifecycle cleanup
-                    worldCard.Data["y"]=400f;
-                    new Il2CppSystem.Delegate(touchBridge.Field("_callback0")!.Pointer).Invoke();
-                    Assert((float)worldCard.Data["y"]! ==400f); // No stale correction on subsequent drag/use
-                    worldCard.Data["y"]=700f;
-                }
-            Assert(nativeCalls==12);
+            foreach(var shift in new[]{0f,100f,-100f}) {
+                HandClickBinding.Arm(stage,new[]{worldCard}); // Update snapshot
+                worldCard.Data["y"]=700f+shift; worldCard.Data["_scaleX"]=worldCard.Data["_scaleY"]=1f; // LateUpdate callback1
+                new Il2CppSystem.Delegate(touchBridge.Field("_callback0")!.Pointer).Invoke(); // native callback0 before render
+                Assert((float)worldCard.Data["y"]! ==700f && worldCard.Get<float>("scaleX")==.73f);
+                HandClickBinding.Clear(); // Next frame, or lifecycle cleanup
+                worldCard.Data["y"]=400f;
+                new Il2CppSystem.Delegate(touchBridge.Field("_callback0")!.Pointer).Invoke();
+                Assert((float)worldCard.Data["y"]! ==400f); // No stale correction on subsequent drag/use
+                worldCard.Data["y"]=700f;
+            }
+            Assert(nativeCalls==6); // Two native calls for each of the three shifts.
             var card=new RuntimeObject();
             var fields=new[]{"outline","suggestion","temporary"};
             foreach(var field in fields) card.Data[field]=new RuntimeObject { Data=new() { ["_scaleX"]=1f,["_scaleY"]=2f,["isDisposed"]=false } };

@@ -88,7 +88,8 @@ internal static partial class TestCommands
             Check(call.Name is not ("Approve" or "ConfirmTransition") || method.Name == "HandleInput", "Only explicit native input approves a transition"); Check(call.DeclaringType.FullName != "BetterAstralParty.Updating.WindowsFileFence", "Transition filesystem review stays on worker");
         }
         var home = NativeMethod(plugin, "BetterAstralParty.GameUi", "NotificationHome").Body.Instructions;
-        foreach (var name in new[] { "currentPanel", "TeamId", "roomStateType", "connectRoomId", "hasModalWindow", "modalWaiting", "hasAnyPopup", "Cut_in", "playing" }) Check(Strings(home, name).Length != 0, "Home eligibility blocker: " + name);
+        // localRoom: a room state without one is a disposed room (a replay played to its end keeps state 5; 2026-11-18).
+        foreach (var name in new[] { "currentPanel", "TeamId", "roomStateType", "localRoom", "connectRoomId", "hasModalWindow", "modalWaiting", "hasAnyPopup", "Cut_in", "playing" }) Check(Strings(home, name).Length != 0, "Home eligibility blocker: " + name);
         // A window covers the home while it holds the keys (2026-11-14: GRoot's top window was the SystemTipsWindow overlay).
         Check(IlCalls(home, "BetterAstralParty.GameUi", "FocusWindow").Length == 1, "Home eligibility blocker: the window holding the keys");
         var focus = NativeMethod(plugin, "BetterAstralParty.GameUi", "FocusWindow").Body.Instructions;

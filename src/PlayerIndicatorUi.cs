@@ -5,7 +5,7 @@ namespace BetterAstralParty;
 // Mod-owned hero clones of the native monster nameplate. They live in an owned layer inside com_AttrInfos,
 // which native per-frame layout skips (it only walks direct UICom_AttrInfo children), so the mod positions them
 // with the native UpdateOffset/UpdateGuideLine and scales the native pixel lifts by the field zoom.
-internal static class FieldBuffUi
+internal static class PlayerIndicatorUi
 {
     private static readonly Dictionary<IntPtr, Plate> Plates = new();
     private static readonly HashSet<IntPtr> Seen = new();
@@ -137,11 +137,11 @@ internal static class FieldBuffUi
 
     internal static void Tick()
     {
-        if (!Compatibility.Allowed("FieldBuffs")) return;
+        if (!Compatibility.Allowed("PlayerIndicators")) return;
         try
         {
-            if (!Plugin.FieldBuffs.Value) { Clear("setting-off"); return; }
-            if (GameUi.HomeAvailable) RuntimeObject.RequireClasses("FieldBuffs", ("GameLogic", "GameLogicManager"), ("UI", "UICom_AttrInfo"));
+            if (!Plugin.PlayerIndicators.Value) { Clear("setting-off"); return; }
+            if (GameUi.HomeAvailable) RuntimeObject.RequireClasses("PlayerIndicators", ("GameLogic", "GameLogicManager"), ("UI", "UICom_AttrInfo"));
             if (ModUi.IsOpen) { Clear("settings-open"); return; }
             if (GameUi.Root == null) { Clear("root-unavailable"); return; }
             if (FieldIndicatorOpacity.Hidden) { _pressed = IntPtr.Zero; return; }
@@ -179,7 +179,7 @@ internal static class FieldBuffUi
         }
         catch (Exception ex)
         {
-            Compatibility.Block("FieldBuffs", ex, () => Clear("exception"));
+            Compatibility.Block("PlayerIndicators", ex, () => Clear("exception"));
         }
     }
 
@@ -265,19 +265,22 @@ internal static class FieldBuffUi
         if (_sceneClass == IntPtr.Zero) _sceneClass = RuntimeObject.FindClass("Core.Scene", "BattleSceneController");
         var cameraObject = RuntimeObject.StaticField(_sceneClass, "inst")?.Get("mainCamera");
         if (cameraObject == null) return;
-        var camera = new Camera(cameraObject.Pointer);
+        // One camera wrapper, value results without a wrapper and value math through UnityMath (2026-11-18).
+        var camera = FieldZoomUi.CameraOf(cameraObject);
         var root = GameUi.Root!;
         float width = root.Get<float>("width"), height = root.Get<float>("height");
         var scale = FieldZoomUi.IndicatorScale;
-        var marker = MarkerLift * scale * Math.Clamp(Plugin.FieldIndicatorHeight.Value, 0f, 1f);
+        var marker = MarkerLift * scale * Math.Clamp(Plugin.IndicatorHeight.Value, 0f, 1f);
+        var enabled = camera.enabled;
+        float screenHeight = Screen.height;
         Placed.Clear();
         foreach (var plate in Plates.Values)
         {
             var ui = plate.Ui;
-            var owner = ui.Call("GetOwnerPos")!.Value<Vector3>();
-            var screen = owner == Vector3.zero || !camera.enabled ? default : camera.WorldToScreenPoint(owner);
-            var local = screen.z > 0 ? layer.Call("GlobalToLocal", new Vector2(screen.x, Screen.height - screen.y))!.Value<Vector2>() : default;
-            var target = local - Vector2.up * (PlateLift * scale);
+            var owner = ui.Result<Vector3>("GetOwnerPos");
+            var screen = UnityMath.IsZero(owner) || !enabled ? default : camera.WorldToScreenPoint(owner);
+            var local = screen.z > 0 ? layer.Result<Vector2, Vector2>("GlobalToLocal", UnityMath.V2(screen.x, screenHeight - screen.y)) : default;
+            var target = UnityMath.V2(local.x, local.y - PlateLift * scale);
             var shown = screen.z > 0 && target.x >= 0 && target.y >= 0 && target.x <= width && target.y <= height;
             if (ui.Get<bool>("visible") != shown) ui.Set("visible", shown);
             if (!shown) continue;
@@ -289,7 +292,7 @@ internal static class FieldBuffUi
         var stepping = self != null && self.Get<int>("canStep") > 0;
         foreach (var (plate, owner) in Placed)
         {
-            var point = layer.Call("TransformPoint", owner - Vector2.up * marker, plate.Ui)!.Value<Vector2>();
+            var point = layer.Result<Vector2, Vector2>("TransformPoint", UnityMath.V2(owner.x, owner.y - marker), plate.Ui);
             plate.Ui.Call("UpdateGuideLine", point);
             var buffs = plate.Ui.Field("graph_ShowBuff")!;
             if (buffs.Get<bool>("visible") == stepping) buffs.Set("visible", !stepping);
@@ -386,7 +389,10 @@ internal static class FieldBuffUi
         Counters.TryGetValue(ui.Pointer, out var badge);
         if (badge != null && (badge.Owner != player.Pointer || badge.Icon.Get<bool>("isDisposed")))
         { GameUi.Dispose(badge.Icon); Counters.Remove(ui.Pointer); badge = null; }
-        var shown = GameUi.Visible(ui) && player.Get("Property")?.Field("Counter")?.Get<bool>("Value") == true
+        // CanCounter or a hero's counter stacks (property 10008), as the fight icons read them (BattleStatusUi.CounterMark).
+        var property = player.Get("Property");
+        var shown = GameUi.Visible(ui) && (property?.Field("Counter")?.Get<bool>("Value") == true
+                || property?.Field("CounterCount")?.Field("property")?.Get<int>("Value") > 0)
             && CounterOwners.Add(player.Pointer);
         if (badge == null && !shown) return;
         var attr = ui.TypeName == "UICom_AttrInfo";

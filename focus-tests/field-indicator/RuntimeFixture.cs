@@ -59,6 +59,9 @@ __PRODUCTION__
         internal RuntimeObject? Get(string name) => Values.TryGetValue(name, out var value) ? value as RuntimeObject : null;
         internal T Get<T>(string name) where T : unmanaged => Values.TryGetValue(name, out var value) ? (T)value! : default;
         internal T Value<T>() where T : unmanaged => (T)Values["value"]!;
+        internal T Result<T>(string name) where T : unmanaged => Call(name)!.Value<T>();
+        internal T Result<T, A>(string name, A arg) where T : unmanaged where A : unmanaged => Call(name, arg)!.Value<T>();
+        internal T Result<T, A>(string name, A arg, RuntimeObject other) where T : unmanaged where A : unmanaged => Call(name, arg, other)!.Value<T>();
         internal string String() => (string)Values["value"]!;
         internal void Set(string name, object? value) => Values[name] = value;
         internal void SetField(string name, object? value) => Set(name, value);
@@ -107,7 +110,12 @@ __PRODUCTION__
         internal static void Position(RuntimeObject item, float x, float y, float scale) => throw new Exception("Unexpected counter layout in click-only fixture");
         internal static RuntimeObject Component(RuntimeObject parent, float width, float height) => throw new Exception("Unexpected layer creation in click-only fixture");
     }
-    internal static class FieldZoomUi { internal static float IndicatorScale => 1f; }
+    internal static class FieldZoomUi { internal static float IndicatorScale => 1f; internal static UnityEngine.Camera CameraOf(RuntimeObject camera) => new(camera.Pointer); }
+    internal static class UnityMath
+    {
+        internal static UnityEngine.Vector2 V2(float x, float y) => new(x, y);
+        internal static bool IsZero(UnityEngine.Vector3 v) => v.x * v.x + v.y * v.y + v.z * v.z < 1e-5f * 1e-5f;
+    }
     internal static class FieldMonsterPlates { internal static readonly List<RuntimeObject> Adopted=new(); internal static IReadOnlyList<RuntimeObject> Plates=>Adopted; }
     internal static class FieldStatePlates { internal static readonly List<RuntimeObject> Adopted=new(); internal static IReadOnlyList<RuntimeObject> Players=>Adopted; }
     internal sealed class FloatSetting { internal float Value = 1f; }
@@ -125,8 +133,8 @@ __PRODUCTION__
     }
     internal static class Plugin
     {
-        internal static readonly Setting FieldBuffs = new();
-        internal static readonly FloatSetting FieldIndicatorHeight = new();
+        internal static readonly Setting PlayerIndicators = new();
+        internal static readonly FloatSetting IndicatorHeight = new();
         internal static readonly Diagnostics Diagnostics = new();
     }
     internal static class Compatibility
@@ -137,7 +145,7 @@ __PRODUCTION__
 
     public static class Check
     {
-        private static readonly Type Ui = typeof(FieldBuffUi);
+        private static readonly Type Ui = typeof(PlayerIndicatorUi);
         private static readonly IDictionary Plates = (IDictionary)Ui.GetField("Plates", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
         private static int _checks;
         private static RuntimeObject Seed()
@@ -156,15 +164,15 @@ __PRODUCTION__
         {
             Input.Down = down; Input.Held = held; Input.Up = up; Input.mousePosition = new Vector3(x, y, 0);
             GameUi.Path = hit == null ? Array.Empty<RuntimeObject>() : new[] { hit.Field("graph_ShowBuff")!, hit };
-            FieldBuffUi.Tick();
+            PlayerIndicatorUi.Tick();
         }
         private static void Assert(bool passed, string name)
         { if (!passed) throw new Exception("Field indicator input: " + name); _checks++; }
         private static RuntimeObject Reset()
         {
-            Application.isFocused = true; Plugin.FieldBuffs.Value = true; ModUi.IsOpen = false; GameUi.Root = new();
+            Application.isFocused = true; Plugin.PlayerIndicators.Value = true; ModUi.IsOpen = false; GameUi.Root = new();
             FieldIndicatorOpacity.Hidden = false;
-            FieldBuffUi.Clear("fixture");
+            PlayerIndicatorUi.Clear("fixture");
             return Seed();
         }
         public static void Run()
@@ -186,7 +194,7 @@ __PRODUCTION__
             plate = Reset(); Frame(plate, 100, 100, down: true, held: true); Frame(null, 100, 100, up: true);
             Assert(plate.OpenCount == 0, "release outside the originating indicator cancels click");
             plate = Reset(); Frame(plate, 100, 100, down: true, held: true); Application.isFocused = false; Frame(plate, 100, 100, held: true);
-            Assert(FieldBuffUi.ActivePlateCount == 1, "focus loss preserves passive player plates");
+            Assert(PlayerIndicatorUi.ActivePlateCount == 1, "focus loss preserves passive player plates");
             Application.isFocused = true; Frame(plate, 100, 100, up: true);
             Assert(plate.OpenCount == 0, "focus restoration cannot revive a stale press");
             plate = Reset(); Frame(plate, 100, 100, down: true, held: true); Frame(plate, 100, 100); Frame(plate, 100, 100, up: true);
@@ -195,21 +203,21 @@ __PRODUCTION__
             GameUi.Root = root; Frame(plate, 100, 100, up: true);
             Assert(plate.OpenCount == 0, "missing root cancels pending click without resurrecting it");
             plate = Reset(); Frame(plate, 100, 100, down: true, held: true); ModUi.IsOpen = true; Frame(plate, 100, 100, held: true);
-            Assert(FieldBuffUi.ActivePlateCount == 0, "opening settings clears owned plates");
+            Assert(PlayerIndicatorUi.ActivePlateCount == 0, "opening settings clears owned plates");
             ModUi.IsOpen = false; plate = Seed(); Frame(plate, 100, 100, up: true);
             Assert(plate.OpenCount == 0, "settings closure cannot reuse a stale press");
-            plate = Reset(); Frame(plate, 100, 100, down: true, held: true); Plugin.FieldBuffs.Value = false; Frame(plate, 100, 100, held: true);
-            Assert(FieldBuffUi.ActivePlateCount == 0, "OFF clears owned plates");
-            Plugin.FieldBuffs.Value = true; plate = Seed(); Frame(plate, 100, 100, up: true);
+            plate = Reset(); Frame(plate, 100, 100, down: true, held: true); Plugin.PlayerIndicators.Value = false; Frame(plate, 100, 100, held: true);
+            Assert(PlayerIndicatorUi.ActivePlateCount == 0, "OFF clears owned plates");
+            Plugin.PlayerIndicators.Value = true; plate = Seed(); Frame(plate, 100, 100, up: true);
             Assert(plate.OpenCount == 0, "re-enabling the setting does not revive a click");
             plate = Reset(); Frame(plate, 100, 100, down: true, held: true); plate.Field("graph_ShowBuff")!.Set("visible", false); Frame(plate, 100, 100, up: true);
             Assert(plate.OpenCount == 0, "hidden public-effect affordance does not open a popup");
-            plate = Reset(); Frame(plate, 100, 100, down: true, held: true); FieldBuffUi.Clear("fixture"); plate = Seed(); Frame(plate, 100, 100, up: true);
+            plate = Reset(); Frame(plate, 100, 100, down: true, held: true); PlayerIndicatorUi.Clear("fixture"); plate = Seed(); Frame(plate, 100, 100, up: true);
             Assert(plate.OpenCount == 0, "explicit cleanup cancels pending click");
             plate = Reset(); FieldIndicatorOpacity.Hidden = true;
             Ui.GetField("_scanAt", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, 0f);
             Frame(plate, 100, 100, down: true, held: true); Frame(plate, 100, 100, up: true);
-            Assert(plate.OpenCount == 0 && FieldBuffUi.ActivePlateCount == 1 && !plate.Get<bool>("isDisposed"),
+            Assert(plate.OpenCount == 0 && PlayerIndicatorUi.ActivePlateCount == 1 && !plate.Get<bool>("isDisposed"),
                 "zoom-hidden plates retain their clones without scan or cached-pointer clicks");
             FieldIndicatorOpacity.Hidden = false;
             Ui.GetField("_scanAt", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, float.PositiveInfinity);
@@ -219,21 +227,21 @@ __PRODUCTION__
             FieldIndicatorOpacity.Hidden = true; Frame(plate, 100, 100, held: true);
             FieldIndicatorOpacity.Hidden = false; Frame(plate, 100, 100, up: true);
             Assert(plate.OpenCount == 0, "zoom hide cancels a pending click before reveal");
-            plate = Reset(); FieldIndicatorOpacity.Hidden = true; Plugin.FieldBuffs.Value = false;
+            plate = Reset(); FieldIndicatorOpacity.Hidden = true; Plugin.PlayerIndicators.Value = false;
             Frame(plate, 100, 100);
-            Assert(FieldBuffUi.ActivePlateCount == 0, "setting OFF still disposes zoom-hidden clones");
+            Assert(PlayerIndicatorUi.ActivePlateCount == 0, "setting OFF still disposes zoom-hidden clones");
             plate = Reset(); FieldIndicatorOpacity.Hidden = true; ModUi.IsOpen = true; Frame(plate, 100, 100);
-            Assert(FieldBuffUi.ActivePlateCount == 0, "settings still clear zoom-hidden clones");
+            Assert(PlayerIndicatorUi.ActivePlateCount == 0, "settings still clear zoom-hidden clones");
             // Pair separation runs on rectangles read once: two overlapping plates split the overlap, a fixed plate pushes
             // the moving one by all of it, and a later pair sees the earlier move (the native sequential order).
             var rects = new List<(float X, float Y, float Width, float Height)> { (0, 0, 10, 10), (0, 6, 10, 10), (50, 0, 10, 10) };
-            FieldBuffUi.SeparateRects(rects, null);
+            PlayerIndicatorUi.SeparateRects(rects, null);
             Assert(rects[0].Y == -2 && rects[1].Y == 8 && rects[2].Y == 0, "overlapping plates split the vertical overlap; distant plates stay");
             rects = new() { (0, 0, 10, 10) };
-            FieldBuffUi.SeparateRects(rects, new() { (0, 4, 10, 10) });
+            PlayerIndicatorUi.SeparateRects(rects, new() { (0, 4, 10, 10) });
             Assert(rects[0].Y == -6, "a fixed monster plate pushes the hero plate by the whole overlap");
             rects = new() { (0, 0, 10, 10), (0, 5, 10, 10), (0, 10, 10, 10) };
-            FieldBuffUi.SeparateRects(rects, null);
+            PlayerIndicatorUi.SeparateRects(rects, null);
             Assert(rects[0].Y == -2.5f && rects[1].Y == 3.75f && rects[2].Y == 13.75f, "later pairs see earlier moves, as the native pass does");
             Console.WriteLine("PASS: " + _checks + " production field-indicator input assertions; actual native rendering remains untested.");
         }

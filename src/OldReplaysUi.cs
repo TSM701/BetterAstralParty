@@ -13,7 +13,7 @@ namespace BetterAstralParty;
 // switches (GTween/Timers .catchCallbackExceptions, false natively) log and drop that callback instead. A replay whose
 // settlement preview failed leaves the replay state on at home (AccountInfoWindow.RequestPlayReplay drops the failed
 // result), and the next live match would hide Move and refuse fights; the mod ends that state at an idle home.
-internal static class ReplayUi
+internal static class OldReplaysUi
 {
     internal const string Feature = "OldReplays";
     private static RuntimeObject? _fight, _button;

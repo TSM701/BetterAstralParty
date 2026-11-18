@@ -7,7 +7,7 @@ internal static class ShushuShieldUi
 {
     internal const int BuffId = 1071101;
     internal const string Feature = "ShushuShield";
-    internal const string RestrictionsFeature = "ShushuShieldRestrictions";
+    internal const string RestrictionsFeature = "ShushuDefendLock";
     private static IntPtr _logicClass, _battleClass;
     private static readonly ActorShield Attacker = new(), Defender = new();
     private sealed record PendingEffect(ActorShield Owner, RuntimeObject Awaiter, GameObject Container);
@@ -110,7 +110,7 @@ internal static class ShushuShieldUi
     internal static void Tick()
     {
         var display = Plugin.ShushuMaster.Value && Plugin.ShushuShield.Value && Compatibility.Allowed(Feature);
-        var restrictions = Plugin.ShushuMaster.Value && Plugin.ShushuShieldRestrictions.Value && Compatibility.Allowed(RestrictionsFeature);
+        var restrictions = Plugin.ShushuMaster.Value && Plugin.ShushuDefendLock.Value && Compatibility.Allowed(RestrictionsFeature);
         if (!display && !restrictions) { Clear(); return; }
         try
         {
@@ -142,7 +142,7 @@ internal static class ShushuShieldUi
                 UpdateActor(Defender, director?.Get("victim"), logic, false);
             }
             catch (Exception ex) { Compatibility.Block(Feature, ex, ClearDisplay); }
-        if (!Plugin.ShushuMaster.Value || !Plugin.ShushuShieldRestrictions.Value || !Compatibility.Allowed(RestrictionsFeature)) ClearRestrictions();
+        if (!Plugin.ShushuMaster.Value || !Plugin.ShushuDefendLock.Value || !Compatibility.Allowed(RestrictionsFeature)) ClearRestrictions();
         else
             try { UpdateRestrictions(director); }
             catch (Exception ex) { Compatibility.Block(RestrictionsFeature, ex, ClearRestrictions); }

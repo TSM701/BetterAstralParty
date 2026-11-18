@@ -45,11 +45,25 @@ internal static class FieldFreeCamera
         return dx <= 50 && dy <= 50 && (dragThreshold < 0 || dx < dragThreshold && dy < dragThreshold);
     }
     internal static bool Holding => _camera != null;
+    // The player's own free view: entered by a wheel tick, or panned or zoomed since a Fight PiP's hold entered it or since
+    // a return inside that hold. FieldZoomUi shows the return button during a hold only then.
+    internal static bool Moved { get; private set; }
+    // CharacterMove.Move turns its character camera's damping to 0 while the character walks and back to 0.3 when it stops
+    // (CharacterCamera.SetMoveDamping); a free view entered from a walking camera kept 0 and moved without easing until it
+    // ended (user-reported 2026-11-18: smooth camera moves sometimes turned linear). The resting value replaces that 0.
+    internal const float RestingDamping = .3f;
     internal static RuntimeObject? Camera => _camera == null ? null : new RuntimeObject(_camera.Pointer);
 
-    internal static void Enter(RuntimeObject scene, RuntimeObject brain, RuntimeObject active, RuntimeObject body, UnityEngine.Camera output)
+    internal static void Enter(RuntimeObject scene, RuntimeObject brain, RuntimeObject active, RuntimeObject body, UnityEngine.Camera output) =>
+        Enter(scene, brain, active, body, output.transform.position, output.transform.rotation);
+
+    // `position`, `rotation`: the rendered pose to start at. A Fight PiP that starts full screen reads it as the fight window
+    // opens and enters only once it shrinks, when the field camera's brain may follow the fight's cameras (FieldZoomUi.FightHold).
+    internal static void Enter(RuntimeObject scene, RuntimeObject brain, RuntimeObject active, RuntimeObject body, Vector3 position, Quaternion rotation,
+        bool player = true)
     {
         if (Holding) return;
+        Moved = player;
         _scene = scene; _brain = new CinemachineBrain(brain.Pointer);
         try
         {
@@ -68,15 +82,17 @@ internal static class FieldFreeCamera
             var nativeBody = new CinemachineTransposer(body.Pointer);
             transposer.m_BindingMode = CinemachineTransposer.BindingMode.WorldSpace;
             transposer.m_FollowOffset = nativeBody.m_FollowOffset;
-            transposer.m_XDamping = nativeBody.m_XDamping;
-            transposer.m_YDamping = nativeBody.m_YDamping;
-            transposer.m_ZDamping = nativeBody.m_ZDamping;
+            var walking = nativeBody.m_XDamping == 0 && nativeBody.m_YDamping == 0 && nativeBody.m_ZDamping == 0;
+            transposer.m_XDamping = walking ? RestingDamping : nativeBody.m_XDamping;
+            transposer.m_YDamping = walking ? RestingDamping : nativeBody.m_YDamping;
+            transposer.m_ZDamping = walking ? RestingDamping : nativeBody.m_ZDamping;
+            if (walking) Plugin.Diagnostics.Write("fieldFreeCamera entered from an undamped camera; damping=" + RestingDamping);
             // Start at the rendered pose, even while the native Follow target is still damping.
-            _anchor.transform.position = output.transform.position - transposer.m_FollowOffset;
-            _camera.transform.SetPositionAndRotation(output.transform.position, output.transform.rotation);
+            _anchor.transform.position = position - transposer.m_FollowOffset;
+            _camera.transform.SetPositionAndRotation(position, rotation);
             _camera.InvalidateComponentPipeline();
             _cameraObject.SetActive(true);
-            _camera.ForceCameraPosition(output.transform.position, output.transform.rotation);
+            _camera.ForceCameraPosition(position, rotation);
             Acquire();
         }
         catch { Clear(); throw; }
@@ -112,7 +128,8 @@ internal static class FieldFreeCamera
         else if (_focusTarget != null && Input.GetMouseButtonUp(0))
         {
             var target = _focusTarget; _focusTarget = null;
-            if (!_returnPending)
+            // A Fight PiP keeps the free view while it shows the field (FightPip.HoldsField).
+            if (!_returnPending && !FightPip.HoldsField)
             {
                 // Same as the exit button, but leave the camera to the native click handler instead of returning home.
                 Plugin.Diagnostics.Write("fieldFreeCamera released for native focus; target=" + target + "; suspended=" + (_override < 0 ? "true" : "false")
@@ -128,11 +145,13 @@ internal static class FieldFreeCamera
         var supported = nativePointer != IntPtr.Zero
             && new RuntimeObject(nativePointer).TypeName == "CinemachineVirtualCamera"
             && new CinemachineVirtualCamera(nativePointer);
-        // The top owned override masks IsBlending; inspect the native base frame instead.
-        if (blocked || !supported || count != (_override >= 0 ? 2 : 1)
+        // The top owned override masks IsBlending; inspect the native base frame instead. A Fight PiP keeps the override
+        // while the field camera is off for a full-screen fight, so the field comes back held.
+        if (blocked && !FightPip.HoldsField || !supported || count != (_override >= 0 ? 2 : 1)
             || _override >= 0 && (stack[1].id != _override || stack[1].blend?.CamB?.Pointer != _camera!.Pointer))
         { Suspend(); return false; }
-        if (_returnPending)
+        // A return pressed while a Fight PiP held the field ends the free view once the hold does.
+        if (_returnPending && !FightPip.HoldsField)
         {
             Suspend();
             if (free?.Call("GetHostStatus")?.Value<bool>() != false
@@ -223,9 +242,28 @@ internal static class FieldFreeCamera
         position.x = Math.Clamp(position.x, bounds.min.x, bounds.max.x);
         position.z = Math.Clamp(position.z, bounds.min.z, bounds.max.z);
         _anchor.transform.position = position;
+        Moved = true; _returnPending = false;
     }
 
-    internal static void Return() { _returnPending = true; Suspend(); }
+    // The player zoomed the free view (FieldZoomUi): it is theirs again, and a return pressed in a hold is called off.
+    internal static void Touched() { Moved = true; _returnPending = false; }
+
+    // A return inside a Fight PiP's hold: the view follows the turn player's camera from here (FieldZoomUi.ReturnInHold).
+    internal static void MoveAnchor(Vector3 position)
+    {
+        if (_anchor) _anchor!.transform.position = position;
+        Moved = false;
+    }
+
+    // While a Fight PiP holds the field the override stays (without it the field camera's brain follows the fight's cameras):
+    // the view goes back to the turn player's camera now and the free view ends with the hold (user-reported 2026-11-18:
+    // the return button vanished during PIP fights).
+    internal static void Return()
+    {
+        _returnPending = true;
+        if (FightPip.HoldsField) { FieldZoomUi.ReturnInHold(); return; }
+        Suspend();
+    }
 
     private static void Suspend()
     {
@@ -259,7 +297,7 @@ internal static class FieldFreeCamera
         if (_cameraObject) UnityEngine.Object.Destroy(_cameraObject);
         if (_anchor) UnityEngine.Object.Destroy(_anchor);
         _cameraObject = _anchor = null; _camera = null; _brain = null; _scene = null;
-        _returnPending = _dragging = _indicatorPress = false;
+        _returnPending = _dragging = _indicatorPress = Moved = false;
         _focusTarget = null;
     }
 }

@@ -59,14 +59,8 @@ static class NativeUi {
     }
 }
 public static class SubmitCheck {
-    sealed class Entry {public RuntimeObject Card=new();public float? GuideRotation;}
-    static RuntimeObject? _hotZone,_dropHint;
-    static NativeUi.Surface? _dropHighlight;
-    static (Vector2 Size,float Unit,bool Korean)? _dropHintLayout;
+    static RuntimeObject? _hotZone;
 __UpdateDropZone__
-__UpdateDropHint__
-__SetGuideDirection__
-__ClearDropHint__
 __TOLOCAL__
     static void Check(bool value){if(!value)throw new Exception("Submit presentation regression");}
     static bool Near(float a,float b)=>Math.Abs(a-b)<.001f;
@@ -78,56 +72,25 @@ __TOLOCAL__
             parent.Data["localScale"]=scale;
             foreach(var height in new[]{720f,1080f,1440f,2160f}) {
                 var width=height*16/9;var unit=Math.Min(width/1920,height/1080);var bottom=height*.6f;
-                UpdateDropZone(root,width,unit,false,bottom);
+                UpdateDropZone(root,width,height,bottom);
+                // The zone reaches half a screen above the screen top, where nothing of it is seen.
+                var top=height*HandLayout.DropOverhang/scale;
                 Check(Near(_hotZone.Get<float>("x"),width*.1f/scale));
-                Check(Near(_hotZone.Get<float>("y"),0));
+                Check(Near(_hotZone.Get<float>("y"),-top));
                 Check(Near(_hotZone.Get<float>("width"),width*.8f/scale));
-                Check(Near(_hotZone.Get<float>("height"),bottom/scale));
-                Check(_dropHighlight!.Graph.Get<float>("width")==_hotZone.Get<float>("width"));
-                Check(_dropHighlight.Graph.Get<float>("height")==_hotZone.Get<float>("height"));
-                Check(Near(_dropHint!.Get<float>("y"),bottom/scale-90*unit)); // Above the cards, clear of the top bar.
-                Check(!_dropHint.Get<bool>("touchable")&&!_dropHighlight.Graph.Get<bool>("touchable"));
-                Check(ReferenceEquals(_dropHint.Get("parent"),_hotZone));
-                Check(ReferenceEquals(_dropHighlight.Graph.Get("parent"),_hotZone));
+                Check(Near(_hotZone.Get<float>("height"),bottom/scale+top));
                 Check(!_hotZone.Get<bool>("visible")&&!_hotZone.Get<bool>("touchable")&&_hotZone.Get<float>("alpha")==.3f);
-                var writes=_hotZone.Writes+_dropHighlight.Graph.Writes+_dropHint.Writes;
-                for(int frame=0;frame<100;frame++)UpdateDropZone(root,width,unit,false,bottom);
-                Check(writes==_hotZone.Writes+_dropHighlight.Graph.Writes+_dropHint.Writes);
+                var writes=_hotZone.Writes;
+                for(int frame=0;frame<100;frame++)UpdateDropZone(root,width,height,bottom);
+                Check(writes==_hotZone.Writes);
             }
         }
-        Check(NativeUi.Created.Count==2);
-        Check(((Color)_dropHighlight!.Graph.Get("shape").Data["stroke"]).a==1f);
-        Check(((Color)_dropHighlight.Graph.Get("shape").Data["fill"]).a==.18f);
-        Check((float)_dropHighlight.Graph.Get("shape").Data["line"]==4f);
-        var hint=_dropHint!;var highlight=_dropHighlight.Graph;
-        ModText.Korean=false;UpdateDropHint(new(300,600),1);
-        Check(hint.Get<string>("text")=="Drop card\nhere");
-        ModText.Korean=true;UpdateDropHint(new(300,600),1);
-        Check(hint.Get<string>("text")=="카드를 이곳에\n놓으세요");
-        ClearDropHint();Check(hint.Get<bool>("isDisposed")&&highlight.Get<bool>("isDisposed"));
-        Check(_dropHint==null&&_dropHighlight==null&&_dropHintLayout==null);
         parent.Data["localScale"]=1f;
-        UpdateDropZone(root,1920,1,true,500);
-        Check(Near(_hotZone.Get<float>("x"),192)&&Near(_hotZone.Get<float>("y"),0));
-        Check(Near(_hotZone.Get<float>("width"),1536)&&Near(_hotZone.Get<float>("height"),500));
-        Check(_dropHint==null&&_dropHighlight==null&&NativeUi.Created.Count==2);
-        foreach(var original in new[]{0f,12f,-20f}) {
-            var guide=new RuntimeObject {Data={["rotation"]=original,["alpha"]=.45f,["visible"]=false,["touchable"]=false}};
-            var entry=new Entry {Card=new RuntimeObject {Data={["effectGuide"]=guide}}};
-            SetGuideDirection(entry,false);Check(guide.Writes==0); // Native/Click never take ownership.
-            SetGuideDirection(entry,true);Check(guide.Get<float>("rotation")==original+90);
-            var writes=guide.Writes;RuntimeObject.Reads=0;
-            for(int frame=0;frame<100;frame++)SetGuideDirection(entry,true);
-            Check(guide.Writes==writes&&RuntimeObject.Reads==0);
-            Check(guide.Get<float>("alpha")==.45f&&!guide.Get<bool>("visible")&&!guide.Get<bool>("touchable"));
-            SetGuideDirection(entry,false);Check(guide.Get<float>("rotation")==original&&entry.GuideRotation==null);
-            SetGuideDirection(entry,true);guide.Set("rotation",45f);
-            SetGuideDirection(entry,false);Check(guide.Get<float>("rotation")==45f); // Preserve a foreign write.
-            SetGuideDirection(entry,true);entry.Card.Data["isDisposed"]=true;writes=guide.Writes;
-            SetGuideDirection(entry,false);Check(guide.Writes==writes&&entry.GuideRotation==null);
-        }
-        Console.WriteLine("PASS: production drop bounds (10-90 % wide, screen top to the card line) and hover's non-hit artwork with its hint above the cards agree at HD–4K/scaled parents; KR/EN, native fade/visibility/input preserved, idle no-write, click without hint.");
-        Console.WriteLine("PASS: production guide rotation ownership, Native/Click isolation, foreign-write/disposal cleanup and idle zero reads. Native late-load transfer verified by IL; in-game rendering unverified.");
+        UpdateDropZone(root,1920,1080,500);
+        Check(Near(_hotZone.Get<float>("x"),192)&&Near(_hotZone.Get<float>("y"),-540));
+        Check(Near(_hotZone.Get<float>("width"),1536)&&Near(_hotZone.Get<float>("height"),1040));
+        Check(NativeUi.Created.Count==0); // The zone draws nothing of its own.
+        Console.WriteLine("PASS: production drop bounds (10-90 % wide, half a screen above the screen top down to the card line) at HD–4K/scaled parents; native fade/visibility/input preserved, idle no-write, nothing drawn by the mod.");
     }
 }
 }

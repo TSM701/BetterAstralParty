@@ -4,7 +4,7 @@ using UnityEngine;
 namespace BetterAstralParty;
 
 // A private native dice component. Never writes the game's HP, dice or result data.
-internal static class RemainingHpUi
+internal static class FinalDamageUi
 {
     private static RuntimeObject? _point, _parent;
     private static RuntimeObject? _title;
@@ -51,7 +51,7 @@ internal static class RemainingHpUi
                 int? changeHp = null;
                 if (Plugin.Diagnostics.IsRecording)
                     try { changeHp = defender.Get("Property")?.Field("ChangeHP")?.Get<int>("Value"); }
-                    catch (Exception ex) { Plugin.Diagnostics.Error("RemainingHpUi.ChangeHP", ex); }
+                    catch (Exception ex) { Plugin.Diagnostics.Error("FinalDamageUi.ChangeHP", ex); }
                 Plugin.Diagnostics.CombatResult(_hp, _prediction, hp, _modifiers, monsterDefeat, changeHp);
             }
             if (step == 3 || CombatAdvisor.IsFinalHpPhase(step) && !_captured)
@@ -108,7 +108,7 @@ internal static class RemainingHpUi
         }
         catch (Exception ex)
         {
-            Plugin.Diagnostics.Error("RemainingHpUi", ex);
+            Plugin.Diagnostics.Error("FinalDamageUi", ex);
             Plugin.Logger.LogWarning("[Damage] Indicator disabled for this session: " + ex.GetType().Name);
             Clear(); _failed = true; // Isolate this optional view from existing advice.
         }
@@ -205,6 +205,10 @@ internal static class RemainingHpUi
                 _showing = false;
                 return;
             }
+            // While Fight PiP runs the fight, the view sits in FightWindow, whose coordinates are the root's when it is full
+            // and which carries it into the PiP when it is not.
+            var holder = FightPip.Holder ?? root;
+            if (_point.Get("parent")?.Pointer != holder.Pointer) holder.Call("AddChild", _point);
             var width = root.Get<float>("width");
             var height = root.Get<float>("height");
             // The view keeps the point's own size and the scale written here. In game (2026-11-06) a lethal figure was
@@ -256,7 +260,7 @@ internal static class RemainingHpUi
     {
         if (_point == null || _point.Get<bool>("isDisposed")) return;
         try { _title?.Set("text", ModText.Text("피해량")); }
-        catch (Exception ex) { Plugin.Diagnostics.Error("RemainingHpUi.Language", ex); ClearDisplay(); }
+        catch (Exception ex) { Plugin.Diagnostics.Error("FinalDamageUi.Language", ex); ClearDisplay(); }
     }
 
     internal static void ClearDisplay()

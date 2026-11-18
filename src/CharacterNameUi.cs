@@ -5,7 +5,7 @@ namespace BetterAstralParty;
 internal static class CharacterNameUi
 {
     private static readonly Dictionary<IntPtr, (RuntimeObject Label, string Property, string Original, string Applied)> Changed = new();
-    private static Dictionary<string, string> _names = new(StringComparer.Ordinal);
+    private static Dictionary<string, string> _names = new(StringComparer.Ordinal), _sentences = new(StringComparer.Ordinal);
     private static IntPtr _configClass, _helperClass, _settingsClass, _table;
     private static int _language = -1;
     private static bool _loggedApplied;
@@ -22,14 +22,14 @@ internal static class CharacterNameUi
     // Every name slot found so far, hidden or not, until it is disposed: a list hidden behind character details shows
     // epithets again when it returns, and virtual lists reuse slots on scroll, so slots on stage are rechecked every
     // frame. Off-stage slots only wait for their return, and make room at the cap.
-    private static readonly Dictionary<IntPtr, (RuntimeObject Label, string Property)> Slots = new();
+    private static readonly Dictionary<IntPtr, (RuntimeObject Label, string Property, bool Sentence)> Slots = new();
     private static readonly List<IntPtr> Gone = new();
     private const int MaxSlots = 256;
     private static int _replaced, _newSlots;
 
     internal static void Tick(RuntimeObject root)
     {
-        if (!Compatibility.Allowed("Names")) return;
+        if (!Compatibility.Allowed("NameStyle")) return;
         try
         {
             if (!Plugin.UseRealNames.Value) { RestoreAll(); return; }
@@ -39,8 +39,8 @@ internal static class CharacterNameUi
             if (_table != IntPtr.Zero)
             {
                 Gone.Clear();
-                foreach (var (key, (label, property)) in Slots)
-                    if (label.Get<bool>("isDisposed")) Gone.Add(key); else if (label.Get<bool>("onStage")) Replace(label, property);
+                foreach (var (key, (label, property, sentence)) in Slots)
+                    if (label.Get<bool>("isDisposed")) Gone.Add(key); else if (label.Get<bool>("onStage")) Replace(label, property, sentence);
                 foreach (var key in Gone) Slots.Remove(key);
             }
             // Cues are read every frame, also while a pass is running, so none is lost.
@@ -57,6 +57,8 @@ internal static class CharacterNameUi
                 Pending.Push((root, 0, -1));
             }
             VisitSlice();
+            // Epithets inside the other text tables, a slice a frame after the names load (CharacterNameTables).
+            if (_table != IntPtr.Zero) CharacterNameTables.Slice();
             if (Pending.Count == 0)
             {
                 var filling = _replaced != 0 || _newSlots != 0 || Time.unscaledTime < _burstUntil;
@@ -66,7 +68,7 @@ internal static class CharacterNameUi
         catch (Exception ex)
         {
             Pending.Clear();
-            Compatibility.Block("Names", ex, RestoreAll);
+            Compatibility.Block("NameStyle", ex, RestoreAll);
         }
     }
 
@@ -74,7 +76,7 @@ internal static class CharacterNameUi
     {
         if (_configClass == IntPtr.Zero)
         {
-            RuntimeObject.RequireClasses("Names", ("", "StaticConfigure"), ("UI", "UIHelper"), ("Core", "GameSettings"));
+            RuntimeObject.RequireClasses("NameStyle", ("", "StaticConfigure"), ("UI", "UIHelper"), ("Core", "GameSettings"));
             _configClass = RuntimeObject.FindClass("", "StaticConfigure");
             _helperClass = RuntimeObject.FindClass("UI", "UIHelper");
             _settingsClass = RuntimeObject.FindClass("Core", "GameSettings");
@@ -100,8 +102,10 @@ internal static class CharacterNameUi
             pairs.Add((nick, name));
         }
         _names = CharacterNames.BuildMap(pairs);
+        _sentences = CharacterNames.SentenceMap(_names);
         _table = table.Pointer;
         _language = language;
+        CharacterNameTables.Begin(_sentences, language);
         Plugin.Logger.LogInfo($"[캐릭터 이름] 게임 번역에서 본명/이명 {_names.Count}개 연결됨");
         return true;
     }
@@ -109,7 +113,7 @@ internal static class CharacterNameUi
     // A full table drops one slot that is off stage now; its list is scanned again when it returns.
     private static bool MakeRoom()
     {
-        foreach (var (key, (label, _)) in Slots)
+        foreach (var (key, (label, _, _)) in Slots)
             if (label.Get<bool>("isDisposed") || !label.Get<bool>("onStage")) return Slots.Remove(key);
         return false;
     }
@@ -130,7 +134,9 @@ internal static class CharacterNameUi
                 || !node.Get<bool>("internalVisible") || !node.Get<bool>("internalVisible2"))) continue;
             if (childIndex < 0)
             {
+                // A name slot holds an epithet alone; a sentence slot an epithet inside a sentence the game built.
                 var field = CharacterNames.LabelField(node.TypeName);
+                var sentence = field == null && (field = CharacterNames.SentenceField(node.TypeName)) != null;
                 if (field != null)
                 {
                     var label = field.Length == 0 ? node : node.Field(field);
@@ -138,9 +144,9 @@ internal static class CharacterNameUi
                     {
                         var property = CharacterNames.LabelProperty(node.TypeName);
                         var before = Changed.Count;
-                        Replace(label, property);
+                        Replace(label, property, sentence);
                         if (Changed.Count > before) _replaced++;
-                        if (!Slots.ContainsKey(label.Pointer) && (Slots.Count < MaxSlots || MakeRoom())) { Slots[label.Pointer] = (label, property); _newSlots++; }
+                        if (!Slots.ContainsKey(label.Pointer) && (Slots.Count < MaxSlots || MakeRoom())) { Slots[label.Pointer] = (label, property, sentence); _newSlots++; }
                     }
                 }
                 if (depth >= 24 || node.Get("asCom") == null) continue;
@@ -153,7 +159,7 @@ internal static class CharacterNameUi
         }
     }
 
-    private static void Replace(RuntimeObject label, string property)
+    private static void Replace(RuntimeObject label, string property, bool sentence = false)
     {
         var current = ReadLabel(label, property);
         if (Changed.TryGetValue(label.Pointer, out var previous))
@@ -161,7 +167,12 @@ internal static class CharacterNameUi
             if (current == previous.Applied) return;
             Changed.Remove(label.Pointer); // The game reused or refreshed the label.
         }
-        if (!_names.TryGetValue(current, out var name)) return;
+        if (!_names.TryGetValue(current, out var name))
+        {
+            if (!sentence) return;
+            name = CharacterNames.Sentence(current, _sentences);
+            if (ReferenceEquals(name, current)) return;
+        }
         WriteLabel(label, property, name);
         Changed[label.Pointer] = (label, property, current, name);
         if (!_loggedApplied)
@@ -173,23 +184,26 @@ internal static class CharacterNameUi
 
     private static string ReadLabel(RuntimeObject label, string property)
     {
-        if (property != "data") return label.Get(property)?.String() ?? "";
+        if (!CharacterNames.IsVar(property)) return label.Get(property)?.String() ?? "";
         var vars = label.Get("templateVars");
-        return vars != null && vars.Call("ContainsKey", "data")!.Value<bool>()
-            ? vars.Call("get_Item", "data")?.String() ?? "" : "";
+        return vars != null && vars.Call("ContainsKey", property)!.Value<bool>()
+            ? vars.Call("get_Item", property)?.String() ?? "" : "";
     }
 
     private static void WriteLabel(RuntimeObject label, string property, string value)
     {
-        if (property != "data") { label.Set(property, value); return; }
+        if (!CharacterNames.IsVar(property)) { label.Set(property, value); return; }
         // Preserve the localized sentence and all other variables; use the game's own renderer.
-        label.Call("SetVar", "data", value);
+        label.Call("SetVar", property, value);
         label.Call("FlushVars");
     }
 
     internal static void RestoreAll()
     {
         Pending.Clear();
+        // The tables are back as the game loaded them, so the next pass with names on builds the map and patches again.
+        CharacterNameTables.Restore();
+        _language = -1;
         foreach (var (key, edit) in Changed.ToArray())
         {
             if (!edit.Label.Get<bool>("isDisposed"))

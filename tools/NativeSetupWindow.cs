@@ -506,9 +506,21 @@ namespace BetterAstralParty.Installation
             y = Note(_emergency ? T("BetterAstralParty 파일과 이 게임의 복구 백업을 영구 삭제했습니다.", "BetterAstralParty files and this game's recovery backups were deleted.")
                 : _removal ? T("BetterAstralParty 파일을 지웠습니다.", "BetterAstralParty files were removed.") : "BetterAstralParty " + _version, y, null, 76, 460);
             var text = _finalLine == null ? "" : Pick(_finalLine);
-            if (text.Length != 0) Box(text, y + S(16), Cream, CreamEdge, Brown);
+            if (text.Length != 0) y = Box(text, y + S(16), Cream, CreamEdge, Brown);
+            if (!_removal && _game != null && InteropPending(_game))
+                Note(T("다음 실행은 BepInEx가 게임에 맞는 파일을 만드느라 몇 분 걸릴 수 있습니다. 창이 멈추거나 ‘응답 없음’이 떠도 닫지 말고 기다려 주세요.",
+                    "The next start can take a few minutes while BepInEx builds files for the game. If the window freezes or shows Not Responding, keep it open and wait."), y + S(12));
             Footer(new[] { (T("게임 폴더 열기", "Open game folder"), false, (Action)OpenGameFolder, _game != null), (T("닫기", "Close"), true, (Action)Close, true) },
                 new[] { (T("자세히 보기", "Details"), (Action)ShowLog) });
+        }
+        // The shared loader builds its interop assemblies at the first start without its hash record or after the game
+        // assembly changed, minutes with the game window not responding on a slow PC (2026-11-18, reports of 응답 없음).
+        private static bool InteropPending(string game)
+        {
+            try {
+                var hash = WindowsPath.ForIo(Path.Combine(game, "BepInEx", "interop", "assembly-hash.txt"));
+                return !File.Exists(hash) || File.GetLastWriteTimeUtc(WindowsPath.ForIo(Path.Combine(game, "GameAssembly.dll"))) > File.GetLastWriteTimeUtc(hash);
+            } catch { return false; }
         }
         private void RenderFailed()
         {

@@ -76,10 +76,12 @@ internal static unsafe class SmoothShape
         if (!States.TryGetValue(shape, out var state)) return;
         if (Pack(state.Fill) == Pack(fill) && state.Line == line && Pack(state.Stroke) == Pack(lineColor)) return;
         var lineChanged = state.Line != line;
+        var under = FillLine(state);
         state.Fill = fill; state.Line = line; state.Stroke = lineColor;
         if (state.FillImage == null) { Draw(shape, state); return; }
         // A shape made without an outline keeps its single image; every caller restyles shapes made with one.
         if (state.Ring != null && lineChanged && line > 0) Show(state.Ring, state, line);
+        if (state.Ring != null && FillLine(state) != under) Show(state.FillImage, state, FillLine(state));
         Tint(state);
     }
 
@@ -112,7 +114,7 @@ internal static unsafe class SmoothShape
         try
         {
             shape.Call("SetSize", width, height);
-            state.FillImage = NewImage(state, 0f, state.Fill);
+            state.FillImage = NewImage(state, FillLine(state), state.Fill);
             state.Ring = NewImage(state, state.Line, state.Stroke);
             var size = RuntimeObject.EnumValue("FairyGUI", "RelationType", "Size");
             foreach (var part in new[] { state.FillImage, state.Ring })
@@ -145,19 +147,28 @@ internal static unsafe class SmoothShape
         image.Set("texture", Sprite(state, line));
         var display = image.Get("displayObject")!;
         display.Set("textureScale", new Vector2(ShapeRaster.Density, ShapeRaster.Density));
-        var margin = ShapeRaster.Margin(state.TopLeft, state.TopRight, state.BottomLeft, state.BottomRight, line);
+        var margin = ShapeRaster.Margin(state.TopLeft, state.TopRight, state.BottomLeft, state.BottomRight, Math.Abs(line));
         display.Set("scale9Grid", new NullableRect(new Rect(margin, margin, 2, 2)));
     }
 
-    // A white mask: the whole shape for a fill (line 0), only the outline band for a ring.
+    // The fill's mask under an opaque ring ends half the ring inside the shape (-line), so its antialiased edge lies under the
+    // ring's opaque band: a fill reaching the shape's edge showed through the ring's own antialiased outer pixels, a light
+    // fringe around the Received Likes pills' black outline on a dark card (2026-11-16, 2026.11.2-dev.11). Under a
+    // see-through ring the fill keeps the whole shape, as the ring lets it show.
+    private static float FillLine(State state) => state.Line > 0 && state.Stroke.a >= 1f ? -state.Line : 0f;
+
+    // A white mask: the whole shape for a fill (line 0), only the outline band for a ring (line > 0), and for the fill under an
+    // opaque ring of that width (line < 0) the shape inset by half the ring.
     private static RuntimeObject Sprite(State state, float line)
     {
         var key = (state.TopLeft, state.TopRight, state.BottomLeft, state.BottomRight, line);
         if (Sprites.TryGetValue(key, out var sprite)) return sprite;
-        var margin = ShapeRaster.Margin(state.TopLeft, state.TopRight, state.BottomLeft, state.BottomRight, line);
+        var margin = ShapeRaster.Margin(state.TopLeft, state.TopRight, state.BottomLeft, state.BottomRight, Math.Abs(line));
         var size = ShapeRaster.Size(margin);
-        var mask = ShapeRaster.Pixels(margin, state.TopLeft, state.TopRight, state.BottomLeft, state.BottomRight, line,
-            (1f, 1f, 1f, line > 0 ? 0f : 1f), (1f, 1f, 1f, 1f));
+        var mask = line < 0
+            ? ShapeRaster.Pixels(margin, state.TopLeft, state.TopRight, state.BottomLeft, state.BottomRight, -line / 2, (1f, 1f, 1f, 1f), (1f, 1f, 1f, 0f))
+            : ShapeRaster.Pixels(margin, state.TopLeft, state.TopRight, state.BottomLeft, state.BottomRight, line,
+                (1f, 1f, 1f, line > 0 ? 0f : 1f), (1f, 1f, 1f, 1f));
         return Sprites[key] = Region(mask, size);
     }
 

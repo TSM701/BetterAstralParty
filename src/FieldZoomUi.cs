@@ -23,8 +23,8 @@ internal static class FieldZoomUi
     private static Vector3 _viewDelta;
     // Which native view DiceViewDelta was measured from this frame, for the dice diagnostics.
     internal static string DiceViewSource { get; private set; } = "hidden";
-    internal static float IndicatorScale => _owned && _fieldVisible && _applied.magnitude > 0
-        ? Math.Clamp(_original.magnitude / _applied.magnitude, 0.2f, 5f) : 1f;
+    internal static float IndicatorScale => _owned && _fieldVisible && UnityMath.Magnitude(_applied) > 0
+        ? Math.Clamp(UnityMath.Magnitude(_original) / UnityMath.Magnitude(_applied), 0.2f, 5f) : 1f;
     private static IntPtr _wheelBrain, _wheelCamera, _wheelFrame;
     // WASD moves the native free camera, and the owned view's pan, by FreeCameraObject.CameraSpeed per second; the game
     // writes it only in its constructor. The WASD Speed slider scales it while this feature runs, and Clear puts it back.
@@ -41,9 +41,9 @@ internal static class FieldZoomUi
             Update();
             FieldMonsterPlates.Tick(IndicatorScale);
             FieldStatePlates.Tick(IndicatorScale);
-            var distance = _original.magnitude;
+            var distance = UnityMath.Magnitude(_original);
             FieldIndicatorOpacity.Tick(_fieldVisible && _owned && _zoomOutLimit > distance
-                ? Math.Clamp((_applied.magnitude - distance) / (_zoomOutLimit - distance), 0, 1) : 0);
+                ? Math.Clamp((UnityMath.Magnitude(_applied) - distance) / (_zoomOutLimit - distance), 0, 1) : 0);
         }
         catch (Exception ex) { Compatibility.Block("FieldZoom", ex, Clear); }
     }
@@ -85,7 +85,9 @@ internal static class FieldZoomUi
             || !CameraOf(cameraObject!).enabled || !CameraOf(cameraObject!).gameObject.activeInHierarchy
             || logic?.Get("battle")?.Field<bool>("clientFinishReady") != true;
         var owned = FieldFreeCamera.Update(scene, brain!, free, player, blocked);
-        FieldCameraReturnUi.Tick(FieldFreeCamera.Holding && !blocked);
+        // While a PIP holds the field with the free view (FightPip.HoldsField) the return button shows only for a view the
+        // player moved or zoomed (FieldFreeCamera.Moved); the hold alone is no free view of theirs.
+        FieldCameraReturnUi.Tick(FieldFreeCamera.Holding && !blocked && (!FightPip.HoldsField || FieldFreeCamera.Moved));
         var wheel = Input.mouseScrollDelta.y;
         var wheelAllowed = wheel == 0 && _pendingWheel == 0 && Same(_target, _applied)
             || FieldInputAllowed(root) && !FieldCameraReturnUi.ConsumedInput
@@ -110,7 +112,7 @@ internal static class FieldZoomUi
         var follow = active.Get("Follow");
         if (!Alive(follow)) { _pendingWheel = 0; WheelState("camera-follow"); return; }
         var camera = CameraOf(cameraObject!);
-        if (camera.orthographic || camera.usePhysicalProperties || camera.lensShift.x != 0 || camera.lensShift.y != 0)
+        if (camera.orthographic || camera.usePhysicalProperties || camera.lensShift is var shift && (shift.x != 0 || shift.y != 0))
         { _pendingWheel = 0; WheelState("camera-lens"); return; }
         var offset = body.Field<Vector3>("m_FollowOffset");
         if (!Finite(offset)) { _pendingWheel = 0; WheelState("camera-offset"); return; }
@@ -135,7 +137,7 @@ internal static class FieldZoomUi
             nativeView = _owned && _body?.Pointer == body.Pointer && !Same(_applied, _original) ? follow!.Get<Vector3>("position") + _original : null;
             DiceViewSource = nativeView != null ? "native-zoom" : "native";
         }
-        _viewDelta = nativeView is { } view ? camera.transform.position - view : default;
+        _viewDelta = nativeView is { } view ? UnityMath.Sub(camera.transform.position, view) : default;
         if (!owned)
         {
             var frames = brain!.Field("mFrameStack");
@@ -217,6 +219,7 @@ internal static class FieldZoomUi
                     }
                 }
                 _target = zoomTarget;
+                if (FieldFreeCamera.Holding) FieldFreeCamera.Touched();
                 WheelState("accepted");
             }
             else
@@ -263,7 +266,7 @@ internal static class FieldZoomUi
     {
         if (!Application.isFocused || ModUi.IsOpen || Input.touchCount != 0 || root.Get<bool>("modalWaiting")
             || GameUi.LiveDrag() != null
-            || GameUi.Find(root, "FightWindow", maxDepth: 1) is { } fight && !EncounterHidden(fight)
+            || GameUi.Find(root, "FightWindow", maxDepth: 1) is { } fight && !EncounterHidden(fight) && !FightPip.FieldOpen(pointer: !pan || Input.GetMouseButton(0))
             || GameUi.Find(root, "SettingWindow", maxDepth: 1) != null
             || GameUi.Find(root, "SettingInBattleWindow", maxDepth: 1) != null
             || GameUi.Find(root, "SinglePlayerSettingInBattleWindow", maxDepth: 1) != null
@@ -373,8 +376,9 @@ internal static class FieldZoomUi
 
     // One interop wrapper for the render camera while it stays the same object, instead of new ones every frame; the plate
     // layers read the same BattleSceneController.mainCamera.
+    // `is not null`: Unity's != on a UnityEngine.Object is a native call, and the pointer test decides here.
     internal static Camera CameraOf(RuntimeObject cameraObject) =>
-        _camera != null && _camera.Pointer == cameraObject.Pointer ? _camera : _camera = new Camera(cameraObject.Pointer);
+        _camera is not null && _camera.Pointer == cameraObject.Pointer ? _camera : _camera = new Camera(cameraObject.Pointer);
 
     private static void Restore()
     {
@@ -400,6 +404,81 @@ internal static class FieldZoomUi
         if (_speedSet != _speedBase && Alive(_speedFree) && _speedFree!.Field<float>("CameraSpeed") == _speedSet)
             _speedFree.SetField("CameraSpeed", _speedBase);
         _speedFree = null;
+    }
+
+    // Fight PiP (2026-11-17): while a PIP shows the field, the owned free view holds the field camera. Without its override
+    // the field camera's CinemachineBrain follows the fight's own cameras once the battle platform opens (BattleSceneCamera:
+    // PK layer 6, priority 51, over the character cameras' 10; the game keeps the field camera off in fights, so its own flow
+    // never shows that), and the fight was drawn full size behind the PIP (user-reported on 2026.11.2-dev.23). Entered from
+    // the native view as a wheel tick enters it. Returns "entered", or the check that kept it out, for the diagnostics.
+    // `enter` false (a PIP that starts full screen, user-chosen 2026-11-18): the checks pass and the rendered pose is read
+    // into `later` ("ready"), touching nothing, and HoldLater enters from it once the PIP first shrinks.
+    internal static string HoldForFight(out FightHold? later, bool enter = true)
+    {
+        later = null;
+        if (FieldFreeCamera.Holding) return "held";
+        if (!Compatibility.Allowed("FieldZoom") || !Compatibility.Allowed("FieldCameraReturn") || !Plugin.FieldZoom.Value || PvpSafety.Suspended) return "off";
+        var scene = RuntimeObject.StaticField(RuntimeObject.FindClass("Core.Scene", "BattleSceneController"), "inst");
+        if (!Alive(scene) || scene!.Pointer != _scene?.Pointer) return "scene";
+        var brain = scene.Get("cinemachineBrain");
+        var cameraObject = scene.Get("mainCamera");
+        if (!Alive(brain) || !Alive(cameraObject)) return "camera";
+        var player = RuntimeObject.StaticField(RuntimeObject.FindClass("Core.Camera", "CameraManager"), "_inst")?.Call("GetCurPlayerCamera")?.Field("vCamera");
+        var active = brain!.Get("ActiveVirtualCamera");
+        if (!Alive(active) || active!.TypeName != "CinemachineVirtualCamera"
+            || active.Pointer != scene.Field("freeCamera")?.Pointer && active.Pointer != player?.Pointer)
+            return "camera-unsupported:" + (active?.Get("Name")?.String() ?? active?.TypeName ?? "none");
+        var body = active.Call("GetCinemachineComponent", 0); // Audited Cinemachine Stage.Body.
+        if (!Alive(body) || body!.TypeName != "CinemachineTransposer" || !body.Get<bool>("IsValid")
+            || body.Field("m_BindingMode")!.Value<int>() != 4 || active.Get("LookAt") != null
+            || active.Call("GetCinemachineComponent", 1) != null) return "camera-body";
+        if (!Alive(active.Get("Follow"))) return "camera-follow";
+        var camera = CameraOf(cameraObject!);
+        if (camera.orthographic || camera.usePhysicalProperties || camera.lensShift.x != 0 || camera.lensShift.y != 0) return "camera-lens";
+        if (brain.Field("mFrameStack")?.Get<int>("Count") != 1) return "camera-stack";
+        var transform = camera.transform;
+        later = new FightHold(scene, brain, active, body, transform.position, transform.rotation);
+        return enter ? HoldLater(later) : "ready";
+    }
+
+    // What HoldForFight read as the fight window opened. The field does not change during a fight (server pushes wait
+    // behind its presentation), but the field camera's brain follows the fight's cameras while the camera is off, so the
+    // free view starts from this pose and the camera it followed then, not from the brain's current ones.
+    internal sealed record FightHold(RuntimeObject Scene, RuntimeObject Brain, RuntimeObject Active, RuntimeObject Body, Vector3 Position, Quaternion Rotation);
+
+    internal static string HoldLater(FightHold? hold)
+    {
+        if (FieldFreeCamera.Holding) return "held";
+        if (hold == null) return "none";
+        if (!Compatibility.Allowed("FieldZoom") || !Compatibility.Allowed("FieldCameraReturn") || !Plugin.FieldZoom.Value || PvpSafety.Suspended) return "off";
+        if (!Alive(hold.Scene) || hold.Scene.Pointer != _scene?.Pointer) return "scene";
+        if (!Alive(hold.Brain) || !Alive(hold.Active) || !Alive(hold.Body)) return "camera";
+        if (!Alive(hold.Active.Get("Follow"))) return "camera-follow";
+        if (hold.Brain.Field("mFrameStack")?.Get<int>("Count") != 1) return "camera-stack";
+        FieldFreeCamera.Enter(hold.Scene, hold.Brain, hold.Active, hold.Body, hold.Position, hold.Rotation, player: false);
+        Restore();
+        var held = FieldFreeCamera.Camera!.Call("GetCinemachineComponent", 0)!;
+        _body = held; _original = _applied = _target = held.Field<Vector3>("m_FollowOffset");
+        return "entered";
+    }
+
+    // The return button while a Fight PiP holds the field: the held view moves to the turn player's own camera at its own
+    // distance, as the native return would show it (CameraManager.SwitchCamera to that character), and the hold stays.
+    internal static bool ReturnInHold()
+    {
+        var logic = RuntimeObject.StaticField(RuntimeObject.FindClass("GameLogic", "GameLogicManager"), "_inst");
+        var character = logic?.Get("battle")?.Call("GetCurrentPlayer")?.Field("CharacterInst")?.Field("vCamera")?.Field("vCamera");
+        var follow = character?.Get("Follow");
+        var native = character?.Call("GetCinemachineComponent", 0); // Audited Cinemachine Stage.Body.
+        var held = FieldFreeCamera.Camera?.Call("GetCinemachineComponent", 0);
+        if (!Alive(character) || !Alive(follow) || !Alive(native) || native!.TypeName != "CinemachineTransposer" || !Alive(held)) return false;
+        var offset = native.Field<Vector3>("m_FollowOffset");
+        if (!Finite(offset)) return false;
+        Restore();
+        held!.SetField("m_FollowOffset", offset);
+        _body = held; _original = _applied = _target = offset; _zoomOutLimit = 0;
+        FieldFreeCamera.MoveAnchor(follow!.Get<Vector3>("position"));
+        return true;
     }
 
     // Feature off, PvP, scene exit and failures also put the WASD speed back; the zoom's own camera resets keep it.

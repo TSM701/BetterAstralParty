@@ -8,7 +8,7 @@ internal static partial class TestCommands
     private static void FieldInput(DevContext context, string stage, Action<string> pin)
     {
         using var native = Native(context); ExactField(native, "FairyGUI.UIConfig", "clickDragSensitivity", "System.Int32", true, true);
-        var production = WithoutNamespace(ReadSource(context, "src/FieldBuffUi.cs")).Replace("using UnityEngine;", "", StringComparison.Ordinal);
+        var production = WithoutNamespace(ReadSource(context, "src/PlayerIndicatorUi.cs")).Replace("using UnityEngine;", "", StringComparison.Ordinal);
         RunEmbedded(context, stage, "field-indicator-input", Template(context, "focus-tests/field-indicator/RuntimeFixture.cs", pin).Replace("__PRODUCTION__", production, StringComparison.Ordinal), "FieldIndicatorInputTest.Check.Run()", pin, true);
     }
     private static void FieldOpacity(DevContext context, string stage, Action<string> pin)
@@ -40,7 +40,7 @@ internal static partial class TestCommands
     private static void FieldCounter(DevContext context, string stage, Action<string> pin)
     {
         var runtime = context.NativeAssemblyPath; pin(runtime);
-        if (!context.NativeAssemblyExplicit) Check(context.Hash(runtime) == "BDB19B0CA19E8EF692CC8741CE8DAC9EE36D79C13EF1921EEE14D5B9AE4BADBB", "Exact audited historical native runtime SHA-256");
+        if (!context.NativeAssemblyExplicit) Check(context.Hash(runtime) == "3D8C04315DBEDB1458135E33C54520E2879D05B4F1B84EC35DBADDFE279CA4F2", "Exact audited historical native runtime SHA-256");
         using var native = Native(context);
         ExactField(native, "Core.Unit.BattleProperty", "Counter", "Tools.ReadOnlyReactiveProperty`1<System.Boolean>");
         ExactMethod(native, "Tools.ReadOnlyReactiveProperty`1", "get_Value", "T"); ExactMethod(native, "GameLogic.BattlePlayerData", "get_Property", "Core.Unit.BattleProperty");
@@ -57,7 +57,7 @@ internal static partial class TestCommands
         }
         Check(Calls(NativeMethod(native, "Core.Unit.BattleProperty", ".ctor")).Contains("System.Boolean party.model.Hero::get_CanCounter()", StringComparer.Ordinal)
             && Calls(NativeMethod(native, "Core.Unit.BattleProperty", "OnCanCounterChanged")).Contains("System.Boolean party.protocol.HeroCounterChangeS2C::get_CanCounter()", StringComparer.Ordinal), "Counter is native synced constructor/change data");
-        var source = ReadSource(context, "src/FieldBuffUi.cs"); var start = source.IndexOf("private static void RefreshCounters", StringComparison.Ordinal); var end = source.IndexOf("internal static void Clear", StringComparison.Ordinal); Check(start >= 0 && end > start, "Exact counter renderer fragment");
+        var source = ReadSource(context, "src/PlayerIndicatorUi.cs"); var start = source.IndexOf("private static void RefreshCounters", StringComparison.Ordinal); var end = source.IndexOf("internal static void Clear", StringComparison.Ordinal); Check(start >= 0 && end > start, "Exact counter renderer fragment");
         var fragment = source[start..end]; Contains(fragment, new[] { "Field(\"Counter\")?.Get<bool>(\"Value\")", "NativeUi.Icon(ui, \"Com_Icon_Counter\"" }, "Static private counter art and synced getter");
         NoPattern(fragment, "CounterIndicator|Play\\(|RefreshBuff|SetField|OnCanCounterChanged|Request|Subscribe|AddListener|ShowAttrInfo|GetPlayerDataById\"", "Counter has no animation/callback/RPC/buff-ID guess");
         Contains(source, new[] { "RefreshCounters(battleUi!);", "foreach (var badge in Counters.Values) GameUi.Dispose(badge.Icon);" }, "Counter scan/cleanup lifecycle");

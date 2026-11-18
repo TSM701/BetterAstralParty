@@ -48,7 +48,33 @@ static class ShapeRasterCheck
         // SmoothShape's white masks: a ring is transparent inside and opaque on its band, a fill opaque throughout; both stay white.
         var ring = ShapeRaster.Pixels(margin, 13, 13, 13, 13, 3, (1f, 1f, 1f, 0f), (1f, 1f, 1f, 1f));
         Check(At(ring, size / 2, size / 2, size) == (255, 255, 255, 0) && At(ring, 0, size / 2, size) == (255, 255, 255, 255), "ring mask: clear centre, opaque band, white");
-        // Atlas blit: the mask lands with its top-left at (x, y) from the page top, and its edge texels extrude into the padding.
+        // The fill under an opaque ring (2026-11-16): the shape inset by half the ring. Nothing of it reaches the shape's own
+        // antialiased edge, its ramp lies under the ring's opaque band, and it is opaque wherever the ring is not, inside.
+        var under = ShapeRaster.Pixels(margin, 13, 13, 13, 13, 1.5f, (1f, 1f, 1f, 1f), (1f, 1f, 1f, 0f));
+        var whole = ShapeRaster.Pixels(margin, 13, 13, 13, 13, 0, (1f, 1f, 1f, 1f), (1f, 1f, 1f, 1f));
+        bool outside = true, hidden = true, meets = true;
+        for (var y = 0; y < size; y++)
+            for (var x = 0; x < size; x++)
+            {
+                var (f, r, w) = (At(under, x, y, size).A, At(ring, x, y, size).A, At(whole, x, y, size).A);
+                if (w < 255 && f != 0) outside = false;
+                if (f is > 0 and < 255 && r != 255) hidden = false;
+                if (w == 255 && r < 255 && f != 255) meets = false;
+            }
+        Check(outside && hidden && meets && At(under, size / 2, size / 2, size) == (255, 255, 255, 255),
+            "fill under a ring: clear at the shape's edge, its ramp under the ring, opaque inside the ring");
+        // Stripes (2026-11-16, NoteUi): "/" bands whose period divides the tile, so a tile's right column continues into the next
+        // tile's left one and its top row into its bottom; light and clear bands alternate across a row.
+        var stripes = ShapeRaster.Stripes(68, 8, 0.45f);
+        Check(stripes.Length == 68 * 68 * 4, "stripes RGBA32");
+        var seamless = true;
+        for (var y = 1; y < 68; y++) seamless &= At(stripes, 67, y, 68).A == At(stripes, 0, y - 1, 68).A || Math.Abs(At(stripes, 67, y, 68).A - At(stripes, 0, y - 1, 68).A) <= 1;
+        var alongRow = Enumerable.Range(0, 68).Select(x => At(stripes, x, 30, 68).A).ToArray();
+        var lit = alongRow.Count(a => a == 255); var clear = alongRow.Count(a => a == 0);
+        // A period of 8.5 px, lit 45 %: about 2.4 px fully lit and 3.3 px fully clear per stripe once the ramps are taken off.
+        Check(seamless && lit is >= 12 and <= 28 && clear is >= 18 and <= 36 && At(stripes, 10, 10, 68) == At(stripes, 11, 9, 68),
+            "stripes: seamless across tiles, about 45 % lit, constant along a stripe");
+                // Atlas blit: the mask lands with its top-left at (x, y) from the page top, and its edge texels extrude into the padding.
         var tiny = new byte[3 * 3 * 4];
         for (var i = 0; i < 9; i++) { tiny[i * 4] = (byte)(i + 1); tiny[i * 4 + 3] = 255; } // Bottom-up rows: 1..3 bottom, 7..9 top.
         var page = new byte[12 * 12 * 4];

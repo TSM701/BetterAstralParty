@@ -15,6 +15,34 @@ internal static partial class TestCommands
             && ui.Contains("PingFocusGuard.Tick();", StringComparison.Ordinal) && !ui.Contains("\"OnApplicationFocus\"", StringComparison.Ordinal), "Ping cancellation uses the existing polling driver, not native type injection");
         using var native = Native(context); var types = native.MainModule.GetTypes().ToDictionary(type => type.FullName, StringComparer.Ordinal);
         Check(types["Core.Scene.BattleSceneController"].Fields.Any(field => field.Name == "MarkManager"), "Native scene mark manager");
+        // Fight PiP: IsMapTool names the last mark mode kind only; the mode is on while MarkManager.IsActive (2026-11-17).
+        Check(Il(types["UI.ExpressionWindow"].Methods.Single(method => method.Name == "get_IsMapTool")).Contains("ExpressionWindow::_isMapTool", StringComparison.Ordinal)
+            && types["Core.Mark.MarkManager"].Methods.Any(method => method.Name == "get_IsActive" && !method.IsStatic && method.ReturnType.FullName == "System.Boolean"), "Fight PiP map tool reads the active mark mode");
+        // Fight PiP reopens the game library a watched fight closed: FightWindow.OnShown hides it through CloseAllUnFightWin,
+        // and TryShowAsync opens it on the match's map page (2026-11-17).
+        Check(Il(types["UI.FightWindow"].Methods.Single(method => method.Name == "OnShown")).Contains("UIManager::CloseAllUnFightWin", StringComparison.Ordinal)
+            && Il(types["UI.UIManager"].Methods.Single(method => method.Name == "CloseAllUnFightWin")).Contains("UIManager::_cachedNewGameLibraryWindow", StringComparison.Ordinal)
+            && Il(types["UI.NewGameLibraryWindow"].Methods.Single(method => method.Name == "TryShowAsync" && method.Parameters.Count == 0)).Contains("NewGameLibraryWindow::ShowGameLibrary_Map", StringComparison.Ordinal),
+            "Fight PiP reopens the game library the way the game opens it in a match");
+        // ...and puts its page back (2026-11-18): an initialized window shows synchronously, the map detail is root page 6, and
+        // the tab, monster and exclusive/common switch go back through the tab buttons' and switch's own handlers.
+        var library = types["UI.NewGameLibraryWindow"]; var main = types["UI.UINewGameLibrary_Com_MapMain"];
+        Check(Il(library.NestedTypes.Single(type => type.Name.StartsWith("<EnsureShownAsync>", StringComparison.Ordinal)).Methods.Single(method => method.Name == "MoveNext")).Contains("BaseWindow::get_initialized", StringComparison.Ordinal)
+            && Regex.IsMatch(Il(library.Methods.Single(method => method.Name == "OnMapDetailEntered")), @"ldc\.i4\.6[\s\S]*SetRootPage")
+            && library.Fields.Any(field => field.Name == "_rootPage") && main.Fields.Any(field => field.Name == "currentMonsterId" && field.FieldType.FullName == "System.Int32")
+            && Il(main.Methods.Single(method => method.Name == "OnTabChanged")).Contains("UINewGameLibrary_Com_MapMain::RefreshCurrentPage", StringComparison.Ordinal)
+            && Il(main.Methods.Single(method => method.Name == "RememberMonster")).Contains("UINewGameLibrary_Com_MapMain::currentMonsterId", StringComparison.Ordinal)
+            && Il(main.Methods.Single(method => method.Name == "OnMapGroupChanged")).Contains("GameLibraryMapShowData::SelectCategory", StringComparison.Ordinal)
+            && Il(types["UI.UINewGameLibrary_Com_MapTab"].Methods.Single(method => method.Name == "OnGroupChanged")).Contains("UINewGameLibrary_Com_MapTab::Iscom", StringComparison.Ordinal)
+            && Il(types["UI.UINewGameLibrary_Com_MapTab"].Methods.Single(method => method.Name == "OnSelectRelic")).Contains("stfld System.Int32 UI.UINewGameLibrary_Com_MapTab::_selectedRelicId", StringComparison.Ordinal)
+            && Il(types["UI.UINewGameLibrary_Com_MapTab"].Methods.Single(method => method.Name == "RenderRelic")).Contains("UINewGameLibrary_Com_MapTab::_selectedRelicId", StringComparison.Ordinal)
+            && Il(types["FairyGUI.GList"].Methods.Single(method => method.Name == "CheckVirtualList")).Contains("GList::RefreshVirtualList(System.Object)", StringComparison.Ordinal)
+            && Il(types["FairyGUI.ScrollPane"].Methods.Single(method => method.Name == "SetPosY")).Contains("GComponent::EnsureBoundsCorrect", StringComparison.Ordinal)
+            // The monster tab's scrolling part is its description, which RenderMonster puts back to the top (2026-11-18).
+            && types["UI.UINewGameLibrary_Com_Monster"].Fields.Any(field => field.Name == "Com_LibraryFile")
+            && types["UI.UICom_LibraryCharacterFile"].Fields.Any(field => field.Name == "com_LibraryFile" && field.FieldType.FullName == "UI.UICom_LibraryFileContent")
+            && Regex.IsMatch(Il(types["UI.UICom_LibraryCharacterFile"].Methods.Single(method => method.Name == "RenderMonster")), @"UICom_LibraryCharacterFile::com_LibraryFile\s+IL_\w+: callvirt FairyGUI\.ScrollPane FairyGUI\.GComponent::get_scrollPane\(\)\s+IL_\w+: ldc\.r4 0\s+IL_\w+: callvirt System\.Void FairyGUI\.ScrollPane::set_percY"),
+            "Fight PiP puts the reopened game library's page, chosen chip and scroll back through its own handlers");
         foreach (var name in new[] { "Core.Mark.PCMarkInput", "Core.Mark.MobileMarkInput" }) Check(Il(types[name].Methods.Single(method => method.Name == "ExitMark")).Contains("MarkModeController::ExitMarkMode", StringComparison.Ordinal), "Native mark exit " + name);
         var exit = Il(types["Core.Mark.MarkModeController"].Methods.Single(method => method.Name == "ExitMarkMode"));
         Check(!Regex.IsMatch(exit, "Request|C2S") && exit.Contains("MarkExit", StringComparison.Ordinal) && exit.Contains("UpdateStatus", StringComparison.Ordinal), "Native mark exit is local cleanup");
@@ -39,12 +67,12 @@ internal static partial class TestCommands
         Contains(Il(types["UI.RelicWindow"].Methods.Single(method => method.Name == "RendererRelicItem")), new[] { "get_NameID", "get_DescID", "get_Icon", "get_RelicQualityType", "UICom_RelicQuality_Large::qualityType", "UIRelic_Button_Item::cutIn" }, "Native relic renderer");
         Check(Il(NativeAsyncMoveNext(native, "UI.BaseWindow", "Load")).Contains("UIPackage::AddPackageAsync(System.String,System.String)", StringComparison.Ordinal), "Native async package loading ABI");
         Contains(Il(types["UI.UIRelicWindow"].Methods.Single(method => method.Name == "BindAll")), new[] { "UI.UIRelic_Button_Item", "UIObjectFactory::SetPackageItemExtension" }, "Native package extension registration");
-        var source = ReadSource(context, "src/CardPreviewUi.cs");
+        var source = ReadSource(context, "src/PingDetailsUi.cs");
         Contains(source, new[] { "_relicLoad.Get<bool>(\"IsCompleted\")", "load.Call(\"GetResult\")", "\"AddPackageAsync\", \"Relic\", \"\"", ".Call(\"GetAwaiter\")", "\"UIRelicWindow\"), \"BindAll\"",
             "if (_relicLoad != null) return false;", "waiting.Id == id && waiting.Relic == relic", "if (!insidePopup && ping == null) BeginClose();", "(!request.Relic || RelicUiReady())",
             "Show(root, request.Id, request.Relic, request.Anchor)", "_anchor = anchor;", "\"BattleRelicMessage\"", "\"GetRelicMsg\"", "\"GetRelicInfoConfigure\"",
-            "CardPreviewLayout.Resolve(Pings, RelicPings", "_shownRelic == relic", "_shownRelic != relic", "Local(config, \"NameID\", \"Relic\")", "Local(config, \"DescID\", \"Relic\")",
-            "relic ? \"Relic_Button_Item\" : \"Com_Card\"", "relic ? \"cutIn\" : \"ShowDescState\"", "description.Get<float>(\"textHeight\")", "if (!Plugin.CardPopups.Value)", "GameUi.Dispose(_popup)", "Input.GetKeyDown(KeyCode.Escape)" }, "Deferred public ping popup lifecycle");
+            "PingDetailsLayout.Resolve(Pings, RelicPings", "_shownRelic == relic", "_shownRelic != relic", "Local(config, \"NameID\", \"Relic\")", "Local(config, \"DescID\", \"Relic\")",
+            "relic ? \"Relic_Button_Item\" : \"Com_Card\"", "relic ? \"cutIn\" : \"ShowDescState\"", "description.Get<float>(\"textHeight\")", "if (!Plugin.PingDetails.Value)", "GameUi.Dispose(_popup)", "Input.GetKeyDown(KeyCode.Escape)" }, "Deferred public ping popup lifecycle");
         foreach (var name in new[] { "BeginClose", "Reset" }) Check(Regex.IsMatch(source, name + @"\(\)\s*\{\s*_pending = null;"), "Pending popup click canceled on " + name);
         var showStart = source.IndexOf("private static void Show(", StringComparison.Ordinal); var showEnd = source.IndexOf("private static void RenderRelic(", StringComparison.Ordinal);
         Check(source.IndexOf("load.Call(\"GetResult\")", StringComparison.Ordinal) < source.IndexOf("Update();", StringComparison.Ordinal) && showStart >= 0 && showEnd > showStart
@@ -64,7 +92,7 @@ internal static partial class TestCommands
         var local = Derive(source, @"(?s)    private static string Local\(.*?\r?\n    \}", "Production localization enum consumer");
         var enumValue = Derive(ReadSource(context, "src/RuntimeObject.cs"), @"(?m)^    internal static int EnumValue\([^\r\n]+", "Production native enum reader");
         var fixture = ReadSource(context, "focus-tests/ping-popups/Fixture.cs")
-            .Replace("__LAYOUT__", WithoutImports(ReadSource(context, "src/CardPreviewLayout.cs")), StringComparison.Ordinal)
+            .Replace("__LAYOUT__", WithoutImports(ReadSource(context, "src/PingDetailsLayout.cs")), StringComparison.Ordinal)
             .Replace("__INDEX__", index, StringComparison.Ordinal).Replace("__LOCAL__", local, StringComparison.Ordinal).Replace("__ENUM__", enumValue, StringComparison.Ordinal);
         RunGeneralFixture(context, stage, fixture, "PingPopupCheck.Run()", pin);
     }
@@ -84,7 +112,7 @@ internal static partial class TestCommands
     private static void AutoThanks(DevContext context, string stage, Action<string> pin)
     {
         var nativePath = context.NativeAssemblyPath; var corePath = Path.Combine(context.Root, ".research/extracted/mscorlib.dll.dll"); pin(nativePath); pin(corePath);
-        if (!context.NativeAssemblyExplicit) Check(context.Hash(nativePath) == "BDB19B0CA19E8EF692CC8741CE8DAC9EE36D79C13EF1921EEE14D5B9AE4BADBB", "Audited historical native recommendation input");
+        if (!context.NativeAssemblyExplicit) Check(context.Hash(nativePath) == "3D8C04315DBEDB1458135E33C54520E2879D05B4F1B84EC35DBADDFE279CA4F2", "Audited historical native recommendation input");
         Check(context.Hash(corePath) == "D5B2944460EDCCD6D0266DD20BF922029FBA018124DD7B940B96812F4EF58BBD", "Audited engine core recommendation metadata input");
         using var native = Native(context); using var core = AssemblyDefinition.ReadAssembly(corePath);
         var scene = native.MainModule.GetType("Core.Scene.BaseSceneController"); var awake = scene.Methods.Single(method => method.Name == "Awake");
@@ -174,7 +202,8 @@ internal static partial class TestCommands
         var choice = fight.Methods.Single(method => method.Name == "RefreshDefendReadyChoice"); Check(Il(choice).Contains("set_touchable", StringComparison.Ordinal) && choice.Body.Instructions.Count(instruction => instruction.OpCode.Name == "ldc.i4.5") == 1, "Native defense choice phase and touchability");
         var source = GeneralWithoutNamespace(ReadSource(context, "src/ShushuShieldUi.cs")).Replace("using UnityEngine;", "", StringComparison.Ordinal);
         Check(!Regex.IsMatch(source, "CounterIndicator|MaxPoint|UpdateIcon|ClearIcon"), "Removed shield emphasis stays removed");
-        var counter = Derive(ReadSource(context, "src/BattleStatusUi.cs"), @"(?s)    private static void RefreshCounter\(.*?\r?\n    \}", "Production public counter reader");
+        // The whole per-actor counter class; its private members opened so the fixture can read its state.
+        var counter = Derive(ReadSource(context, "src/BattleStatusUi.cs"), @"(?s)    private sealed class CounterMark\r?\n.*?\r?\n    \}", "Production public counter reader").Replace("        private ", "        internal ", StringComparison.Ordinal);
         RunGeneralFixture(context, stage, GeneralShushuShield0.Replace("__SOURCE__", source, StringComparison.Ordinal).Replace("__COUNTER__", counter, StringComparison.Ordinal), "ShieldUiTest.Check.Run()", pin);
     }
 }

@@ -26,7 +26,7 @@ internal static class FieldDiceUi
     private static void Update()
     {
         // Pin Dice to Screen OFF returns tracked dice to their native field position and stops tracking.
-        var enabled = Plugin.FieldZoom.Value && Plugin.DiceLock.Value && !PvpSafety.Suspended;
+        var enabled = Plugin.FieldZoom.Value && Plugin.DicePin.Value && !PvpSafety.Suspended;
         var delta = enabled ? FieldZoomUi.DiceViewDelta : Vector3.zero;
         // In the free view a roll is tracked even while the delta reads zero, so the diagnostics see it.
         var watch = delta != Vector3.zero || enabled && FieldFreeCamera.Holding;

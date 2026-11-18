@@ -1,4 +1,6 @@
 using UnityEngine;
+using NVector2 = System.Numerics.Vector2;
+using NVector3 = System.Numerics.Vector3;
 
 namespace BetterAstralParty;
 
@@ -69,7 +71,7 @@ internal static class WalkDirectionUi
 
         internal void Spin(float angle)
         {
-            if (Math.Abs(Mathf.DeltaAngle(angle, _spin)) <= .1f) return;
+            if (Math.Abs(UnityMath.DeltaAngle(angle, _spin)) <= .1f) return;
             _spin = angle;
             Image.Set("rotation", angle);
         }
@@ -99,16 +101,16 @@ internal static class WalkDirectionUi
         }
 
         // The holder at `at`; x and y are the screen steps of one mask pixel along the mask's axes there.
-        internal void Place(Vector2 at, Vector2 x, Vector2 y)
+        internal void Place(NVector2 at, NVector2 x, NVector2 y)
         {
-            var (turn, scaleX, scaleY, spin) = ShapeRaster.Ground(x.x, x.y, y.x, y.y);
-            if (!float.IsFinite(at.x + at.y + turn + scaleX + scaleY + spin) || scaleY <= 0) { Show(false); return; }
-            if (!(Math.Abs(at.x - _x) <= .05f && Math.Abs(at.y - _y) <= .05f))
+            var (turn, scaleX, scaleY, spin) = ShapeRaster.Ground(x.X, x.Y, y.X, y.Y);
+            if (!float.IsFinite(at.X + at.Y + turn + scaleX + scaleY + spin) || scaleY <= 0) { Show(false); return; }
+            if (!(Math.Abs(at.X - _x) <= .05f && Math.Abs(at.Y - _y) <= .05f))
             {
-                _x = at.x; _y = at.y;
-                Holder.Call("SetXY", at.x, at.y);
+                _x = at.X; _y = at.Y;
+                Holder.Call("SetXY", at.X, at.Y);
             }
-            if (Math.Abs(Mathf.DeltaAngle(turn, _turn)) > .1f)
+            if (Math.Abs(UnityMath.DeltaAngle(turn, _turn)) > .1f)
             {
                 _turn = turn;
                 Holder.Set("rotation", turn);
@@ -157,14 +159,18 @@ internal static class WalkDirectionUi
         try
         {
             if (MenuLayout.WalkDirectionMode(Plugin.WalkDirection.Value) == "Off" || PvpSafety.Suspended || GameUi.Root == null) { Clear(); return; }
-            if (Time.unscaledTime >= _scanAt)
+            var lap = RuntimeObject.LapStart();
+            var now = Time.unscaledTime;
+            if (now >= _scanAt)
             {
-                _scanAt = Time.unscaledTime + .25f;
+                _scanAt = now + .25f;
                 Scan();
             }
+            RuntimeObject.Lap("walk.scan", ref lap);
             if (_layer == null) return;
             if (_layer.Get<bool>("isDisposed")) { Clear(); return; } // The battle UI went with its scene.
             Layout();
+            RuntimeObject.Lap("walk.layout", ref lap);
         }
         catch (Exception ex) { Compatibility.Block(Feature, ex, Clear); }
     }
@@ -251,56 +257,91 @@ internal static class WalkDirectionUi
         for (var i = 0; i < Ordered.Count; i++)
         {
             var index = Ordered.Count - 1 - i; // The local player's group last, on top.
-            if (layer.Call("GetChildIndex", Ordered[i].Group)!.Value<int>() != index) layer.Call("SetChildIndex", Ordered[i].Group, index);
+            if (layer.IndexOfChild(Ordered[i].Group) != index) layer.Call("SetChildIndex", Ordered[i].Group, index);
         }
         if (Plugin.Diagnostics.IsRecording)
             Plugin.Diagnostics.State("walkDirection", $"mode={MenuLayout.WalkDirectionMode(Plugin.WalkDirection.Value)}; units={Units.Count}; marks={marks}");
     }
 
+    // Every UnityEngine value operation and Camera.WorldToScreenPoint is an il2cpp_runtime_invoke (UnityMath): with four
+    // units this layout made about 300 a frame (2026-11-18). The camera's matrices and pixel rectangle are read once a frame
+    // and points are projected in managed code as WorldToScreenPoint projects them; every 64th frame one ring centre is also
+    // projected by the engine, and a miss over half a pixel turns the managed projection off for the session and is logged.
+    private static bool _projectionOff;
+    private static int _projectionFrames;
+
     private static void Layout()
     {
-        if (_camera is not { } camera || !camera || !camera.enabled) { HideAll(); return; }
+        if (_camera is not { } camera || !Alive(camera) || !camera.enabled) { HideAll(); return; }
         // The layer's GlobalToLocal is affine; three calls a frame map every point.
-        var origin = Local(0, 0);
-        var stepX = (Local(1000, 0) - origin) / 1000;
-        var stepY = (Local(0, 1000) - origin) / 1000;
-        var height = Screen.height;
-        Vector2 Project(Vector3 world)
+        var origin = Num(Local(0, 0));
+        var stepX = (Num(Local(1000, 0)) - origin) / 1000;
+        var stepY = (Num(Local(0, 1000)) - origin) / 1000;
+        float height = Screen.height;
+        var view = camera.worldToCameraMatrix;
+        var projection = camera.projectionMatrix;
+        var rect = camera.pixelRect;
+        // Camera.WorldToScreenPoint: the clip-space point through both matrices, the viewport from the pixel rectangle and
+        // the depth in front of the camera; zero for a point on the camera plane, as the engine returns.
+        NVector3 ToScreen(NVector3 p)
         {
-            var point = camera.WorldToScreenPoint(world);
-            return point.z > 0 ? origin + stepX * point.x + stepY * (height - point.y) : new Vector2(float.NaN, float.NaN);
+            if (_projectionOff) return Num(camera.WorldToScreenPoint(UnityMath.V3(p.X, p.Y, p.Z)));
+            float vx = view.m00 * p.X + view.m01 * p.Y + view.m02 * p.Z + view.m03,
+                vy = view.m10 * p.X + view.m11 * p.Y + view.m12 * p.Z + view.m13,
+                vz = view.m20 * p.X + view.m21 * p.Y + view.m22 * p.Z + view.m23,
+                vw = view.m30 * p.X + view.m31 * p.Y + view.m32 * p.Z + view.m33;
+            float x = projection.m00 * vx + projection.m01 * vy + projection.m02 * vz + projection.m03 * vw,
+                y = projection.m10 * vx + projection.m11 * vy + projection.m12 * vz + projection.m13 * vw,
+                w = projection.m30 * vx + projection.m31 * vy + projection.m32 * vz + projection.m33 * vw;
+            if (!(Math.Abs(w) > 1e-7f)) return default;
+            return new(rect.m_XMin + (1 + x / w) * rect.m_Width * .5f, rect.m_YMin + (1 + y / w) * rect.m_Height * .5f, -vz);
+        }
+        NVector2 Project(NVector3 world)
+        {
+            var point = ToScreen(world);
+            return point.Z > 0 ? origin + stepX * point.X + stepY * (height - point.Y) : new NVector2(float.NaN);
         }
         // The ground's look at a point: its screen point and the screen steps of one ground unit along `along` and a quarter
         // turn clockwise from it seen from above (toward the camera for the camera's right), measured `reach` either side.
-        (Vector2 At, Vector2 Along, Vector2 Across) Look(Vector3 at, Vector3 along, float reach)
+        (NVector2 At, NVector2 Along, NVector2 Across) Look(NVector3 at, NVector3 along, float reach)
         {
-            var across = Vector3.Cross(Vector3.up, along);
-            Vector2 a = Project(at + along * reach), b = Project(at - along * reach), c = Project(at + across * reach), d = Project(at - across * reach);
+            var across = new NVector3(along.Z, 0, -along.X); // Vector3.Cross(Vector3.up, along)
+            NVector2 a = Project(at + along * reach), b = Project(at - along * reach), c = Project(at + across * reach), d = Project(at - across * reach);
             return ((a + b + c + d) / 4, (a - b) / (2 * reach), (c - d) / (2 * reach));
         }
         var circles = MenuLayout.WalkDirectionMode(Plugin.WalkDirection.Value) == "Circles";
-        var right = camera.transform.right;
-        right.y = 0;
-        right.Normalize();
+        var right = Flat(new NVector3(view.m00, view.m01, view.m02)); // The view matrix's first row: the camera's right.
+        var check = !_projectionOff && _projectionFrames++ % 64 == 0;
         foreach (var unit in Ordered)
         {
             Transform? ring = null;
             foreach (var arrow in unit.Arrows)
             {
-                var live = arrow.Effect != null && arrow.Effect && arrow.Ring != null && arrow.Ring
-                    && arrow.Effect.parent is { } parent && parent.Pointer == unit.Container.Pointer
+                var live = Alive(arrow.Effect) && Alive(arrow.Ring)
+                    && arrow.Effect!.parent is { } parent && parent.Pointer == unit.Container.Pointer
                     && arrow.Effect.gameObject.activeInHierarchy;
                 if (!live) { arrow.Hide(); arrow.Effect = null; continue; } // A pooled mark may come back elsewhere: look it up again.
                 ring ??= arrow.Ring;
             }
-            if (ring == null || !circles) unit.Ring.Show(false);
-            if (ring == null) continue;
-            var centre = ring.position;
+            if (ring is null || !circles) unit.Ring.Show(false);
+            if (ring is null) continue;
+            var centre = Num(ring.position);
             var scale = ring.lossyScale.x;
+            if (check)
+            {
+                check = false;
+                var managed = ToScreen(centre);
+                var engine = camera.WorldToScreenPoint(UnityMath.V3(centre.X, centre.Y, centre.Z));
+                if (!(Math.Abs(managed.X - engine.x) <= .5f && Math.Abs(managed.Y - engine.y) <= .5f && Math.Abs(managed.Z - engine.z) <= .01f + Math.Abs(engine.z) * 1e-4f))
+                {
+                    _projectionOff = true;
+                    Plugin.Diagnostics.Write(FormattableString.Invariant($"walkDirection.projection off: managed=({managed.X:F2},{managed.Y:F2},{managed.Z:F3}); engine=({engine.x:F2},{engine.y:F2},{engine.z:F3})"));
+                }
+            }
             var ground = Look(centre, right, RingMiddle * scale);
-            var perPixel = 1 / ground.Along.magnitude; // Ground units per screen pixel across the ring.
+            var perPixel = 1 / ground.Along.Length(); // Ground units per screen pixel across the ring.
             // The drafts' arrow size: 20 px for a ring 46 px across horizontally, growing with the root of the ring.
-            var size = 20 * Mathf.Sqrt(RingOuter * scale / perPixel / 46);
+            var size = 20 * MathF.Sqrt(RingOuter * scale / perPixel / 46);
             if (circles)
             {
                 var pixel = RingMiddle * scale / RingRadius; // Ground units per mask pixel.
@@ -308,10 +349,8 @@ internal static class WalkDirectionUi
             }
             foreach (var arrow in unit.Arrows)
             {
-                if (arrow.Effect == null) continue;
-                var forward = arrow.Effect.forward;
-                forward.y = 0;
-                forward.Normalize();
+                if (arrow.Effect is null) continue;
+                var forward = Flat(Num(arrow.Effect.forward));
                 // The arrowhead lies on the ground just past the ring's middle; its size stays in screen pixels as drawn across.
                 var at = centre + forward * (RingMiddle * scale + size * .55f * perPixel);
                 var step = size * perPixel / ArrowLength; // Ground units per mask pixel.
@@ -321,7 +360,18 @@ internal static class WalkDirectionUi
         }
     }
 
-    private static Vector2 Local(float x, float y) => _layer!.Call("GlobalToLocal", new Vector2(x, y))!.Value<Vector2>();
+    private static Vector2 Local(float x, float y) => _layer!.Result<Vector2, Vector2>("GlobalToLocal", UnityMath.V2(x, y));
+    private static NVector2 Num(Vector2 v) => new(v.x, v.y);
+    private static NVector3 Num(Vector3 v) => new(v.x, v.y, v.z);
+    // Vector3.Normalize after dropping the height: zero when shorter than 1e-5, as Unity returns.
+    private static NVector3 Flat(NVector3 v)
+    {
+        v.Y = 0;
+        var length = v.Length();
+        return length > 1e-5f ? v / length : NVector3.Zero;
+    }
+    // UnityEngine.Object's bool test for scene objects without a call: the engine zeroes a destroyed object's cached pointer.
+    private static bool Alive(UnityEngine.Object? obj) => obj is not null && obj.m_CachedPtr != IntPtr.Zero;
 
     private static void HideAll()
     {

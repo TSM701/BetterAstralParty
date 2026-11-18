@@ -22,17 +22,17 @@ internal static class MenuLayout
     internal const float HelpTagMaxWidth = 324, HelpTagHeight = 26;
     internal static readonly (string Title, bool General, string[] Actions)[] Sections =
     {
-        ("전투 추천", false, new[] { "Enabled", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "Details", "ShootingStarShow", "KoMinimum", "KoCardPreview", "KoSpectator", "FinalDamage" }),
-        ("전투 표시", false, new[] { "BattleStatus", "StatusHand", "StatusEffects", "CounterIcons", "CounterAnimation", "CounterSound", "ShushuMaster", "ShushuShield", "ShushuShieldRestrictions" }),
-        ("필드·카메라", false, new[] { "FieldBuffs", "FieldMarker", "WalkDirection", "FieldZoom", "ZoomSensitivity", "ZoomOutLimit", "FreeCameraSpeed", "IndicatorFade", "IndicatorFadeStrength", "IndicatorHide", "IndicatorHideDistance", "DiceLock" }),
-        ("손패·카드", false, new[] { "HandLayout", "FoldedHandOpacity", "CardPopups" }),
-        ("캐릭터", false, new[] { "Names", "CharacterRoles", "CharacterGuide", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill" }),
-        ("편의 기능", false, new[] { "AutoThanks", "SendAllLikes", "ShopBulkBuy", "PingFocus" }),
+        ("전투 추천", false, new[] { "ActionAdvice", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "AdviceDetails", "ShootingStarShow", "KoDiceTarget", "KoCardHover", "KoSpectator", "FinalDamage" }),
+        ("전투 표시", false, new[] { "BattleStatus", "StatusHand", "StatusEffects", "CounterIcons", "CounterAnimation", "CounterSound", "ShushuMaster", "ShushuShield", "ShushuDefendLock", "FightPip", "FightPipStart", "FightPipOpacity" }),
+        ("필드·카메라", false, new[] { "PlayerIndicators", "IndicatorHeight", "WalkDirection", "FieldZoom", "ZoomSensitivity", "ZoomOutLimit", "FreeCameraSpeed", "IndicatorFade", "IndicatorFadeStrength", "IndicatorHide", "IndicatorHideDistance", "DicePin", "MiniSlimeOpacity" }),
+        ("손패·카드", false, new[] { "GroupHand", "FoldedHandOpacity", "PingDetails" }),
+        ("캐릭터", false, new[] { "NameStyle", "CharacterRoles", "PrepSkillInfo", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill" }),
+        ("편의 기능", false, new[] { "AutoThanks", "SendAllLikes", "ReceivedLikes", "ShopBulkBuy", "ReplaySaveLimit", "PingFocus" }),
         ("실험 기능", false, new[] { "OldReplays" }),
         ("화면·언어", true, new[] { "Language", "Scale", "Opacity" }),
         ("알림·소리", true, new[] { "MuteUnfocused", "InputAttention", "MatchFocus", "SuppressNotices" }),
-        ("진단", true, new[] { "Diagnostics", "DiagnosticsOpen", "DiagnosticsCollect" }),
-        ("설정 보관", true, new[] { "SettingsAutoKeep", "SettingsSave", "SettingsLoad", "SettingsFolder", "SettingsReset" }),
+        ("진단", true, new[] { "Diagnostics", "DiagnosticsCollect" }),
+        ("설정 보관", true, new[] { "SettingsAutoKeep", "SettingsSave", "SettingsLoad", "SettingsReset" }),
         // Last on its tab: the Beta sign-in rows under the channel show only for the Beta channel, leaving no gap.
         ("업데이트", true, new[] { "Update", "AutoUpdate", "UpdateNotifications", "UpdateDownload", "UpdateChannel", "UpdateAuth", "UpdateSignOut" })
     };
@@ -143,14 +143,15 @@ internal static class MenuLayout
     // Options that only act while another option is ON sit in a tray under it, joined by a guide line, and dim while it is OFF.
     internal static string? Parent(string action) => action switch
     {
-        "Details" or "EncounterAdvice" or "DefenseAdvice" or "CardAdvice" or "ShootingStarShow" => "Enabled",
-        "KoCardPreview" or "KoSpectator" => "KoMinimum",
+        "AdviceDetails" or "EncounterAdvice" or "DefenseAdvice" or "CardAdvice" or "ShootingStarShow" => "ActionAdvice",
+        "KoCardHover" or "KoSpectator" => "KoDiceTarget",
         "StatusHand" or "StatusEffects" or "CounterIcons" or "CounterAnimation" or "CounterSound" => "BattleStatus",
-        "ShushuShield" or "ShushuShieldRestrictions" => "ShushuMaster",
-        "FieldMarker" => "FieldBuffs",
-        "ZoomSensitivity" or "ZoomOutLimit" or "FreeCameraSpeed" or "IndicatorFade" or "IndicatorFadeStrength" or "IndicatorHide" or "IndicatorHideDistance" or "DiceLock" => "FieldZoom",
-        "FoldedHandOpacity" => "HandLayout",
+        "ShushuShield" or "ShushuDefendLock" => "ShushuMaster",
+        "IndicatorHeight" => "PlayerIndicators",
+        "ZoomSensitivity" or "ZoomOutLimit" or "FreeCameraSpeed" or "IndicatorFade" or "IndicatorFadeStrength" or "IndicatorHide" or "IndicatorHideDistance" or "DicePin" => "FieldZoom",
+        "FoldedHandOpacity" => "GroupHand",
         "PlayerTabHand" or "PlayerTabRole" or "PlayerTabSkill" => "PlayerTab",
+        "FightPipStart" or "FightPipOpacity" => "FightPip",
         "UpdateAuth" or "UpdateSignOut" => "UpdateChannel",
         _ => null
     };
@@ -245,49 +246,56 @@ internal static class MenuLayout
             : arrangement.Y(last) + LineHeight + LinesBottom + arrangement.Note(head) - arrangement.Y(head);
     }
     // Short "where / what" tag shown above the hover help body.
+    // Round folder buttons inside a row, left of its switch (user-chosen 2026-11-18, 2안 and the 설정 보관/진단 A drafts of
+    // artifacts/cc/replay-folder-drafts): each opens a folder, and the rows that only did that are gone. They take the
+    // pointer before their row (ModUi.Inline) and their texts find the row in a search.
+    internal static readonly (string Row, string Action)[] InlineButtons =
+        { ("ReplaySaveLimit", "ReplayCopiesFolder"), ("SettingsAutoKeep", "SettingsFolder"), ("Diagnostics", "DiagnosticsOpen") };
+
     internal static string? Subtitle(string action) => action switch
     {
-        "Enabled" => "전투·인카운트 선택 버튼",
-        "Details" => "추천 아이콘에 마우스",
+        "ActionAdvice" => "전투·인카운트 선택 버튼",
+        "AdviceDetails" => "추천 아이콘에 마우스",
         "EncounterAdvice" => "인카운트 선택 버튼",
         "DefenseAdvice" => "방어·회피 버튼",
         "CardAdvice" => "전투 손패 카드",
         "ShootingStarShow" => "인카운트 놓아주기 버튼",
-        "KoCardPreview" => "전투 손패 카드",
+        "KoCardHover" => "전투 손패 카드",
         "KoSpectator" => "다른 사람 전투",
         "StatusHand" => "전투 HP 아래",
         "StatusEffects" => "전투 HP 아래",
         "CounterIcons" => "인카운트·전투 반격 아이콘",
         "ShushuMaster" => "전투 캐릭터",
-        "KoMinimum" => "전투 화면 가운데",
+        "KoDiceTarget" => "전투 화면 가운데",
         "FinalDamage" => "전투 결과의 HP 옆",
         "BattleStatus" => "전투 HP 아래",
         "ShushuShield" => "전투 캐릭터",
-        "ShushuShieldRestrictions" => "내 방어·회피 선택",
+        "ShushuDefendLock" => "내 방어·회피 선택",
         "CounterAnimation" => "인카운트·전투 반격 아이콘",
         "CounterSound" => "인카운트·전투 반격 아이콘",
-        "FieldBuffs" => "필드 캐릭터 위",
-        "FieldMarker" => "필드 캐릭터 위",
+        "PlayerIndicators" => "필드 캐릭터 위",
+        "IndicatorHeight" => "필드 캐릭터 위",
         "WalkDirection" => "필드 캐릭터 발밑",
         "FieldZoom" => "필드",
         "IndicatorFade" => "필드 인디케이터",
         "IndicatorHide" => "필드 인디케이터",
-        "DiceLock" => "필드 주사위",
-        "HandLayout" => "내 필드 손패",
-        "CardPopups" => "카드·칩 핑 말풍선",
-        "Names" => "캐릭터 이름이 나오는 곳",
+        "DicePin" => "필드 주사위",
+        "GroupHand" => "내 필드 손패",
+        "PingDetails" => "카드·칩 핑 말풍선",
+        "NameStyle" => "캐릭터 이름이 나오는 곳",
         "CharacterRoles" => "준비 화면 초상화",
-        "CharacterGuide" => "준비 화면 초상화에 마우스",
+        "PrepSkillInfo" => "준비 화면 초상화에 마우스",
         "PlayerTab" or "PlayerTabHand" or "PlayerTabRole" or "PlayerTabSkill" => "필드 플레이어 목록",
         "AutoThanks" => "PvE 퀵 채팅",
-        "SendAllLikes" => "게임 결과 화면",
+        "SendAllLikes" or "ReceivedLikes" => "게임 결과 화면",
         "ShopBulkBuy" => "스타 코인 상점",
         "PingFocus" => "핑 선택 모드",
-        "OldReplays" => "전적 리플레이",
+        "OldReplays" or "ReplaySaveLimit" or "ReplayCopiesFolder" => "전적 리플레이",
+        "FightPip" or "FightPipStart" or "FightPipOpacity" => "관전 전투",
         "Language" => "모드 글자 전체",
         "Scale" => "모드 전투 패널",
         "IndicatorFadeStrength" or "IndicatorHideDistance" => "필드 인디케이터",
-        "ZoomSensitivity" or "ZoomOutLimit" or "FreeCameraSpeed" => "필드",
+        "ZoomSensitivity" or "ZoomOutLimit" or "FreeCameraSpeed" or "MiniSlimeOpacity" => "필드",
         "FoldedHandOpacity" => "내 필드 손패",
         "Opacity" => "모드 전투 패널",
         "MuteUnfocused" => "다른 창을 쓰는 동안",
@@ -296,9 +304,9 @@ internal static class MenuLayout
         "SuppressNotices" => "로그인 직후",
         "UpdateChannel" => "모드 업데이트",
         "Update" or "AutoUpdate" => "모드 업데이트",
-        "SettingsAutoKeep" => "내 PC",
+        "SettingsAutoKeep" or "SettingsFolder" => "내 PC",
         "UpdateNotifications" => "홈 화면",
-        "Diagnostics" => "내 PC",
+        "Diagnostics" or "DiagnosticsOpen" => "내 PC",
         _ => null
     };
     // Native Setting_Com_Slider is 1010x68 (bar 997x54, grip 100x100 at y -16); placed in settings-content units.
@@ -308,18 +316,21 @@ internal static class MenuLayout
     internal static float SliderOffsetY(string action) => SliderCenterY(action) - 8;
     internal static float SliderLabelOffsetY(string action) => SliderCenterY(action) - 17.5f;
     internal static float SliderLabelX(string action) => RowBox(action).X + TextX(action);
-    internal static float SliderBarX(string action) => RowBox(action).X + 128;
+    // The name's box; a long name widens it and shortens the bar instead of shrinking the text (2026-11-18: "미니 슬라임
+    // 불투명도" shrank to about 12 px in the 98-wide box).
+    internal static float SliderLabelWidth(string action) => action == "MiniSlimeOpacity" ? 200 : 98;
+    internal static float SliderBarX(string action) => RowBox(action).X + 30 + SliderLabelWidth(action);
     internal static float SliderValueX(string action) => RowBox(action).X + RowBox(action).Width - 18 - SliderValueWidth;
     internal const float SliderValueWidth = 58;
     // Every slider uses the top-level scale, so bar thickness and grip size match; narrower rows get a shorter bar
     // (the native GSlider recomputes its bar from its width). The grip overhangs the bar end, so leave room before the value.
     internal const float SliderScale = 250f / 1010f;
-    internal static float SliderBarWidth(string action) => RowBox(action).Width - 214;
-    internal static readonly string[] Sliders = { "FieldMarker", "ZoomSensitivity", "ZoomOutLimit", "FreeCameraSpeed", "IndicatorFadeStrength", "IndicatorHideDistance", "FoldedHandOpacity", "Scale", "Opacity" };
+    internal static float SliderBarWidth(string action) => RowBox(action).Width - 116 - SliderLabelWidth(action);
+    internal static readonly string[] Sliders = { "IndicatorHeight", "ZoomSensitivity", "ZoomOutLimit", "FreeCameraSpeed", "IndicatorFadeStrength", "IndicatorHideDistance", "FoldedHandOpacity", "FightPipOpacity", "MiniSlimeOpacity", "Scale", "Opacity" };
     internal static bool IsSlider(string action) => Array.IndexOf(Sliders, action) >= 0;
     internal static (int Min, int Max) SliderRange(string action) => action switch
     {
-        "Scale" => (75, 150), "ZoomSensitivity" or "FreeCameraSpeed" => (10, 300), "ZoomOutLimit" => (0, 100), "IndicatorHideDistance" => (0, 100), _ => (0, 100)
+        "Scale" => (75, 150), "ZoomSensitivity" or "FreeCameraSpeed" => (10, 300), "ZoomOutLimit" => (0, 100), "IndicatorHideDistance" => (0, 100), "FightPipOpacity" or "MiniSlimeOpacity" => (20, 100), _ => (0, 100)
     };
     // The zoomed-out slider shows the indicators' opacity at the farthest zoom-out. The file keeps the fade strength it always
     // stored (0 = no fade, 1 = the original curve ending at 30 %, 100/70 ending at 0 %), so saved values and backups keep their look.
@@ -329,32 +340,38 @@ internal static class MenuLayout
         action == "IndicatorFadeStrength" ? (100 - percent) / 70f : percent * 0.01f;
     internal static string SliderLabel(string action) => action switch
     {
-        "FieldMarker" => "위치 조정", "IndicatorFadeStrength" or "FoldedHandOpacity" => "불투명도",
+        "IndicatorHeight" => "위치 조정", "IndicatorFadeStrength" or "FoldedHandOpacity" or "FightPipOpacity" => "불투명도",
         "ZoomSensitivity" => "줌 감도", "ZoomOutLimit" => "최대 줌 아웃", "FreeCameraSpeed" => "WASD 속도", "IndicatorHideDistance" => "숨김 거리",
-        "Scale" => "표시 크기", _ => "배경 불투명도"
+        "Scale" => "표시 크기", "MiniSlimeOpacity" => "미니 슬라임 불투명도", _ => "배경 불투명도"
     };
     // Culture P0 can insert a space ("50 %") that wraps the sign; always "50%".
     internal static string Percent(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture) + "%";
     internal static string[] Options(string action) => action switch
     {
         "Language" => new[] { "Auto", "한국어", "English" },
-        "HandLayout" => new[] { "Native", "Click", "Hover" },
+        "NameStyle" => new[] { "Real", "Title" }, // A two-way style, not ON/OFF (dropdown since 2026-11-15).
+        "GroupHand" => new[] { "Native", "Click" },
         "WalkDirection" => new[] { "Off", "Arrows", "Circles" },
         "InputAttention" => new[] { "Taskbar", "Windows", "Off" },
         "UpdateChannel" => new[] { "Stable", "PreRelease", "Beta" },
         "AutoUpdate" => new[] { "Off", "Check", "Download", "Apply" },
+        "FightPipStart" => new[] { "Small", "Full" }, // The view each match starts in; both choices look ON.
         _ => Array.Empty<string>()
     };
+    // Any row with choices opens a dropdown, two choices included (Group Hand since Hover was removed, 2026-11-15).
+    internal static bool IsDropdown(string action) => Options(action).Length > 0;
     // Move Direction Highlight's saved value; anything else (a hand edit, an unknown value) is the default, Arrows.
     internal static string WalkDirectionMode(string? value) => value is "Off" or "Circles" ? value : "Arrows";
     internal static string OptionLabel(string action, string value) => action switch
     {
         "Language" => value == "Auto" ? "자동" : value,
-        "HandLayout" => value switch { "Click" => "클릭 펼치기", "Hover" => "호버 펼치기", _ => "기본" },
+        "NameStyle" => value == "Title" ? "이명" : "본명",
+        "GroupHand" => value == "Click" ? "클릭 펼치기" : "기본",
         "WalkDirection" => value switch { "Off" => "끄기", "Circles" => "원과 화살표", _ => "화살표만" },
         "InputAttention" => InputAttentionState.Label(value),
         "UpdateChannel" => value switch { "PreRelease" => "프리 릴리즈", "Beta" => "비공개 베타", _ => "릴리즈" },
         "AutoUpdate" => value switch { "Off" => "끄기", "Check" => "확인만", "Download" => "자동 받기", "Apply" => "자동 적용", _ => "사용자 지정" },
+        "FightPipStart" => value == "Full" ? "전체 화면" : "작은 창",
         _ => value
     };
     // Automatic update steps over the three saved switches; other saved combinations show as Custom until changed.
@@ -382,8 +399,9 @@ internal static class MenuLayout
     internal static string StateHelp(string action, bool enabled, string mode) => action switch
     {
         "Language" => mode switch { "한국어" => "모드 안내를 한국어로 표시합니다.", "English" => "모드 안내를 영어로 표시합니다.", _ => "모드 안내 언어를 게임 메뉴에 맞춥니다." },
-        "Names" => enabled ? "본명으로 표시합니다." : "이명으로 표시합니다.",
-        "HandLayout" => !enabled ? "게임 기본 배치로 보여줍니다." : mode == "Click" ? "클릭한 묶음을 가로로 펼치고\n다른 곳을 클릭하면 접습니다." : "마우스를 올린 묶음을 위로 펼치고\n벗어나면 접습니다.",
+        "NameStyle" => mode == "Title" ? "이명으로 표시합니다." : "본명으로 표시합니다.",
+        "FightPipStart" => mode == "Full" ? "경기를 시작하면 관전 전투를\n전체 화면으로 보여줍니다." : "경기를 시작하면 관전 전투를\n작은 창으로 보여줍니다.",
+        "GroupHand" => !enabled ? "게임 기본 배치로 보여줍니다." : "클릭한 묶음을 가로로 펼치고\n다른 곳을 클릭하면 접습니다.",
         "WalkDirection" => mode switch
         {
             "Off" => "게임 기본 표시만 보여줍니다.",
@@ -391,23 +409,26 @@ internal static class MenuLayout
             _ => "발밑 원의 이동 방향 화살표를\n캐릭터보다 위에 그립니다."
         },
         "ShushuShield" when !enabled => "쉴드 효과를 그리지 않습니다.",
-        "ShushuShieldRestrictions" when !enabled => "방어 버튼과 카드를 잠그지 않습니다.",
+        "ShushuDefendLock" when !enabled => "방어 버튼과 카드를 잠그지 않습니다.",
         "AutoThanks" when !enabled => "자동으로 보내지 않습니다.",
         "SendAllLikes" when !enabled => "버튼을 보여주지 않습니다.",
+        "ReceivedLikes" when !enabled => "받은 좋아요를 보여주지 않습니다.",
         "ShopBulkBuy" when !enabled => "버튼을 보여주지 않습니다.",
         "CharacterRoles" when !enabled => "역할을 보여주지 않습니다.",
-        "CharacterGuide" when !enabled => "설명을 보여주지 않습니다.",
+        "PrepSkillInfo" when !enabled => "설명을 보여주지 않습니다.",
         "PlayerTab" when !enabled => "탭을 보여주지 않습니다.",
         "PlayerTabHand" when !enabled => "손패 장수를 보여주지 않습니다.",
         "PlayerTabRole" when !enabled => "역할을 보여주지 않습니다.",
         "PlayerTabSkill" when !enabled => "스킬 쿨타임을 보여주지 않습니다.",
         "IndicatorFade" when !enabled => "줌 아웃해도 그대로 보여줍니다.",
         "IndicatorHide" when !enabled => "거리와 상관없이 보여줍니다.",
-        "DiceLock" when !enabled => "게임 기본처럼 필드 위에 두어\n줌에 따라 크기가 바뀝니다.",
+        "DicePin" when !enabled => "게임 기본처럼 필드 위에 두어\n줌에 따라 크기가 바뀝니다.",
         "CounterSound" when !enabled => "알림음을 내지 않습니다.",
         "CounterAnimation" when !enabled => "반격 아이콘을 멈춘 채 보여줍니다.",
         "PingFocus" when !enabled => "핑 선택 모드를 그대로 둡니다.",
+        "ReplaySaveLimit" when !enabled => "게임 기본 개수까지만 저장하고\n사본을 만들지 않습니다.",
         "OldReplays" when !enabled => "버전이 다른 리플레이는\n게임 기본처럼 재생하지 않습니다.",
+        "FightPip" when !enabled => "관전 전투를 게임 기본처럼\n전체 화면으로 보여줍니다.",
         "FinalDamage" when !enabled => "피해 숫자를 보여주지 않습니다.",
         "SuppressNotices" when !enabled => "공지가 자동으로 열립니다.",
         "UpdateNotifications" when !enabled => "알림을 띄우지 않고\n모드 설정 버튼에만 표시합니다.",
@@ -421,22 +442,22 @@ internal static class MenuLayout
             _ => "단계에 없는 조합으로 저장되어 있습니다.\n단계를 고르면 그 단계로 바뀝니다."
         },
         "UpdateChannel" => mode switch { "PreRelease" => "프리 릴리즈와\n더 새로운 정식 릴리즈를 받습니다.", "Beta" => "비공개 베타 버전을 받습니다.\n토큰 인증이 필요합니다.", _ => "정식 릴리즈만 받습니다." },
-        "Enabled" when !enabled => "추천 아이콘을 표시하지 않습니다.",
-        "Details" when !enabled => "마우스를 올려도\n수치를 보여주지 않습니다.",
+        "ActionAdvice" when !enabled => "추천 아이콘을 표시하지 않습니다.",
+        "AdviceDetails" when !enabled => "마우스를 올려도\n수치를 보여주지 않습니다.",
         "EncounterAdvice" when !enabled => "조우 화면에서 추천하지 않습니다.",
         "DefenseAdvice" when !enabled => "방어·회피를 추천하지 않습니다.",
         "CardAdvice" when !enabled => "카드를 추천하지 않습니다.",
         "ShootingStarShow" when !enabled => "놓아주기 버튼에 표시하지 않습니다.",
-        "KoCardPreview" when !enabled => "카드에 마우스를 올려도\n지금 조건을 그대로 보여줍니다.",
+        "KoCardHover" when !enabled => "카드에 마우스를 올려도\n지금 조건을 그대로 보여줍니다.",
         "KoSpectator" when !enabled => "내 전투에서만 보여줍니다.",
         "StatusHand" when !enabled => "손패 장수를 보여주지 않습니다.",
         "StatusEffects" when !enabled => "효과 아이콘을 보여주지 않습니다.",
         "CounterIcons" when !enabled => "반격 아이콘을 보여주지 않습니다.",
         "ShushuMaster" when !enabled => "슈슈 쉴드 효과와 방어 잠금을\n모두 쓰지 않습니다.",
-        "KoMinimum" when !enabled => "주사위 조건을 보여주지 않습니다.",
-        "CardPopups" when !enabled => "클릭해도 열지 않습니다.",
+        "KoDiceTarget" when !enabled => "주사위 조건을 보여주지 않습니다.",
+        "PingDetails" when !enabled => "클릭해도 열지 않습니다.",
         "BattleStatus" when !enabled => "추가 정보를 보여주지 않습니다.",
-        "FieldBuffs" when !enabled => "인디케이터를 보여주지 않습니다.",
+        "PlayerIndicators" when !enabled => "인디케이터를 보여주지 않습니다.",
         "FieldZoom" when !enabled => "휠 줌과 자유 시점을 쓰지 않습니다.",
         "MatchFocus" when !enabled => "창을 가져오지 않습니다.",
         "Diagnostics" when !enabled => "기록하지 않습니다.",
@@ -450,39 +471,46 @@ internal static class MenuLayout
         "Language" => ("언어", "모드 안내 언어를 선택합니다.\n자동은 게임 메뉴 언어를 따릅니다."),
         "Features" => ("모드 기능", "기능별 표시 설정을 변경합니다."),
         "General" => ("일반 설정", "언어·음소거·알림·진단을 설정합니다."),
-        "Enabled" => ("행동 추천", "공격·놓아주기, 방어·회피와\n쓸 만한 카드를 추천합니다."),
-        "Details" => ("추천 상세 수치", "예상 피해와\n전투불능 확률을 보여줍니다."),
-        "KoMinimum" => ("KO 주사위 조건", "KO·생존이 확정되는 주사위 조건을\n보여줍니다."),
-        "CardPopups" => ("핑 상세 보기", "카드·칩 핑 말풍선을 클릭하면\n원본 이미지와 설명이 열립니다."),
-        "HandLayout" => ("손패 묶기", "손패를 기능별로 모아\n클릭이나 호버로 펼칩니다."),
+        "ActionAdvice" => ("행동 추천", "공격·놓아주기, 방어·회피와\n쓸 만한 카드를 추천합니다."),
+        "AdviceDetails" => ("추천 상세 수치", "예상 피해와\n전투불능 확률을 보여줍니다."),
+        "KoDiceTarget" => ("KO 주사위 조건", "KO·생존이 확정되는 주사위 조건을\n보여줍니다."),
+        "PingDetails" => ("핑 상세 보기", "카드·칩 핑 말풍선을 클릭하면\n원본 이미지와 설명이 열립니다."),
+        "GroupHand" => ("손패 묶기", "손패를 기능별로 모아\n클릭하면 펼칩니다."),
         "BattleStatus" => ("전투 상태", "양쪽의 손패 장수·공개 효과와\n반격 가능 여부를 보여줍니다.\n아이콘에 마우스를 올리면 설명이 나옵니다."),
         "ShushuShield" => ("슈슈 쉴드 효과", "슈슈 쉴드가 있는 전투 캐릭터에\n쉴드 효과를 그립니다."),
-        "ShushuShieldRestrictions" => ("슈슈 쉴드 방어 잠금", "내가 쉴드를 가진 방어자이면\n방어 버튼과 방어 카드를 잠급니다."),
+        "ShushuDefendLock" => ("슈슈 쉴드 방어 잠금", "내가 쉴드를 가진 방어자이면\n방어 버튼과 방어 카드를 잠급니다."),
         "AutoThanks" => ("감사합니다 자동 전송", "게임 기본 감사합니다 추천을\n추천마다 한 번 보냅니다."),
         "SendAllLikes" => ("좋아요 일괄 전송", "확인 버튼 위의 버튼을 누르면\n다른 플레이어 모두에게 좋아요를 보냅니다."),
+        "ReceivedLikes" => ("받은 좋아요 표시", "결과 화면 카드마다 받은 좋아요를\n보낸 사람의 캐릭터 아이콘으로 보여줍니다."),
         "ShopBulkBuy" => ("상점 일괄 구매", "상점 아래 일괄 구매 버튼으로 고른 상품을\n한 번에 사고, 무료 일괄 수령으로 무료 상품을 받습니다."),
         "CharacterRoles" => ("역할 표시", "게임 내부 분류로\n캐릭터 역할을 보여줍니다."),
         "PlayerTab" => ("플레이어 목록 탭", "필드 플레이어 목록 바 아래에\n손패 장수·역할·스킬 쿨타임을 보여줍니다."),
         "PlayerTabHand" => ("손패 장수", "플레이어마다 공개 손패 장수를\n보여줍니다."),
         "PlayerTabRole" => ("역할", "게임 내부 분류로\n캐릭터 역할을 보여줍니다."),
         "PlayerTabSkill" => ("스킬 쿨타임", "액티브 스킬의 남은 턴/전체 턴을\n보여줍니다."),
-        "CharacterGuide" => ("준비 화면 스킬 설명", "준비 화면 초상화에 마우스를 올리면\n스킬·재사용 대기시간·잠재력이 나옵니다."),
+        "PrepSkillInfo" => ("준비 화면 스킬 설명", "준비 화면 초상화에 마우스를 올리면\n스킬·재사용 대기시간·잠재력이 나옵니다."),
         "IndicatorFade" => ("줌 아웃 시 불투명도", "줌 아웃할수록 플레이어·몬스터\n인디케이터의 불투명도를 낮춥니다."),
         "IndicatorHide" => ("멀면 숨기기", "멀리 줌 아웃하면 숨기고\n다시 확대하면 보여줍니다."),
-        "DiceLock" => ("주사위 화면 고정", "줌·자유 시점에서도 굴린 주사위를\n기본 시점과 같은 위치·크기로 보여줍니다."),
+        "DicePin" => ("주사위 화면 고정", "줌·자유 시점에서도 굴린 주사위를\n기본 시점과 같은 위치·크기로 보여줍니다."),
         "CounterSound" => ("소리", "반격 아이콘이 나타날 때\n알림음을 냅니다."),
         "CounterAnimation" => ("애니메이션", "인카운트·전투 반격 아이콘을\n움직여 보여줍니다."),
         "OldReplays" => ("구버전 리플레이 재생", "버전이 다른 리플레이도 재생합니다.\n지금 게임과 규칙이 달라 도중에\n멈추거나 화면이 틀릴 수 있습니다."),
+        "FightPip" => ("전투 PIP", "내가 구경만 하는 전투를\n작은 창으로 보여줍니다.\n끌어서 옮기고 모서리로 크기를 바꾸며\n누르면 전체 화면이 됩니다.\n전체 화면에서 Esc를 누르면\n작은 창으로 돌아갑니다."),
+        "FightPipStart" => ("시작 화면", "경기를 시작할 때 관전 전투를\n보여줄 화면입니다."),
+        "FightPipOpacity" => ("PIP 불투명도", "작은 창 안 전투 장면의 불투명도입니다.\n100%는 원래대로 보입니다."),
+        "MiniSlimeOpacity" => ("미니 슬라임 불투명도", "루루의 잠재력으로 칸 위에 생기는\n미니 슬라임의 불투명도입니다.\n100%는 원래대로 보입니다."),
+        "ReplaySaveLimit" => ("리플레이 저장 한도 해제", "리플레이를 개수 제한 없이 저장하고\n사본을 따로 보관합니다.\n캐시 정리로 지워진 리플레이는\n다음 실행 때 되살립니다.\n사본 위치:\n%LOCALAPPDATA%\\\nBetterAstralParty\\Replays"),
+        "ReplayCopiesFolder" => ("사본 폴더 열기", "리플레이 사본이 있는 폴더를\n파일 탐색기로 엽니다.\n%LOCALAPPDATA%\\\nBetterAstralParty\\Replays"),
         "PingFocus" => ("Alt+Tab 핑 모드 해제", "Alt+Tab 후 남은 핑 선택 모드를\n핑을 보내지 않고 끕니다."),
         "FinalDamage" => ("최종 피해", "양쪽 선택이 끝나면\n서버가 정한 피해를 보여줍니다."),
         "SuppressNotices" => ("시작 공지 끄기", "공지가 자동으로 열리지 않습니다."),
         "UpdateNotifications" => ("업데이트 알림 팝업", "새 버전이 나오면 홈 화면 위쪽에\n잠깐 알림을 띄웁니다.\n누르면 변경 내역이 열립니다."),
-        "FieldBuffs" => ("플레이어 인디케이터", "플레이어 이름·HP와 공개 효과를 보여줍니다.\n효과 아이콘을 클릭하면 설명이 열립니다."),
-        "FieldMarker" => ("인디케이터 높이", "점을 캐릭터 발밑(0%)부터\n원래 위치(100%) 사이로 옮깁니다."),
+        "PlayerIndicators" => ("플레이어 인디케이터", "플레이어 이름·HP와 공개 효과를 보여줍니다.\n효과 아이콘을 클릭하면 설명이 열립니다."),
+        "IndicatorHeight" => ("인디케이터 높이", "점을 캐릭터 발밑(0%)부터\n원래 위치(100%) 사이로 옮깁니다."),
         "WalkDirection" => ("이동 방향 강조", "플레이어·몬스터 발밑의 이동 방향을\n가려지지 않게 그립니다."),
         "FieldZoom" => ("휠 줌·자유 시점", "휠로 확대·축소하고 드래그로 시점을 옮깁니다.\n턴 바의 '자유 시점 카메라 종료'로\n기본 시점에 돌아갑니다."),
         "MatchFocus" => ("매칭 시 게임 창 띄우기", "PvE 매칭 성사나 방 시작 때\n게임 창을 한 번 앞으로 가져옵니다."),
-        "Names" => ("이름 표기", "본명 또는 이명으로 표시합니다."),
+        "NameStyle" => ("이름 표기", "본명 또는 이명으로 표시합니다."),
         "Diagnostics" => ("진단 로그", "공개 전투 계산까지 자세히 기록합니다.\n내 PC에만 저장됩니다."),
         "SettingsAutoKeep" => ("자동 보관", "설정을 바꿀 때마다 보관합니다.\n게임 쪽 설정 파일이 없을 때만 되살립니다."),
         "SettingsSave" => ("지금 보관", "지금 설정을 보관본으로 남깁니다.\n자동 보관은 이 보관본을 덮어쓰지 않습니다."),
@@ -515,7 +543,7 @@ internal static class MenuLayout
         "DefenseAdvice" => ("방어·회피 추천", "방어를 추천하고, 방어해도 반드시\n쓰러질 때는 회피를 추천합니다."),
         "CardAdvice" => ("카드 추천", "쓸 만한 카드 위에\n효과를 표시합니다."),
         "ShootingStarShow" => ("슈팅 스타 표시", "놓아줄 때 몬스터에게 주는 피해와\n얻는 스타라이트를 보여줍니다."),
-        "KoCardPreview" => ("카드 호버 조건", "카드에 마우스를 올리면\n카드 사용 후 조건으로 보여줍니다."),
+        "KoCardHover" => ("카드 호버 조건", "카드에 마우스를 올리면\n카드 사용 후 조건으로 보여줍니다."),
         "KoSpectator" => ("관전 전투 표시", "다른 사람 전투에서도\n조건을 보여줍니다."),
         "StatusHand" => ("손패 장수", "양쪽의 공개 손패 장수를\n보여줍니다."),
         "StatusEffects" => ("공개 효과 아이콘", "양쪽의 공개 효과를 아이콘으로 보여줍니다.\n아이콘에 마우스를 올리면 설명이 나옵니다."),

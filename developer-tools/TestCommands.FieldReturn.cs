@@ -79,7 +79,7 @@ internal static partial class TestCommands
         var asset = Path.Combine(context.Root, ".research/ui-assets/Common_fui.bytes"); pin(asset);
         RunEmbedded(context, stage, "field-camera-return", template.Replace("__PRODUCTION__", production, StringComparison.Ordinal).Replace("__NATIVE_POSITION__", position, StringComparison.Ordinal), "FieldCameraReturnTest.NativeReturnAsset.Load(System.IO.File.ReadAllBytes(" + Literal(asset) + ")); FieldCameraReturnTest.Check.Run()", pin, true);
         foreach (var (name, before, after) in new[] { ("Gap", "Math.Max(top.x, bottom.x) + anchorHeight / 2", "Math.Max(top.x, bottom.x) + anchorHeight / 6"),
-            ("Size", "anchorHeight * 1.25f / buttonHeight", "anchorHeight / buttonHeight"), ("Centre", "var y = Math.Min(top.y, bottom.y);", "var y = (top.y + bottom.y - buttonHeight * scale) / 2;") }) {
+            ("Size", "anchorHeight * 1.25f / (buttonHeight - Below)", "anchorHeight / (buttonHeight - Below)"), ("Centre", "var y = Math.Min(top.y, bottom.y);", "var y = (top.y + bottom.y - buttonHeight * scale) / 2;") }) {
             Check(production.Contains(before, StringComparison.Ordinal), "Exact negative-control binding: " + name);
             var ns = "FieldCameraReturnLegacy" + name;
             var mutant = template.Replace("FieldCameraReturnTest", ns, StringComparison.Ordinal).Replace("UnityEngine", ns + ".UnityEngine", StringComparison.Ordinal)

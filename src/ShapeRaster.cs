@@ -75,6 +75,24 @@ internal static class ShapeRaster
         return Coverage(distance * Density);
     }
 
+    // The settlement dark bars' stripes (2026-11-16, NoteUi): `count` "/" stripes (top right to bottom left) across a
+    // size x size tile, each `fill` of its period wide and antialiased across its edges. The period divides the tile, so tiles
+    // set side by side continue the stripes without a seam.
+    internal static byte[] Stripes(int size, int count, float fill)
+    {
+        var pixels = new byte[size * size * 4];
+        float period = (float)size / count, width = period * fill, root = MathF.Sqrt(2f);
+        for (var y = 0; y < size; y++)
+            for (var x = 0; x < size; x++)
+            {
+                // x + y is constant along a stripe (y measured down); u is the place in its period, along x.
+                var u = ((x + y + 1f) % period + period) % period;
+                var inside = u < width ? Math.Min(u, width - u) : -Math.Min(u - width, period - u);
+                White(pixels, size, x, y, Coverage(-inside / root));
+            }
+        return pixels;
+    }
+
     // Move direction masks (2026-11-06), white with the same one-pixel ramp, rows bottom-up, centred in a size x size mask.
     // A notched arrowhead pointing right (the drafts' sticker shape), `length` pixels from notch corners to tip; `grow` widens
     // it all round by that many pixels, rounding its corners, for the outline bands drawn under it.

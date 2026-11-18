@@ -15,6 +15,9 @@ LanguageCheck.Run();
 ReleaseUpdateCheck.Run();
 ReleaseSessionCheck.Run();
 CombatEffectsCheck.Run();
+ReceivedLikesCheck.Run();
+FightPipCheck.Run();
+ReplayKeeperCheck.Run();
 
 if (Array.IndexOf(args, "--compare-assembly") is var comparison && comparison >= 0)
 {
@@ -35,7 +38,8 @@ if (Array.IndexOf(args, "--compare-assembly") is var comparison && comparison >=
         var actual = method.Invoke(null, parameters);
         if (actual == null) throw new Exception($"기존 DLL 계산 결과 누락: {calculator}");
         // Probability presentation intentionally changed; retain numeric bounds and recommendation comparisons.
-        foreach (var property in expected.GetType().GetProperties().Where(p => p.Name is not ("Details" or "DefendQuick" or "DodgeQuick")))
+        foreach (var property in expected.GetType().GetProperties().Where(p => p.Name is not ("Details" or "DefendQuick" or "DodgeQuick"
+            or "DefendDamage" or "DefendKnockout" or "DodgeDamage" or "DodgeKnockout")))
             if (property.GetValue(expected)?.ToString() != actual.GetType().GetProperty(property.Name)!.GetValue(actual)?.ToString())
                 throw new Exception($"기존 DLL 계산 결과 불일치: {calculator}.{property.Name} / {string.Join(",", inputs)}");
         comparisons++;
@@ -238,7 +242,7 @@ foreach (var die in Enumerable.Range(1, 6))
 }
 Console.WriteLine("162개 입력에서 문자열 생략 경로의 피해·전투불능·추천 일치 검증 통과");
 
-foreach (var action in new[] { "Enabled", "Details", "CardPopups", "BattleStatus", "FieldBuffs", "Names", "Diagnostics", "MuteUnfocused", "InputAttention" })
+foreach (var action in new[] { "ActionAdvice", "AdviceDetails", "PingDetails", "BattleStatus", "PlayerIndicators", "NameStyle", "Diagnostics", "MuteUnfocused", "InputAttention" })
 {
     // Top rows are 480 wide; option rows in a parent's tray are ChildWidth (settings remake, 2026-11-01).
     if (MenuLayout.ToggleWidth(action) != (MenuLayout.Parent(action) == null ? 480 : MenuLayout.ChildWidth) || MenuLayout.ToggleHeight != 60)
@@ -271,7 +275,7 @@ foreach (var rows in new[] { 0, 1, 7, 20 })
 if (!MenuLayout.InSettings(0, 0) || !MenuLayout.InSettings(200, 389)
     || MenuLayout.InSettings(-1, 20) || MenuLayout.InSettings(20, -1)
     || MenuLayout.InSettings(MenuLayout.SettingsWidth, 20) || MenuLayout.InSettings(20, MenuLayout.SettingsHeight)
-    || !MenuLayout.FixedControl("Close") || MenuLayout.FixedControl("HandLayout"))
+    || !MenuLayout.FixedControl("Close") || MenuLayout.FixedControl("GroupHand"))
     throw new Exception("Settings clipping must exclude offscreen controls, not fixed footer/tab controls");
 foreach (var renderedHeight in new[] { 60f, 85f, 100f, 120f })
 {
@@ -281,8 +285,8 @@ foreach (var renderedHeight in new[] { 60f, 85f, 100f, 120f })
 }
 if (MenuLayout.HelpY + MenuLayout.HelpHeight > MenuLayout.TabY || 255 + MenuLayout.ToggleHeight > 320 || 320 + MenuLayout.ToggleHeight > 390 || 455 + 60 > 520)
     throw new Exception("왼쪽 표시 설정·진단 로그 겹침/설정창 경계 침범");
-foreach (var action in new[] { "Enabled", "Details", "CardPopups", "BattleStatus", "FieldBuffs", "Names", "Diagnostics", "MuteUnfocused", "InputAttention",
-    "WalkDirection", "Scale", "Opacity", "IndicatorFadeStrength", "FoldedHandOpacity", "Close" })
+foreach (var action in new[] { "ActionAdvice", "AdviceDetails", "PingDetails", "BattleStatus", "PlayerIndicators", "NameStyle", "Diagnostics", "MuteUnfocused", "InputAttention",
+    "WalkDirection", "Scale", "Opacity", "IndicatorFadeStrength", "FoldedHandOpacity", "FightPipOpacity", "MiniSlimeOpacity", "Close" })
 {
     var help = MenuLayout.Help(action);
     if (help == MenuLayout.Help("") || help.Title.Length == 0 || help.Body.Length == 0 || help.Body.Length > 80)
@@ -324,15 +328,6 @@ foreach (var name in new[] { "RelicWindow", "LoseCardWindow", "LandShopWindow", 
 foreach (var name in new[] { "SettingWindow", "ChatWindow", "BattlePlayerInfoWindow", "ReplayWindow", "LandBuildingMissionWindow" })
     if (InputAttentionState.InputWindow(name)) throw new Exception("Non-input dialog alerts");
 if (!MenuLayout.GeneralControl("InputAttention")) throw new Exception("Input alert settings tab");
-// CardChoiceTimer: only the closed (or moved-on) window's own timer, and only while that same object is still registered.
-{
-    IntPtr seen = 11, newer = 12;
-    if (InputAttentionState.StaleChoiceTimer(5, seen, 0, seen) != 5 || InputAttentionState.StaleChoiceTimer(5, seen, 6, seen) != 5
-        || InputAttentionState.StaleChoiceTimer(5, seen, 5, seen) != 0 || InputAttentionState.StaleChoiceTimer(5, seen, 0, IntPtr.Zero) != 0
-        || InputAttentionState.StaleChoiceTimer(5, seen, 0, newer) != 0 || InputAttentionState.StaleChoiceTimer(5, IntPtr.Zero, 0, IntPtr.Zero) != 0
-        || InputAttentionState.StaleChoiceTimer(0, seen, 0, seen) != 0)
-        throw new Exception("A card-choice timer is cancelled only when its closed window's own timer is still registered");
-}
 // HomeEscQuit: ask the frame after an Esc, only when the home was idle around the key; an Esc that closes a window, a window
 // opened for that Esc and skipped frames never ask.
 {
@@ -463,16 +458,16 @@ foreach (var (w, h) in new[] { (1920f, 1080f), (1280f, 720f), (800f, 600f), (256
 foreach (var (x, y) in new[] { (0f, 0f), (w, h), (w / 2, h / 2), (w - 150, h - 80) })
 foreach (var desired in new[] { 0.75f, 1f, 1.5f })
 {
-    var p = CardPreviewLayout.Place(w, h, x, y, desired);
-    if (p.Scale <= 0 || p.X < 16 || p.Y < 16 || p.X + CardPreviewLayout.Width * p.Scale > w - 15.9f
-        || p.Y + CardPreviewLayout.Height * p.Scale > h - 15.9f) throw new Exception("카드 팝업 화면 경계 실패");
+    var p = PingDetailsLayout.Place(w, h, x, y, desired);
+    if (p.Scale <= 0 || p.X < 16 || p.Y < 16 || p.X + PingDetailsLayout.Width * p.Scale > w - 15.9f
+        || p.Y + PingDetailsLayout.Height * p.Scale > h - 15.9f) throw new Exception("카드 팝업 화면 경계 실패");
 }
 var cardLookup = new Dictionary<string, int>();
-CardPreviewLayout.AddUnique(cardLookup, "나 [color=#FF0000]공격(대)[/color] 있어", 123);
-CardPreviewLayout.AddUnique(cardLookup, "중복", 1);
-CardPreviewLayout.AddUnique(cardLookup, "중복", 2);
-CardPreviewLayout.AddUnique(cardLookup, "중복", 1);
-CardPreviewLayout.AddUnique(cardLookup, "", 123);
+PingDetailsLayout.AddUnique(cardLookup, "나 [color=#FF0000]공격(대)[/color] 있어", 123);
+PingDetailsLayout.AddUnique(cardLookup, "중복", 1);
+PingDetailsLayout.AddUnique(cardLookup, "중복", 2);
+PingDetailsLayout.AddUnique(cardLookup, "중복", 1);
+PingDetailsLayout.AddUnique(cardLookup, "", 123);
 if (cardLookup.Count != 2 || cardLookup["중복"] != 0 || cardLookup.ContainsKey("공격(대)")
     || cardLookup["나 [color=#FF0000]공격(대)[/color] 있어"] != 123)
     throw new Exception("카드 핑 완전 일치·모호한 이름 차단 실패");
@@ -480,23 +475,23 @@ Console.WriteLine("카드 팝업 해상도·가장자리·배율·핑 완전 일
 
 var relicLookup = new Dictionary<string, int>();
 const string chipPing = "나 [color=#9700E6]휴대용 선풍기 - 대형[/color] 있어";
-CardPreviewLayout.AddUnique(relicLookup, chipPing, 123); // Same numeric ID as a card is not the same item.
-if (CardPreviewLayout.Resolve(cardLookup, relicLookup, chipPing) != (true, 123)
-    || CardPreviewLayout.Resolve(cardLookup, relicLookup, "나 [color=#FF0000]공격(대)[/color] 있어") != (false, 123)
-    || CardPreviewLayout.Resolve(cardLookup, relicLookup, "휴대용 선풍기").Id != 0)
+PingDetailsLayout.AddUnique(relicLookup, chipPing, 123); // Same numeric ID as a card is not the same item.
+if (PingDetailsLayout.Resolve(cardLookup, relicLookup, chipPing) != (true, 123)
+    || PingDetailsLayout.Resolve(cardLookup, relicLookup, "나 [color=#FF0000]공격(대)[/color] 있어") != (false, 123)
+    || PingDetailsLayout.Resolve(cardLookup, relicLookup, "휴대용 선풍기").Id != 0)
     throw new Exception("카드/칩 종류 구분 또는 핑 완전 일치 실패");
-CardPreviewLayout.AddUnique(cardLookup, chipPing, 999);
-if (CardPreviewLayout.Resolve(cardLookup, relicLookup, chipPing).Id != 0)
+PingDetailsLayout.AddUnique(cardLookup, chipPing, 999);
+if (PingDetailsLayout.Resolve(cardLookup, relicLookup, chipPing).Id != 0)
     throw new Exception("카드와 칩의 동일 문구 충돌 차단 실패");
-CardPreviewLayout.AddUnique(relicLookup, "중복 칩", 1);
-CardPreviewLayout.AddUnique(relicLookup, "중복 칩", 2);
-if (CardPreviewLayout.Resolve(cardLookup, relicLookup, "중복 칩").Id != 0)
+PingDetailsLayout.AddUnique(relicLookup, "중복 칩", 1);
+PingDetailsLayout.AddUnique(relicLookup, "중복 칩", 2);
+if (PingDetailsLayout.Resolve(cardLookup, relicLookup, "중복 칩").Id != 0)
     throw new Exception("중복 칩 문구 차단 실패");
 foreach (var (w, h) in new[] { (800f, 600f), (1920f, 1080f), (2560f, 1080f) })
 foreach (var chipHeight in new[] { 620f, 900f, 1400f })
 foreach (var (x, y) in new[] { (0f, 0f), (w, h), (w / 2, h / 2) })
 {
-    var p = CardPreviewLayout.Place(w, h, x, y, 1.5f, 460, chipHeight);
+    var p = PingDetailsLayout.Place(w, h, x, y, 1.5f, 460, chipHeight);
     if (p.X < 16 || p.Y < 16 || p.X + 460 * p.Scale > w - 15.9f || p.Y + chipHeight * p.Scale > h - 15.9f)
         throw new Exception("칩 긴 설명 팝업 화면 경계 실패");
 }
@@ -524,6 +519,42 @@ if (CharacterNames.LabelField("UIHero_Button_Hero") != "txt_chrname"
     || CharacterNames.LabelField("UIRoomHero_Com_Player") != null)
     throw new Exception("캐릭터 이름 칸 범위 제한 실패");
 Console.WriteLine("본명/이명 대응·복원·계정/채팅/프로필 보호 검증 통과");
+// Epithets inside sentences (2026-11-16): the achievements, item and emoji names, banners and the like.
+var sentenceMap = CharacterNames.SentenceMap(new Dictionary<string, string>
+{
+    ["그림자 닌자"] = "코마치", ["초텐짱"] = "최고귀염뽀짝천사", ["소심한 수녀"] = "알라나", ["간판 소녀"] = "미미",
+    ["질"] = "질 스팅레이", ["도로시"] = "도로시 헤이즈", ["Golden-Scaled Advisor"] = "Souri", ["게임 마스터"] = "렌", ["늪의 교룡"] = "마무시",
+});
+if (sentenceMap.ContainsKey("질") || sentenceMap.ContainsKey("도로시") || sentenceMap.ContainsKey("Golden-Scaled Advisor") || sentenceMap.Count != 6)
+    throw new Exception("짧거나 본명에 포함되거나 번역되지 않은 이명 제외 실패");
+foreach (var (text, expected) in new[]
+{
+    ("그림자 닌자(으)로 50회 플레이하기", "코마치(으)로 50회 플레이하기"),
+    ("명함 - 그림자 닌자", "명함 - 코마치"),
+    ("그림자 닌자 15 (애니메이션)", "코마치 15 (애니메이션)"),
+    ("초텐짱을 공격할 때, 공격력 -1", "최고귀염뽀짝천사를 공격할 때, 공격력 -1"),
+    ("게임 마스터는 늪의 교룡과 싸운다", "렌은 마무시와 싸운다"),
+    ("늪의 교룡이 나타났다", "마무시가 나타났다"),
+    ("늪의 교룡으로 승리", "마무시로 승리"),
+    ("게임 마스터로 승리", "렌으로 승리"),
+    ("게임 마스터로봇", "렌로봇"),
+    ("소심한 수녀 - 알라나", "소심한 수녀 - 알라나"),
+    ("이 게임의 간판 소녀 미미예요.", "이 게임의 간판 소녀 미미예요."),
+    ("품질 좋은 질문", "품질 좋은 질문"),
+    ("", ""),
+})
+{
+    var actual = CharacterNames.Sentence(text, sentenceMap);
+    if (actual != expected) throw new Exception($"문장 속 이명 교체 실패: {text} -> {actual}");
+}
+var untouched = "이명이 없는 문장";
+if (!ReferenceEquals(CharacterNames.Sentence(untouched, sentenceMap), untouched)) throw new Exception("바꿀 것이 없는 문장은 그대로 반환해야 함");
+if (CharacterNames.SentenceField("UITask_Com_AchieveLabel") != "txt_taskDesc" || CharacterNames.SentenceField("UIChat_Com_ExpressionPopup") != "txt_CurrentTitle"
+    || CharacterNames.SentenceField("UIChat_Com_ChatItem") != null || CharacterNames.SentenceField("UIHero_Com_FileArchive") != null
+    || CharacterNames.LabelField("UIAssistVote_Com_NPCInfo") != "txt_Title" || CharacterNames.LabelProperty("UIAssistVote_Com_RelicInfo") != "target"
+    || CharacterNames.LabelProperty("UIAssistVoteWindow") != "target" || !CharacterNames.IsVar("target") || CharacterNames.IsVar("text"))
+    throw new Exception("업적·이모티콘·투표 이름 칸 범위 실패");
+Console.WriteLine("문장 속 이명·조사·제외 규칙 검증 통과");
 if (!CharacterNames.SkipSubtree("UICom_AttrInfo") || !CharacterNames.SkipSubtree("UIButton_Buff")
     || CharacterNames.SkipSubtree("UIAccountInfo_Com_Main") || CharacterNames.SkipSubtree("UIHero_Button_Hero"))
     throw new Exception("필드 검색 제외/실제 본명 칸 유지 실패");
@@ -571,7 +602,7 @@ if (VisibleCombatAdvisor.Calculate(new(4, 10, 4, 3, 4, 4, 9, true)) != null
     throw new Exception("잘못된 범위/특수 주사위 입력 허용");
 var uncertain = VisibleCombatAdvisor.Calculate(new(4, 2, 1, 10, 3, 0, 10, true))!.Value;
 if (uncertain.Recommendation != RecommendedAction.Defend || !uncertain.Defend.Contains("추천")
-    || !uncertain.DefendQuick.Contains('~') || uncertain.DodgeQuick != "예상 피해 1\n전투불능 50%")
+    || !uncertain.DefendQuick.Contains('~') || uncertain.DodgeQuick != "예상 피해 2\n전투불능 50%")
     throw new Exception("불확실 범위 보존/방어 확정 KO일 때만 회피 추천 실패");
 Console.WriteLine("PvE 제한·회피 불가·불확실 범위 검증 통과");
 
@@ -968,8 +999,13 @@ Console.WriteLine("카드 비교·과잉 투자·비공개 확률 미가정·PvE
 
 var quick = VisibleCombatAdvisor.Calculate(new(9, 8, 3, 3, 5, 4, 4, true))!.Value;
 if (quick.Recommendation != RecommendedAction.Defend || quick.DefendQuick != "예상 피해 1.5\n전투불능 0%"
-    || quick.DodgeQuick != "예상 피해 6.7\n전투불능 83.33%")
+    || quick.DodgeQuick != "예상 피해 8\n전투불능 83.33%")
     throw new Exception("스크린샷 전투의 요약/추천 오류");
+// The dodge badge shows the HP a failed dodge loses, a range over the public ATK, and 0 when no dodge face can fail.
+if (VisibleCombatAdvisor.Calculate(new(9, 20, 3, 5, 2, 0, 0, true))!.Value.DodgeQuick != "예상 피해 5~7\n전투불능 0%"
+    || VisibleCombatAdvisor.Calculate(new(9, 8, 3, 3, 3, 4, 4, true) { Modifiers = new() { DodgeDice = DiceFaces.Range(4, 6) } })!.Value.DodgeQuick
+        != "예상 피해 0\n전투불능 0%")
+    throw new Exception("회피 실패 시 피해 표시 오류");
 if (uncertain.Recommendation != RecommendedAction.Defend || blockedDodge.Recommendation != RecommendedAction.Defend)
     throw new Exception("불확실/회피 불가 상태의 단일 추천 누락");
 var compact = AdviceText.Quick(quick.DefendQuick);
@@ -1058,7 +1094,7 @@ foreach (var invalid in new[] { encounter with { Hp = 0 }, encounter with { Enem
 if (harmless.Quick.Split('\n').Length != 2 || !harmless.Quick.EndsWith('%'))
     throw new Exception("조우 요약 두 줄/확률 뒤 부가 문구 제거 실패");
 if (MenuLayout.Help("BattleStatus").Title != "전투 상태"
-    || !MenuLayout.Help("Enabled").Body.Contains("놓아주기")) throw new Exception("설정 기능 연결 안내 누락");
+    || !MenuLayout.Help("ActionAdvice").Body.Contains("놓아주기")) throw new Exception("설정 기능 연결 안내 누락");
 Console.WriteLine("조우 단일 공격·놓아주기/득실 동률·반격 생존 조건·PvE 제한 검증 통과");
 
 // Independent 36-outcome oracle: first choose a response for each revealed attack die,
@@ -1130,21 +1166,24 @@ foreach (var (chance, expected) in new[] { (0d, "0"), (1d, "100"),
 Console.WriteLine("카드 짝지은 증가폭·폭넓은 기존 조건의 0효과·오버플로·확률 경계 검증 통과");
 
 var tied = VisibleCombatAdvisor.Calculate(new(9, 100, 5, 5, 1, 4, 4, true))!.Value;
-if (tied.Recommendation != RecommendedAction.Defend || !tied.Summary.Contains("방어 추천") || !tied.Defend.Contains("추천"))
+if (tied.Recommendation != RecommendedAction.Defend || !tied.Defend.Contains("추천"))
     throw new Exception("완전 동률 시 방어 추천 누락");
 var weaklyBetter = VisibleCombatAdvisor.Calculate(new(9, 100, 5, 6, 1, 10, 10, true))!.Value;
 if (weaklyBetter.Recommendation != RecommendedAction.Defend)
     throw new Exception("동률 시나리오가 포함된 일관된 방어 우위 누락");
 var dodgeBetter = VisibleCombatAdvisor.Calculate(new(9, 1, 3, 3, 2, 20, 20, true))!.Value;
-if (dodgeBetter.Recommendation != RecommendedAction.Dodge || !dodgeBetter.Summary.Contains("회피 추천")
-    || !quick.Summary.Contains("방어 추천") || !blockedDodge.Summary.Contains("회피 불가")
-    || !uncertain.Summary.Contains("방어 추천")) throw new Exception("방어자 단일 추천/회피 불가 표제 오류");
+if (dodgeBetter.Recommendation != RecommendedAction.Dodge || !dodgeBetter.Dodge.Contains("회피 추천")
+    || quick.Recommendation != RecommendedAction.Defend || blockedDodge.DodgeDamage != null || blockedDodge.DodgeKnockout != null
+    || uncertain.Recommendation != RecommendedAction.Defend) throw new Exception("방어자 단일 추천/회피 불가 표제 오류");
+// The observer panel's figures: the same ranges and KO chances as the quick text, without labels.
+if (quick.DefendDamage != "1.5" || quick.DefendKnockout != "0%" || quick.DodgeDamage != "8" || quick.DodgeKnockout != "83.33%")
+    throw new Exception("관전 패널 피해·전투불능 수치 오류");
 // Defending survives a 6 here, so a lower dodge KO chance (4/6 < 5/6) no longer recommends dodge.
 var survivable = VisibleCombatAdvisor.Calculate(new(9, 5, 7, 7, 4, 1, 1, true))!.Value;
 if (survivable.Recommendation != RecommendedAction.Defend)
     throw new Exception("방어로 살 수 있는데 회피 추천");
 foreach (var advice in new[] { tied, weaklyBetter, dodgeBetter, quick, blockedDodge, uncertain })
-    if (!advice.Summary.StartsWith("방어자 기준") || advice.Summary.Contains("선택"))
+    if (advice.Defend.Contains("선택") || advice.Dodge.Contains("선택"))
         throw new Exception("방어자 이득 비교를 행동 예측처럼 표시함");
 Console.WriteLine("방어자 단일 추천·양쪽 우위·동률 방어·회피 불가 표제 검증 통과");
 
@@ -1166,7 +1205,7 @@ foreach (var canDodge in new[] { false, true })
     }
     var expected = canDodge && dodgeEverywhere ? RecommendedAction.Dodge : RecommendedAction.Defend;
     var actual = VisibleCombatAdvisor.Calculate(new(9, hp, atkMin, atkMin + 3, die, defMin, defMin + 3, canDodge))!.Value;
-    if (actual.Recommendation != expected || actual.Summary.Contains("보류") || actual.Summary.Contains("동률")
+    if (actual.Recommendation != expected || (actual.Defend + actual.Dodge).Contains("보류") || (actual.Defend + actual.Dodge).Contains("동률")
         || actual.Defend.Contains("추천") == actual.Dodge.Contains("추천"))
         throw new Exception($"단일 추천 독립 열거 불일치: {hp}/{atkMin}/{defMin}/{die}/{canDodge}");
     singleChoiceCases++;
@@ -1182,8 +1221,12 @@ foreach (var scale in new[] { 0.75f, 1f, 1.5f })
         throw new Exception("반격 표시 이동 종속 실패");
     if (!(anchor.X < 477 && anchor.X + size > 477 && anchor.Y < -16 && anchor.Y + size > -16))
         throw new Exception("반격 아이콘이 DEFENSE 우상단 모서리에 겹치지 않음");
+    var attack = BattleStatusLayout.CounterAnchor(-23, -16, 500, size, true);
+    if (!(attack.X < -23 && attack.X + size > -23 && attack.Y == anchor.Y)
+        || Math.Abs(attack.X + size / 2 + anchor.X + size / 2 - 2 * (-23 + 250)) > 0.001f)
+        throw new Exception("공격자 반격 아이콘이 ATTACK 좌상단에 좌우 대칭으로 겹치지 않음");
 }
-Console.WriteLine("반격 아이콘 우상단 겹침·배율·헤더 이동 종속 검증 통과");
+Console.WriteLine("반격 아이콘 방어 우상단·공격 좌상단 대칭 겹침·배율·헤더 이동 종속 검증 통과");
 
 float counterSince = -1;
 foreach (var (visible, time, expected) in new[] {
@@ -1197,6 +1240,11 @@ counterSince = -1; // Target change/cleanup starts a new wait even if the next h
 if (BattleStatusLayout.CounterReady(true, 9f, ref counterSince))
     throw new Exception("반격 새 대상 대기 초기화 실패");
 Console.WriteLine("반격 0.75초 지연·유지·대기 중 숨김 취소·재등장/대상 변경 검증 통과");
+// Both fight actors' counters pop together: the second within the gap is silent, a later one sounds again.
+if (!BattleStatusLayout.CounterSoundFree(10f, float.NegativeInfinity) || BattleStatusLayout.CounterSoundFree(10.4f, 10f)
+    || BattleStatusLayout.CounterSoundFree(11.49f, 10f) || !BattleStatusLayout.CounterSoundFree(11.5f, 10f))
+    throw new Exception("반격음 중복 방지 간격 오류");
+Console.WriteLine("반격음 1.5초 안 중복 재생 방지 검증 통과");
 
 foreach (var uiScale in new[] { 0.75f, 1f, 1.5f })
 foreach (var iconX in new[] { 18f, 226f })

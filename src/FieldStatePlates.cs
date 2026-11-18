@@ -32,8 +32,9 @@ internal static class FieldStatePlates
         var logic = RuntimeObject.StaticField(RuntimeObject.FindClass("GameLogic", "GameLogicManager"), "_inst");
         if (logic?.Get("fight")?.Field("fightStatus")?.Value<bool>() == true) { Clear(); return; }
         var battleUi = logic?.Get("battle")?.Field("battleInfo")?.Get("ui");
-        var scan = Time.unscaledTime >= _scanAt;
-        if (scan) _scanAt = Time.unscaledTime + 0.2f;
+        var now = Time.unscaledTime;
+        var scan = now >= _scanAt;
+        if (scan) _scanAt = now + 0.2f;
         if (_sceneClass == IntPtr.Zero) _sceneClass = RuntimeObject.FindClass("Core.Scene", "BattleSceneController");
         var cameraObject = RuntimeObject.StaticField(_sceneClass, "inst")?.Get("mainCamera");
         foreach (var group in Groups)
@@ -82,17 +83,21 @@ internal static class FieldStatePlates
 
     // Per plate and frame: no wrapper for a value result or a child, no argument array (2026-11-13; zoomed out the plate
     // layers allocated about 12 KB a frame).
+    // Value math through UnityMath, and the camera and screen read once a pass (2026-11-18).
     private static void Layout(Group group, Camera camera, float scale)
     {
+        if (group.Adopted.Count == 0) return;
+        var enabled = camera.enabled;
+        float screenHeight = Screen.height;
         foreach (var ui in group.Adopted)
         {
             if (ui.Get<bool>("isDisposed")) continue;
             var owner = Owner(ui);
-            var screen = owner is not { } point || point == Vector3.zero || !camera.enabled ? default : camera.WorldToScreenPoint(point);
+            var screen = owner is not { } point || UnityMath.IsZero(point) || !enabled ? default : camera.WorldToScreenPoint(point);
             var shown = screen.z > 0;
             if (ui.Get<bool>("visible") != shown) ui.Set("visible", shown);
             if (!shown) continue;
-            var local = group.Layer!.Result<Vector2, Vector2>("GlobalToLocal", new Vector2(screen.x, Screen.height - screen.y));
+            var local = group.Layer!.Result<Vector2, Vector2>("GlobalToLocal", UnityMath.V2(screen.x, screenHeight - screen.y));
             ui.Call("SetXY", local.x, local.y + ContentLift(ui) * (1 - scale));
         }
     }

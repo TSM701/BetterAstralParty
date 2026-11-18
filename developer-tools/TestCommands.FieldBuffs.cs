@@ -5,7 +5,7 @@ namespace BetterAstralParty.Development;
 
 internal static partial class TestCommands
 {
-    private static void FieldBuffs(DevContext context, string stage, Dictionary<string, string> options, Action<string> pin)
+    private static void PlayerIndicators(DevContext context, string stage, Dictionary<string, string> options, Action<string> pin)
     {
         using var native = Native(context);
         string Il(string type, string method, int argc) => Body(NativeMethod(native, type, method, argc));
@@ -64,11 +64,26 @@ internal static partial class TestCommands
         var tabSource = ReadSource(context, "src/PlayerTabUi.cs");
         Contains(tabSource, new[] { "Call(\"RequestGetHeroInfoC2S\", id)", "Call(\"GetPlayerDataById\", id)?.Field<int>(\"SkillCD\")", "Get<bool>(\"CanSendC2S\")", "room.Get<int>(\"Round\")", "if (room!.Pointer != _asksRoom) { Asks.Clear(); _asksRoom = room.Pointer; }", "Compatibility.Block(SkillFeature, ex, Asks.Clear)" }, "Player list tab asks the server like the window");
         var skillHarness = Template(context, "focus-tests/csharp-migration/player-tab-skill.template.cs", pin)
-            .Replace("__ASK__", Fragment(tabSource, @"(?s)    private sealed class Ask .*?    private readonly record struct Server\(RuntimeObject Battle, long Self, int Round\);", "Player tab server state"), StringComparison.Ordinal)
+            .Replace("__ASK__", Fragment(tabSource, @"(?s)    private sealed class Ask\b.*?    private readonly record struct Server\(RuntimeObject Battle, long Self, int Round, bool Open, int Table, bool Running\);", "Player tab server state"), StringComparison.Ordinal)
             .Replace("__ASKED__", MethodFragment(tabSource, "private static int Asked"), StringComparison.Ordinal);
         RunEmbedded(context, stage, "player-tab-skill", skillHarness, "PlayerTabSkillTest.Check.Run()", pin);
-        var spam = skillHarness.Replace("if (ask.Reply == null && (ask.Round", "if ((ask.Round", StringComparison.Ordinal); Check(spam != skillHarness, "One request at a time anchor exists");
+        var spam = skillHarness.Replace("if (ask.Reply == null && (round", "if ((round", StringComparison.Ordinal); Check(spam != skillHarness, "One request at a time anchor exists");
         RunEmbedded(context, stage, "player-tab-skill-spam-mutant", spam.Replace("PlayerTabSkillTest", "PlayerTabSkillSpam", StringComparison.Ordinal), "PlayerTabSkillSpam.Check.Run()", pin, expectedFailure: "no second request while one is pending");
+        Contains(tabSource, new[] { "Field(\"roomStateType\")?.Value<int>() == 4", "Get(\"fight\")?.Field(\"fightStatus\")?.Value<bool>() != true" }, "Player list tab asks only a running room outside fights");
+        // GameFinishS2C waits in the push queue behind the final fight's presentation (2026-11-16, 11001 on dev.10): a push
+        // leaves the queue only after its handler, and the handler switches the room to SETTLEMENT first.
+        Pattern(Body(NativeAsyncMoveNext(native, "Core.Net.RPCMsgManager", "ProcessNextPushRPCMsg")), @"RPCMsgManager::_OnPushRPCMsg[\s\S]*::get_Item\([\s\S]*RPCMsgManager::DealServerCallback[\s\S]*RPCMsgManager::_OnPushRPCMsg[\s\S]*::RemoveAt\(", "A push leaves the queue only after its handler");
+        Pattern(Body(NativeAsyncMoveNext(native, "GameLogic.BattleResultLogic", "OnGameFinishS2CServerCallBack")), @"RoomController::roomStateType\n[\s\S]*?ldc.i4.5\nIL_[0-9a-f]+: callvirt [^\n]*GameLogic.RoomController::SwitchRoomState\(","Game finish switches the room to SETTLEMENT first");
+        Check(FieldType(native.MainModule.GetType("Core.Net.NetManager"), "RPC") == "Core.Net.RPCMsgManager"
+            && FieldType(native.MainModule.GetType("Core.Net.RPCMsgManager"), "_OnPushRPCMsg") == "System.Collections.Generic.List`1<Core.Net.OnPushRPCMsgData>", "Native push queue");
+        Contains(tabSource, new[] { "RuntimeObject.StaticField(_netClass, \"_inst\")?.Field(\"RPC\")?.Field(\"_OnPushRPCMsg\")", "&& pushes?.Get<int>(\"Count\") == 0;" }, "Player list tab asks only once every server push is handled");
+        // 11001 at a match's end on dev.21 (2026-11-17) with the room RUNNING and no push waiting: requests also wait for a
+        // quiet room, and replies are polled every scan so a failure at the end is still recorded.
+        Contains(tabSource, new[] { "var quiet = Quiet(open, changed, now);", "room.Get<int>(\"Round\"), quiet, _tableChanges, running)", "var open = running && pushes?.Get<int>(\"Count\") == 0;","if (state != _tableState) { _tableState = state; _tableChanges++; changed = true; }",
+            "foreach (var ask in Asks.Values) ask.Finish(now);", "\"; sentMs=\" + (int)((now - At) * 1000)" }, "Player list tab asks only into a quiet room and records late failures");
+        Contains(tabSource, new[] { "var state = TableState(battle!);", "data.Field(\"CharacterInst\")?.Get(\"standLand\")?.Get<int>(\"Id\")", "Field(\"_buffDict\")?.Get<int>(\"Count\")" }, "Player list tab asks again when the public table changes");
+        var closed = skillHarness.Replace(") && server.Open)", "))", StringComparison.Ordinal); Check(closed != skillHarness, "Open room gate anchor exists");
+        RunEmbedded(context, stage, "player-tab-skill-open-mutant", closed.Replace("PlayerTabSkillTest", "PlayerTabSkillOpen", StringComparison.Ordinal), "PlayerTabSkillOpen.Check.Run()", pin, expectedFailure: "no request during a fight or once the game is ending");
         // Option 1 narrows the role label beside the skill part: the label hands its new size to its shrinking text, which
         // marks itself for a re-fit on its next redraw.
         Pattern(Il("FairyGUI.GTextField", "HandleSizeChanged", 0), @"ldc.i4.2\nIL_[0-9a-f]+: bne.un.s (IL_[0-9a-f]+)\n[\s\S]*\n\1: ldarg.0\nIL_[0-9a-f]+: call FairyGUI.DisplayObject FairyGUI.GObject::get_displayObject\(\)\n(IL_[0-9a-f]+: [^\n]*\n){4}IL_[0-9a-f]+: callvirt System.Void FairyGUI.DisplayObject::SetSize\(System.Single,System.Single\)", "Shrinking label passes a new size to its text");
@@ -81,8 +96,8 @@ internal static partial class TestCommands
         // Picking a player moves the selectable buttons out of com_Container into com_Empty.
         Pattern(Il("UI.UIBattleInfo_Com_Player", "AdjustPlayerParent", 2), @"UIBattleInfo_Com_Player::com_Empty\nIL_[0-9a-f]+: ldarg.1\nIL_[0-9a-f]+: callvirt [^\n]*GComponent::AddChild", "Player selection moves bars into com_Empty");
         Contains(ReadSource(context, "src/PlayerTabUi.cs"), new[] { "if (container != null)", "?.Field(\"com_LaunchPK\")", "launch!.Field(\"com_P\" + slot)", "owner?.Field(\"_playerData\")" }, "Player list tabs follow the encounter screen copies");
-        var source = ReadSource(context, "src/FieldBuffUi.cs"); var list = Il("UI.BattlePlayerInfoWindow", "RefreshMonsterBuffList", 3);
-        Contains(source, new[] { "Call(\"UpdateOffset\", target)", "Call(\"UpdateGuideLine\", point)", "PlateLift = 200f, MarkerLift = 120f", "FieldZoomUi.IndicatorScale", "Plugin.FieldIndicatorHeight.Value" }, "Owned hero plate layout");
+        var source = ReadSource(context, "src/PlayerIndicatorUi.cs"); var list = Il("UI.BattlePlayerInfoWindow", "RefreshMonsterBuffList", 3);
+        Contains(source, new[] { "Call(\"UpdateOffset\", target)", "Call(\"UpdateGuideLine\", point)", "PlateLift = 200f, MarkerLift = 120f", "FieldZoomUi.IndicatorScale", "Plugin.IndicatorHeight.Value" }, "Owned hero plate layout");
         // Monster plate zoom-follow: native plates move into an owned layer the native pass skips; a hidden owned
         // direct child keeps receiving the native long-press SwitchMonsterInfo state.
         Pattern(Il("UI.UIBattleInfoPanel", "SwitchMonsterInfo", 1), @"::com_AttrInfos\n[\s\S]*::_children[\s\S]*isinst UI.UICom_AttrInfo[\s\S]*::SwitchInfo\(System.Boolean\)", "Native long-press info walks direct plate children");
@@ -91,7 +106,7 @@ internal static partial class TestCommands
         Check(native.MainModule.GetType("UI.UICom_AttrInfo").Fields.Single(field => field.Name == "_PlayerId").FieldType.FullName == "System.Int64", "Native plate owner id is Int64");
         var monsters = ReadSource(context, "src/FieldMonsterPlates.cs");
         Contains(monsters, new[] { "PlateLift = 200f, MarkerLift = 120f", "Call(\"UpdateOffset\", target)", "Call(\"UpdateGuideLine\", point)", "Math.Abs(scale - 1f) > 0.01f", "_parent!.Call(\"AddChild\", ui)", "ui.Call(\"SwitchInfo\", info == 1)" }, "Monster plates follow zoom and return to com_AttrInfos");
-        NoPattern(monsters, "FieldIndicatorHeight", "Monster dot height stays native");
+        NoPattern(monsters, "IndicatorHeight", "Monster dot height stays native");
         Contains(ReadSource(context, "src/FieldZoomUi.cs"), new[] { "FieldMonsterPlates.Tick(IndicatorScale);", "Attempt(FieldMonsterPlates.Clear);" }, "Zoom drives and clears the monster plate layer");
         // Settings marker slider: exact native GSlider members the mod writes (value/max are properties, changeOnClick a field).
         var slider = native.MainModule.GetType("FairyGUI.GSlider");
@@ -147,7 +162,7 @@ internal static partial class TestCommands
         foreach (var name in new[] { "txt_Name", "txt_HP", "graph_Line", "graph_Guide", "graph_Sign" }) Check(native.MainModule.GetType("UI.UICom_AttrInfo").Fields.Any(field => field.Name == name) && source.Contains("\"" + name + "\"", StringComparison.Ordinal), "Ally color field: " + name);
         Contains(source, new[] { "new Color(0.35f, 0.8f, 1f)", "Ui.Field(field)!.Set(\"color\", allyColor)" }, "Owned ally sky-blue style");
         Contains(source, new[] {
-            "!Plugin.FieldBuffs.Value",
+            "!Plugin.PlayerIndicators.Value",
             "VisibleCombatAdvisor.IsPve",
             "Field(\"fightStatus\")",
             "Get<int>(\"characterType\") != 1",
@@ -172,14 +187,16 @@ internal static partial class TestCommands
         NoPattern(source, "GetCharacterName|new Material|renderQueue\\s*=|\"_ZTest\"|StyleWorldGraphics|SortingGroup|_world|ScreenToWorldPoint|DelegateSupport|Il2CppSystem.Action|beforeUpdate|PositionAboveHeads|NativeUi.OutlineTree", "No unsafe custom positioning/native callback/world renderer");
         var baselinePath = Path.Combine(context.Root, "artifacts/backup-before-0.4.30/BetterAstralParty.dll"); var builtPath = options.TryGetValue("plugin-path", out var selected) ? Path.GetFullPath(selected) : Path.Combine(context.Root, "artifacts/BetterAstralParty.dll"); pin(baselinePath); pin(builtPath);
         using (var baseline = AssemblyDefinition.ReadAssembly(baselinePath)) using (var built = AssemblyDefinition.ReadAssembly(builtPath)) {
+            // The baseline still carries the class's name before 2026.11.2-dev.45 (FieldBuffUi).
             var old = baseline.MainModule.GetTypes().Single(type => type.FullName == "BetterAstralParty.FieldBuffUi/Plate").Methods.Single(method => method.Name == "Refresh");
-            var current = built.MainModule.GetTypes().Single(type => type.FullName == "BetterAstralParty.FieldBuffUi/Plate").Methods.Single(method => method.Name == "Refresh"); Check(Body(old) == Body(current), "Initial field plate renderer bytecode preserved");
+            var current = built.MainModule.GetTypes().Single(type => type.FullName == "BetterAstralParty.PlayerIndicatorUi/Plate").Methods.Single(method => method.Name == "Refresh");
+            Check(Body(old).Replace("FieldBuffUi", "PlayerIndicatorUi", StringComparison.Ordinal) == Body(current), "Initial field plate renderer bytecode preserved");
         }
         Check(!source.Contains("Clear(\"unfocused\")", StringComparison.Ordinal) && source.Contains("if (!Application.isFocused) { _pressed = IntPtr.Zero; return; }", StringComparison.Ordinal) && source.IndexOf("Scan();", StringComparison.Ordinal) <= source.IndexOf("if (!Application.isFocused)", StringComparison.Ordinal), "Focus loss preserves plates and cancels click only");
         foreach (var reason in new[] { "setting-off", "settings-open", "fight-active", "parent-hidden", "parent-changed", "not-pve", "players-unavailable", "exception" }) Check(source.Contains("Clear(\"" + reason + "\")", StringComparison.Ordinal), "Plate hide diagnostic: " + reason);
         Contains(source, new[] { "if (!Plugin.Diagnostics.IsRecording || Time.unscaledTime < _diagnoseAt) return;", "_diagnoseAt = Time.unscaledTime + 1f;", "ownerMatches=", "ownerZero=", "animatorHidden=", "attached=", "if (state == _diagnosticState) return;", "Error(\"FieldBuff.inspect\", ex)" }, "Isolated deduplicated plate diagnostics");
         NoPattern(source, "Call\\(\"(ShowAttrInfo|RendererBuff|RefreshBuff)\"\\s*\\)|Call\\(\"ShowAttrInfo\"|HandCards|RequestGetHeroInfo|SetField\\(\"Com_AttrInfo\"|SetField\\(\"UpdateAction\"", "No native subscription/private data/existing object mutation");
-        Contains(ReadSource(context, "src/ModUi.cs"), new[] { "FieldBuffUi.Tick();", "Plugin.FieldBuffs.Value = !Plugin.FieldBuffs.Value", "\"FieldBuffs\" => Plugin.FieldBuffs.Value" }, "Independent field indicator setting/tick");
+        Contains(ReadSource(context, "src/ModUi.cs"), new[] { "PlayerIndicatorUi.Tick();", "Plugin.PlayerIndicators.Value = !Plugin.PlayerIndicators.Value", "\"PlayerIndicators\" => Plugin.PlayerIndicators.Value" }, "Independent field indicator setting/tick");
         FieldInput(context, stage, pin);
     }
 }

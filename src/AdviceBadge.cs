@@ -106,7 +106,7 @@ internal sealed class AdviceBadge
         if (Panel.Get<bool>("isDisposed")) return;
         if (_visualOnly)
         {
-            var show = _active && _hovered && !string.IsNullOrEmpty(_lastText) && Plugin.ShowDetails.Value;
+            var show = _active && _hovered && !string.IsNullOrEmpty(_lastText) && Plugin.AdviceDetails.Value;
             var progress = AdviceText.Reveal(Time.unscaledTime - _hoverAt);
             var drawn = (show, show ? progress : 0f, _panelY + (show ? (1 - progress) * AdviceText.HoverSlide : 0f));
             if (_panelDrawn != drawn)

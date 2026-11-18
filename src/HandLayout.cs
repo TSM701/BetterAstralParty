@@ -6,11 +6,6 @@ internal enum HandGroup { Attack, Defense, Disrupt, Support, Move, Resource, Oth
 // audited against original Card/STRCard because EffectType is NOT a functional taxonomy.
 internal static class HandLayout
 {
-    internal static int Mode(bool enabled, string expand) => !enabled ? 0 : expand == "Click" ? 2 : 1;
-    internal static int NextMode(bool enabled, string expand) => (Mode(enabled, expand) + 2) % 3;
-    internal static string ModeLabel(int mode) => mode == 0 ? "기본" : mode == 2 ? "클릭 펼치기" : "호버 펼치기";
-    internal const float GuideRightRotation = 90f;
-    internal static string DropHint(bool korean) => korean ? "카드를 이곳에\n놓으세요" : "Drop card\nhere";
     internal static Slot ClickRow(float width, float height, int count, int index, float aspect, float pileTop)
     {
         var unit = Math.Min(width / 1920f, height / 1080f);
@@ -22,11 +17,13 @@ internal static class HandLayout
         // Keep the enlarged card and its outline just above the highest folded pile.
         return new(start + index * (cell + gap) + (cell - w) / 2, pileTop - 16 * unit - h * 1.06f, w, h, cell + gap);
     }
-    // The drop zone ends 12 px above every resting card: the folded piles and the open row (Click) or column (Hover),
-    // whose focused card is enlarged. Native use tests the dropped card's centre (its anchored pivot), so a card has to
+    // The drop zone ends 12 px above every resting card: the folded piles and the open row, whose focused card is enlarged. Native use tests the dropped card's centre (its anchored pivot), so a card has to
     // travel over half its height before a drop counts.
     internal static float DropBottom(float pileTop, Slot? open, float unit) =>
         Math.Min(pileTop, open is { } slot ? Focus(slot).Y : pileTop) - 12 * unit;
+    // The zone also reaches this share of the screen height above the screen top, where nothing of it is seen: the pointer
+    // holds a card below its centre, so a high release can put the centre above the screen (user-requested 2026-11-15).
+    internal const float DropOverhang = .5f;
 
     internal static HandGroup Classify(int id, int cardType) => cardType switch
     {
@@ -78,7 +75,7 @@ internal static class HandLayout
         var hit = Focus(slot);
         return InColumn(x, y, hit, hit.Y + hit.Height + border, border);
     }
-    internal static Slot Place(float width, float height, int columns, int column, int rows, int row, float aspect = 1.5f, bool expanded = false)
+    internal static Slot Place(float width, float height, int columns, int column, int rows, int row, float aspect = 1.5f)
     {
         var unit = Math.Min(width / 1920f, height / 1080f);
         var gap = 10 * unit;
@@ -91,16 +88,7 @@ internal static class HandLayout
         var columnWidth = cardWidth;
         var cardHeight = cardWidth * aspect;
         var step = Math.Min(32 * unit, height * .10f / Math.Max(1, rows - 1));
-        if (expanded)
-        {
-            // Entire cards, not partially exposed strips. Fit the whole column uniformly.
-            var rowGap = 8 * unit;
-            // Reserve each cell's zoom footprint; focusing never moves neighbours or overlaps them.
-            cardHeight = Math.Min(cardHeight, (height * .82f - bottomInset - rowGap * (rows - 1)) / rows) / 1.12f;
-            cardWidth = cardHeight / aspect;
-            step = cardHeight * 1.12f + rowGap;
-        }
-        var top = height - bottomInset - cardHeight * (expanded ? 1.06f : 1f) - step * (rows - 1);
+        var top = height - bottomInset - cardHeight - step * (rows - 1);
         return new(columnX + (columnWidth - cardWidth) / 2, top + row * step, cardWidth, cardHeight, step);
     }
 }

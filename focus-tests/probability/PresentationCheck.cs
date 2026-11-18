@@ -32,7 +32,7 @@ public static class PresentationCheck
             Check(CardAdvisor.Calculate(new PreRollCombat(9, 1, 0, 0, 0, 0) { Modifiers = effect },
                 new(true, 1, 1, 1))!.Value.Details == "0%", "HP1 is not forced to 100 through public protection");
         Check(VisibleCombatAdvisor.Calculate(new(9, 1, 0, 0, 3, 0, 0, true))!.Value.DodgeQuick
-            == "예상 피해 0.5\n전투불능 50%", "revealed-roll HP1 dodge risk remains calculated");
+            == "예상 피해 1\n전투불능 50%", "revealed-roll HP1 dodge risk remains calculated");
 
         // Favorable display must not change the recommendation policy.
         var uncertain = VisibleCombatAdvisor.Calculate(new(4, 2, 1, 10, 3, 0, 10, true))!.Value;

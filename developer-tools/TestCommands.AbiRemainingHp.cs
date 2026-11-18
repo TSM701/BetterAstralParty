@@ -6,7 +6,7 @@ internal static partial class TestCommands
 {
     private static void RemainingHpProjection(DevContext context, string stage, Action<string> pin)
     {
-        var view = ReadSource(context, "src/RemainingHpUi.cs"); var game = ReadSource(context, "src/GameUi.cs"); var dice = ReadSource(context, "src/CardDiceUi.cs");
+        var view = ReadSource(context, "src/FinalDamageUi.cs"); var game = ReadSource(context, "src/GameUi.cs"); var dice = ReadSource(context, "src/CardDiceUi.cs");
         Contains(view, new[] { "GameUi.Visible(parent.Field(\"txt_Failure\"))", "fight.Get(\"attackerData\")?.Get(\"characterType\")?.Value<int>() == 2", "if (step == 6 && !_resultLogged && _prediction >= 0" }, "Monster defeat result gates");
         using var native = Native(context);
         var result = Il(NativeAsyncMoveNext(native, "BattleShowDirector", "PlayDefenderDead"));
@@ -58,7 +58,7 @@ internal static partial class TestCommands
         NoPattern(view, @"com_value|FinalDamageReady|int\.TryParse|""PointChange""\)!\.Get<bool>|UnknownEffectsRow", "Damage figure reads no dice, totals or arithmetic text, and the server's figure leaves no effect uncounted");
         Contains(game, new[] { "CardKoMinimum.RevealedDie(attackerUi.Field(\"showPoint\")", "PublicCombatEffects.Read(fight.Get(\"defenderData\"), \"defender\", fight.Get(\"attackerData\"))",
             "PublicCombatEffects.Read(fight.Get(\"attackerData\"), \"encounter.self\", enemy)", "PublicCombatEffects.Read(enemy, \"encounter.enemy\", fight.Get(\"attackerData\"))",
-            "RemainingHpUi.Update(fight, ui, attackerUi, defenderUi, step, hp, step == 5 ? ServerFight.Decided(director) : null);", "RemainingHpUi.Animate();", "RemainingHpUi.ResetCapture();", "CardDiceUi.PollResolved();", "CardUi.Clear(keepDice: step is 4 or 5 or 6 || spectatorCards)", "CardDiceUi.BindResolved",
+            "FinalDamageUi.Update(fight, ui, attackerUi, defenderUi, step, hp, step == 5 ? ServerFight.Decided(director) : null);", "FinalDamageUi.Animate();", "FinalDamageUi.ResetCapture();", "CardDiceUi.PollResolved();", "CardUi.Clear(keepDice: step is 4 or 5 or 6 || spectatorCards)", "CardDiceUi.BindResolved",
             "(role is 0 or 1 || role == 2 && Plugin.KoSpectator.Value)", "director!.Field(\"_attackerData\")?.Pointer != fight.Get(\"attackerData\")?.Pointer" }, "Advice direction, final evidence polling and revealed-roll lifecycle");
         Check(game.IndexOf("CardKoMinimum.RevealedDie(attackerUi.Field(\"showPoint\")", StringComparison.Ordinal) < game.IndexOf("var input = new VisibleCombat(", StringComparison.Ordinal), "Advice rejects final totals before constructing raw-die input");
         Contains(ReadSource(context, "src/NativeUi.cs"), new[] { "LocalToWorld", "WorldToViewportPoint", "BattleStatusLayout.Project", "RootToLocal" }, "Shared world-space buff projection");
@@ -73,14 +73,14 @@ internal static partial class TestCommands
             "NativeUi.Create(\"Fight\", \"修改为 90-90\")", "diamond.Call(\"SetXY\", 35f, 35f)", "NativeUi.Label(point, \"\", 38, 30, 36, 100, 36", "format.SetField(\"letterSpacing\", 0)",
             "TintArtwork(disc, Color.cyan)", "index == 0 ? Color.red : Color.cyan", "filter.Call(\"Tint\", color, 1f)", "image.Set(\"filter\", filter)", "CardDiceLayout.Row(row)",
             "NativeUi.Component(_panel, 160, 160)", "row.Empty.Set(\"text\", content.Empty)", "if (!revealed) { _resolvedUi = _attacker = _defender = null; _final = false; }", "defenseDie is >= 1 and <= 6 ? defenseDie : 0, revealed: true);", "Show(_resolvedUi, point, input, null, false, false, die, revealed: true);",
-            "GameUi.Visible(number), die, _resolvedInput.Modifiers.AttackDice.ZeroOnly)", "Get<int>(\"selectedIndex\") != 5 || _final)", "row == 0 ? \"骰子底P1\" : \"骰子底P3\"", "if (!Plugin.KoMinimum.Value) { Clear(); return; }",
+            "GameUi.Visible(number), die, _resolvedInput.Modifiers.AttackDice.ZeroOnly)", "Get<int>(\"selectedIndex\") != 5 || _final)", "row == 0 ? \"骰子底P1\" : \"骰子底P3\"", "if (!Plugin.KoDiceTarget.Value) { Clear(); return; }",
             "_unknownRow!.Show(finalDamage is >= 0 ? default : input.Modifiers.Unknown);" }, "Minimum-condition policy, native dice presentation and independent setting");
         // Before the server decides, only the attack die is read, at showPoint 1; the decided hit settles the view (ShowFinal).
         NoPattern(dice, @"com_value|""PointChange""\)|RevealedDefenseDie|FightValues|defensePoint", "KO view reads no arithmetic panel, totals or defense die text");
         Check(!Regex.IsMatch(dice, "ThresholdRange|DefenseThresholds|생존 가능 조건|KO 가능 조건|rangeText") && !dice.Contains("공격 눈 공개", StringComparison.Ordinal), "No mixed threshold policy or redundant revealed subtitle");
         var layout = ReadSource(context, "src/CardDiceLayout.cs");
         Check(!layout.Contains("피해량", StringComparison.Ordinal) && !layout.Contains("/ HP", StringComparison.Ordinal) && !dice.Contains("방어 선택 시 피해량", StringComparison.Ordinal), "Minimum conditions never become a damage presentation");
-        foreach (var forbidden in new[] { "NativeUi.Arrow(", "\"이상\"", "\"이하\"", "\"확정\"", "\"Fight_Com_Point\"", "Set(\"visible\", possible)", "hpTop", "Local(life,", "NativeUi.Surface", "HigherAlsoPossible", "Plugin.ShowDetails.Value", "Plugin.Enabled.Value" })
+        foreach (var forbidden in new[] { "NativeUi.Arrow(", "\"이상\"", "\"이하\"", "\"확정\"", "\"Fight_Com_Point\"", "Set(\"visible\", possible)", "hpTop", "Local(life,", "NativeUi.Surface", "HigherAlsoPossible", "Plugin.AdviceDetails.Value", "Plugin.ActionAdvice.Value" })
             Check(!dice.Contains(forbidden, StringComparison.Ordinal), "Dice preserve numeric semantics without legacy presentation " + forbidden);
         Check(view.Contains("try { if (!server.Dodge) CardDiceUi.ShowFinal(parent, a, _hp, _prediction, _modifiers, server.AttackDie, server.DefenseDie); }", StringComparison.Ordinal)
             && view.IndexOf("CardDiceUi.ShowFinal(", StringComparison.Ordinal) > view.IndexOf("_prediction = Math.Max(0, -server.HpChange);", StringComparison.Ordinal)
@@ -89,18 +89,18 @@ internal static partial class TestCommands
             && view.IndexOf("if (!Plugin.FinalDamage.Value) return;", StringComparison.Ordinal) < view.IndexOf("            Ensure(root);", StringComparison.Ordinal), "Final certainty follows the server's decided hit and precedes the independent artwork gate");
         var animate = MethodFragment(view, "internal static void Animate"); var displayClear = MethodFragment(view, "internal static void ClearDisplay");
         Contains(animate, new[] { "if (!Plugin.FinalDamage.Value) { ClearDisplay(); return; }", "if (GameUi.HomeAvailable || root == null", "{ Clear(); return; }" }, "Display-only setting cleanup remains distinct from scene cleanup");
-        NoPattern(animate, @"Plugin\.(Enabled|KoMinimum)\.Value", "Final damage artwork is independent of advice and KO settings");
+        NoPattern(animate, @"Plugin\.(ActionAdvice|KoDiceTarget)\.Value", "Final damage artwork is independent of advice and KO settings");
         NoPattern(displayClear, @"ResetCapture|_hp|_die|_prediction|_captured|_resultLogged", "Display cleanup retains public hit evidence");
-        Check(ReadSource(context, "src/ModUi.cs").Contains("case \"FinalDamage\": Plugin.FinalDamage.Value = !Plugin.FinalDamage.Value; RemainingHpUi.ClearDisplay(); break;", StringComparison.Ordinal), "Final damage toggle uses display-only cleanup rather than resetting the in-flight hit");
+        Check(ReadSource(context, "src/ModUi.cs").Contains("case \"FinalDamage\": Plugin.FinalDamage.Value = !Plugin.FinalDamage.Value; FinalDamageUi.ClearDisplay(); break;", StringComparison.Ordinal), "Final damage toggle uses display-only cleanup rather than resetting the in-flight hit");
         var cards = ReadSource(context, "src/CardUi.cs"); var observerStart = cards.IndexOf("        if (role == 2)", StringComparison.Ordinal); var observerEnd = cards.IndexOf("        if (role is not (0 or 1))", StringComparison.Ordinal);
         Check(observerStart >= 0 && observerEnd > observerStart && observerEnd < cards.IndexOf("var ready =", StringComparison.Ordinal) && observerEnd < cards.IndexOf("var cards =", StringComparison.Ordinal), "Spectator branch precedes ready and private-hand access");
         RunGeneralFixture(context, Path.Combine(stage, "spectator"), GeneralRemainingHp0.Replace("__OBSERVER__", cards[observerStart..observerEnd], StringComparison.Ordinal), "SpectatorKoProbe.Run()", pin);
-        Check(!cards.Contains("Plugin.ShowDetails.Value", StringComparison.Ordinal), "KO card previews independent of hover-details setting");
-        Contains(cards, new[] { "var hit = Plugin.KoMinimum.Value && Plugin.KoCardPreview.Value", "preview ? hovered.Bonus : null", "parsed.Attack != (role == 0)", "if (!CardAdviceOn) { candidates.Clear(); return; }" }, "Local defender card validation and conditions-only observation");
-        var adviceAt = game.IndexOf("        if (!Plugin.Enabled.Value || !Plugin.DefenseAdvice.Value) return;", game.IndexOf("CardDiceUi.BindResolved", StringComparison.Ordinal), StringComparison.Ordinal);
+        Check(!cards.Contains("Plugin.AdviceDetails.Value", StringComparison.Ordinal), "KO card previews independent of hover-details setting");
+        Contains(cards, new[] { "var hit = Plugin.KoDiceTarget.Value && Plugin.KoCardHover.Value", "preview ? hovered.Bonus : null", "parsed.Attack != (role == 0)", "if (!CardAdviceOn) { candidates.Clear(); return; }" }, "Local defender card validation and conditions-only observation");
+        var adviceAt = game.IndexOf("        if (!Plugin.ActionAdvice.Value || !Plugin.DefenseAdvice.Value) return;", game.IndexOf("CardDiceUi.BindResolved", StringComparison.Ordinal), StringComparison.Ordinal);
         Check(adviceAt >= 0 && adviceAt < game.IndexOf("var input = new VisibleCombat(", StringComparison.Ordinal), "Advice OFF keeps public dice observation without recommendation art");
-        var entryStart = game.IndexOf("        if (!Plugin.Enabled.Value && !Plugin.KoMinimum.Value && !Plugin.FinalDamage.Value)", StringComparison.Ordinal); var entryEnd = game.IndexOf("        if (HomeAvailable) RuntimeObject.RequireClasses(\"Enabled\"", StringComparison.Ordinal);
-        Check(entryStart >= 0 && entryEnd > entryStart && entryEnd < game.IndexOf("RemainingHpUi.Update(", StringComparison.Ordinal), "Three independent combat settings guard only the all-OFF entry boundary");
+        var entryStart = game.IndexOf("        if (!Plugin.ActionAdvice.Value && !Plugin.KoDiceTarget.Value && !Plugin.FinalDamage.Value)", StringComparison.Ordinal); var entryEnd = game.IndexOf("        if (HomeAvailable) RuntimeObject.RequireClasses(\"ActionAdvice\"", StringComparison.Ordinal);
+        Check(entryStart >= 0 && entryEnd > entryStart && entryEnd < game.IndexOf("FinalDamageUi.Update(", StringComparison.Ordinal), "Three independent combat settings guard only the all-OFF entry boundary");
         RunGeneralFixture(context, Path.Combine(stage, "combat-entry"), GeneralRemainingHp1.Replace("__ENTRY__", game[entryStart..entryEnd], StringComparison.Ordinal), "CombatSettingEntryProbe.Run()", pin);
         var update = MethodFragment(view, "internal static void Update");
         var renderStart = update.IndexOf("            Ensure(root);", StringComparison.Ordinal); var updateCatch = update.LastIndexOf("        catch (Exception ex)", StringComparison.Ordinal);
@@ -117,7 +117,7 @@ internal static partial class TestCommands
             .Replace("__DISPLAY_CLEAR__", displayClear, StringComparison.Ordinal)
             .Replace("__CLEAR__", Fragment(view, @"(?m)^    internal static void Clear\(\) \{ ClearDisplay\(\); ResetCapture\(\); \}", "scene clear resets display and capture"), StringComparison.Ordinal)
             .Replace("__COMBAT__", WithoutImports(ReadSource(context, "src/CombatAdvisor.cs")), StringComparison.Ordinal);
-        RunGeneralFixture(context, Path.Combine(stage, "capture-lifetime"), capture, "RemainingHpUi.Run()", pin);
+        RunGeneralFixture(context, Path.Combine(stage, "capture-lifetime"), capture, "FinalDamageUi.Run()", pin);
         Console.WriteLine("Historical five-argument Content assertion superseded by the approved achievable-defense-face input; old raw damage-log strings superseded by current support/reason/status metadata. Public final-number and spectator privacy gates are unchanged.");
     }
 }

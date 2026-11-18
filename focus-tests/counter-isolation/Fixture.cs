@@ -46,6 +46,7 @@ static class VisibleCombatAdvisor{public static bool IsPve(int mode)=>mode==9;}
 static class NativeUi {
     public static RuntimeObject CounterIndicator(RuntimeObject parent)=>Probe.Obj(("isDisposed",false));
     public static void Play(RuntimeObject effect,string transition){if(Probe.FailEncounter)throw new MissingFieldException("Inert changed sound payload");}
+    public static void PlayCounter(RuntimeObject effect)=>Play(effect,"MaxPoint");
 }
 static class GameUi {
     public static RuntimeObject? Root;public static bool HomeAvailable=>false;
@@ -64,9 +65,12 @@ static class BattleStatusUi {
     private static void ClearRows(){Probe.RowsCleared++;}
     public static void Clear(){ClearRows();ClearCounter();}
     public static void ClearCounter(){Probe.CounterCleared++;}
-    private static IntPtr _quietCounter,_counterDefender;private static bool _counterShown;
-    private static void RefreshCounter(RuntimeObject? actor){Probe.Refreshes++;if(Probe.FailRefresh)throw new MissingFieldException("Inert changed counter construction");}
-    private static void PositionCounter(){Probe.Positions++;if(Probe.FailPosition)throw new InvalidOperationException("Inert changed counter positioning");}
+    sealed class CounterMark {
+        internal void Quiet(bool keep){}
+        internal void Refresh(RuntimeObject? actor){Probe.Refreshes++;if(Probe.FailRefresh)throw new MissingFieldException("Inert changed counter construction");}
+        internal void Position(){Probe.Positions++;if(Probe.FailPosition)throw new InvalidOperationException("Inert changed counter positioning");}
+    }
+    static readonly CounterMark AttackerCounter=new(),DefenderCounter=new();
 __COUNTER_BOUNDARY__
 __BATTLE_TICK__
 }
@@ -84,7 +88,7 @@ public static class CounterIsolationCheck {
         Probe.Reset();Probe.FailEncounter=true;EncounterCounterUi.Tick();
         Check(Compatibility.Blocked.SetEquals(new[]{BattleStatusUi.CounterFeature})&&Probe.EncounterDisposed==1,"Actual encounter failure cleans only its clone and counter state");
         BattleStatusUi.Tick();Check(Probe.Scans==1&&Probe.RowPositions==2&&Probe.RowsCleared==0,"Actual public row tick survives encounter effect failure");
-        Check(Compatibility.Allowed("ShushuShield")&&Compatibility.Allowed("ShushuShieldRestrictions"),"Counter breaker does not affect shield settings");
+        Check(Compatibility.Allowed("ShushuShield")&&Compatibility.Allowed("ShushuDefendLock"),"Counter breaker does not affect shield settings");
         Console.WriteLine("PASS isolated counter failures: "+checks+" checks");
     }
 }

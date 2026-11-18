@@ -37,6 +37,9 @@ internal static partial class ModUi
         internal bool Switch => Layout?.Switch == true;
     }
     private static readonly Dictionary<IntPtr, SettingRow> SettingRows = new();
+    // Round buttons inside rows (MenuLayout.InlineButtons): the button, its fill and its action.
+    private static readonly Dictionary<IntPtr, (RuntimeObject Button, RuntimeObject Fill, string Action)> Inline = new();
+    private const float InlineSize = 30, InlineGap = 12;
     // Draft B: a top row's fill shows its state (pale yellow ON, warm gray OFF); option rows stay cream.
     private static readonly Color RowOn = new(1f, 0.788f, 0.059f), ChildOn = new(1f, 0.855f, 0.361f), ChildOff = new(0.827f, 0.816f, 0.776f),
         RowCream = new(1f, 0.973f, 0.89f), ChipLine = new(0.839f, 0.776f, 0.627f), Divider = new(0.886f, 0.839f, 0.729f),
@@ -165,9 +168,9 @@ internal static partial class ModUi
     private static bool _pvpCleaned;
     private static readonly Action[] PvpCleanup = {
         UpdateNotificationUi.Clear,
-        GameUi.Stop, CardPreviewUi.Reset, BattleStatusUi.Clear, EncounterCounterUi.Clear, ShushuShieldUi.Clear,
-        CharacterGuideUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, FieldZoomUi.Clear, () => FieldBuffUi.Clear("pvp-safety"), WalkDirectionUi.Clear, PlayerTabUi.Clear,
-        CharacterNameUi.RestoreAll, InputAttention.Stop, PingFocusGuard.Reset, AutoThanksUi.Clear, SendAllLikesUi.Clear, ShopBulkUi.Clear, BattleMenuUi.Clear, FieldDiceUi.Clear, ReplayUi.Clear,
+        GameUi.Stop, PingDetailsUi.Reset, BattleStatusUi.Clear, EncounterCounterUi.Clear, ShushuShieldUi.Clear,
+        PrepSkillInfoUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, CardResultClicks.Clear, FieldZoomUi.Clear, () => PlayerIndicatorUi.Clear("pvp-safety"), WalkDirectionUi.Clear, PlayerTabUi.Clear,
+        CharacterNameUi.RestoreAll, InputAttention.Stop, PingFocusGuard.Reset, AutoThanksUi.Clear, SendAllLikesUi.Clear, ReceivedLikesUi.Clear, ShopBulkUi.Clear, BattleMenuUi.Clear, FieldDiceUi.Clear, OldReplaysUi.Clear, FightPip.Clear, ReplayKeeper.Clear, MiniSlimeOpacity.Clear,
         () => Plugin.Diagnostics.EndCombat(),
         () => { ClosePanel(true); GameUi.Dispose(_modal); _modal = null; }
     };
@@ -260,8 +263,6 @@ internal static partial class ModUi
         catch (Exception ex) { Compatibility.Block("PingFocus", ex); }
         try { InputAttention.Tick(); }
         catch (Exception ex) { Compatibility.Block("InputAttention", ex, InputAttention.Stop); }
-        try { CardChoiceTimer.Tick(); }
-        catch (Exception ex) { Compatibility.Block(CardChoiceTimer.Feature, ex, CardChoiceTimer.Clear); }
         try { HomeEscQuit.Tick(); }
         catch (Exception ex) { Compatibility.Block(HomeEscQuit.Feature, ex); }
         var measure = Plugin.DiagnosticLogging.Value && Plugin.Diagnostics.IsRecording;
@@ -270,6 +271,7 @@ internal static partial class ModUi
         // Spike attribution: managed collections and IL2CPP heap drops (a native GC) during and between ticks.
         var clrGcs = measure ? GC.CollectionCount(0) : 0;
         var nativeUsed = measure ? (long)Il2CppInterop.Runtime.IL2CPP.il2cpp_gc_get_used_size() : 0;
+        var jitStarted = measure ? System.Runtime.JitInfo.GetCompilationTime(true).Ticks : 0;
         _measureTicks = measure;
         Array.Clear(TickMarks); Array.Clear(TickBytes);
         TickMarks[0] = started; TickBytes[0] = allocated;
@@ -287,8 +289,8 @@ internal static partial class ModUi
             GameUi.Tick(); Mark(1);
             if (measure) coreEnd = System.Diagnostics.Stopwatch.GetTimestamp();
             BattleMenuUi.Tick(); Mark(2);
-            AutoThanksUi.Tick(); SendAllLikesUi.Tick(); ShopBulkUi.Tick(); Mark(3);
-            CharacterGuideUi.Tick(); ReplayUi.Tick(); Mark(4);
+            AutoThanksUi.Tick(); SendAllLikesUi.Tick(); ReceivedLikesUi.Tick(); ShopBulkUi.Tick(); Mark(3);
+            PrepSkillInfoUi.Tick(); OldReplaysUi.Tick(); ReplayKeeper.Tick(); MiniSlimeOpacity.Tick(); Mark(4);
             ModFont.Tick(); Mark(5);
             if (_languageRevision != ModText.Revision)
             {
@@ -300,11 +302,11 @@ internal static partial class ModUi
             }
             Mark(6);
             UpdateNotificationUi.Tick(); Mark(7);
-            FieldZoomUi.Tick(); Mark(8);
+            FightPip.Tick(); FieldZoomUi.Tick(); Mark(8);
             FieldDiceUi.Tick(); Mark(9);
             if (measure) gameEnd = System.Diagnostics.Stopwatch.GetTimestamp();
-            CardTargetButtonsUi.Tick(); Mark(10);
-            CardPreviewUi.Tick(); Mark(11);
+            CardTargetButtonsUi.Tick(); CardResultClicks.Tick(); Mark(10);
+            PingDetailsUi.Tick(); Mark(11);
             var handStarted = measure ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
             var handAllocated = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
             HandLayoutUi.Tick(); Mark(12);
@@ -318,12 +320,16 @@ internal static partial class ModUi
             BattleStatusUi.Tick(); Mark(14);
             EncounterCounterUi.Tick(); Mark(15);
             if (measure) fieldStart = System.Diagnostics.Stopwatch.GetTimestamp();
-            FieldBuffUi.Tick(); WalkDirectionUi.Tick(); PlayerTabUi.Tick(); MonsterMoveProbe.Tick(); FightDataProbe.Tick(); NancyProbe.Tick(); Mark(16);
+            PlayerIndicatorUi.Tick(); Mark(16);
+            WalkDirectionUi.Tick(); Mark(17);
+            PlayerTabUi.Tick(); Mark(18);
+            MonsterMoveProbe.Tick(); FightDataProbe.Tick(); NancyProbe.Tick(); NativePassProbe.Tick(); Mark(19);
             if (measure) fieldEnd = System.Diagnostics.Stopwatch.GetTimestamp();
             if (measure) statusEnd = System.Diagnostics.Stopwatch.GetTimestamp();
             try { TickSettings(); }
             catch (Exception ex) { FailSettings(ex); }
-            Mark(17);
+            Mark(20);
+            JitWarmup.Tick(); Mark(21);
         }
         catch (Exception ex)
         {
@@ -342,15 +348,16 @@ internal static partial class ModUi
                 var milliseconds = 1000d / System.Diagnostics.Stopwatch.Frequency;
                 var nativeAfter = (long)Il2CppInterop.Runtime.IL2CPP.il2cpp_gc_get_used_size();
                 Plugin.Diagnostics.TickSpikes(TickMarks, TickBytes, milliseconds, GC.CollectionCount(0) - clrGcs,
-                    nativeAfter < nativeUsed, _nativeUsedAfterTick > 0 && nativeUsed < _nativeUsedAfterTick);
+                    nativeAfter < nativeUsed, _nativeUsedAfterTick > 0 && nativeUsed < _nativeUsedAfterTick,
+                    (System.Runtime.JitInfo.GetCompilationTime(true).Ticks - jitStarted) / (double)TimeSpan.TicksPerMillisecond, nativeAfter - nativeUsed);
                 _nativeUsedAfterTick = nativeAfter;
                 Plugin.Diagnostics.Performance(ended / (double)System.Diagnostics.Stopwatch.Frequency,
                     (ended - started) * milliseconds, (gameEnd - started) * milliseconds,
                     Math.Max(0, popupEnd - gameEnd) * milliseconds, Math.Max(0, statusEnd - popupEnd) * milliseconds,
                     GC.GetAllocatedBytesForCurrentThread() - allocated, Time.unscaledDeltaTime * 1000d,
                     fieldEnd > 0 ? (fieldEnd - fieldStart) * milliseconds : 0,
-                    FieldBuffUi.ActivePlateCount, FieldBuffUi.EffectCount, handMs, handBytes, (coreEnd - started) * milliseconds,
-                    FieldBuffUi.MonsterPlateCount);
+                    PlayerIndicatorUi.ActivePlateCount, PlayerIndicatorUi.EffectCount, handMs, handBytes, (coreEnd - started) * milliseconds,
+                    PlayerIndicatorUi.MonsterPlateCount);
             }
         }
     }
@@ -383,9 +390,9 @@ internal static partial class ModUi
 
     internal static void FailUi(Exception ex) => Compatibility.Block("CoreUi", ex,
         UpdateNotificationUi.Clear,
-        GameUi.Stop, CardPreviewUi.Reset, BattleStatusUi.Clear, EncounterCounterUi.Clear, ShushuShieldUi.Clear,
-        CharacterGuideUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, FieldZoomUi.Clear,
-        () => FieldBuffUi.Clear("compatibility"), WalkDirectionUi.Clear, PlayerTabUi.Clear, CharacterNameUi.RestoreAll, BattleMenuUi.Clear, SendAllLikesUi.Clear, ShopBulkUi.Clear, FieldDiceUi.Clear, ReplayUi.Clear,
+        GameUi.Stop, PingDetailsUi.Reset, BattleStatusUi.Clear, EncounterCounterUi.Clear, ShushuShieldUi.Clear,
+        PrepSkillInfoUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, CardResultClicks.Clear, FieldZoomUi.Clear,
+        () => PlayerIndicatorUi.Clear("compatibility"), WalkDirectionUi.Clear, PlayerTabUi.Clear, CharacterNameUi.RestoreAll, BattleMenuUi.Clear, SendAllLikesUi.Clear, ReceivedLikesUi.Clear, ShopBulkUi.Clear, FieldDiceUi.Clear, OldReplaysUi.Clear, ReplayKeeper.Clear, MiniSlimeOpacity.Clear,
         // As in PvpCleanup: the input-attention tray icon and the latches of features the blocked frame no longer ticks.
         InputAttention.Stop, AutoThanksUi.Clear, PingFocusGuard.Reset,
         () => { ClosePanel(true); GameUi.Dispose(_modal); _modal = null; });
@@ -470,8 +477,8 @@ internal static partial class ModUi
 
     private static BepInEx.Configuration.ConfigEntry<float> SliderEntry(string action) => action switch
     {
-        "FieldMarker" => Plugin.FieldIndicatorHeight, "IndicatorFadeStrength" => Plugin.IndicatorFadeStrength,
-        "FoldedHandOpacity" => Plugin.FoldedHandOpacity, "Scale" => Plugin.UiScale, "FreeCameraSpeed" => Plugin.FreeCameraSpeed,
+        "IndicatorHeight" => Plugin.IndicatorHeight, "IndicatorFadeStrength" => Plugin.IndicatorFadeStrength,
+        "FoldedHandOpacity" => Plugin.FoldedHandOpacity, "FightPipOpacity" => Plugin.FightPipOpacity, "MiniSlimeOpacity" => Plugin.MiniSlimeOpacity, "Scale" => Plugin.UiScale, "FreeCameraSpeed" => Plugin.FreeCameraSpeed,
         "ZoomSensitivity" => Plugin.ZoomSensitivity, "ZoomOutLimit" => Plugin.ZoomOutLimit, "IndicatorHideDistance" => Plugin.IndicatorHideDistance, _ => Plugin.Opacity
     };
 
@@ -642,7 +649,7 @@ internal static partial class ModUi
     private static void Create()
     {
         if (_modal != null && !_modal.Get<bool>("isDisposed")) return;
-        Controls.Clear(); Labels.Clear(); ToggleBackgrounds.Clear(); SectionHeaders.Clear(); Trays.Clear(); SettingRows.Clear(); Titles.Clear();
+        Controls.Clear(); Labels.Clear(); ToggleBackgrounds.Clear(); SectionHeaders.Clear(); Trays.Clear(); SettingRows.Clear(); Titles.Clear(); Inline.Clear();
         ResetSearchState();
         _savedText = ""; _layout = null;
         TraceSettingsOpen(DiagnosticPhase.SettingsModal);
@@ -765,7 +772,7 @@ internal static partial class ModUi
         foreach (var action in MenuLayout.Sliders)
         {
             var size = MenuLayout.TextSize(action);
-            Labels[action] = NativeUi.Label(_sheet!, ModText.Text(MenuLayout.SliderLabel(action)), MenuLayout.SettingsX + MenuLayout.SliderLabelX(action), 0, 98, 35, size);
+            Labels[action] = NativeUi.Label(_sheet!, ModText.Text(MenuLayout.SliderLabel(action)), MenuLayout.SettingsX + MenuLayout.SliderLabelX(action), 0, MenuLayout.SliderLabelWidth(action), 35, size);
             Labels[action].Set("autoSize", 3);
             Labels[action].Set("singleLine", true);
             GameUi.StyleText(Labels[action], size, align: 0);
@@ -792,41 +799,39 @@ internal static partial class ModUi
         AddToggle("AutoUpdate", 440, MenuLayout.ToggleY(10));
         AddToggle("UpdateAuth", 440, MenuLayout.ToggleY(11));
         AddToggle("UpdateSignOut", 440, MenuLayout.ToggleY(12));
-        AddToggle("DiagnosticsOpen", 440, MenuLayout.ToggleY(13));
-        AddToggle("DiagnosticsCollect", 440, MenuLayout.ToggleY(14));
-        AddToggle("SuppressNotices", 440, MenuLayout.ToggleY(15));
-        AddToggle("UpdateNotifications", 440, MenuLayout.ToggleY(16));
-        AddToggle("SettingsAutoKeep", 440, MenuLayout.ToggleY(17));
-        AddToggle("SettingsSave", 440, MenuLayout.ToggleY(18));
-        AddToggle("SettingsLoad", 440, MenuLayout.ToggleY(19));
-        AddToggle("SettingsFolder", 440, MenuLayout.ToggleY(20));
-        AddToggle("SettingsReset", 440, MenuLayout.ToggleY(21));
-        AddToggle("Enabled", 440, MenuLayout.ToggleY(0));
-        AddToggle("Details", 440, MenuLayout.ToggleY(1));
-        AddToggle("KoMinimum", 440, MenuLayout.ToggleY(2));
-        AddToggle("CardPopups", 440, MenuLayout.ToggleY(3));
+        AddToggle("DiagnosticsCollect", 440, MenuLayout.ToggleY(13));
+        AddToggle("SuppressNotices", 440, MenuLayout.ToggleY(14));
+        AddToggle("UpdateNotifications", 440, MenuLayout.ToggleY(15));
+        AddToggle("SettingsAutoKeep", 440, MenuLayout.ToggleY(16));
+        AddToggle("SettingsSave", 440, MenuLayout.ToggleY(17));
+        AddToggle("SettingsLoad", 440, MenuLayout.ToggleY(18));
+        AddToggle("SettingsReset", 440, MenuLayout.ToggleY(19));
+        AddToggle("ActionAdvice", 440, MenuLayout.ToggleY(0));
+        AddToggle("AdviceDetails", 440, MenuLayout.ToggleY(1));
+        AddToggle("KoDiceTarget", 440, MenuLayout.ToggleY(2));
+        AddToggle("PingDetails", 440, MenuLayout.ToggleY(3));
         AddToggle("BattleStatus", 440, MenuLayout.ToggleY(4));
         AddToggle("ShushuShield", 440, MenuLayout.ToggleY(5));
-        AddToggle("FieldBuffs", 440, MenuLayout.ToggleY(6));
-        AddToggle("Names", 440, MenuLayout.ToggleY(7));
-        AddToggle("HandLayout", 440, MenuLayout.ToggleY(8));
+        AddToggle("PlayerIndicators", 440, MenuLayout.ToggleY(6));
+        AddToggle("NameStyle", 440, MenuLayout.ToggleY(7));
+        AddToggle("GroupHand", 440, MenuLayout.ToggleY(8));
         AddToggle("FieldZoom", 440, MenuLayout.ToggleY(9));
-        AddToggle("ShushuShieldRestrictions", 440, MenuLayout.ToggleY(10));
+        AddToggle("ShushuDefendLock", 440, MenuLayout.ToggleY(10));
         AddToggle("AutoThanks", 440, MenuLayout.ToggleY(11));
         AddToggle("CharacterRoles", 440, MenuLayout.ToggleY(12));
-        AddToggle("CharacterGuide", 440, MenuLayout.ToggleY(13));
+        AddToggle("PrepSkillInfo", 440, MenuLayout.ToggleY(13));
         AddToggle("IndicatorFade", 440, MenuLayout.ToggleY(14));
         AddToggle("IndicatorHide", 440, MenuLayout.ToggleY(15));
         AddToggle("CounterSound", 440, MenuLayout.ToggleY(16));
         AddToggle("CounterAnimation", 440, MenuLayout.ToggleY(17));
         AddToggle("PingFocus", 440, MenuLayout.ToggleY(18));
         AddToggle("FinalDamage", 440, MenuLayout.ToggleY(19));
-        AddToggle("DiceLock", 440, MenuLayout.ToggleY(20));
+        AddToggle("DicePin", 440, MenuLayout.ToggleY(20));
         AddToggle("EncounterAdvice", 440, MenuLayout.ToggleY(21));
         AddToggle("DefenseAdvice", 440, MenuLayout.ToggleY(22));
         AddToggle("CardAdvice", 440, MenuLayout.ToggleY(23));
         AddToggle("ShootingStarShow", 440, MenuLayout.ToggleY(24));
-        AddToggle("KoCardPreview", 440, MenuLayout.ToggleY(25));
+        AddToggle("KoCardHover", 440, MenuLayout.ToggleY(25));
         AddToggle("KoSpectator", 440, MenuLayout.ToggleY(26));
         AddToggle("StatusHand", 440, MenuLayout.ToggleY(27));
         AddToggle("StatusEffects", 440, MenuLayout.ToggleY(28));
@@ -840,6 +845,10 @@ internal static partial class ModUi
         AddToggle("WalkDirection", 440, MenuLayout.ToggleY(36));
         AddToggle("SendAllLikes", 440, MenuLayout.ToggleY(37));
         AddToggle("ShopBulkBuy", 440, MenuLayout.ToggleY(38));
+        AddToggle("ReceivedLikes", 440, MenuLayout.ToggleY(39));
+        AddToggle("FightPip", 440, MenuLayout.ToggleY(40));
+        AddToggle("FightPipStart", 440, MenuLayout.ToggleY(41));
+        AddToggle("ReplaySaveLimit", 440, MenuLayout.ToggleY(42));
         TraceSettingsOpen(DiagnosticPhase.SettingsReparent);
         foreach (var (button, action) in Controls.Values)
             if (!MenuLayout.FixedControl(action)) MoveIntoSettings(button, MenuLayout.SettingY(action) + MenuLayout.ChildOffsetY(action));
@@ -1178,9 +1187,29 @@ internal static partial class ModUi
         value.Set("verticalAlign", 1);
         var row = SettingRows[toggle.Pointer] = new SettingRow { Button = toggle, Background = background, Value = value };
         Titles.Remove(toggle.Pointer); // Button() styled a centred title; the row restyles it on its first refresh.
-        if (MenuLayout.Options(action).Length > 2) Labels["Arrow." + action] = Chevron(toggle, width - 38, height / 2);
+        if (MenuLayout.IsDropdown(action)) Labels["Arrow." + action] = Chevron(toggle, width - 38, height / 2);
         if (action == "Update") AddUpdateParts(row, width, height);
+        foreach (var (owner, inline) in MenuLayout.InlineButtons) if (owner == action) AddInline(toggle, action, inline, width, height);
     }
+
+    // A round white button with a black ring and a folder, InlineGap left of the row's switch, inside the row so it moves,
+    // hides and scrolls with it (2안 of artifacts/cc/replay-folder-drafts).
+    private static void AddInline(RuntimeObject row, string owner, string action, float width, float height)
+    {
+        var x = width - MenuLayout.TrackSize(owner).Width - MenuLayout.TrackInset(owner) - InlineGap - InlineSize;
+        var button = NativeUi.Component(row, InlineSize, InlineSize);
+        button.Call("SetXY", x, (height - InlineSize) / 2);
+        button.Set("opaque", true);
+        const float r = InlineSize / 2;
+        var fill = SmoothShape.Create(button, 0f, 0f, InlineSize, InlineSize, Color.white, r, r, r, r, 2.5f, Color.black);
+        // The folder: a tab over a body, 16 x 12.5 around the centre, in 2-unit lines.
+        float w = 16f, h = 12.5f, left = (InlineSize - w) / 2, top = (InlineSize - h) / 2, body = top + h * .18f;
+        SmoothShape.Create(button, left, top, w * .42f, body - top + 1f, Color.white, 1.5f, 1.5f, 0f, 0f, 2f, Color.black);
+        SmoothShape.Create(button, left, body, w, top + h - body, Color.white, 2f, 2f, 2f, 2f, 2f, Color.black);
+        Inline[button.Pointer] = (button, fill, action);
+    }
+
+    private static string ActionOf(IntPtr pointer) => Inline.TryGetValue(pointer, out var inline) ? inline.Action : Controls[pointer].Action;
 
     internal static void TogglePanel()
     {
@@ -1338,26 +1367,28 @@ internal static partial class ModUi
         var point = RuntimeObject.StaticCall(RuntimeObject.FindClass("FairyGUI", "Stage"), "get_inst")!
             .Get<Vector2>("touchPosition");
         if (DragScrollMarker(point)) { _pressed = IntPtr.Zero; return; }
-        var hit = GameUi.PointerPath().FirstOrDefault(item => Controls.ContainsKey(item.Pointer));
+        // A button inside a row comes before its row on the way up from the hit object.
+        var hit = GameUi.PointerPath().FirstOrDefault(item => Inline.ContainsKey(item.Pointer) || Controls.ContainsKey(item.Pointer));
         var local = _settingsView!.Call("GlobalToLocal", point)!.Value<Vector2>();
         var position = _settingsScroll!.Get<float>("scrollingPosY");
         var scrolling = position != _scrollPosition || _settingsScroll.Get<bool>("isDragged");
         _scrollPosition = position;
         if (scrolling) { _pressed = IntPtr.Zero; hit = null; }
-        if (hit != null && !MenuLayout.FixedControl(Controls[hit.Pointer].Action)
+        if (hit != null && !MenuLayout.FixedControl(ActionOf(hit.Pointer))
             && !MenuLayout.InSettings(local.x, local.y)) hit = null;
         var current = hit?.Pointer ?? IntPtr.Zero;
         if (current != _hovered)
         {
             if (Controls.TryGetValue(_hovered, out var old)) NativeUi.Play(old.Button, "Switchout");
-            if (hit != null) NativeUi.Play(hit, "Switchin");
+            if (hit != null && !Inline.ContainsKey(current)) NativeUi.Play(hit, "Switchin");
+            foreach (var (pointer, inline) in Inline) SmoothShape.Fill(inline.Fill, pointer == current ? ChildOn : Color.white);
             _hovered = current;
-            SetHelp(hit == null ? "" : Controls[current].Action);
+            SetHelp(hit == null ? "" : ActionOf(current));
         }
         if (Input.GetMouseButtonDown(0)) { _pressed = current; TraceInput("down", current); }
         if (!Input.GetMouseButtonUp(0)) return;
         TraceInput("up", current);
-        if (current != IntPtr.Zero && current == _pressed && !hit!.Get<bool>("grayed") && !Locked(Controls[current].Action)) Apply(Controls[current].Action);
+        if (current != IntPtr.Zero && current == _pressed && !hit!.Get<bool>("grayed") && !Locked(ActionOf(current))) Apply(ActionOf(current));
         _pressed = IntPtr.Zero;
     }
 
@@ -1451,30 +1482,32 @@ internal static partial class ModUi
 
     private static bool ToggleEnabled(string action) => action switch
     {
-        "Enabled" => Plugin.Enabled.Value,
-        "KoMinimum" => Plugin.KoMinimum.Value,
-        "CardPopups" => Plugin.CardPopups.Value,
-        "HandLayout" => Plugin.GroupHand.Value,
+        "ActionAdvice" => Plugin.ActionAdvice.Value,
+        "KoDiceTarget" => Plugin.KoDiceTarget.Value,
+        "PingDetails" => Plugin.PingDetails.Value,
+        "GroupHand" => Plugin.GroupHand.Value,
         "BattleStatus" => Plugin.BattleStatus.Value,
         "ShushuShield" => Plugin.ShushuShield.Value,
-        "ShushuShieldRestrictions" => Plugin.ShushuShieldRestrictions.Value,
+        "ShushuDefendLock" => Plugin.ShushuDefendLock.Value,
         "AutoThanks" => Plugin.AutoThanks.Value,
         "SendAllLikes" => Plugin.SendAllLikes.Value,
         "ShopBulkBuy" => Plugin.ShopBulkBuy.Value,
+        "ReceivedLikes" => Plugin.ReceivedLikes.Value,
+        "ReplaySaveLimit" => Plugin.ReplaySaveLimit.Value,
         "CharacterRoles" => Plugin.CharacterRoles.Value,
-        "CharacterGuide" => Plugin.CharacterGuide.Value,
+        "PrepSkillInfo" => Plugin.PrepSkillInfo.Value,
         "PlayerTab" => Plugin.PlayerTab.Value,
         "PlayerTabHand" => Plugin.PlayerTabHand.Value,
         "PlayerTabRole" => Plugin.PlayerTabRole.Value,
         "PlayerTabSkill" => Plugin.PlayerTabSkill.Value,
         "IndicatorFade" => Plugin.IndicatorFade.Value,
         "IndicatorHide" => Plugin.IndicatorHide.Value,
-        "DiceLock" => Plugin.DiceLock.Value,
+        "DicePin" => Plugin.DicePin.Value,
         "EncounterAdvice" => Plugin.EncounterAdvice.Value,
         "DefenseAdvice" => Plugin.DefenseAdvice.Value,
         "CardAdvice" => Plugin.CardAdvice.Value,
         "ShootingStarShow" => Plugin.ShootingStarShow.Value,
-        "KoCardPreview" => Plugin.KoCardPreview.Value,
+        "KoCardHover" => Plugin.KoCardHover.Value,
         "KoSpectator" => Plugin.KoSpectator.Value,
         "StatusHand" => Plugin.StatusHand.Value,
         "StatusEffects" => Plugin.StatusEffects.Value,
@@ -1484,21 +1517,23 @@ internal static partial class ModUi
         "CounterAnimation" => Plugin.CounterAnimation.Value,
         "PingFocus" => Plugin.PingFocus.Value,
         "OldReplays" => Plugin.OldReplays.Value,
+        "FightPip" => Plugin.FightPip.Value,
         "SuppressNotices" => Plugin.SuppressNotices.Value,
         "AutoUpdate" => AutoUpdateMode() != "Off",
         "Update" or "UpdateChannel" => true,
         "UpdateNotifications" => Plugin.UpdateNotifications.Value,
         "FinalDamage" => Plugin.FinalDamage.Value,
-        "FieldBuffs" => Plugin.FieldBuffs.Value,
+        "PlayerIndicators" => Plugin.PlayerIndicators.Value,
         "WalkDirection" => MenuLayout.WalkDirectionMode(Plugin.WalkDirection.Value) != "Off",
         "FieldZoom" => Plugin.FieldZoom.Value,
-        "Names" => Plugin.UseRealNames.Value,
+        "NameStyle" => true, // Name or Title, an equal choice: never drawn as OFF.
+        "FightPipStart" => true, // Small or full, an equal choice.
         "Diagnostics" => Plugin.DiagnosticLogging.Value,
         "MuteUnfocused" => Plugin.MuteUnfocused.Value,
         "SettingsAutoKeep" => Plugin.SettingsAutoKeep.Value,
         "MatchFocus" => Plugin.MatchFocus.Value,
         "InputAttention" => InputAttentionState.Normalize(Plugin.InputAttention.Value) != "Off",
-        _ => Plugin.ShowDetails.Value
+        _ => Plugin.AdviceDetails.Value
     };
 
     private static void SetHelp(string action, string? option = null)
@@ -1511,7 +1546,8 @@ internal static partial class ModUi
         var mode = action switch
         {
             "Language" => ModText.Mode,
-            "HandLayout" => Plugin.HandExpandMode.Value,
+            "NameStyle" => NamesMode,
+            "FightPipStart" => StartMode,
             "WalkDirection" => MenuLayout.WalkDirectionMode(Plugin.WalkDirection.Value),
             "InputAttention" => InputAttentionState.Normalize(Plugin.InputAttention.Value),
             "UpdateChannel" => Plugin.UpdateChannel.Value,
@@ -1645,7 +1681,9 @@ internal static partial class ModUi
         var selected = action switch
         {
             "Language" => ModText.Mode,
-            "HandLayout" => !Plugin.GroupHand.Value ? "Native" : Plugin.HandExpandMode.Value,
+            "NameStyle" => NamesMode,
+            "FightPipStart" => StartMode,
+            "GroupHand" => Plugin.GroupHand.Value ? "Click" : "Native",
             "WalkDirection" => MenuLayout.WalkDirectionMode(Plugin.WalkDirection.Value),
             "UpdateChannel" => Plugin.UpdateChannel.Value,
             "AutoUpdate" => AutoUpdateMode(),
@@ -1717,9 +1755,10 @@ internal static partial class ModUi
         switch (action)
         {
             case "Language": Plugin.Language.Value = value; ModText.Select(value); break;
-            case "HandLayout":
-                // HandLayoutUi restores native layout itself when it sees the mode change, inside its own breaker.
-                Plugin.HandExpandMode.Value = value == "Click" ? "Click" : "Hover";
+            case "NameStyle": Plugin.UseRealNames.Value = value == "Real"; break;
+            case "FightPipStart": Plugin.FightPipStartFull.Value = value == "Full"; break; // FightPip takes it on its next frame.
+            case "GroupHand":
+                // HandLayoutUi restores native layout itself when it sees the switch, inside its own breaker.
                 Plugin.GroupHand.Value = value != "Native";
                 break;
             case "WalkDirection": Plugin.WalkDirection.Value = value; break; // WalkDirectionUi follows the mode on its next frame.
@@ -1737,10 +1776,14 @@ internal static partial class ModUi
         if (Plugin.Diagnostics.IsRecording) Plugin.Diagnostics.Write($"settingsDropdown applied; action={action}; value={value}");
     }
 
+    // The saved switch (캐릭터 본명 표시) read as the Name Style dropdown's choice.
+    private static string NamesMode => Plugin.UseRealNames.Value ? "Real" : "Title";
+    private static string StartMode => Plugin.FightPipStartFull.Value ? "Full" : "Small";
+
     private static void ApplyCore(string action)
     {
         if (!Compatibility.Allowed(action) || MenuLayout.IsSlider(action)) return; // Sliders apply their own value.
-        if (MenuLayout.Options(action).Length > 2) { OpenDropdown(action); return; }
+        if (MenuLayout.IsDropdown(action)) { OpenDropdown(action); return; }
         switch (action)
         {
             case "DiagnosticsOpen": DiagnosticActions.OpenFolder(); Refresh(); _helpAction = null; SetHelp(action); return;
@@ -1791,6 +1834,14 @@ internal static partial class ModUi
                 Plugin.ResetAllSettings();
                 Isolated("InputAttention", InputAttention.Stop); Isolated("FieldZoom", FieldIndicatorOpacity.Clear);
                 break;
+            case "ReplayCopiesFolder":
+                try
+                {
+                    Directory.CreateDirectory(ReplayKeeper.Folder);
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ReplayKeeper.Folder) { UseShellExecute = true });
+                }
+                catch (Exception ex) { Plugin.Logger.LogWarning("[리플레이 저장 한도 해제] 폴더 열기 실패: " + ex.GetType().Name); }
+                Refresh(); _helpAction = null; SetHelp(action); return;
             case "SettingsFolder":
                 try
                 {
@@ -1799,32 +1850,34 @@ internal static partial class ModUi
                 }
                 catch (Exception ex) { Plugin.Logger.LogWarning("[설정 보관] 폴더 열기 실패: " + ex.GetType().Name); }
                 Refresh(); _helpAction = null; SetHelp(action); return;
-            case "Enabled": Plugin.Enabled.Value = !Plugin.Enabled.Value; break;
-            case "Details": Plugin.ShowDetails.Value = !Plugin.ShowDetails.Value; break;
-            case "KoMinimum": Plugin.KoMinimum.Value = !Plugin.KoMinimum.Value; if (!Plugin.KoMinimum.Value) CardDiceUi.Clear(); break;
-            case "Names": Plugin.UseRealNames.Value = !Plugin.UseRealNames.Value; break;
-            case "CardPopups": Plugin.CardPopups.Value = !Plugin.CardPopups.Value; break;
+            case "ActionAdvice": Plugin.ActionAdvice.Value = !Plugin.ActionAdvice.Value; break;
+            case "AdviceDetails": Plugin.AdviceDetails.Value = !Plugin.AdviceDetails.Value; break;
+            case "KoDiceTarget": Plugin.KoDiceTarget.Value = !Plugin.KoDiceTarget.Value; if (!Plugin.KoDiceTarget.Value) CardDiceUi.Clear(); break;
+            case "PingDetails": Plugin.PingDetails.Value = !Plugin.PingDetails.Value; break;
             case "BattleStatus": Plugin.BattleStatus.Value = !Plugin.BattleStatus.Value; break;
             case "ShushuShield": Plugin.ShushuShield.Value = !Plugin.ShushuShield.Value; if (!Plugin.ShushuShield.Value) ShushuShieldUi.ClearDisplay(); break;
-            case "ShushuShieldRestrictions": Plugin.ShushuShieldRestrictions.Value = !Plugin.ShushuShieldRestrictions.Value; if (!Plugin.ShushuShieldRestrictions.Value) ShushuShieldUi.ClearRestrictions(); break;
+            case "ShushuDefendLock": Plugin.ShushuDefendLock.Value = !Plugin.ShushuDefendLock.Value; if (!Plugin.ShushuDefendLock.Value) ShushuShieldUi.ClearRestrictions(); break;
             case "AutoThanks": Plugin.AutoThanks.Value = !Plugin.AutoThanks.Value; break;
             case "SendAllLikes": Plugin.SendAllLikes.Value = !Plugin.SendAllLikes.Value; break;
             case "ShopBulkBuy": Plugin.ShopBulkBuy.Value = !Plugin.ShopBulkBuy.Value; break;
+            case "ReceivedLikes": Plugin.ReceivedLikes.Value = !Plugin.ReceivedLikes.Value; break;
+            case "ReplaySaveLimit": Plugin.ReplaySaveLimit.Value = !Plugin.ReplaySaveLimit.Value; break; // ReplayKeeper puts the limit back on its next pass.
             case "CharacterRoles": Plugin.CharacterRoles.Value = !Plugin.CharacterRoles.Value; break;
-            case "CharacterGuide": Plugin.CharacterGuide.Value = !Plugin.CharacterGuide.Value; break;
+            case "PrepSkillInfo": Plugin.PrepSkillInfo.Value = !Plugin.PrepSkillInfo.Value; break;
             case "PlayerTab": Plugin.PlayerTab.Value = !Plugin.PlayerTab.Value; break;
             case "PlayerTabHand": Plugin.PlayerTabHand.Value = !Plugin.PlayerTabHand.Value; break;
             case "PlayerTabRole": Plugin.PlayerTabRole.Value = !Plugin.PlayerTabRole.Value; break;
             case "PlayerTabSkill": Plugin.PlayerTabSkill.Value = !Plugin.PlayerTabSkill.Value; break;
             case "OldReplays": Plugin.OldReplays.Value = !Plugin.OldReplays.Value; break;
+            case "FightPip": Plugin.FightPip.Value = !Plugin.FightPip.Value; break;
             case "IndicatorFade": Plugin.IndicatorFade.Value = !Plugin.IndicatorFade.Value; Isolated("FieldZoom", FieldIndicatorOpacity.Clear); break;
             case "IndicatorHide": Plugin.IndicatorHide.Value = !Plugin.IndicatorHide.Value; Isolated("FieldZoom", FieldIndicatorOpacity.Clear); break;
-            case "DiceLock": Plugin.DiceLock.Value = !Plugin.DiceLock.Value; FieldDiceUi.Clear(); break;
+            case "DicePin": Plugin.DicePin.Value = !Plugin.DicePin.Value; FieldDiceUi.Clear(); break;
             case "EncounterAdvice": Plugin.EncounterAdvice.Value = !Plugin.EncounterAdvice.Value; break;
             case "DefenseAdvice": Plugin.DefenseAdvice.Value = !Plugin.DefenseAdvice.Value; break;
             case "CardAdvice": Plugin.CardAdvice.Value = !Plugin.CardAdvice.Value; CardUi.Clear(keepDice: true); break;
             case "ShootingStarShow": Plugin.ShootingStarShow.Value = !Plugin.ShootingStarShow.Value; ShootingStarUi.Clear(); break;
-            case "KoCardPreview": Plugin.KoCardPreview.Value = !Plugin.KoCardPreview.Value; CardDiceUi.Clear(); break;
+            case "KoCardHover": Plugin.KoCardHover.Value = !Plugin.KoCardHover.Value; CardDiceUi.Clear(); break;
             case "KoSpectator": Plugin.KoSpectator.Value = !Plugin.KoSpectator.Value; CardDiceUi.Clear(); break;
             case "StatusHand": Plugin.StatusHand.Value = !Plugin.StatusHand.Value; BattleStatusUi.Clear(); break;
             case "StatusEffects": Plugin.StatusEffects.Value = !Plugin.StatusEffects.Value; BattleStatusUi.Clear(); break;
@@ -1835,8 +1888,8 @@ internal static partial class ModUi
             case "PingFocus": Plugin.PingFocus.Value = !Plugin.PingFocus.Value; if (!Plugin.PingFocus.Value) PingFocusGuard.Reset(); break;
             case "SuppressNotices": Plugin.SuppressNotices.Value = !Plugin.SuppressNotices.Value; break;
             case "UpdateNotifications": Plugin.UpdateNotifications.Value = !Plugin.UpdateNotifications.Value; break;
-            case "FinalDamage": Plugin.FinalDamage.Value = !Plugin.FinalDamage.Value; RemainingHpUi.ClearDisplay(); break;
-            case "FieldBuffs": Plugin.FieldBuffs.Value = !Plugin.FieldBuffs.Value; break;
+            case "FinalDamage": Plugin.FinalDamage.Value = !Plugin.FinalDamage.Value; FinalDamageUi.ClearDisplay(); break;
+            case "PlayerIndicators": Plugin.PlayerIndicators.Value = !Plugin.PlayerIndicators.Value; break;
             case "FieldZoom": Plugin.FieldZoom.Value = !Plugin.FieldZoom.Value; break; // FieldZoomUi restores the camera itself once OFF.
             case "Diagnostics": Plugin.DiagnosticLogging.Value = !Plugin.DiagnosticLogging.Value; break;
             case "MuteUnfocused": Plugin.MuteUnfocused.Value = !Plugin.MuteUnfocused.Value; break;
@@ -1908,6 +1961,7 @@ internal static partial class ModUi
             var right = Labels.ContainsKey("Arrow." + action) ? 46f : 14f;
             var value = layout.Item1 || layout.Item2 ? 0 : (width - text - right) * 0.5f;
             var reserve = layout.Item1 ? MenuLayout.TrackSize(action).Width + MenuLayout.TrackInset(action) + 8 : layout.Item2 ? CapsuleWidth + 20 : right + value + 8;
+            if (MenuLayout.InlineButtons.Any(inline => inline.Row == action)) reserve += InlineSize + InlineGap;
             var label = button.Call("GetChild", "title")!;
             label.Call("SetXY", text, pills != null ? 5f : 0f);
             label.Call("SetSize", width - text - reserve, pills != null ? 32f : height);
@@ -2102,7 +2156,7 @@ internal static partial class ModUi
             if (MenuLayout.IsSlider(action)) continue; // Sliders and their unavailable switches are refreshed below.
             var role = action == "Update" ? UpdateRole() : action;
             if (action == "Update") button.Set("grayed", false);
-            if (action is "SettingsSave" or "SettingsLoad" or "SettingsFolder" or "SettingsReset")
+            if (action is "SettingsSave" or "SettingsLoad" or "SettingsReset")
             {
                 var savedAt = SettingsBackup.SavedAt(SettingsBackup.Folder);
                 var armed = action == "SettingsLoad" && Time.unscaledTime < _loadArmedUntil || action == "SettingsReset" && Time.unscaledTime < _resetArmedUntil;
@@ -2113,7 +2167,7 @@ internal static partial class ModUi
                 RowText(button, action, ModText.Text(MenuLayout.Help(action).Title), state);
                 continue;
             }
-            if (action is "DiagnosticsOpen" or "DiagnosticsCollect")
+            if (action is "DiagnosticsCollect")
             {
                 var busy = action == "DiagnosticsCollect" && DiagnosticActions.Busy;
                 button.Set("grayed", busy); ToggleBackgrounds[action].Set("grayed", busy);
@@ -2179,11 +2233,12 @@ internal static partial class ModUi
                 var enabled = ToggleEnabled(action);
                 var blocked = !Compatibility.Allowed(action);
                 var title = MenuLayout.Help(action).Title;
-                var state = action == "Names" ? (enabled ? "본명" : "이명") : null;
+                var state = action == "NameStyle" ? MenuLayout.OptionLabel(action, NamesMode) : null;
                 if (action == "InputAttention") state = InputAttentionState.Label(Plugin.InputAttention.Value);
-                if (action == "HandLayout") state = HandLayout.ModeLabel(HandLayout.Mode(Plugin.GroupHand.Value, Plugin.HandExpandMode.Value));
+                if (action == "GroupHand") state = MenuLayout.OptionLabel(action, Plugin.GroupHand.Value ? "Click" : "Native");
                 if (action == "WalkDirection") state = MenuLayout.OptionLabel(action, MenuLayout.WalkDirectionMode(Plugin.WalkDirection.Value));
                 if (action == "AutoUpdate") state = MenuLayout.OptionLabel(action, AutoUpdateMode());
+                if (action == "FightPipStart") state = MenuLayout.OptionLabel(action, StartMode);
                 if (blocked) state = "사용 불가";
                 // Gray only the switch and bar: OFF remains fully clickable and hoverable.
                 background.Set("grayed", blocked || !enabled);

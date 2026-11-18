@@ -14,11 +14,12 @@ internal static class ShootingStar
     internal static bool IsBoss(int monsterType) => monsterType is 2 or 10;
 
     // The server resolves release effects; the client has no formula. Gold adds the Starlight stacks against
-    // bosses; observed in game (2026-10-22), the stacks this release grants are not part of its own damage, so the
-    // bonus is the count held before letting go. Fixed damage takes the monster's incoming modifiers (2026-10-23:
+    // bosses; observed in game (2026-10-22), the stacks gold itself grants are not part of its damage, so alone it
+    // adds the count held before letting go. Fixed damage takes the monster's incoming modifiers (2026-10-23:
     // 2 + 15 Starlight + Weakness Mark +1 = 18). A per-hit cap (Treasure Barrel) is not observed on this damage yet,
     // so it widens the result to a range instead of being assumed. Two held relics hit one after the other, each its
-    // own hit with the modifiers (user-confirmed 2026-10-24).
+    // own hit with the modifiers (user-confirmed 2026-10-24). Purple hits first, and the Starlight it grants is
+    // already held when gold hits a boss (2026-11-15: 0, 10 and 21 held, gold hit 3, 13 and 24).
     internal static ReleaseGain? Calculate((int Damage, int Stacks)? purple, (int Damage, int Stacks)? gold, bool boss, int starlight,
         HitModifiers incoming = default)
     {
@@ -26,7 +27,7 @@ internal static class ShootingStar
         // OnHitBonus is the erosion stack a combat hit applies; a release is not a hit.
         incoming = incoming with { OnHitBonus = 0 };
         var uncapped = incoming with { Cap = 0 };
-        var goldDamage = gold == null ? 0 : gold.Value.Damage + (boss ? starlight : 0);
+        var goldDamage = gold == null ? 0 : gold.Value.Damage + (boss ? starlight + (purple?.Stacks ?? 0) : 0);
         return new(Hits(purple, gold, goldDamage, incoming), Hits(purple, gold, goldDamage, uncapped), (purple?.Stacks ?? 0) + (gold?.Stacks ?? 0));
     }
 
@@ -65,7 +66,7 @@ internal static class ShootingStar
         var gain = Calculate(purpleValues, goldValues, boss, starlight, incoming.Value);
         // The raw inputs let combat-audit try other rules against the observed result.
         Evidence = $"purple={purpleValues?.Item1 ?? 0}; gold={goldValues?.Item1 ?? 0}; boss={boss}; starlight={starlight}; "
-            + $"incoming={incoming.Value.Bonus}; cap={incoming.Value.Cap}; stacks={gain?.Stacks}; damage={gain?.Damage}";
+            + $"incoming={incoming.Value.Bonus}; cap={incoming.Value.Cap}; stacks={gain?.Stacks}; damage={gain?.Damage}; purpleStacks={purpleValues?.Item2 ?? 0}";
         return gain;
     }
 

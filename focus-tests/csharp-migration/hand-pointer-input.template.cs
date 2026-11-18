@@ -27,7 +27,7 @@ static class Input {
 static class Application { public static bool isFocused=true; }
 sealed class Setting { public bool Value=true; }
 sealed class Log { public bool IsRecording=false; public void Write(string value){} public void LogInfo(string value){} }
-static class Plugin { public static readonly Setting CardPopups=new();public static readonly Log Logger=new(),Diagnostics=new(); }
+static class Plugin { public static readonly Setting PingDetails=new();public static readonly Log Logger=new(),Diagnostics=new(); }
 static class ModUi { public static bool IsOpen; }
 static class FieldCameraReturnUi { public static bool ConsumedInput; }
 static class VisibleCombatAdvisor { public static bool IsPve(int map)=>map==9; }
@@ -153,14 +153,11 @@ static class Hand {
     static readonly Dictionary<IntPtr,Entry> Entries=new();
     public static void Reset(){_expanded=_pressedPile=null;_outsidePress=false;_focused=IntPtr.Zero;}
     public static void Step(bool locked=false)=>PollPileClick(GameUi.PointerPath(refresh:true),new(100,120),1,locked);
-    public static void StepMode(bool clickMode,bool inputLocked=false,int pending=0) {
-        var root=GameUi.Root!;
+    public static void StepMode(bool inputLocked=false,int pending=0) {
+        var root=GameUi.Root!; // The legacy mutant looks the window up from the root.
         var path=GameUi.PointerPath(refresh:true);
-        var hovered=path.FirstOrDefault(item=>Entries.ContainsKey(item.Pointer));
         var pointer=new Vector2(100,120);
-        var unit=1f;var width=1920f;var height=1080f;
-        var groups=new List<HandGroup>{HandGroup.Attack};
-        var piles=new[]{new List<Entry>{new()}};var aspects=new[]{1.5f};
+        var unit=1f;
 __INTERACTION__
     }
     public static void NativeCard(RuntimeObject card) { Entries.Clear();Entries.Add(card.Pointer,new()); }
@@ -226,58 +223,46 @@ public static class Check {
         GameUi.Dispose(overlay);Input.Frame(down:true);Hand.Step(locked:true);Input.Frame(up:true);Hand.Step();
         Assert(!Hand.Expanded,"native input lock owns press/release");
 
-        // Execute the actual Update Click/Hover branch and its production PollPileClick.
+        // Execute the actual Update click branch and its production PollPileClick.
         // Contentless CardWindow stays live through native monster cancellation; it is not a hit surface.
         Native.CardWindow=new RuntimeObject("CardWindow") { Parent=root };
         var cancelSurface=Rect("GButton");cancelSurface.Parent=Native.CardWindow;
         Native.Layers.Clear();Native.Layers.Add(cancelSurface);Native.Layers.Add(pile);
-        Hand.Reset();Input.Frame(down:true);Hand.StepMode(true,inputLocked:true,pending:1);
+        Hand.Reset();Input.Frame(down:true);Hand.StepMode(inputLocked:true,pending:1);
         Assert(!Hand.Expanded,"real target selection retains native input/pending ownership");
         GameUi.Dispose(cancelSurface);Native.Cached=cancelSurface;
-        Input.Frame(up:true);Hand.StepMode(true);
+        Input.Frame(up:true);Hand.StepMode();
         Assert(!Hand.Expanded && GameUi.Visible(Native.CardWindow),"cancel release cannot turn into pile click; empty CardWindow remains on stage");
         for(int cycle=0;cycle<3;cycle++) {
-            Input.Frame(down:true);Hand.StepMode(true);Input.Frame(up:true);Hand.StepMode(true);
+            Input.Frame(down:true);Hand.StepMode();Input.Frame(up:true);Hand.StepMode();
             Assert(Hand.Expanded==(cycle%2==0),"retained empty CardWindow must not disable subsequent pile open/close clicks");
         }
-        Hand.Reset();Input.Frame(down:true);Hand.StepMode(true,pending:1);Input.Frame(up:true);Hand.StepMode(true);
+        Hand.Reset();Input.Frame(down:true);Hand.StepMode(pending:1);Input.Frame(up:true);Hand.StepMode();
         Assert(!Hand.Expanded,"pending native use cannot acquire pile press even with unlocked container");
-        FieldCameraReturnUi.ConsumedInput=true;Input.Frame(down:true);Hand.StepMode(true);
-        FieldCameraReturnUi.ConsumedInput=false;Input.Frame(up:true);Hand.StepMode(true);
+        FieldCameraReturnUi.ConsumedInput=true;Input.Frame(down:true);Hand.StepMode();
+        FieldCameraReturnUi.ConsumedInput=false;Input.Frame(up:true);Hand.StepMode();
         Assert(!Hand.Expanded,"camera return consumed press cannot acquire pile release");
         var confirmSurface=Rect("GButton");confirmSurface.Parent=Native.CardWindow;
         Native.Layers.Insert(0,confirmSurface);Native.Cached=pile;
-        Input.Frame(down:true);Hand.StepMode(true);GameUi.Dispose(confirmSurface);
-        Input.Frame(up:true);Hand.StepMode(true);
+        Input.Frame(down:true);Hand.StepMode();GameUi.Dispose(confirmSurface);
+        Input.Frame(up:true);Hand.StepMode();
         Assert(!Hand.Expanded,"real CardWindow confirm/cancel press retains ownership when window surface vanishes on release");
-        Hand.Reset();Input.Frame(down:true);Hand.StepMode(true);Input.Frame(up:true);Hand.StepMode(true);
+        Hand.Reset();Input.Frame(down:true);Hand.StepMode();Input.Frame(up:true);Hand.StepMode();
         Assert(Hand.Expanded,"pile recovers immediately after native window surface closure");
-        // Hover has no window-existence gate; actual native hit order remains authoritative.
-        var hoverCard=Rect("UIHandCard_Button_Card");hoverCard.Parent=root;Hand.NativeCard(hoverCard);
-        Native.Layers.Clear();Native.Layers.Add(hoverCard);Native.Cached=hoverCard;
-        Hand.Reset();Input.Frame();Hand.StepMode(false);
-        Assert(Hand.Expanded && Hand.Focused==hoverCard.Pointer,"Hover resumes over original artwork while empty CardWindow survives");
-        Input.Frame(down:true);Hand.StepMode(false);
-        Assert(!Hand.Expanded && Hand.Focused==IntPtr.Zero,"Hover keeps held-card gesture exclusion");
-        Input.Frame();Hand.StepMode(false,inputLocked:true);
-        Assert(!Hand.Expanded,"Hover keeps native container input lock");
-        var realOpaque=Rect("NativeModalOverlay");realOpaque.Parent=Native.CardWindow;
-        Native.Layers.Insert(0,realOpaque);Native.Cached=realOpaque;Hand.Reset();Input.Frame();Hand.StepMode(false);
-        Assert(!Hand.Expanded,"Hover never bypasses actual opaque native overlay hit");
-        GameUi.Dispose(realOpaque);Native.Cached=hoverCard;Input.Frame();Hand.StepMode(false);
-        Assert(Hand.Expanded,"Hover recovers after native overlay is removed");
+        Input.Frame();Hand.StepMode(inputLocked:true);
+        Assert(!Hand.Expanded,"native container input lock folds the open row");
         Hand.Reset();Native.Layers.Clear();Native.Layers.Add(pile);Native.CardWindow=null;
         Application.isFocused=false;Input.Frame(down:true);Hand.Step();Input.Frame(up:true);Hand.Step();
         Assert(!Hand.Expanded,"unfocused click stays ignored");
         int focusResets=Preview.Resets;Preview.Step();Assert(Preview.Resets==focusResets+1,"popup focus gate retained");Application.isFocused=true;
-        int resets=Preview.Resets;Plugin.CardPopups.Value=false;Input.Frame(down:true);Preview.Step();
-        Assert(Preview.Resets==resets+1,"popup setting gate retained");Plugin.CardPopups.Value=true;
+        int resets=Preview.Resets;Plugin.PingDetails.Value=false;Input.Frame(down:true);Preview.Step();
+        Assert(Preview.Resets==resets+1,"popup setting gate retained");Plugin.PingDetails.Value=true;
         ModUi.IsOpen=true;resets=Preview.Resets;Preview.Step();Assert(Preview.Resets==resets+1,"settings modal gate retained");ModUi.IsOpen=false;
         info.Set("MapType",2);Time.unscaledTime+=.3f;resets=Preview.Resets;Preview.Step();
         Assert(Preview.Resets==resets+1,"popup PvP gate retained");
         Assert(Native.HitTests==Native.Clears,"each completed or failed hit test clears native raycast scratch");
         Assert(Native.Mappings==Native.HitTests-1,"every successful hit test maps its display object");
-        Console.WriteLine($"PASS: {assertions} production fresh-pointer/Click/Hover assertions, retained-empty-window cancel recovery, true native locks/modal ownership, pooled ping handoff; native lifecycle/signatures verified. Runtime input remains unverified.");
+        Console.WriteLine($"PASS: {assertions} production fresh-pointer/Click assertions, retained-empty-window cancel recovery, true native locks/modal ownership, pooled ping handoff; native lifecycle/signatures verified. Runtime input remains unverified.");
     }
 }
 }

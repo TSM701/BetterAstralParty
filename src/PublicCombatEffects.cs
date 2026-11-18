@@ -85,6 +85,10 @@ internal static class PublicCombatEffects
                 1291202 => ErosionBonus(source, stacks),
                 10671302 => Parameter("Skill", 106713, 5, 15, id, 3),
                 10331101 or 10591101 => 0,
+                // Sword in the Stone's Holy Sword's Protection (STRBuild 300002: "ATK +2 and damage taken -2 for 1 round",
+                // the ATK already in the native total). No table holds the 2. 2026-11-15: a held one took 0 where the
+                // model said 1 and 2, and 5 hits by a holder matched without it.
+                8000001 => -2,
                 // Includes stat-only/unrelated buffs; this is not a coverage assertion.
                 _ => 0
             };
@@ -104,7 +108,8 @@ internal static class PublicCombatEffects
             // a shield magnitude or a character ID.
         }
         // The attacker's own shown effects (dodge locks, extra attacks, conditional ATK) can change this hit too.
-        if (!AddUnknown(source, unknown)) return null;
+        var sourceBuffs = new HashSet<int>();
+        if (!AddUnknown(source, unknown, sourceBuffs)) return null;
         if (evidence != null)
         {
             Plugin.Diagnostics.State("combatEffects." + role, string.Join(",", evidence));
@@ -145,7 +150,8 @@ internal static class PublicCombatEffects
                     $"passives={string.Join(",", ids!)}; targetType={player?.Get("characterType")?.Value<int>()}; minimumHP={minimumHp}; onHitBonus={onHitBonus}");
         }
         var result = new HitModifiers(adjustment, damageCap, immune)
-            { ShushuShield = applied.Contains(1071101), MinimumHp = minimumHp, OnHitBonus = onHitBonus, Unknown = Unknown(unknown) };
+            { ShushuShield = applied.Contains(1071101), MinimumHp = minimumHp, OnHitBonus = onHitBonus, Unknown = Unknown(unknown),
+                IgnoreDefense = sourceBuffs.Contains(IgnoreDefenseBuff) };
         result = ApplyDice(result, player!, source, applied, mind, precision, role);
         return result.Valid ? result : null;
     }
@@ -245,8 +251,18 @@ internal static class PublicCombatEffects
         return result;
     }
 
+    // Blooming Cactus (STRBuild 300051): "your next attack ignores the defender's DEF stat (dice rolls still take effect
+    // normally)". On the attacker, the server's DEF total held only the die (2026-11-15: totals 4 and 5 for dice 4 and 5,
+    // against monsters with DEF 1 and more).
+    internal const int IgnoreDefenseBuff = 8000501;
+
+    // The defender's DEF range without its stat. Whether a player's card DEF still counts is not observed, so it stays
+    // as a bound: 0 up to what the cards could add. A monster has no cards, so its range is 0.
+    internal static (int Min, int Max) Defense(int min, int max, int stat, bool ignored) =>
+        ignored ? (0, Math.Max(0, max - Math.Max(0, stat))) : (min, max);
+
     // Same public lists as the target's (Item1 buffs, Item2 property effects); delayed buffs are not active yet.
-    private static bool AddUnknown(RuntimeObject? actor, SortedSet<int> unknown)
+    private static bool AddUnknown(RuntimeObject? actor, SortedSet<int> unknown, HashSet<int>? seen = null)
     {
         var shown = actor?.Get("buffContainer")?.Call("GetShowBuffs", actor, false);
         if (shown == null) return true;
@@ -260,6 +276,7 @@ internal static class PublicCombatEffects
                 var item = items!.Call("get_Item", i)!;
                 if (list == 0 && item.Get<int>("DelayRound") > 0) continue;
                 var id = list == 0 ? item.Get<int>("BuffId") : item.Field("buffId")!.Value<int>();
+                seen?.Add(id);
                 if (!CombatBuffAudit.Counted(id)) unknown.Add(id);
             }
         }

@@ -38,17 +38,68 @@ internal static class PlayerTabUi
 
     private static readonly Dictionary<IntPtr, Tab> Tabs = new();
     private static readonly HashSet<IntPtr> Seen = new();
-    private static IntPtr _logicClass, _configClass, _asksRoom;
+    private static IntPtr _logicClass, _configClass, _asksRoom, _netClass;
     private static float _scanAt;
 
     // Other players' turns as the player info window gets them in PvE (RefreshHeroInfo_PVE): it asks the server
     // (RequestGetHeroInfoC2S) and shows the reply's BattlePlayerData.SkillCD, because every round start copies the
     // receiver's own skill map onto all characters and activeSkillCD is right only for the local player (user-chosen
-    // 2026-11-01: ask the server too, once per player when a round starts or a skill use moves the count).
-    private sealed class Ask { internal int Round = -1, Client = -1; internal bool Answered; internal RuntimeObject? Reply; }
+    // 2026-11-01: ask the server too, once per player when a round starts or a skill use moves the count). A card that
+    // changes another player's cooldown (운명의 인도: active skill cooldown -1) reaches only that player's client
+    // (BattleLogic.UpdateBaseAttr applies HeroCdChangeS2C to the local player alone), so a move of the public hand count
+    // asks too, and once more FollowUp seconds later in case the card resolved after its hand count moved (2026-11-15).
+    // Anything else that lowers a cooldown (a land, a chip, a teammate's skill, an event) changes the public table too, so a
+    // change of any player's hand, coins, HP, level, land or buff count asks every other player whose turns are not 0 yet,
+    // at most once every Gap seconds each; changes in between go with the next ask (user-requested 2026-11-16).
+    private sealed class Ask
+    {
+        internal int Round = -1, Client = -1, Hand = -1, Table = -1; internal float Again = float.PositiveInfinity, At = float.NegativeInfinity; internal bool Answered; internal RuntimeObject? Reply;
+        // The round and client count of the last scan, and a client count newer than the stored answer (a skill use).
+        internal int SeenRound = -1, SeenClient = -1, Fresh = -1; internal float FreshAt = float.NegativeInfinity;
+
+        // A finished reply has already run the native callback that stores SkillCD (RPCMsgManager: DealServerCallback,
+        // then Finish). A failed one is not retried until the round or the count moves again. Scan polls every reply too,
+        // so one that fails as the game ends is recorded after the player bars are gone. An answer asked for after a skill
+        // use replaces its client count.
+        internal void Finish(float now)
+        {
+            if (Reply?.Field<bool>("isCompleted") != true) return;
+            var failed = Reply.Field<bool>("isTimeOut") || Reply.Field<int>("errId") != 0;
+            if (failed && Plugin.Diagnostics.IsRecording)
+                Plugin.Diagnostics.State("playerTab.skillCd", "reply failed; err=" + Reply.Field<int>("errId") + "; timeout=" + Reply.Field<bool>("isTimeOut")
+                    + "; sentMs=" + (int)((now - At) * 1000));
+            Answered |= !failed;
+            if (!failed && At >= FreshAt) Fresh = -1;
+            Reply = null;
+        }
+    }
+    private const float FollowUp = 3f, Gap = 2f;
+    private static int _tableState, _tableChanges;
     private static readonly Dictionary<long, Ask> Asks = new();
-    // This scan's server side; null where the window would not ask either (replays, or no requests can be sent).
-    private readonly record struct Server(RuntimeObject Battle, long Self, int Round);
+    // A request goes out only once the room has been open (see Server) with the public table unchanged for Settle
+    // seconds. On 2026.11.2-dev.21 (2026-11-17) 11001 came once more at a match's end, with the gates below: the local
+    // player's last card went out 7 s before the settlement and its presentation ended 4 s before it, and the field still
+    // changed in between, so the server's last pushes came apart and the queue was empty between them. A quiet room means
+    // the server has sent nothing for a while.
+    private const float Settle = 3f;
+    private static float _quietAt;
+    private static bool Quiet(bool open, bool changed, float now)
+    {
+        if (!open || changed) _quietAt = now + Settle;
+        return open && now >= _quietAt;
+    }
+    // This scan's server side; null where the window would not ask either (replays, or no requests can be sent). Open: a
+    // running room (RoomStateType RUNNING 4) outside fights, the only time a request goes out (2026-11-16). A request while
+    // the server was ending the game came back as error 11001, which the game showed as "잘못된 명령 코드 - 11001 / 방에
+    // 입장할 수 없습니다": twice on 2026-11-15/16, both the 3 s follow-up during the match's final fight, 1 and 7 s before
+    // its settlement. GameFinishS2C switches the room to SETTLEMENT 5 at once; a move seen meanwhile asks once open again.
+    // It came back once more on dev.10 (2026-11-16): an ask 2 s after a co-op challenge's final fight, 8 s before the
+    // settlement, while the room still read RUNNING. Server pushes wait in RPCMsgManager._OnPushRPCMsg and leave it only after
+    // their handler finished (ProcessNextPushRPCMsg), so GameFinishS2C sat there behind the fight's presentation; Open also
+    // needs that queue empty, i.e. everything the server sent is handled, and stays closed until the room is quiet.
+    // Table: how many times the public table state has changed this match. Running: a running room outside fights, which is
+    // all a round start's request waits for (see Asked).
+    private readonly record struct Server(RuntimeObject Battle, long Self, int Round, bool Open, int Table, bool Running);
 
     // Width for the parts that are ON.
     internal static float Width(bool hand, bool role, bool skill) => (hand ? HandWidth : 0) + (role ? RolePart(skill) : 0) + (skill ? SkillWidth : 0);
@@ -78,8 +129,23 @@ internal static class PlayerTabUi
         if (room!.Pointer != _asksRoom) { Asks.Clear(); _asksRoom = room.Pointer; }
         var battle = logic?.Get("battle");
         var session = logic?.Get("replay")?.Get("Session");
-        var server = battle != null && session?.Get<bool>("IsReplay") == false && session.Get<bool>("CanSendC2S")
-            ? new Server(battle, logic!.Get("account")?.Call("GetPlayerID")?.Value<long>() ?? 0, room.Get<int>("Round")) : (Server?)null;
+        if (_netClass == IntPtr.Zero) _netClass = RuntimeObject.FindClass("Core.Net", "NetManager");
+        var pushes = _netClass == IntPtr.Zero ? null : RuntimeObject.StaticField(_netClass, "_inst")?.Field("RPC")?.Field("_OnPushRPCMsg");
+        var running = logic!.Get("room")?.Field("roomController")?.Field("roomStateType")?.Value<int>() == 4
+            && logic.Get("fight")?.Field("fightStatus")?.Value<bool>() != true;
+        var open = running && pushes?.Get<int>("Count") == 0;
+        var asking = battle != null && session?.Get<bool>("IsReplay") == false && session.Get<bool>("CanSendC2S");
+        var now = Time.unscaledTime;
+        var changed = false;
+        if (asking && skill)
+        {
+            var state = TableState(battle!);
+            if (state != _tableState) { _tableState = state; _tableChanges++; changed = true; }
+            foreach (var ask in Asks.Values) ask.Finish(now);
+        }
+        var quiet = Quiet(open, changed, now);
+        var server = asking
+            ? new Server(battle!, logic.Get("account")?.Call("GetPlayerID")?.Value<long>() ?? 0, room.Get<int>("Round"), quiet, _tableChanges, running) : (Server?)null;
         Seen.Clear();
         // No container gate: picking a player (sending coins) moves the selectable buttons into com_Empty
         // (AdjustPlayerParent) and hides the container (2026-10-25); each bar's own visibility decides.
@@ -125,11 +191,11 @@ internal static class PlayerTabUi
         var count = player.Get("cardContainer")?.Get<int>("CardCount") ?? -1;
         // RoomPlayer.characterConfig is a CharacterHandle (Id only); the role lives in the Character table.
         var id = player.Field("player")?.Field("characterConfig")?.Field("Id")?.Value<int>() ?? 0;
-        var text = CharacterRole.Label(id > 0 ? CharacterGuideUi.Config(id)?.Get<int>("TagType") ?? 0 : 0, ModText.Korean);
+        var text = CharacterRole.Label(id > 0 ? PrepSkillInfoUi.Config(id)?.Get<int>("TagType") ?? 0 : 0, ModText.Korean);
         (int Left, int Total)? cooldown = null;
         // The turns have their own breaker: a failed lookup or request hides only the skill part.
         if (skill && Compatibility.Allowed(SkillFeature))
-            try { cooldown = Cooldown(player, server); }
+            try { cooldown = Cooldown(player, server, count); }
             catch (Exception ex) { Compatibility.Block(SkillFeature, ex, Asks.Clear); }
         Refresh(tab, hand, role && text.Length > 0, count, text, cooldown);
     }
@@ -137,7 +203,7 @@ internal static class PlayerTabUi
     // The player info window's own values (BattlePlayerInfoWindow.GetSkillInfo): the active skill's shown configuration
     // holds the total turns and the countdown BattleProperty.activeSkillCD the turns left (0 = ready now), which for
     // other players comes from the server as the window shows it.
-    private static (int Left, int Total)? Cooldown(RuntimeObject player, Server? server)
+    private static (int Left, int Total)? Cooldown(RuntimeObject player, Server? server, int hand)
     {
         var id = player.Field("player")?.Call("GetBattleActiveSkillId")?.Value<int>() ?? 0;
         if (_configClass == IntPtr.Zero) _configClass = RuntimeObject.FindClass("", "StaticConfigure");
@@ -149,31 +215,60 @@ internal static class PlayerTabUi
         var total = config.Get<int>("Round");
         var left = player.Get("Property")?.Field("activeSkillCD")?.Get<int>("Value") ?? -1;
         var who = player.Field("player")?.Get<long>("Id") ?? 0;
-        if (server is { } side && who != 0 && who != side.Self && left >= 0) left = Asked(side, who, left);
+        if (server is { } side && who != 0 && who != side.Self && left >= 0) left = Asked(side, who, left, hand, Time.unscaledTime);
         return total > 0 && left >= 0 ? (left, total) : null;
     }
 
-    private static int Asked(Server server, long id, int client)
+    // The public table state: every player's hand, coins, HP, level, land and buff count (monsters left out).
+    private static int TableState(RuntimeObject battle)
+    {
+        var players = battle.Field("PlayerDatas");
+        var state = new HashCode();
+        for (int i = 0, count = Math.Min(8, players?.Get<int>("Count") ?? 0); i < count; i++)
+        {
+            var data = players!.Call("get_Item", i);
+            if (data == null || data.Get<int>("characterType") == 2) continue;
+            var property = data.Get("Property");
+            state.Add(data.Get("cardContainer")?.Get<int>("CardCount") ?? -1);
+            state.Add(property?.Field("gold")?.Get<int>("Value") ?? -1);
+            state.Add(property?.Field("HP")?.Get<int>("Value") ?? -1);
+            state.Add(property?.Field("level")?.Get<int>("Value") ?? -1);
+            state.Add(data.Field("CharacterInst")?.Get("standLand")?.Get<int>("Id") ?? -1);
+            state.Add(data.Get("buffContainer")?.Field("_buffDict")?.Get<int>("Count") ?? -1);
+        }
+        return state.ToHashCode();
+    }
+
+    private static int Asked(Server server, long id, int client, int hand, float now)
     {
         if (!Asks.TryGetValue(id, out var ask)) Asks[id] = ask = new();
-        // A finished reply has already run the native callback that stores SkillCD (RPCMsgManager: DealServerCallback,
-        // then Finish). A failed one is not retried until the round or the count moves again.
-        if (ask.Reply?.Field<bool>("isCompleted") == true)
+        ask.Finish(now);
+        // A skill use shows at once (user-reported 2026-11-17: the tab still lagged the player info window, which asks when it
+        // opens): CardLogic.TriggerSkill sets the user's client count from the server's map, so a count that moved outside a
+        // round start is right and newer than the stored answer. A round start moves every count too, but
+        // BattleLogic.OnRoundStartS2CServerCallBack copies the local player's map onto every character and updates the round
+        // in the same frame, so a count moving with the round is that copy and is not shown.
+        if (ask.SeenRound != server.Round) ask.Fresh = -1;
+        else if (ask.SeenClient >= 0 && ask.SeenClient != client) (ask.Fresh, ask.FreshAt) = (client, now);
+        (ask.SeenRound, ask.SeenClient) = (server.Round, client);
+        // Before the first answer the count is the game start's (Hero.SkillCds) or a skill use's, both right until a round starts.
+        var shown = ask.Fresh >= 0 ? ask.Fresh : ask.Answered ? server.Battle.Call("GetPlayerDataById", id)?.Field<int>("SkillCD") ?? client : client;
+        // One request at a time per player, when a round starts, the count moves (a skill use) or the hand count moves
+        // (a card play), and the one follow-up after such a move; when the table changed, at most every Gap seconds and
+        // only while the turns are not 0; only while the room is open and quiet (see Server and Settle). A round start asks
+        // as soon as the room runs outside a fight: the server ends a game with GameFinishS2C instead of a next round, so a
+        // request right after RoundStartS2C cannot meet the game's end, and waiting for a quiet room kept the new round's
+        // turns off the tab while the bots played (user-reported 2026-11-17).
+        var round = ask.Round != server.Round;
+        var moved = round || ask.Client != client || ask.Hand != hand;
+        var table = ask.Table != server.Table && shown != 0 && now - ask.At >= Gap;
+        if (ask.Reply == null && (round && server.Running || (moved || table || now >= ask.Again) && server.Open))
         {
-            var failed = ask.Reply.Field<bool>("isTimeOut") || ask.Reply.Field<int>("errId") != 0;
-            if (failed && Plugin.Diagnostics.IsRecording)
-                Plugin.Diagnostics.State("playerTab.skillCd", "reply failed; err=" + ask.Reply.Field<int>("errId") + "; timeout=" + ask.Reply.Field<bool>("isTimeOut"));
-            ask.Answered |= !failed;
-            ask.Reply = null;
-        }
-        // One request at a time per player, when a round starts or the count moves (a skill use).
-        if (ask.Reply == null && (ask.Round != server.Round || ask.Client != client))
-        {
-            (ask.Round, ask.Client) = (server.Round, client);
+            (ask.Round, ask.Client, ask.Hand, ask.Table, ask.At) = (server.Round, client, hand, server.Table, now);
+            ask.Again = moved ? now + FollowUp : float.PositiveInfinity;
             ask.Reply = server.Battle.Call("RequestGetHeroInfoC2S", id);
         }
-        // Before the first answer the count is the game start's (Hero.SkillCds) or a skill use's, both right until a round starts.
-        return ask.Answered ? server.Battle.Call("GetPlayerDataById", id)?.Field<int>("SkillCD") ?? client : client;
+        return shown;
     }
 
     private static Tab Create(RuntimeObject owner)

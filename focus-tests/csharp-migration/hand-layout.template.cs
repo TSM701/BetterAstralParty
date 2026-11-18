@@ -147,24 +147,20 @@ __CLICK__
         var pile = new List<Entry> { new Entry(), new Entry() };
         var ready = new HashSet<Entry>(pile);
         var group = HandGroup.Attack;
-        var groups = new List<HandGroup> { group };
-        var column = 0; var width = 1920f; var height = 1080f; var aspect = 1.5f; var pileTop = 730f; var unit = 1f;
-        void FocusFrame(bool clickMode, Vector2 pointer) {
+        var width = 1920f; var height = 1080f; var aspect = 1.5f; var pileTop = 730f; var unit = 1f;
+        void FocusFrame(Vector2 pointer) {
 __FOCUS_BLOCK__
         }
-        foreach(var clickMode in new[]{true,false}) {
-            _expanded=group; _focused=IntPtr.Zero;
-            HandLayout.Slot Cell(int row) => clickMode ? HandLayout.ClickRow(width,height,pile.Count,row,aspect,pileTop)
-                : HandLayout.Place(width,height,groups.Count,column,pile.Count,row,aspect,true);
-            var a=Cell(0); var b=Cell(1);
-            FocusFrame(clickMode,new(a.X+a.Width/2,a.Y+a.Height/2)); Check(_focused==pile[0].Card.Pointer);
-            var edge=HandLayout.Focus(a);
-            FocusFrame(clickMode,new(edge.X,edge.Y+edge.Height/2)); Check(_focused==pile[0].Card.Pointer);
-            FocusFrame(clickMode,new(0,0)); Check(_focused==(clickMode?IntPtr.Zero:pile[0].Card.Pointer));
-            FocusFrame(clickMode,new(b.X+b.Width/2,b.Y+b.Height/2)); Check(_focused==pile[1].Card.Pointer);
-            FocusFrame(clickMode,new(0,0)); Check(_focused==(clickMode?IntPtr.Zero:pile[1].Card.Pointer));
-            Check(_expanded==group);
-        }
+        _expanded=group; _focused=IntPtr.Zero;
+        HandLayout.Slot Cell(int row) => HandLayout.ClickRow(width,height,pile.Count,row,aspect,pileTop);
+        var a=Cell(0); var b=Cell(1);
+        FocusFrame(new(a.X+a.Width/2,a.Y+a.Height/2)); Check(_focused==pile[0].Card.Pointer);
+        var edge=HandLayout.Focus(a);
+        FocusFrame(new(edge.X,edge.Y+edge.Height/2)); Check(_focused==pile[0].Card.Pointer);
+        FocusFrame(new(0,0)); Check(_focused==IntPtr.Zero); // The open row keeps no enlarged card after pointer exit.
+        FocusFrame(new(b.X+b.Width/2,b.Y+b.Height/2)); Check(_focused==pile[1].Card.Pointer);
+        FocusFrame(new(0,0)); Check(_focused==IntPtr.Zero);
+        Check(_expanded==group);
         _expanded=null; _focused=IntPtr.Zero;
         var resetEntry = new Entry { Card=Node(null), Rendered=true, Owned=true, Applied=new(20,500) };
         Check(DisplayZoomReset(resetEntry,new(20,600)));

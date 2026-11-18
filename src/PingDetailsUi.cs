@@ -3,7 +3,7 @@ using UnityEngine;
 namespace BetterAstralParty;
 
 // Read-only card/chip inspection. Never calls a selection action, chat sender or use-card window.
-internal static class CardPreviewUi
+internal static class PingDetailsUi
 {
     private static readonly Dictionary<string, int> Pings = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, int> RelicPings = new(StringComparer.Ordinal);
@@ -24,9 +24,12 @@ internal static class CardPreviewUi
     private static Vector2 _anchor;
     private static (float X, float Y, float Scale, float Alpha)? _drawn;
 
+    // FightPip leaves Esc to an open popup, which closes on it.
+    internal static bool Showing => _popup is { } popup && !popup.Get<bool>("isDisposed") && popup.Get<bool>("visible");
+
     internal static void Tick()
     {
-        if (!Compatibility.Allowed("CardPopups")) return;
+        if (!Compatibility.Allowed("PingDetails")) return;
         try
         {
             // Finish/observe the native load even if its click was cancelled or the setting is OFF.
@@ -42,14 +45,14 @@ internal static class CardPreviewUi
         catch (Exception ex)
         {
             // A changed game UI must not break the existing combat recommendations.
-            Compatibility.Block("CardPopups", ex, Reset);
+            Compatibility.Block("PingDetails", ex, Reset);
         }
     }
 
     private static void Update()
     {
-        if (!Plugin.CardPopups.Value) { Reset(); return; }
-        if (GameUi.HomeAvailable) RuntimeObject.RequireClasses("CardPopups", ("GameLogic", "GameLogicManager"), ("UI", "UIHelper"), ("UI", "CommonUIManager"));
+        if (!Plugin.PingDetails.Value) { Reset(); return; }
+        if (GameUi.HomeAvailable) RuntimeObject.RequireClasses("PingDetails", ("GameLogic", "GameLogicManager"), ("UI", "UIHelper"), ("UI", "CommonUIManager"));
         var root = GameUi.Root;
         if (root == null) return;
         var now = Time.unscaledTime;
@@ -92,7 +95,7 @@ internal static class CardPreviewUi
         {
             if (ping != null && _pressed == ping.Pointer && _pressedText == pingText && LoadIndex())
             {
-                var (relic, id) = CardPreviewLayout.Resolve(Pings, RelicPings, pingText);
+                var (relic, id) = PingDetailsLayout.Resolve(Pings, RelicPings, pingText);
                 if (id > 0)
                 {
                     if ((_pinned && _shownId == id && _shownRelic == relic)
@@ -155,7 +158,7 @@ internal static class CardPreviewUi
                 var item = list.Call("GetChildAt", i)!;
                 if (item.TypeName != "UIExpression_Com_ChatItem" || !GameUi.Visible(item)) continue;
                 var title = item.Field("title")!;
-                if (CardPreviewLayout.Resolve(Pings, RelicPings, title.Get("text")?.String() ?? "").Id <= 0) continue;
+                if (PingDetailsLayout.Resolve(Pings, RelicPings, title.Get("text")?.String() ?? "").Id <= 0) continue;
                 live.Add(item.Pointer);
                 if (!PingTargets.TryGetValue(item.Pointer, out var target) || target.Get<bool>("isDisposed"))
                 {
@@ -213,9 +216,9 @@ internal static class CardPreviewUi
             if (message?.TypeName != "BattleCardMessage") continue;
             // Read only the displayed chat history, never a sender's hand or card count.
             var payload = message.Field("SendMsg")?.String() ?? "";
-            if (CardPreviewLayout.TryCardMessage(payload, message.Field<int>("MsgType"), out var id)
+            if (PingDetailsLayout.TryCardMessage(payload, message.Field<int>("MsgType"), out var id)
                 && table.Call("ContainsKey", id)!.Value<bool>())
-                CardPreviewLayout.AddUnique(Pings, message.Field("shortInfo")?.String() ?? "", id);
+                PingDetailsLayout.AddUnique(Pings, message.Field("shortInfo")?.String() ?? "", id);
         }
     }
 
@@ -229,7 +232,7 @@ internal static class CardPreviewUi
             var id = config.Get<int>("Id");
             // The game's own formatter handles the installed Korean patch and colour tags.
             var ping = RuntimeObject.StaticCall(messageClass, method, id)?.String() ?? "";
-            CardPreviewLayout.AddUnique(index, ping, id);
+            PingDetailsLayout.AddUnique(index, ping, id);
         }
     }
 
@@ -247,7 +250,7 @@ internal static class CardPreviewUi
         {
             GameUi.Dispose(_popup);
             _relicBackground = null;
-            _popup = NativeUi.Component(root, CardPreviewLayout.Width, CardPreviewLayout.Height);
+            _popup = NativeUi.Component(root, PingDetailsLayout.Width, PingDetailsLayout.Height);
             _popup.Set("sortingOrder", 29000);
             _popup.Set("visible", false);
             _popup.Set("opaque", true);
@@ -319,7 +322,7 @@ internal static class CardPreviewUi
     {
         if (_popup == null || _popup.Get<bool>("isDisposed") || !_popup.Get<bool>("visible")) return;
         var width = root.Get<float>("width"); var height = root.Get<float>("height");
-        var layout = CardPreviewLayout.Place(width, height, _anchor.x * width, _anchor.y * height, Plugin.UiScale.Value,
+        var layout = PingDetailsLayout.Place(width, height, _anchor.x * width, _anchor.y * height, Plugin.UiScale.Value,
             _popup.Get<float>("width"), _popup.Get<float>("height"));
         _relicBackground?.Refresh();
         var reveal = _closingAt < 0 ? AdviceText.Reveal(Time.unscaledTime - _shownAt, 0.18f)

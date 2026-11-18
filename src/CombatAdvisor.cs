@@ -35,6 +35,8 @@ public readonly record struct HitModifiers(int Bonus = 0, int Cap = 0, bool Immu
     public bool ShushuShield { get; init; }
     public int MinimumHp { get; init; }
     public int OnHitBonus { get; init; }
+    // The attacker shows Blooming Cactus (PublicCombatEffects.IgnoreDefenseBuff): the defender's DEF stat does not count.
+    public bool IgnoreDefense { get; init; }
     public DiceFaces AttackDice { get; init; }
     public DiceFaces DefenseDice { get; init; }
     public DiceFaces DodgeDice { get; init; }
@@ -176,14 +178,7 @@ public static class CombatAdvisor
 
     private static ChoiceStats EnumerateDodge(CombatInput input)
     {
-        var successes = 0;
-
-        for (var die = 0; die <= 6; die++)
-        {
-            if (!input.Modifiers.DodgeDice.Contains(die)) continue;
-            successes += die > input.AttackerDie || die == 6 && input.AttackerDie == 6 ? 1 : 0;
-        }
-
+        var successes = DodgeSuccesses(input);
         var count = input.Modifiers.DodgeDice.Count;
         var failures = count - successes;
         var damage = HitDamage(input.FinalAttack, input.Modifiers, input.Hp);
@@ -192,6 +187,20 @@ public static class CombatAdvisor
             damage >= input.Hp ? (double)failures / count : 0,
             damage == 0 ? 1 : (double)successes / count);
     }
+
+    private static int DodgeSuccesses(CombatInput input)
+    {
+        var successes = 0;
+        for (var die = 0; die <= 6; die++)
+            if (input.Modifiers.DodgeDice.Contains(die))
+                successes += die > input.AttackerDie || die == 6 && input.AttackerDie == 6 ? 1 : 0;
+        return successes;
+    }
+
+    // HP a failed dodge loses, which the dodge badge shows instead of the mean (user-decided 2026-11-15);
+    // 0 when every allowed dodge face escapes.
+    internal static double FailedDodgeDamage(CombatInput input) => DodgeSuccesses(input) == input.Modifiers.DodgeDice.Count ? 0
+        : Math.Min(input.Hp, HitDamage(input.FinalAttack, input.Modifiers, input.Hp));
 
     // Successful dodges never enter this resolver. Zero-damage events are not hits.
     // ponytail: single-hit model. Additive modifiers precede the cap; verify mixed

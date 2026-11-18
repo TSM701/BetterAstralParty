@@ -13,7 +13,12 @@ public readonly record struct VisibleAdvice(string Defend, string Dodge)
     public string DefendQuick { get; init; }
     public string DodgeQuick { get; init; }
     public RecommendedAction Recommendation { get; init; }
-    public string Summary { get; init; }
+    // The observer panel's figures (ChoiceVisual): damage ranges and KO chances without their labels. The dodge pair is
+    // null while the native dodge is unavailable.
+    public string DefendDamage { get; init; }
+    public string DefendKnockout { get; init; }
+    public string? DodgeDamage { get; init; }
+    public string? DodgeKnockout { get; init; }
 }
 
 public static class VisibleCombatAdvisor
@@ -48,13 +53,15 @@ public static class VisibleCombatAdvisor
             var modifiers = face == 0 ? input.Modifiers : input.Modifiers with
                 { DefenseDice = DiceFaces.Range(face, face), DefenseDistributionUnknown = false };
             var boosted = input.Boost.Apply(atk + input.AttackDie);
-            var result = CombatAdvisor.Calculate(new(input.Hp, (int)(rule == 1 ? boosted.High : boosted.Low), input.AttackDie, def)
-                { Modifiers = modifiers }, false);
+            var combat = new CombatInput(input.Hp, (int)(rule == 1 ? boosted.High : boosted.Low), input.AttackDie, def)
+                { Modifiers = modifiers };
+            var result = CombatAdvisor.Calculate(combat, false);
+            var failedDodge = CombatAdvisor.FailedDodgeDamage(combat);
             allDodge &= result.Recommendation == RecommendedAction.Dodge;
             defLow = Math.Min(defLow, result.Defend.ExpectedDamage);
             defHigh = Math.Max(defHigh, result.Defend.ExpectedDamage);
-            dodgeLow = Math.Min(dodgeLow, result.Dodge.ExpectedDamage);
-            dodgeHigh = Math.Max(dodgeHigh, result.Dodge.ExpectedDamage);
+            dodgeLow = Math.Min(dodgeLow, failedDodge);
+            dodgeHigh = Math.Max(dodgeHigh, failedDodge);
             defKoLow = Math.Min(defKoLow, result.Defend.KnockoutChance);
             dodgeKoLow = Math.Min(dodgeKoLow, result.Dodge.KnockoutChance);
         }
@@ -67,14 +74,16 @@ public static class VisibleCombatAdvisor
         var dodgeTitle = recommendation == RecommendedAction.Dodge ? "★ 회피 추천*"
             : !input.DodgeAvailable ? "회피 불가" : "회피*";
         return new(defTitle + $"\n평균 피해 {Range(defLow, defHigh)}",
-            dodgeTitle + (input.DodgeAvailable ? $"\n평균 피해 {Range(dodgeLow, dodgeHigh)}" : ""))
+            dodgeTitle + (input.DodgeAvailable ? $"\n예상 피해 {Range(dodgeLow, dodgeHigh)}" : ""))
         {
             DefendQuick = $"예상 피해 {Range(defLow, defHigh)}\n전투불능 {CombatAdvisor.Probability(defKoLow)}%",
             DodgeQuick = input.DodgeAvailable
                 ? $"예상 피해 {Range(dodgeLow, dodgeHigh)}\n전투불능 {CombatAdvisor.Probability(dodgeKoLow)}%" : "회피 불가",
             Recommendation = recommendation,
-            Summary = "방어자 기준 · " + (!input.DodgeAvailable && !input.Modifiers.ShushuShield ? "회피 불가"
-                : recommendation == RecommendedAction.Defend ? "방어 추천" : "회피 추천")
+            DefendDamage = Range(defLow, defHigh),
+            DefendKnockout = CombatAdvisor.Probability(defKoLow) + "%",
+            DodgeDamage = input.DodgeAvailable ? Range(dodgeLow, dodgeHigh) : null,
+            DodgeKnockout = input.DodgeAvailable ? CombatAdvisor.Probability(dodgeKoLow) + "%" : null
         };
     }
 

@@ -23,14 +23,42 @@ internal static class FieldMonsterPlates
     private static IntPtr _plateClass, _sceneClass;
     private static float _scanAt;
 
+    // What the last pass gave each plate (2026-11-18: zoomed out, about 23 µs a plate a frame, almost all of it native
+    // calls). UpdateOffset only moves a plate toward its target, so while the owner, target, width and the plate's place
+    // hold from one frame to the next it has settled and would write the same place again; UpdateGuideLine follows only
+    // the marker point, the plate's place and offset and its line, so with those unchanged it would draw the same guide.
+    // Both are then skipped; every 16th frame (staggered) and after an info switch each plate is laid out in full anyway.
+    private sealed class PlateState
+    {
+        internal Vector3 Owner;
+        internal Vector2 Target, Place;
+        internal float Width;
+        internal (float OwnerX, float OwnerY, float X, float Y, float OffsetX, float LineX, float LineWidth, float Lift) Guide;
+        internal bool Placed, Guided;
+    }
+    private static readonly Dictionary<IntPtr, PlateState> States = new();
+    private static readonly HashSet<IntPtr> Full = new();
+    private static int _frame;
+
     // Visible adopted plates, for the hero layout's fixed obstacles.
     internal static IReadOnlyList<RuntimeObject> Plates => Adopted;
 
     internal static bool ZoomFollows(float scale) => float.IsFinite(scale) && Math.Abs(scale - 1f) > 0.01f;
 
+    // Development builds only (2026-11-18): Ctrl+Shift+F6 lays the plates out here at the native zoom too, to compare the
+    // frame against the native per-frame pass, which compares every pair of plates, on a crowded field.
+    private static readonly bool DevelopmentBuild = Plugin.Version.Contains("-dev.", StringComparison.Ordinal);
+    private static bool _forceAdopt;
+
     internal static void Tick(float scale)
     {
-        if (!ZoomFollows(scale) || PvpSafety.Suspended || GameUi.Root == null) { Clear(); return; }
+        if (DevelopmentBuild && Input.GetKeyDown(KeyCode.F6) && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))
+            && (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)))
+        {
+            _forceAdopt = !_forceAdopt;
+            Plugin.Diagnostics.Write("fieldMonsterPlates.forceAdopt=" + (_forceAdopt ? "on" : "off"));
+        }
+        if (!(ZoomFollows(scale) || _forceAdopt) || PvpSafety.Suspended || GameUi.Root == null) { Clear(); return; }
         var logic = RuntimeObject.StaticField(RuntimeObject.FindClass("GameLogic", "GameLogicManager"), "_inst");
         if (logic?.Get("fight")?.Field("fightStatus")?.Value<bool>() == true) { Clear(); return; }
         var battleUi = logic?.Get("battle")?.Field("battleInfo")?.Get("ui");
@@ -41,7 +69,10 @@ internal static class FieldMonsterPlates
         if (_layer.Get<float>("width") != parent.Get<float>("width") || _layer.Get<float>("height") != parent.Get<float>("height"))
             _layer.Call("SetSize", parent.Get<float>("width"), parent.Get<float>("height"));
         if (Time.unscaledTime >= _scanAt) { _scanAt = Time.unscaledTime + 0.2f; Adopt(parent); }
-        if (!FieldIndicatorOpacity.Hidden) Layout(scale);
+        if (FieldIndicatorOpacity.Hidden) return;
+        var lap = RuntimeObject.LapStart();
+        Layout(scale);
+        RuntimeObject.Lap("plates.monsters", ref lap);
     }
 
     private static void Adopt(RuntimeObject parent)
@@ -59,6 +90,7 @@ internal static class FieldMonsterPlates
             parent.Call("AddChild", _sentinel);
         }
         Adopted.RemoveAll(ui => ui.Get<bool>("isDisposed") || ui.Get("parent")?.Pointer != _layer!.Pointer);
+        foreach (var key in States.Keys.Where(key => !Adopted.Exists(ui => ui.Pointer == key)).ToList()) States.Remove(key);
         for (var i = parent.Get<int>("numChildren") - 1; i >= 0; i--)
         {
             var child = parent.Call("GetChildAt", i)!;
@@ -80,17 +112,28 @@ internal static class FieldMonsterPlates
         var info = _sentinel == null ? 0 : Math.Max(0, ShowInfo(_sentinel));
         var self = _battleUi?.Field("_SelfPlayer")?.Field("CharacterInst");
         var stepping = self != null && self.Get<int>("canStep") > 0;
-        Placed.Clear();
+        // Value math through UnityMath, and the camera and screen read once a pass (2026-11-18).
+        var enabled = camera.enabled;
+        float screenHeight = Screen.height;
+        // The layer's GlobalToLocal is affine: three calls a pass map every owner point.
+        Vector2 Map(float x, float y) => _layer!.Result<Vector2, Vector2>("GlobalToLocal", UnityMath.V2(x, y));
+        var origin = Map(0, 0); var alongX = Map(1000, 0); var alongY = Map(0, 1000);
+        float xx = (alongX.x - origin.x) / 1000, xy = (alongX.y - origin.y) / 1000, yx = (alongY.x - origin.x) / 1000, yy = (alongY.y - origin.y) / 1000;
+        _frame++;
+        var index = 0;
+        Placed.Clear(); Full.Clear();
         // Per plate and frame: no wrapper for a value result, no argument array (2026-11-13; zoomed out this layer
         // allocated about 12 KB a frame).
         foreach (var ui in Adopted)
         {
             if (ui.Get<bool>("isDisposed")) continue;
-            if (ShowInfo(ui) != info) ui.Call("SwitchInfo", info == 1);
+            var full = (_frame + index++ & 15) == 0;
+            if (ShowInfo(ui) != info) { ui.Call("SwitchInfo", info == 1); full = true; }
             var owner = ui.Result<Vector3>("GetOwnerPos");
-            var screen = owner == Vector3.zero || !camera.enabled ? default : camera.WorldToScreenPoint(owner);
-            var local = screen.z > 0 ? _layer!.Result<Vector2, Vector2>("GlobalToLocal", new Vector2(screen.x, Screen.height - screen.y)) : default;
-            var target = local - Vector2.up * (PlateLift * scale);
+            var screen = UnityMath.IsZero(owner) || !enabled ? default : camera.WorldToScreenPoint(owner);
+            float sx = screen.x, sy = screenHeight - screen.y;
+            var local = screen.z > 0 ? UnityMath.V2(origin.x + xx * sx + yx * sy, origin.y + xy * sx + yy * sy) : default;
+            var target = UnityMath.V2(local.x, local.y - PlateLift * scale);
             var shown = screen.z > 0 && target.x > 0 && target.y > 0 && target.x < width && target.y < height;
             if (ui.Get<bool>("visible") != shown) ui.Set("visible", shown);
             // shortcut: native also fades a plate to 0.5 over a movement arrow; here every plate yields input while
@@ -102,19 +145,34 @@ internal static class FieldMonsterPlates
                 if (touchable) Untouchable.Remove(ui.Pointer); else Untouchable.Add(ui.Pointer);
             }
             if (ui.Get<float>("alpha") != 1f) ui.Set("alpha", 1f);
-            if (!shown) continue;
-            ui.Call("UpdateOffset", target);
+            if (!States.TryGetValue(ui.Pointer, out var state)) States[ui.Pointer] = state = new PlateState();
+            if (!shown) { state.Placed = state.Guided = false; continue; }
+            var place = UnityMath.V2(ui.Get<float>("x"), ui.Get<float>("y"));
+            var plateWidth = ui.Get<float>("width");
+            if (full || !state.Placed || !Same(state.Owner, owner) || !Same(state.Target, target) || state.Width != plateWidth || !Same(state.Place, place))
+                ui.Call("UpdateOffset", target);
+            state.Owner = owner; state.Target = target; state.Width = plateWidth; state.Place = place; state.Placed = true;
+            if (full) Full.Add(ui.Pointer);
             Placed.Add((ui, local));
         }
         Rects.Clear(); Before.Clear();
-        foreach (var (ui, _) in Placed) { var rect = FieldBuffUi.Rect(ui); Rects.Add(rect); Before.Add(rect.Y); }
-        FieldBuffUi.SeparateRects(Rects, null);
+        foreach (var (ui, _) in Placed) { var rect = PlayerIndicatorUi.Rect(ui); Rects.Add(rect); Before.Add(rect.Y); }
+        PlayerIndicatorUi.SeparateRects(Rects, null);
         for (var i = 0; i < Rects.Count; i++)
             if (Rects[i].Y != Before[i]) Placed[i].Ui.Set("y", Rects[i].Y);
         foreach (var (ui, owner) in Placed)
         {
-            var point = _layer!.Result<Vector2, Vector2>("TransformPoint", owner, ui) - Vector2.up * (MarkerLift * scale);
-            ui.Call("UpdateGuideLine", point);
+            var state = States[ui.Pointer];
+            var line = ui.FieldPointer("graph_Line");
+            var guide = (owner.x, owner.y, ui.Get<float>("x"), ui.Get<float>("y"), ui.Field<Vector2>("Offset").x,
+                RuntimeObject.GetOf<float>(line, "x"), RuntimeObject.GetOf<float>(line, "width"), MarkerLift * scale);
+            if (Full.Contains(ui.Pointer) || !state.Guided || state.Guide != guide)
+            {
+                var mapped = _layer!.Result<Vector2, Vector2>("TransformPoint", owner, ui);
+                var point = UnityMath.V2(mapped.x, mapped.y - MarkerLift * scale);
+                ui.Call("UpdateGuideLine", point);
+                state.Guide = guide; state.Guided = true;
+            }
             if (RuntimeObject.GetOf<bool>(ui.FieldPointer("graph_ShowBuff"), "visible") == stepping)
             {
                 ui.Field("graph_ShowBuff")!.Set("visible", !stepping);
@@ -122,6 +180,9 @@ internal static class FieldMonsterPlates
             }
         }
     }
+
+    private static bool Same(Vector3 a, Vector3 b) => a.x == b.x && a.y == b.y && a.z == b.z;
+    private static bool Same(Vector2 a, Vector2 b) => a.x == b.x && a.y == b.y;
 
     // The plate's ShowInfo controller index, or -1 without one; read through the pointer the plate holds.
     private static int ShowInfo(RuntimeObject plate)
@@ -147,7 +208,7 @@ internal static class FieldMonsterPlates
             }
             catch (Exception ex) { failure ??= ex; }
         }
-        Adopted.Clear(); Placed.Clear(); Untouchable.Clear(); BuffHidden.Clear();
+        Adopted.Clear(); Placed.Clear(); Untouchable.Clear(); BuffHidden.Clear(); States.Clear(); Full.Clear();
         try { GameUi.Dispose(_sentinel); } catch (Exception ex) { failure ??= ex; }
         try { GameUi.Dispose(_layer); } catch (Exception ex) { failure ??= ex; }
         _sentinel = _layer = _parent = _battleUi = null;

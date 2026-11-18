@@ -19,14 +19,14 @@ internal static partial class TestCommands
         switch (name) {
             case "typography": Typography(context, stage, pin); break;
             case "relic-background": RelicBackground(context, stage, pin); break;
-            case "character-guide": CharacterGuide(context, stage, pin); break;
+            case "character-guide": PrepSkillInfo(context, stage, pin); break;
             case "character-names": CharacterNames(context, stage, pin); break;
             case "fight-readiness": FightReadiness(context, stage, pin); break;
             case "runtime-arguments": RuntimeArguments(context, stage, pin); break;
             case "runtime-getters": RuntimeGetters(context, stage, pin); break;
             case "probability-ui": ProbabilityUi(context, stage, pin); break;
             case "encounter-recommendation": EncounterRecommendation(context, stage, pin); break;
-            case "ko-minimum": KoMinimum(context, stage, pin); break;
+            case "ko-minimum": KoDiceTarget(context, stage, pin); break;
             case "button-pivots": ButtonPivots(context); break;
             case "surfaces": Surfaces(context, options, pin); break;
             case "input-attention": InputAttention(context); break;
@@ -146,6 +146,145 @@ internal static partial class TestCommands
             .Replace("__GETTER__", Derive(source, @"(?s)    internal T Get<T>\(.*?\r?\n    \}", "Production typed getter boundary"), StringComparison.Ordinal)
             .Replace("__FIELD_GETTER__", Derive(source, @"(?s)    internal T Field<T>\(.*?\r?\n    \}", "Production typed field getter boundary"), StringComparison.Ordinal);
         RunGeneralFixture(context, stage, code, "GetterProbe.Run()", pin, allowUnsafe: true);
+        PlainGetterBodies(context, source);
+        // Shared wrappers (2026-11-17): only short weak references, one table per thread, boxed values and strings fresh, and
+        // a dead entry refilled with a new wrapper rather than handing out one whose handle may be freed.
+        Contains(source, new[] {
+            "private static RuntimeObject? Wrap(IntPtr pointer) => pointer == IntPtr.Zero ? null : Shared(pointer);",
+            "[ThreadStatic] private static Dictionary<IntPtr, WeakReference<RuntimeObject>>? _shared;",
+            "if (klass == _stringClass || IL2CPP.il2cpp_class_is_valuetype(klass)) return new RuntimeObject(pointer);",
+            "if (weak.TryGetTarget(out var known)) return known;",
+            "table[pointer] = new WeakReference<RuntimeObject>(made);",
+            "~RuntimeObject() => IL2CPP.il2cpp_gchandle_free(_handle);",
+        }, "Shared wrappers hold weak references only");
+        Check(!Regex.IsMatch(source, @"WeakReference<RuntimeObject>\([^)]*true\)"), "Shared wrappers never track resurrection");
+    }
+
+    // RuntimeObject.PlainGetters reads these getters as their fields and GameUi.Visible reads onStage and internalVisible(2)
+    // as their bodies do (2026-11-17): each listed getter must be exactly `ldarg.0; ldfld <its own field>; ret`, the
+    // composite bodies must keep their shape, and nothing may override what Visible reads.
+    private static void PlainGetterBodies(DevContext context, string source)
+    {
+        using var native = Native(context);
+        using var corlib = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(context.Root, ".research", "extracted", "mscorlib.dll.dll"));
+        var table = source[source.IndexOf("PlainGetters =", StringComparison.Ordinal)..];
+        table = table[..table.IndexOf("};", StringComparison.Ordinal)];
+        var rows = Regex.Matches(table, "\\(\"([\\w.`]+)\", \"(\\w+)\", \"([<>\\w]+)\"\\)");
+        Check(rows.Count == Regex.Matches(table, "\\(\"").Count && rows.Count >= 25, "Plain getter table read whole: " + rows.Count);
+        foreach (Match row in rows)
+        {
+            var (type, property, field) = (row.Groups[1].Value, row.Groups[2].Value, row.Groups[3].Value);
+            var module = type.StartsWith("System.", StringComparison.Ordinal) ? corlib.MainModule : native.MainModule;
+            var getter = module.GetType(type)?.Methods.SingleOrDefault(method => method.Name == "get_" + property && !method.HasParameters && !method.IsStatic);
+            var body = getter?.Body.Instructions.Where(instruction => instruction.OpCode.Code != Mono.Cecil.Cil.Code.Nop).ToArray();
+            // The field is the getter's own or a base class's (ReadOnlyReactiveProperty reads ReactiveProperty._value); the runtime
+            // finds it by name through the parents (il2cpp_class_get_field_from_name).
+            bool Owns(Mono.Cecil.TypeReference declaring)
+            {
+                var owner = declaring.Resolve()?.FullName;
+                for (var at = getter?.DeclaringType; at != null; at = at.BaseType?.Resolve())
+                    if (at.FullName == owner) return true;
+                return false;
+            }
+            Check(body is { Length: 3 } && body[0].OpCode.Code == Mono.Cecil.Cil.Code.Ldarg_0 && body[1].OpCode.Code == Mono.Cecil.Cil.Code.Ldfld
+                && body[1].Operand is Mono.Cecil.FieldReference read && read.Name == field && Owns(read.DeclaringType)
+                && body[2].OpCode.Code == Mono.Cecil.Cil.Code.Ret, "Plain getter " + type + "." + property + " returns its field " + field);
+        }
+        // Chained getters: `ldarg.0; ldfld F; callvirt get_P; ret`.
+        var chains = source[source.IndexOf("ChainGetters =", StringComparison.Ordinal)..];
+        chains = chains[..chains.IndexOf("};", StringComparison.Ordinal)];
+        var links = Regex.Matches(chains, "\\(\"([\\w.`]+)\", \"(\\w+)\", \"([<>\\w]+)\", \"(\\w+)\"\\)");
+        Check(links.Count == Regex.Matches(chains, "\\(\"").Count && links.Count >= 4, "Chained getter table read whole: " + links.Count);
+        foreach (Match link in links)
+        {
+            var (type, property, field, next) = (link.Groups[1].Value, link.Groups[2].Value, link.Groups[3].Value, link.Groups[4].Value);
+            var getter = native.MainModule.GetType(type)?.Methods.SingleOrDefault(method => method.Name == "get_" + property && !method.HasParameters && !method.IsStatic);
+            var body = getter?.Body.Instructions.Where(instruction => instruction.OpCode.Code != Mono.Cecil.Cil.Code.Nop).ToArray();
+            // The first link reads the field, or calls a plain getter of the same object that returns it.
+            bool Holds(Mono.Cecil.Cil.Instruction instruction) => instruction.OpCode.Code == Mono.Cecil.Cil.Code.Ldfld
+                && instruction.Operand is Mono.Cecil.FieldReference held && held.Name == field
+                || instruction.OpCode.Code == Mono.Cecil.Cil.Code.Call && instruction.Operand is Mono.Cecil.MethodReference plain && plain.Resolve() is { } hop
+                && hop.Body.Instructions.Where(step => step.OpCode.Code != Mono.Cecil.Cil.Code.Nop).ToArray() is { Length: 3 } steps
+                && steps[0].OpCode.Code == Mono.Cecil.Cil.Code.Ldarg_0 && steps[1].Operand is Mono.Cecil.FieldReference backing && backing.Name == field
+                && steps[2].OpCode.Code == Mono.Cecil.Cil.Code.Ret;
+            Check(body is { Length: 4 } && body[0].OpCode.Code == Mono.Cecil.Cil.Code.Ldarg_0 && Holds(body[1])
+                && body[2].OpCode.Code is Mono.Cecil.Cil.Code.Callvirt or Mono.Cecil.Cil.Code.Call && body[2].Operand is Mono.Cecil.MethodReference called
+                && called.Name == "get_" + next && !called.HasParameters && body[3].OpCode.Code == Mono.Cecil.Cil.Code.Ret,
+                "Chained getter " + type + "." + property + " returns " + field + "." + next);
+        }
+        // Guarded setters: their first comparison against the listed fields returns at once when the value already stands.
+        var gobject = native.MainModule.GetType("FairyGUI.GObject");
+        var display = native.MainModule.GetType("FairyGUI.DisplayObject");
+        Mono.Cecil.MethodDefinition Method(string name, int count) => gobject.Methods.Single(method => method.Name == name && method.Parameters.Count == count);
+        Mono.Cecil.Cil.Instruction[] Body(Mono.Cecil.MethodDefinition method) =>
+            method.Body.Instructions.Where(instruction => instruction.OpCode.Code != Mono.Cecil.Cil.Code.Nop).ToArray();
+        bool Reads(Mono.Cecil.Cil.Instruction instruction, string field) => instruction.OpCode.Code == Mono.Cecil.Cil.Code.Ldfld
+            && instruction.Operand is Mono.Cecil.FieldReference read && read.Name == field && read.DeclaringType.FullName == "FairyGUI.GObject";
+        bool Branch(Mono.Cecil.Cil.Instruction instruction, bool equal) => (equal
+            ? instruction.OpCode.Code is Mono.Cecil.Cil.Code.Beq or Mono.Cecil.Cil.Code.Beq_S
+            : instruction.OpCode.Code is Mono.Cecil.Cil.Code.Bne_Un or Mono.Cecil.Cil.Code.Bne_Un_S) && instruction.Operand is Mono.Cecil.Cil.Instruction;
+        bool Returns(Mono.Cecil.Cil.Instruction branch) => ((Mono.Cecil.Cil.Instruction)branch.Operand).OpCode.Code == Mono.Cecil.Cil.Code.Ret;
+        foreach (var (setter, field) in new[] { ("set_visible", "_visible"), ("set_touchable", "_touchable"), ("set_grayed", "_grayed") })
+        {
+            var body = Body(Method(setter, 1));
+            Check(body[0].OpCode.Code == Mono.Cecil.Cil.Code.Ldarg_0 && Reads(body[1], field) && body[2].OpCode.Code == Mono.Cecil.Cil.Code.Ldarg_1
+                && Branch(body[3], true) && Returns(body[3]), "Guarded setter " + setter + " returns when " + field + " already holds the value");
+        }
+        bool Guard(Mono.Cecil.Cil.Instruction[] body, params string[] fields)
+        {
+            for (var i = 0; i < fields.Length; i++)
+            {
+                var at = i * 4;
+                var argument = body[at + 2].OpCode.Code switch
+                {
+                    Mono.Cecil.Cil.Code.Ldarg_1 => 0, Mono.Cecil.Cil.Code.Ldarg_2 => 1, Mono.Cecil.Cil.Code.Ldarg_3 => 2, _ => -1,
+                };
+                if (body[at].OpCode.Code != Mono.Cecil.Cil.Code.Ldarg_0 || !Reads(body[at + 1], fields[i]) || argument != i) return false;
+                var last = i == fields.Length - 1;
+                if (!Branch(body[at + 3], last) || last && !Returns(body[at + 3])) return false;
+            }
+            return true;
+        }
+        Check(Guard(Body(Method("SetScale", 2)), "_scaleX", "_scaleY"), "Guarded SetScale returns when both scales already stand");
+        Check(Guard(Body(Method("SetSize", 3)), "_rawWidth", "_rawHeight") && Pattern2(Method("SetSize", 2), "GObject::SetSize(System.Single,System.Single,System.Boolean)"),
+            "Guarded SetSize returns when both raw sizes already stand");
+        Check(Guard(Body(Method("SetPosition", 3)), "_x", "_y", "_z") && Pattern2(Method("SetXY", 2), "GObject::_z") && Pattern2(Method("SetXY", 2), "GObject::SetPosition("),
+            "Guarded SetXY (SetPosition with its own z) returns when x and y already stand");
+        bool Pattern2(Mono.Cecil.MethodDefinition method, string text) => Il(method).Contains(text, StringComparison.Ordinal);
+        string Getter(Mono.Cecil.TypeDefinition type, string name) => Il(type.Methods.Single(method => method.Name == name && !method.HasParameters));
+        Pattern(Getter(gobject, "get_onStage"), @"GObject::get_displayObject\(\)[\s\S]*DisplayObject::get_stage\(\)", "onStage reads the display object's stage");
+        Pattern(Getter(display, "get_stage"), @"DisplayObject::get_topmost\(\)[\s\S]*isinst FairyGUI.Stage", "stage is the topmost container as a Stage");
+        Pattern(Getter(display, "get_topmost"), @"DisplayObject::get_parent\(\)[\s\S]*DisplayObject::get_parent\(\)", "topmost follows parent to the top");
+        Pattern(Getter(gobject, "get_internalVisible"), @"GObject::_internalVisible[\s\S]*GObject::get_group\(\)[\s\S]*GObject::get_internalVisible\(\)", "internalVisible: own flag, then the group's");
+        Pattern(Getter(gobject, "get_internalVisible2"), @"GObject::_visible[\s\S]*GObject::get_group\(\)[\s\S]*GObject::get_internalVisible2\(\)", "internalVisible2: own visible, then the group's");
+        var component = native.MainModule.GetType("FairyGUI.GComponent");
+        Pattern(Getter(component, "get_numChildren"), @"GComponent::_children[\s\S]*List`1<FairyGUI.GObject>::get_Count\(\)", "numChildren is the child list's count");
+        Pattern(Il(component.Methods.Single(method => method.Name == "GetChildAt" && method.Parameters.Count == 1)),
+            @"GComponent::get_numChildren\(\)[\s\S]*GComponent::_children[\s\S]*List`1<FairyGUI.GObject>::get_Item\(System.Int32\)", "GetChildAt is the child list's item, in range");
+        Pattern(Getter(gobject, "get_asCom"), @"isinst FairyGUI.GComponent", "asCom is the object as a GComponent");
+        Pattern(Il(component.Methods.Single(method => method.Name == "GetChildIndex" && method.Parameters.Count == 1)),
+            @"GComponent::_children[\s\S]*List`1<FairyGUI.GObject>::IndexOf\(", "GetChildIndex is the child list's IndexOf");
+        foreach (var name in new[] { "FairyGUI.GObject", "FairyGUI.EventDispatcher" })
+            Check(!native.MainModule.GetType(name).Methods.Any(method => method.Name is "Equals" or "GetHashCode"), "Child lists compare FairyGUI objects by reference: " + name);
+        var list = corlib.MainModule.GetType("System.Collections.Generic.List`1");
+        Pattern(Il(list.Methods.Single(method => method.Name == "get_Item")), @"List`1<T>::_size[\s\S]*List`1<T>::_items[\s\S]*ldelem", "List item is _items[index] below _size");
+        bool Derives(Mono.Cecil.TypeDefinition? type, string name)
+        {
+            for (; type != null; type = Resolve(type.BaseType)) if (type.FullName == name) return true;
+            return false;
+        }
+        static Mono.Cecil.TypeDefinition? Resolve(Mono.Cecil.TypeReference? type)
+        {
+            try { return type?.Resolve(); } catch { return null; }
+        }
+        foreach (var type in native.MainModule.GetTypes())
+            foreach (var method in type.Methods)
+            {
+                var gobjectGetter = method.Name is "get_onStage" or "get_internalVisible" or "get_internalVisible2" or "get_displayObject" or "get_group" or "get_parent";
+                var displayGetter = method.Name is "get_stage" or "get_topmost" or "get_parent";
+                Check(!(gobjectGetter && type != gobject && Derives(type, "FairyGUI.GObject") || displayGetter && type != display && Derives(type, "FairyGUI.DisplayObject")),
+                    "Nothing overrides what GameUi.Visible reads: " + type.FullName + "." + method.Name);
+            }
     }
 
     private static void FightReadiness(DevContext context, string stage, Action<string> pin)
@@ -164,7 +303,7 @@ internal static partial class TestCommands
         var end = source.IndexOf("    internal static void OutlineText", start, StringComparison.Ordinal);
         Check(start >= 0 && end > start, "Production Surface extraction");
         RunGeneralFixture(context, stage, GeneralRelicBackground0 + source[start..end] + GeneralRelicBackground1, "RelicBackgroundTest.RelicBackgroundCheck.Run()", pin);
-        Contains(ReadSource(context, "src/CardPreviewUi.cs"), new[] { "fill: new Color(0f, 0f, 0f, 0.88f)", "NativeUi.InheritText(title, dark: true)",
+        Contains(ReadSource(context, "src/PingDetailsUi.cs"), new[] { "fill: new Color(0f, 0f, 0f, 0.88f)", "NativeUi.InheritText(title, dark: true)",
             "NativeUi.InheritText(description, dark: true)", "_relicBackground?.Refresh();" }, "Relic-only styling and live refresh");
     }
 
@@ -233,7 +372,7 @@ internal static partial class TestCommands
         }
     }
 
-    private static void KoMinimum(DevContext context, string stage, Action<string> pin)
+    private static void KoDiceTarget(DevContext context, string stage, Action<string> pin)
     {
         var paths = new[] { "src/CombatAdvisor.cs", "src/PublicCombatEffects.cs", "src/CombatBuffAudit.cs", "src/ShootingStar.cs", "src/VisibleCombat.cs", "src/CardAdvisor.cs", "src/CardKoMinimum.cs", "src/CardDiceLayout.cs",
             "src/EncounterAdvisor.cs", "src/AdviceText.cs", "self-test/CombatEffectsCheck.cs", "self-test/CombatSimulationCheck.cs", "self-test/CombatLogReplayCheck.cs" };

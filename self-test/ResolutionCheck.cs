@@ -58,7 +58,7 @@ static class ResolutionCheck
                 foreach(var x in new[] { 0f,w/2,w })
                 foreach(var y in new[] { 0f,h/2,h })
                 {
-                    var popup=CardPreviewLayout.Place(w,h,x,y,desired,cw,ch);
+                    var popup=PingDetailsLayout.Place(w,h,x,y,desired,cw,ch);
                     Inside(popup.X,popup.Y,cw*popup.Scale,ch*popup.Scale,16,"card/chip popup bounds");
                 }
                 foreach(var attacker in new[] { false,true })
@@ -75,15 +75,14 @@ static class ResolutionCheck
                     Check(Math.Abs((attacker ? b.X+width*b.Scale : b.X)-x)<.02f,"HP anchor alignment");
                 }
             }
-            // Every cell, not just the first/last column. Test the enlarged footprint and its hit corners.
+            // Every cell of the open row, not just the first/last. Test the enlarged footprint and its hit corners.
             var unit=w/1920f;
             var minTextGap=float.MaxValue;
             for(int columns=1;columns<=7;columns++)
-            for(int column=0;column<columns;column++)
             for(int rows=1;rows<=11;rows++)
             for(int row=0;row<rows;row++)
             {
-                var cell=HandLayout.Place(w,h,columns,column,rows,row,expanded:true);
+                var cell=HandLayout.ClickRow(w,h,rows,row,1.5f,HandLayout.Place(w,h,columns,0,rows,0).Y);
                 var focus=HandLayout.Focus(cell);
                 Inside(focus.X,focus.Y,focus.Width,focus.Height,0,"expanded card bounds");
                 var gap=h-37*unit-(focus.Y+focus.Height+3*unit);

@@ -33,7 +33,7 @@ sealed class RuntimeObject
 __ENUM__
 }
 
-static class CardPreviewUi
+static class PingDetailsUi
 {
     internal static readonly Dictionary<string, int> Pings = new();
     internal static RuntimeObject? _pingWindow;
@@ -58,40 +58,40 @@ static class PingPopupCheck
     internal static void Run()
     {
         foreach (var text in new[] { "8, 101", "8, 101, 1", "8, 101, 2", "8, 101, 2147483647" })
-            Check(CardPreviewLayout.TryCardMessage(text, 8, out var id) && id == 101, "Public native card payload " + text);
+            Check(PingDetailsLayout.TryCardMessage(text, 8, out var id) && id == 101, "Public native card payload " + text);
         foreach (var text in new[] { "", "8", "8,0,1", "8,-1,1", "8,101,0", "8,101,-1", "9,101,2", "8,101,2147483648", "8,101,1,2", "8,1e2,1", "8,+101,1", new string('1',129) })
-            Check(!CardPreviewLayout.TryCardMessage(text, 8, out var id) && id == 0, "Invalid public payload rejected " + text);
+            Check(!PingDetailsLayout.TryCardMessage(text, 8, out var id) && id == 0, "Invalid public payload rejected " + text);
         var history = new RuntimeObject(); var window = new RuntimeObject(); window.Fields["_messages"] = history;
-        CardPreviewUi._pingWindow = window; var table = new RuntimeObject(); table.Keys.UnionWith(new[] { 101, 202 });
+        PingDetailsUi._pingWindow = window; var table = new RuntimeObject(); table.Keys.UnionWith(new[] { 101, 202 });
         foreach (var count in new[] { 1, 2, 100 }) {
             var label = "[color=#FF0000]Card 12 / 카드[/color] × " + count;
             history.Items.Clear(); history.Items.Add(Message("8, 101, " + count, label));
-            CardPreviewUi.IndexForTest(table);
-            Check(CardPreviewLayout.Resolve(CardPreviewUi.Pings, new(), label).Id == 101, "All public counts and native text preserved");
+            PingDetailsUi.IndexForTest(table);
+            Check(PingDetailsLayout.Resolve(PingDetailsUi.Pings, new(), label).Id == 101, "All public counts and native text preserved");
         }
         history.Items.Add(Message("8, 999, 2", "unknown")); history.Items.Add(Message("8, 101, 2", "not-card", kind:"BattleRelicMessage"));
-        history.Items.Add(Message("9, 101, 2", "wrong-type")); CardPreviewUi.IndexForTest(table);
-        Check(CardPreviewUi.Pings.Count == 1, "Unknown IDs, other messages and inconsistent types excluded");
+        history.Items.Add(Message("9, 101, 2", "wrong-type")); PingDetailsUi.IndexForTest(table);
+        Check(PingDetailsUi.Pings.Count == 1, "Unknown IDs, other messages and inconsistent types excluded");
         history.Items.Clear(); history.Items.Add(Message("8, 101, 2", "collision")); history.Items.Add(Message("8, 202, 4", "collision"));
-        CardPreviewUi.IndexForTest(table); Check(CardPreviewUi.Pings["collision"] == 0, "Ambiguous native labels never guess an item");
-        history.Items.RemoveAt(1); CardPreviewUi.IndexForTest(table);
-        Check(CardPreviewUi.Pings["collision"] == 101, "Current displayed history is reindexed");
-        Check(CardPreviewLayout.Resolve(CardPreviewUi.Pings, new() { ["collision"] = 202 }, "collision").Id == 0, "Cross-kind collision excluded");
-        history.Items.Clear(); CardPreviewUi.IndexForTest(table); Check(CardPreviewUi.Pings.Count == 0, "Pooled or removed messages leave no stale index");
+        PingDetailsUi.IndexForTest(table); Check(PingDetailsUi.Pings["collision"] == 0, "Ambiguous native labels never guess an item");
+        history.Items.RemoveAt(1); PingDetailsUi.IndexForTest(table);
+        Check(PingDetailsUi.Pings["collision"] == 101, "Current displayed history is reindexed");
+        Check(PingDetailsLayout.Resolve(PingDetailsUi.Pings, new() { ["collision"] = 202 }, "collision").Id == 0, "Cross-kind collision excluded");
+        history.Items.Clear(); PingDetailsUi.IndexForTest(table); Check(PingDetailsUi.Pings.Count == 0, "Pooled or removed messages leave no stale index");
         foreach (var count in new[] { -1, 65 }) {
             history.Count = count; bool rejected = false;
-            try { CardPreviewUi.IndexForTest(table); } catch (InvalidOperationException) { rejected = true; }
+            try { PingDetailsUi.IndexForTest(table); } catch (InvalidOperationException) { rejected = true; }
             Check(rejected, "Public history size bounded");
         }
-        CardPreviewUi._pingWindow = null; CardPreviewUi.IndexForTest(table); Check(CardPreviewUi.Pings.Count == 0, "Missing window is harmless");
+        PingDetailsUi._pingWindow = null; PingDetailsUi.IndexForTest(table); Check(PingDetailsUi.Pings.Count == 0, "Missing window is harmless");
         var config = new RuntimeObject(); config.Fields["NameID"] = 123;
         foreach (var (kind, oldValue, newValue) in new[] { ("Card",9,10), ("Relic",46,47), ("Character",10,11), ("PVENurturance",43,44), ("Buff",7,7) })
         foreach (var value in new[] { oldValue, newValue }) {
             RuntimeObject.Enums[kind] = value;
-            Check(CardPreviewUi.LocalForTest(config, kind) == "localized" && RuntimeObject.LocalType == value, "Localization follows native enum name " + kind);
+            Check(PingDetailsUi.LocalForTest(config, kind) == "localized" && RuntimeObject.LocalType == value, "Localization follows native enum name " + kind);
         }
         bool missing = false;
-        try { CardPreviewUi.LocalForTest(config, "Unknown"); } catch (KeyNotFoundException) { missing = true; }
+        try { PingDetailsUi.LocalForTest(config, "Unknown"); } catch (KeyNotFoundException) { missing = true; }
         Check(missing, "Missing native enum does not fall back to a guessed number");
         Console.WriteLine("Public ping and enum fixtures passed: " + assertions);
     }

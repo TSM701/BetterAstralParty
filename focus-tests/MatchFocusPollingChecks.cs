@@ -168,7 +168,7 @@ internal static class MatchFocusPollingChecks
         manager.Values["match"] = match;
         // Exercise the real production breaker. A changed native getter/type stops only this feature.
         Queue(); info.Values["MapType"] = 4L; info.Values["Id"] = 9000L; controller.Values["roomStateType"] = 2; Tick();
-        check(!Compatibility.Allowed(MatchFocus.Feature) && Compatibility.Allowed("CoreUi") && Compatibility.Allowed("HandLayout"), "binding failure trips only focus breaker");
+        check(!Compatibility.Allowed(MatchFocus.Feature) && Compatibility.Allowed("CoreUi") && Compatibility.Allowed("GroupHand"), "binding failure trips only focus breaker");
         var blockedCalls = window.Calls; info.Values["MapType"] = 4; Queue(); Found(9001);
         check(window.Calls == blockedCalls, "breaker prevents all later OS attempts");
         var restorationCalls = window.TopmostRestores;

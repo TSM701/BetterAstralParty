@@ -12,6 +12,11 @@ internal static class BattleStatusLayout
         return now - visibleSince >= 0.75f;
     }
 
+    // One counter sound at a time (user-requested 2026-11-15): icons that pop together, such as both fight actors holding
+    // a counter, all play their motion, and a pop within this gap of the last sounded one plays it silently.
+    internal const float CounterSoundGap = 1.5f;
+    internal static bool CounterSoundFree(float now, float lastSound) => now - lastSound >= CounterSoundGap;
+
     internal const int PageSize = 6;
     internal const float CardWidth = 80, IconStep = 48, Height = 52;
     // Square buff art needs clearance from the capsule's curved ends, not just its rectangular bounds.
@@ -21,9 +26,9 @@ internal static class BattleStatusLayout
     internal static float RowWidth(int visibleCount, bool paged, bool hand = true) => 2 * EdgePadding + (hand ? CardWidth : 0) + visibleCount * IconStep + (paged ? 50 : 0);
     internal static float IconX(int index, float width, bool attacker, bool hand = true) =>
         attacker ? width - EdgePadding - (hand ? CardWidth : 0) - (index + 1) * IconStep : EdgePadding + (hand ? CardWidth : 0) + index * IconStep;
-    // Centre lies just inside the header's top-right corner; most of the icon overlaps it.
-    internal static (float X, float Y) CounterAnchor(float x, float y, float width, float size) =>
-        (x + width - size * 0.65f, y - size * 0.35f);
+    // Centre lies just inside the header's top-right corner (the attacker's mirrored top-left); most of the icon overlaps it.
+    internal static (float X, float Y) CounterAnchor(float x, float y, float width, float size, bool attacker = false) =>
+        (attacker ? x - size * 0.35f : x + width - size * 0.65f, y - size * 0.35f);
     // Keep the attacker unchanged; align the defender to the native heart, not the padded HP background.
     internal static float HpEdgeX(bool attacker, float textX, float textWidth, float heartX) =>
         attacker ? textWidth : heartX - textX;

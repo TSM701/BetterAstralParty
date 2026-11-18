@@ -182,6 +182,8 @@ namespace FieldCameraReturnTest
                 "width" => Width, "height" => Height, "scaleX" => ScaleX, "scaleY" => ScaleY, "alpha" => Alpha,
                 "pivotX" => PivotX, "pivotY" => PivotY,
                 "xMin" when Kind == "Pin" => PivotAsAnchor ? X - Width * PivotX : X,
+                // The native title is placed by its centre (pivot 0.5, pivot as anchor; the asset loader requires both).
+                "xMin" when Kind == "title" => X - Width * PivotX, "yMin" when Kind == "title" => Y - Height * PivotY,
                 "sortingOrder" => SortingOrder,
                 _ => throw new InvalidOperationException("Unexpected typed getter " + Kind + "." + name)
             };
@@ -469,35 +471,35 @@ namespace FieldCameraReturnTest
             {
                 var s = new Scene(size.Item1, size.Item2); var button = s.Button;
                 var unit = Math.Min(size.Item1 / 1920, size.Item2 / 1080);
-                Near(button.Height * button.ScaleY, s.Strip.Height * unit * 1.25f);
-                Assert(button.Width >= NativeReturnAsset.Width && button.Height >= NativeReturnAsset.Height);
+                Near((button.Height - FieldCameraReturnUi.Below) * button.ScaleY, s.Strip.Height * unit * 1.25f);
+                Assert(button.Width >= NativeReturnAsset.Width && button.Height >= NativeReturnAsset.Height + FieldCameraReturnUi.Below);
                 Near(button.X - button.Width * .5f * button.ScaleX, (720 + 167 + 145 + 18) * unit);
-                Near(button.Y, (70 + 22.5f) * unit);
+                Near(button.Y, 70 * unit + button.Height * button.ScaleY / 2);
                 Near(button.Y - button.Height * .5f * button.ScaleY, 70 * unit);
                 Assert(button.Parent == s.Root && button.Visible && FieldCameraReturnUi.Visible && button.Opaque && !button.ChangeState && button.Title == "자유 시점 카메라 종료");
                 var styled = NativeUi.Styled; s.Frame(); Assert(NativeUi.Styled == styled);
                 ModText.English = true; ModText.Revision++; s.Frame(); Assert(button.Title == "Exit Free Camera" && NativeUi.Styled == styled + 1);
                 s.Pin.Visible = false; s.Frame(); Assert(s.Button == button && LastAnchor == s.Strip && !button.Disposed);
                 Near(s.Button.X - s.Button.Width * .5f * s.Button.ScaleX, (720 + 167 + 145 + 18) * unit);
-                Near(s.Button.Y, (70 + 22.5f) * unit);
+                Near(s.Button.Y, 70 * unit + s.Button.Height * s.Button.ScaleY / 2);
                 Assert(s.Button.Y - s.Button.Height * .5f * s.Button.ScaleY >= 70 * unit - .001f);
                 s.Strip.Visible = false; s.Frame(); Assert(s.Root.Children.Count == 0 && !FieldCameraReturnUi.Visible); s.Clean();
             }
             var resized = new Scene(); var original = resized.Button; resized.Resize(3840, 2160); resized.Frame();
-            Assert(resized.Button == original); Near(original.Height * original.ScaleY, 90); resized.Clean();
+            Assert(resized.Button == original); Near((original.Height - FieldCameraReturnUi.Below) * original.ScaleY, 90); resized.Clean();
             var moved = new Scene(); original = moved.Button;
             moved.Field.X = 21; moved.Field.Y = 15; moved.Strip.X = 510; moved.Strip.Y = 125;
             moved.Strip.ScaleX = 1.3f; moved.Strip.ScaleY = .8f; moved.Pin.X = 39; moved.Pin.Y = 11;
             moved.Pin.Width = 172; moved.Pin.Height = 48; moved.Pin.ScaleX = .75f; moved.Pin.ScaleY = 1.25f;
             moved.Frame(); Assert(moved.Button == original && original.Visible);
-            Near(original.Height * original.ScaleY, 36 * .8f * 1.25f);
+            Near((original.Height - FieldCameraReturnUi.Below) * original.ScaleY, 36 * .8f * 1.25f);
             Near(original.X - original.Width * .5f * original.ScaleX, 21 + 510 + (39 + 172) * 1.3f + 36 * .8f / 2);
-            Near(original.Y, 15 + 125 + 36 * .8f * 1.25f / 2);
+            Near(original.Y, 15 + 125 + original.Height * original.ScaleY / 2);
             Near(original.Y - original.Height * .5f * original.ScaleY, 15 + 125);
             var positionWrites = original.PositionWrites; var scaleWrites = original.ScaleWrites; var sizeWrites = original.SizeWrites;
             moved.Frame(); Assert(original.PositionWrites == positionWrites && original.ScaleWrites == scaleWrites && original.SizeWrites == sizeWrites);
             moved.Press(); moved.Strip.Height = 60; moved.Frame(held: true, hit: true); moved.Release();
-            Assert(FieldFreeCamera.Returns == 0); Near(original.Height * original.ScaleY, 60 * .8f * 1.25f);
+            Assert(FieldFreeCamera.Returns == 0); Near((original.Height - FieldCameraReturnUi.Below) * original.ScaleY, 60 * .8f * 1.25f);
             Assert(original.Y - original.Height * .5f * original.ScaleY >= 15 + 125 - .001f);
             moved.Clean();
             var narrow = new Scene(); original = narrow.Button; narrow.Root.Width = 1060; narrow.Frame();
@@ -532,10 +534,11 @@ namespace FieldCameraReturnTest
                 Assert(normal.CentreFillHeight > 0 && hover.CentreFillHeight > 0);
                 Near(title.Width, button.Width - (NativeReturnAsset.Width - NativeReturnAsset.Children[2].Width));
                 Near(title.Height, button.Height - (NativeReturnAsset.Height - NativeReturnAsset.Children[2].Height));
-                Near(title.X, button.Width / 2); Near(title.Y, button.Height / 2);
+                var native = NativeReturnAsset.Children[2];
+                Near(title.X, native.X + (title.Width - native.Width) / 2); Near(title.Y, native.Y + (title.Height - native.Height) / 2);
                 Assert(title.FontSize == Math.Max(1, (int)Math.Floor(20 * NativeReturnAsset.Height / rowHeight))
                     && title.Height >= title.LastTextHeight && title.Width >= title.LastTextWidth && title.AutoSize == 3);
-                var restingScale = unit * rowHeight * 1.25f / button.Height;
+                var restingScale = unit * rowHeight * 1.25f / (button.Height - FieldCameraReturnUi.Below);
                 Near(button.ScaleX, restingScale * (pressed ? NativeReturnAsset.DownScale : 1)); Near(button.ScaleY, button.ScaleX);
                 Near(hover.Width * button.ScaleX, normal.Width * button.ScaleX);
                 Near(hover.Height * button.ScaleY, normal.Height * button.ScaleY);
@@ -612,8 +615,8 @@ namespace FieldCameraReturnTest
             for (var i = 0; i < 100; i++) s.Frame(); Assert(NativeUi.Styled == styled && label.MetricReads == reads);
             ModFont.WidthFactor = 2; ModFont.HeightFactor = 2; ModFont.Revision++; s.Frame();
             Assert(button.Width > width && button.Height > NativeReturnAsset.Height && s.Button == button);
-            Near(label.Width, label.LastTextWidth); Near(label.Height, label.LastTextHeight);
-            Near(button.Height * button.ScaleY, s.Strip.Height * 1.25f);
+            Near(label.Width, label.LastTextWidth); Near(label.Height, label.LastTextHeight + FieldCameraReturnUi.Below);
+            Near((button.Height - FieldCameraReturnUi.Below) * button.ScaleY, s.Strip.Height * 1.25f);
             Near(button.Y - button.Height * .5f * button.ScaleY, s.Strip.Y);
             Assert(label.AutoSize == 3 && label.MetricReads == reads + 2 && NativeUi.Styled == styled + 1);
             ModText.English = true; ModText.Revision++; s.Frame(); Assert(button.Title == "Exit Free Camera" && label.MetricReads == reads + 4);

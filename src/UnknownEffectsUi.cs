@@ -20,7 +20,8 @@ internal sealed class UnknownEffectsRow
         _label = NativeUi.Label(parent, "", 0, y, width, Height, 16, dark: true);
         _label.Set("verticalAlign", 1);
         for (var i = 0; i < 4; i++) _icons.Add(BuffIcon(parent, IconSize));
-        if (help) { _mark = NativeUi.QuestionMark(parent, MarkSize); _mark.Set("visible", false); }
+        // The settlement-styled "?" (NoteUi, user-chosen 2026-11-16).
+        if (help) { _mark = NoteUi.Badge(parent, MarkSize / 2, MarkSize / 2, MarkSize / 2); _mark.Set("visible", false); }
     }
 
     // Same native button the Combat Status row uses; only its icon loader is filled, never RefreshBuff.
@@ -84,10 +85,13 @@ internal sealed class UnknownEffectsRow
 // Hover help under the KO dice indicator's uncounted-effects row: what the row means, each effect's native icon and
 // name, and the hovered effect's native description. It stays open while the pointer is over the row or the help
 // itself, and opens once by itself the first time uncounted effects appear (remembered in the settings file).
+// Since 2026-11-16 its title sits in the notes' striped light grey header band with a light grey "?" (NoteUi, user-chosen with
+// Received Likes' muted note); the body keeps the panel opacity setting, so it has no shadow.
 internal sealed class UnknownEffectsHelp
 {
     private const float Width = 380, Padding = 14, ItemHeight = 30, HoverDelay = 0.15f, AutoSeconds = 4;
-    private readonly RuntimeObject _panel, _title, _body, _detail;
+    private const float Band = 42, Ring = 3, Radius = 18, BodyTop = Band + 10;
+    private readonly RuntimeObject _panel, _title, _body, _detail, _ring;
     private readonly NativeUi.Surface _background;
     private readonly List<(RuntimeObject Icon, RuntimeObject Name)> _items = new();
     private (int[] Ids, int Detail, int Language)? _drawn;
@@ -100,12 +104,22 @@ internal sealed class UnknownEffectsHelp
         _panel.Set("visible", false);
         _panel.Call("SetXY", centreX - Width / 2, y);
         _background = new NativeUi.Surface(_panel, Width, 120);
-        NativeUi.QuestionMark(_panel, UnknownEffectsRow.MarkSize).Call("SetXY", Padding, Padding);
-        _title = NativeUi.Label(_panel, "", Padding + 30, Padding - 3, Width - 2 * Padding - 30, 28, 18, dark: true);
-        _body = NativeUi.Label(_panel, "", Padding, 46, Width - 2 * Padding, 40, 15, dark: true);
+        // The band covers the top of the panel's ring and a ring copy goes back over it, hiding the band's edge.
+        NoteUi.Striped(_panel, Ring / 2, Ring / 2, Width - Ring, Band - Ring / 2, Radius - Ring / 2, Radius - Ring / 2, 0f, 0f, 0f, Ring / 2);
+        SmoothShape.Create(_panel, Ring, Band, Width - 2 * Ring, 2.5f, Color.black, 0f, 0f, 0f, 0f);
+        _ring = SmoothShape.Create(_panel, 0f, 0f, Width, 120, new Color(0f, 0f, 0f, 0f), Radius, Radius, Radius, Radius, Ring, Color.black);
+        NoteUi.Badge(_panel, Padding + NoteUi.BadgeRadius, Band / 2 + 1, NoteUi.BadgeRadius);
+        _title = NoteUi.Text(_panel, "", Padding + 30, 1 - NoteUi.BandTitleLift * 18, Width - 2 * Padding - 30, Band, 18, NoteUi.Ink);
+        _body = NativeUi.Label(_panel, "", Padding, BodyTop, Width - 2 * Padding, 40, 15, dark: true);
         _body.Set("autoSize", 2);
+        // Each name starts right beside its icon (2026.11.2-dev.13 in a real match showed it centred across the panel).
         for (var i = 0; i < 4; i++)
-            _items.Add((UnknownEffectsRow.BuffIcon(_panel, 22), NativeUi.Label(_panel, "", 0, 0, Width - 2 * Padding - 30, 26, 15, dark: true)));
+        {
+            var name = NativeUi.Label(_panel, "", 0, 0, Width - 2 * Padding - 30, 26, 15, dark: true);
+            name.Set("align", 0);
+            name.Set("verticalAlign", 1);
+            _items.Add((UnknownEffectsRow.BuffIcon(_panel, 22), name));
+        }
         // RefreshHyperlinkDesc takes a rich text field (the Combat Status tooltip's native txt_Desc is one).
         _detail = GameUi.NewLabel(_panel, "", 14, rich: true, dark: true);
         _detail.Call("SetXY", Padding, 0f);
@@ -154,7 +168,7 @@ internal sealed class UnknownEffectsHelp
         _drawn = (ids, detail, ModText.Revision);
         _title.Set("text", ModText.Text("미반영 효과"));
         _body.Set("text", ModText.Text("이 효과는 아직 모드 계산에 들어가지 않습니다. 위 조건은 이 효과를 빼고 계산해서 실제 결과와 다를 수 있습니다."));
-        var y = 46 + _body.Get<float>("textHeight") + 10;
+        var y = BodyTop + _body.Get<float>("textHeight") + 10;
         for (var i = 0; i < _items.Count; i++)
         {
             var (icon, name) = _items[i];
@@ -179,6 +193,7 @@ internal sealed class UnknownEffectsHelp
         var height = y + Padding;
         _panel.Call("SetSize", Width, height);
         _background.Resize(Width, height);
+        _ring.Call("SetSize", Width, height);
     }
 
     private static string Local(RuntimeObject? config, string property)

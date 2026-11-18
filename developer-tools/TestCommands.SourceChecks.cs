@@ -190,7 +190,7 @@ internal static partial class TestCommands
             && click.Contains("AccountInfoWindow::RequestPlayReplay", StringComparison.Ordinal) && !click.Contains("IsValidVersion", StringComparison.Ordinal)), "Replay play handler refuses only while grayed");
         Check(account.NestedTypes.Where(type => type.Name.StartsWith("<RequestPlayReplay>", StringComparison.Ordinal)).SelectMany(type => type.Methods).All(method => !Il(method).Contains("IsValidVersion", StringComparison.Ordinal)),
             "Replay play request has no version check of its own");
-        Contains(ReadSource(context, "src/ReplayUi.cs"), new[] { "Plugin.OldReplays.Value", "\"AccountInfoWindow\"", ".Field(\"btn_ReplayPlay\")", "button.Set(\"grayed\", false);", "button.Set(\"grayed\", true);", "Compatibility.Block(Feature, ex, Clear)" },
+        Contains(ReadSource(context, "src/OldReplaysUi.cs"), new[] { "Plugin.OldReplays.Value", "\"AccountInfoWindow\"", ".Field(\"btn_ReplayPlay\")", "button.Set(\"grayed\", false);", "button.Set(\"grayed\", true);", "Compatibility.Block(Feature, ex, Clear)" },
             "Old Version Replays clears only the version gray and restores it on the same record");
         // Its safety: one throwing tween callback stops TweenManager.Update for the session, and FairyGUI's own static switches
         // catch callbacks; a leftover replay state ends through the session's own Clear, never the global task cancel.
@@ -208,7 +208,7 @@ internal static partial class TestCommands
             && Il(session.Methods.Single(method => method.Name == "Clear")).Contains("RoomController::Dispose()", StringComparison.Ordinal)
             && session.Methods.Any(method => method.Name == "get_CurrentPlayer") && session.Methods.Any(method => method.Name == "get_State"),
             "Replay exit is the player's stop, the global task cancel and the session clear, which disposes the room");
-        var replaySource = ReadSource(context, "src/ReplayUi.cs");
+        var replaySource = ReadSource(context, "src/OldReplaysUi.cs");
         Contains(replaySource, new[] { "RuntimeObject.SetStaticField(tween, name, true);", "RuntimeObject.SetStaticField(timers, name, timersValue);",
             "finally { CatchCallbacks(false); }", "!GameUi.NotificationHome().Eligible", "session.Get(\"CurrentPlayer\")?.Call(\"Stop\");", "session.Call(\"Clear\");" },
             "Old Version Replays holds the catch switches only while ON and ends a leftover replay state only at an idle home");
@@ -237,23 +237,28 @@ internal static partial class TestCommands
             "if (text == null || !Plugin.Diagnostics.IsRecording) return;", "if (_lines >= MaxLines || text == _last) return;", "catch { }" }, "Unity log tap runs only in development builds while diagnostics record, bounded and failure-silent");
         NoPattern(unityLog, @"logMessageReceived|ClassInjector|DelegateSupport|ILogHandler", "Unity log tap never registers a managed delegate or injected class");
         Contains(ReadSource(context, "src/Plugin.cs"), new[] { "UnityLogTap.Register();" }, "Unity log tap registers with the startup patches");
-        Contains(source, new[] { "ReplayUi.Tick();","case \"UpdateChannel\": Plugin.UpdateChannel.Value = value; Plugin.Updates.CheckTransition(DateTimeOffset.UtcNow); break;",
+        Contains(source, new[] { "OldReplaysUi.Tick();","case \"UpdateChannel\": Plugin.UpdateChannel.Value = value; Plugin.Updates.CheckTransition(DateTimeOffset.UtcNow); break;",
             "(Plugin.AutomaticChecks.Value || Plugin.Updates.TransitionCheckPending)" }, "Explicit channel selection remains manual when periodic discovery is OFF");
         Contains(source, new[] { "if (!Plugin.Diagnostics.IsRecording) return;", "TraceInput(\"down\", current)", "TraceInput(\"up\", current)", "TraceInput(\"applied\", _pressed)",
             "var enabled = ToggleEnabled(action)", "// Detailed input trace reads no extra native controls, captions or bounds.", "Plugin.Diagnostics.Error(\"SettingsInputTrace\", ex)",
-            "\"FieldBuffs\" => Plugin.FieldBuffs.Value", "\"FieldZoom\" => Plugin.FieldZoom.Value", "\"MatchFocus\" => Plugin.MatchFocus.Value",
+            "\"PlayerIndicators\" => Plugin.PlayerIndicators.Value", "\"FieldZoom\" => Plugin.FieldZoom.Value", "\"MatchFocus\" => Plugin.MatchFocus.Value",
             "MenuLayout.StateHelp(action, ToggleEnabled(action), mode)", "case \"MatchFocus\": Plugin.MatchFocus.Value = !Plugin.MatchFocus.Value; break;",
             "case \"FieldZoom\": Plugin.FieldZoom.Value = !Plugin.FieldZoom.Value; break;" }, "Settings input");
-        Contains(source, new[] { "!hit!.Get<bool>(\"grayed\") && !Locked(Controls[current].Action)) Apply(", "slider.Set(\"touchable\", active);",
+        Contains(source, new[] { "!hit!.Get<bool>(\"grayed\") && !Locked(ActionOf(current))) Apply(", "slider.Set(\"touchable\", active);",
             "row.Button.Pointer == _hovered && !Locked(action)", "button.Set(\"alpha\", Locked(action) ? 0.5f : 1f);" },
             "Options under an OFF parent or tuned switch dim, ignore clicks and slider drags, and keep their values");
         var trace = Regex.Match(source, @"(?s)private static void TraceInput\(.*?(?=    private static bool ToggleEnabled)");
         Check(trace.Success && trace.Value.Contains("Plugin.Diagnostics.Write(", StringComparison.Ordinal) && !Regex.IsMatch(trace.Value, @"(?:\.Call\(|\.Get<|\.Get\(|\.Field\()"), "Sampled trace reads no extra native objects");
-        var features = new[] { "Enabled", "Details", "KoMinimum", "CardPopups", "BattleStatus", "ShushuShield", "FieldBuffs", "Names", "HandLayout", "FieldZoom",
-            "ShushuShieldRestrictions", "AutoThanks", "CharacterRoles", "CharacterGuide", "IndicatorFade", "IndicatorHide", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "DiceLock", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "ShootingStarShow", "KoCardPreview", "KoSpectator", "StatusHand", "StatusEffects", "CounterIcons", "ShushuMaster", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill", "OldReplays", "WalkDirection", "SendAllLikes", "ShopBulkBuy" };
+        var features = new[] { "ActionAdvice", "AdviceDetails", "KoDiceTarget", "PingDetails", "BattleStatus", "ShushuShield", "PlayerIndicators", "NameStyle", "GroupHand", "FieldZoom",
+            "ShushuDefendLock", "AutoThanks", "CharacterRoles", "PrepSkillInfo", "IndicatorFade", "IndicatorHide", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "DicePin", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "ShootingStarShow", "KoCardHover", "KoSpectator", "StatusHand", "StatusEffects", "CounterIcons", "ShushuMaster", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill", "OldReplays", "WalkDirection", "SendAllLikes", "ShopBulkBuy", "ReceivedLikes", "FightPip", "FightPipStart", "ReplaySaveLimit" };
         for (var row = 0; row < features.Length; row++) Check(source.Contains($"AddToggle(\"{features[row]}\", 440, MenuLayout.ToggleY({row}));", StringComparison.Ordinal), "Feature right column: " + features[row]);
-        var general = new[] { "UpdateChannel", "Update", "UpdateDownload", "AutoUpdate", "UpdateAuth", "UpdateSignOut", "DiagnosticsOpen", "DiagnosticsCollect",
-            "SuppressNotices", "UpdateNotifications", "SettingsAutoKeep", "SettingsSave", "SettingsLoad", "SettingsFolder", "SettingsReset" };
+        var general = new[] { "UpdateChannel", "Update", "UpdateDownload", "AutoUpdate", "UpdateAuth", "UpdateSignOut", "DiagnosticsCollect",
+            "SuppressNotices", "UpdateNotifications", "SettingsAutoKeep", "SettingsSave", "SettingsLoad", "SettingsReset" };
+        // The folder rows became round buttons inside their switch rows (2026-11-18).
+        Check(source.Contains("foreach (var (owner, inline) in MenuLayout.InlineButtons) if (owner == action) AddInline(toggle, action, inline, width, height);", StringComparison.Ordinal)
+            && source.Contains("Inline.ContainsKey(item.Pointer) || Controls.ContainsKey(item.Pointer)", StringComparison.Ordinal)
+            && !source.Contains("AddToggle(\"SettingsFolder\"", StringComparison.Ordinal) && !source.Contains("AddToggle(\"DiagnosticsOpen\"", StringComparison.Ordinal),
+            "Folder buttons sit inside their rows and take the pointer first");
         for (var row = 0; row < general.Length; row++) Check(source.Contains($"AddToggle(\"{general[row]}\", 440, MenuLayout.ToggleY({row + 7}));", StringComparison.Ordinal), "General setting row: " + general[row]);
         Contains(source, new[] { "AddToggle(\"MatchFocus\", 440, MenuLayout.ToggleY(4));", "foreach (var action in MenuLayout.Sliders)", "AddToggle(\"Diagnostics\", 440, 190);", "AddToggle(\"MuteUnfocused\", 440, 255);",
             "AddToggle(\"InputAttention\", 440, 320);", "MoveIntoSettings(button, MenuLayout.SettingY(action)", "toggle.Call(\"SetSize\", width, height);",
@@ -297,7 +302,7 @@ internal static partial class TestCommands
 
     private static void SettingsPreferenceInventory(DevContext context, string source, string plugin)
     {
-        var added = new[] { "ShushuShieldRestrictions", "AutoThanks", "CharacterRoles", "CharacterGuide", "IndicatorFade", "IndicatorHide", "DiceLock", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications", "PlayerTabSkill", "OldReplays", "SendAllLikes", "ShopBulkBuy" };
+        var added = new[] { "ShushuDefendLock", "AutoThanks", "CharacterRoles", "PrepSkillInfo", "IndicatorFade", "IndicatorHide", "DicePin", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications", "PlayerTabSkill", "OldReplays", "SendAllLikes", "ShopBulkBuy", "ReceivedLikes", "FightPip", "ReplaySaveLimit" };
         var layout = ReadSource(context, "src/MenuLayout.cs"); var text = ReadSource(context, "src/ModText.cs");
         var enabled = MethodFragment(source, "private static bool ToggleEnabled"); var apply = MethodFragment(source, "private static void ApplyCore");
         var help = layout[layout.IndexOf("internal static (string Title, string Body) Help(", StringComparison.Ordinal)..];
@@ -309,7 +314,7 @@ internal static partial class TestCommands
         foreach (var setting in added) {
             Check(Regex.IsMatch(plugin, @"ConfigEntry<bool>\s+" + setting + @"\s*\{"), "Boolean preference declared: " + setting);
             var binding = Regex.Match(plugin, @"\b" + setting + @"\s*=\s*Config\.Bind\(" + literal + @",\s*" + literal + @",\s*(?<default>[^,\r\n]+),\s*(?<description>" + literal + @")\)");
-            var expectedDefault = setting == "FinalDamage" ? "Enabled.Value" : setting == "ShushuShieldRestrictions" ? "ShushuShield.Value" : setting == "OldReplays" ? "false" : "true";
+            var expectedDefault = setting == "FinalDamage" ? "ActionAdvice.Value" : setting == "ShushuDefendLock" ? "ShushuShield.Value" : setting == "OldReplays" ? "false" : "true";
             Check(binding.Success && binding.Groups["default"].Value.Trim() == expectedDefault, "Fresh/migrated preference default retained: " + setting);
             Check(binding.Groups["description"].Value.Contains(" / ", StringComparison.Ordinal), "Persisted setting has Korean and English guidance: " + setting);
             Check(enabled.Contains("\"" + setting + "\" => Plugin." + setting + ".Value", StringComparison.Ordinal), "Toggle reads its own saved preference: " + setting);
@@ -341,8 +346,8 @@ internal static partial class TestCommands
             Check(text.Contains("\"" + channel + "\" => Text(\"" + label + "\")", StringComparison.Ordinal) && translations["\"" + label + "\""].SingleOrDefault() == "\"" + english + "\"", "Channel display is localized without changing its stored identity: " + channel);
         }
         Contains(ReadSource(context, "src/Compatibility.cs"), new[] { "if (feature is \"CounterSound\" or \"CounterAnimation\" or \"CounterIcons\") return Reason(\"CounterIndicators\");" }, "Counter preference errors follow the isolated counter breaker rather than public battle rows");
-        Contains(ReadSource(context, "src/Compatibility.cs"), new[] { "\"EncounterAdvice\" or \"DefenseAdvice\" or \"CardAdvice\" or \"KoCardPreview\" or \"KoSpectator\") return Reason(\"Enabled\");",
-            "if (feature is \"ShootingStarShow\") return Reason(\"ShootingStar\") ?? Reason(\"Enabled\");", "if (feature is \"StatusHand\" or \"StatusEffects\") return Reason(\"BattleStatus\");",
+        Contains(ReadSource(context, "src/Compatibility.cs"), new[] { "\"EncounterAdvice\" or \"DefenseAdvice\" or \"CardAdvice\" or \"KoCardHover\" or \"KoSpectator\") return Reason(\"ActionAdvice\");",
+            "if (feature is \"ShootingStarShow\") return Reason(\"ShootingStar\") ?? Reason(\"ActionAdvice\");", "if (feature is \"StatusHand\" or \"StatusEffects\") return Reason(\"BattleStatus\");",
             "if (feature is \"PlayerTabHand\" or \"PlayerTabRole\" or \"PlayerTabSkill\") return Reason(\"PlayerTab\");" }, "Part switches show unavailable while the breaker of the feature that draws them has tripped");
     }
 
@@ -365,7 +370,8 @@ internal static partial class TestCommands
         foreach (var phase in new[] { "open begin", "open complete", "close begin", "close complete", "select", "applied" }) Check(source.Contains("settingsDropdown " + phase, StringComparison.Ordinal), "Dropdown breadcrumb: " + phase);
         Contains(source, new[] { "if (_dropdown != null) { HandleDropdown(); return; }", "if (_dropdown != null) CloseDropdown(); else if (_query.Length > 0) SetQuery(\"\"); else ClosePanel();",
             "if (!path.Any(item => item.Pointer == _dropdown!.Pointer)) CloseDropdown();", "if (current == IntPtr.Zero || current != _pressed)", "if (!Compatibility.Allowed(_dropdownAction!))",
-            "Plugin.Language.Value = value", "Plugin.GroupHand.Value = value != \"Native\"", "Plugin.InputAttention.Value = value", "MenuLayout.DropdownY", "var chosen = options[i] == selected;",
+            "if (MenuLayout.IsDropdown(action)) { OpenDropdown(action); return; }", "if (MenuLayout.IsDropdown(action)) Labels[\"Arrow.\" + action]",
+            "Plugin.Language.Value = value", "Plugin.UseRealNames.Value = value == \"Real\"", "Plugin.GroupHand.Value = value != \"Native\"", "Plugin.InputAttention.Value = value", "MenuLayout.DropdownY", "var chosen = options[i] == selected;",
             "SetField(\"selectionMode\", 3)", "MenuLayout.InSettings(local.x, local.y)", "if (scrolling) { _pressed = IntPtr.Zero; hit = null; }", "MenuLayout.ContentHeight(bottom)",
             "GameUi.Dispose(scrollTemplate)", "MenuLayout.FooterY + 7", "_settingsView.SetField(\"scrollItemToViewOnClick\", false)",
             "var scrollPosition = reopen ? _settingsScroll!.Get<float>(\"scrollingPosY\") : 0;", "_settingsScroll!.Call(\"SetPosY\", scrollPosition, false)" }, "Settings scroll lifecycle");

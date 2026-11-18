@@ -17,7 +17,7 @@ internal static partial class TestCommands
             case "field-indicator-opacity": FieldOpacity(context, stage, pin); break;
             case "field-indicator-input": FieldInput(context, stage, pin); break;
             case "field-counter": FieldCounter(context, stage, pin); break;
-            case "field-buffs": FieldBuffs(context, stage, options, pin); break;
+            case "field-buffs": PlayerIndicators(context, stage, options, pin); break;
             default: return false;
         }
         return true;
@@ -88,7 +88,7 @@ internal static partial class TestCommands
         NoPattern(source, @"Set\(|ActiveCamera|EnableFreeCamera|GetAxis|Send|Dispatch|Register|\.position\s*=|\.rotation\s*=|fieldOfView\s*=", "Zoom changes no native movement/FOV/input/callbacks");
         Check(Regex.Matches(source, "SetField\\(\"([^\"]+)\"").All(match => match.Groups[1].Value is "m_FollowOffset" or "CameraSpeed"), "Only the follow offset and the restored WASD speed are written");
         var harness = Template(context, "focus-tests/field-zoom/RuntimeFixture.template.cs", pin)
-            .Replace("__GEOMETRY__", WithoutNamespace(ReadSource(context, "src/FieldZoomGeometry.cs")), StringComparison.Ordinal)
+            .Replace("__GEOMETRY__", WithoutNamespace(ReadSource(context, "src/FieldZoomGeometry.cs")) + "\n" + WithoutNamespace(ReadSource(context, "src/UnityMath.cs")).Replace("using UnityEngine;", "", StringComparison.Ordinal), StringComparison.Ordinal)
             .Replace("__SOURCE__", source, StringComparison.Ordinal)
             .Replace("__POINTER_PATH__", MethodFragment(gameUi, "internal static IReadOnlyList<RuntimeObject> PointerPath"), StringComparison.Ordinal)
             .Replace("__VALUE_CHECK__", MethodFragment(runtime, "private static void CheckValue<T>"), StringComparison.Ordinal)

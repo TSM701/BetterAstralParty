@@ -50,10 +50,10 @@ static class CharacterNameUi { internal static void Tick(RuntimeObject root) { P
 static class CardDiceUi { internal static void PollResolved() { Probe.Visit("dice.tick"); } }
 static class ShootingStarUi { internal static void Tick() { } internal static void Clear() { } }
 static class CardUi { internal static void Animate() { Probe.Visit("cards.tick"); } }
-static class RemainingHpUi { internal static void Animate() { } }
-static class CardPreviewUi { internal static void Reset() { Probe.LanguageStep("CardPopups"); } }
+static class FinalDamageUi { internal static void Animate() { } }
+static class PingDetailsUi { internal static void Reset() { Probe.LanguageStep("PingDetails"); } }
 static class BattleStatusUi { internal static void Clear() { Probe.LanguageStep("BattleStatus"); } }
-static class FieldBuffUi { internal static void Clear(string reason) { Probe.LanguageStep("FieldBuffs"); } }
+static class PlayerIndicatorUi { internal static void Clear(string reason) { Probe.LanguageStep("PlayerIndicators"); } }
 static class UpdateNotificationUi {
     internal const string Feature = "UpdateNotification";
     static void Clear() { Probe.Visit("notice.clear"); if (Probe.ThrowNoticeClear) throw new Exception("Notice cleanup unavailable"); }
@@ -81,8 +81,8 @@ static class GameUi {
     static void HandleMenuInput() { Probe.Visit("home.input"); if (Probe.ThrowInput) throw new MissingMethodException("menu hit-test"); }
     static void UpdateFight() { Probe.Visit("fight.tick"); }
     static void UpdateHover() { Probe.Visit("hover.tick"); }
-    static void ClearAdvice() { Probe.Visit("advice.clear"); Probe.LanguageStep("Enabled"); }
-    static void ClearAdviceDisplay() { Probe.Visit("advice.clear"); Probe.LanguageStep("Enabled"); }
+    static void ClearAdvice() { Probe.Visit("advice.clear"); Probe.LanguageStep("ActionAdvice"); }
+    static void ClearAdviceDisplay() { Probe.Visit("advice.clear"); Probe.LanguageStep("ActionAdvice"); }
     static void HideAdvice() { }
     static bool _homeOnly = false; // GameUi.TickHome sets it; this fixture runs the gameplay frame only.
 __FAIL_HOME__
@@ -132,12 +132,12 @@ public static class Runner {
         Probe.Check(!Compatibility.Allowed("HomeMenu") && Probe.Count("diagnostic.Compatibility.HomeMenu") == 1 && Probe.Count("modal.dispose") == 1, "Failing diagnostics cannot prevent local home cleanup or reach CoreUi"); cases++;
         Probe.Reset(); Probe.ThrowCreate = Probe.ThrowWarning = Probe.ThrowError = true; ModUi.TogglePanel(); Frames(2); Continuing(2);
         Probe.Check(!Compatibility.Allowed("SettingsUi") && !ModUi.IsOpen && !Probe.NativeModal && Probe.Count("diagnostic.Compatibility.SettingsUi") == 1, "Failing diagnostics cannot prevent local settings cleanup or reach CoreUi"); cases++;
-        foreach (var feature in new[] { "Enabled", "CardPopups", "BattleStatus", "FieldBuffs" }) {
+        foreach (var feature in new[] { "ActionAdvice", "PingDetails", "BattleStatus", "PlayerIndicators" }) {
             Probe.Reset(); Probe.ThrowLanguage = feature; GameUi.RefreshLanguage(); Frames(2);
             Probe.Check(Compatibility.Allowed("CoreUi") && !Compatibility.Allowed(feature) && Compatibility.Allowed("HomeMenu")
                 && Probe.Count("core.failed") == 0 && Probe.Count("character.tick") == 2 && Probe.Count("home.follow") == 2
                 && Probe.Count("diagnostic.Compatibility." + feature) == 1, "Language cleanup fault remains with its owning feature: " + feature);
-            foreach (var cleanup in new[] { "Enabled", "CardPopups", "BattleStatus", "FieldBuffs" })
+            foreach (var cleanup in new[] { "ActionAdvice", "PingDetails", "BattleStatus", "PlayerIndicators" })
                 Probe.Check(Probe.Count("language." + cleanup) == (cleanup == feature ? 2 : 1), "Other language cleanups still run after a failed one");
             cases++;
         }

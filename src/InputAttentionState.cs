@@ -21,10 +21,6 @@ internal static class InputAttentionState
         or "LandPursuitWindow" or "LandRelicWindow" or "LandVendorWindow" or "LandShopWindow"
         // Plant Building Shop (2026-11-12): a buy/cancel choice. LandBuildingMissionWindow only shows progress.
         or "LandBuildShopWindow";
-    // CardChoiceTimer: a watched card choice ends when its window closes (Sn 0) or shows another action, and its input
-    // timer is cancelled only while the timer registered under its Sn is still the object seen with the window open.
-    internal static long StaleChoiceTimer(long watched, IntPtr seen, long open, IntPtr registered) =>
-        watched != 0 && watched != open && seen != IntPtr.Zero && registered == seen ? watched : 0;
     internal static bool ShouldFlash(bool enabled, bool focused, bool running, bool participant,
         bool replay, bool pve, int pending) => enabled && !focused && running && participant
         && !replay && pve && pending > 0;

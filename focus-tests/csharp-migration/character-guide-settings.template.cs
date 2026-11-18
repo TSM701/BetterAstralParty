@@ -16,7 +16,7 @@ internal static class Time { internal static float unscaledTime=1; }
 }
 namespace BetterAstralParty {
 internal sealed class Setting { internal bool Value=true; }
-internal static class Plugin { internal static readonly Setting CharacterGuide=new(),CharacterRoles=new(); }
+internal static class Plugin { internal static readonly Setting PrepSkillInfo=new(),CharacterRoles=new(); }
 internal sealed class RuntimeObject {
     static long _next;internal readonly IntPtr Pointer=new(++_next);internal readonly string TypeName;
     internal readonly Dictionary<string,object?> Values=new();internal object? Scalar;internal int ResultReads;internal string? FailCall;
@@ -78,14 +78,14 @@ internal static class VisibleCombatAdvisor { internal static bool IsPve(int map)
 __SOURCE__
 internal static class GuideSettingsCheck {
     internal static int Assertions;
-    private static readonly Type Guide=typeof(CharacterGuideUi);
+    private static readonly Type Guide=typeof(PrepSkillInfoUi);
     private static FieldInfo Field(string name)=>Guide.GetField(name,BindingFlags.Static|BindingFlags.NonPublic)??throw new InvalidOperationException("Missing actual production field: "+name);
     private static T Read<T>(string name)=>(T)Field(name).GetValue(null)!;
     private static void Set(string name,object? value)=>Field(name).SetValue(null,value);
     private static void Assert(bool value,string message){Assertions++;if(!value)throw new InvalidOperationException("Guide settings assertion: "+message+"; breakers="+string.Join(";",Compatibility.Blocked.Select(pair=>pair.Key+":"+pair.Value)));}
     private sealed class Scene {
         internal readonly RuntimeObject Root=new("Root"),Room=new("Room");internal readonly RuntimeObject[] Players=new RuntimeObject[4];
-        internal Scene(){CharacterGuideUi.Clear();Compatibility.Blocked.Clear();RuntimeObject.FailLocal=false;RuntimeObject.Potentials=null;Set("_heroLoad",null);Set("_heroBound",false);Set("_guideEnabled",true);Set("_rolesEnabled",true);Set("_config",IntPtr.Zero);Set("_helper",IntPtr.Zero);Plugin.CharacterGuide.Value=Plugin.CharacterRoles.Value=true;GameUi.Root=Root;GameUi.Room=Room;Root.Values["width"]=1920f;Root.Values["height"]=1080f;Time.unscaledTime+=1;
+        internal Scene(){PrepSkillInfoUi.Clear();Compatibility.Blocked.Clear();RuntimeObject.FailLocal=false;RuntimeObject.Potentials=null;Set("_heroLoad",null);Set("_heroBound",false);Set("_guideEnabled",true);Set("_rolesEnabled",true);Set("_config",IntPtr.Zero);Set("_helper",IntPtr.Zero);Plugin.PrepSkillInfo.Value=Plugin.CharacterRoles.Value=true;GameUi.Root=Root;GameUi.Room=Room;Root.Values["width"]=1920f;Root.Values["height"]=1080f;Time.unscaledTime+=1;
             for(int i=0;i<4;i++){var p=Players[i]=new("Player");p.Values["mapType"]=new RuntimeObject(){Scalar=4};p.Values["isChoose"]=new RuntimeObject();p.Get("isChoose")!.Values["selectedIndex"]=0;p.Values["loader_Character"]=new RuntimeObject();var swap=new RuntimeObject("Swap");swap.Values["x"]=20f;var button=new RuntimeObject();button.Values["x"]=12f;button.Values["parent"]=swap;swap.Values["btn_ChangeSlot"]=button;p.Values["com_ChangeSlot"]=swap;Room.Values["com_player_"+(i+1)]=p;}
         }
     }
@@ -98,30 +98,30 @@ internal static class GuideSettingsCheck {
         var table=new RuntimeObject();var potential=new RuntimeObject();potential.Values["DescriptionID"]=123;table.Values["123"]=potential;RuntimeObject.Potentials=new();RuntimeObject.Potentials.Values["BreakDict"]=table;
     }
     internal static void Run(){
-        var s=new Scene();CharacterGuideUi.Tick();Assert(Read<ICollection>("Players").Count==4,"default both-on observes four public preparation slots");Assert(((IDictionary)Field("SwapPositions").GetValue(null)!).Count==4,"default roles retains original swap alignment");
-        Time.unscaledTime+=.25f;CharacterGuideUi.Tick();Assert(s.Players.All(p=>p.Get("com_ChangeSlot")!.Get<float>("x")==-12f),"periodic scan keeps native swap alignment idempotent");
-        var template=Read<RuntimeObject>("_cardTemplate");var popup=SeedPopup();Plugin.CharacterGuide.Value=false;CharacterGuideUi.Tick();
+        var s=new Scene();PrepSkillInfoUi.Tick();Assert(Read<ICollection>("Players").Count==4,"default both-on observes four public preparation slots");Assert(((IDictionary)Field("SwapPositions").GetValue(null)!).Count==4,"default roles retains original swap alignment");
+        Time.unscaledTime+=.25f;PrepSkillInfoUi.Tick();Assert(s.Players.All(p=>p.Get("com_ChangeSlot")!.Get<float>("x")==-12f),"periodic scan keeps native swap alignment idempotent");
+        var template=Read<RuntimeObject>("_cardTemplate");var popup=SeedPopup();Plugin.PrepSkillInfo.Value=false;PrepSkillInfoUi.Tick();
         Assert(popup.Get<bool>("isDisposed")&&Field("_popup").GetValue(null)==null,"guide off hides and disposes only its popup");Assert(!template.Get<bool>("isDisposed")&&((IDictionary)Field("SwapPositions").GetValue(null)!).Count==4,"roles-on survives guide off");Assert(Read<ICollection>("Players").Count==4,"role-only mode retains public player observation");
-        s=new Scene();CharacterGuideUi.Tick();popup=SeedPopup();var badge=SeedBadge();template=Read<RuntimeObject>("_cardTemplate");var reads=GameUi.PointerReads;s.Players[0].Get("isChoose")!.Values["selectedIndex"]=1;Plugin.CharacterRoles.Value=false;CharacterGuideUi.Tick();
+        s=new Scene();PrepSkillInfoUi.Tick();popup=SeedPopup();var badge=SeedBadge();template=Read<RuntimeObject>("_cardTemplate");var reads=GameUi.PointerReads;s.Players[0].Get("isChoose")!.Values["selectedIndex"]=1;Plugin.CharacterRoles.Value=false;PrepSkillInfoUi.Tick();
         Assert(badge.Get<bool>("isDisposed")&&template.Get<bool>("isDisposed")&&((IDictionary)Field("Badges").GetValue(null)!).Count==0,"roles off removes owned badges/template");Assert(!popup.Get<bool>("isDisposed")&&Read<ICollection>("Players").Count==4&&GameUi.PointerReads>reads&&Read<IntPtr>("_hover")==s.Players[0].Pointer,"guide-only mode retains popup ownership, hover path and public players");
         Assert(s.Players.All(p=>p.Get("com_ChangeSlot")!.Get<float>("x")==20f),"roles off restores exactly owned native swap coordinates");
-        var created=NativeUi.Created;Plugin.CharacterRoles.Value=true;CharacterGuideUi.Tick();Assert(NativeUi.Created>created&&((IDictionary)Field("SwapPositions").GetValue(null)!).Count==4,"roles re-enable rescans and rebuilds presentation");
-        s.Players[0].Get("com_ChangeSlot")!.Values["x"]=777f;Plugin.CharacterRoles.Value=false;CharacterGuideUi.Tick();Assert(s.Players[0].Get("com_ChangeSlot")!.Get<float>("x")==777f,"off never overwrites another owner's swap position");
-        popup=SeedPopup();badge=SeedBadge();var pending=new RuntimeObject("Awaiter");pending.Values["IsCompleted"]=false;pending.Values["result"]=new RuntimeObject("LoadedPackage");Set("_heroLoad",pending);Plugin.CharacterGuide.Value=false;var classes=RuntimeObject.ClassReads;CharacterGuideUi.Tick();
+        var created=NativeUi.Created;Plugin.CharacterRoles.Value=true;PrepSkillInfoUi.Tick();Assert(NativeUi.Created>created&&((IDictionary)Field("SwapPositions").GetValue(null)!).Count==4,"roles re-enable rescans and rebuilds presentation");
+        s.Players[0].Get("com_ChangeSlot")!.Values["x"]=777f;Plugin.CharacterRoles.Value=false;PrepSkillInfoUi.Tick();Assert(s.Players[0].Get("com_ChangeSlot")!.Get<float>("x")==777f,"off never overwrites another owner's swap position");
+        popup=SeedPopup();badge=SeedBadge();var pending=new RuntimeObject("Awaiter");pending.Values["IsCompleted"]=false;pending.Values["result"]=new RuntimeObject("LoadedPackage");Set("_heroLoad",pending);Plugin.PrepSkillInfo.Value=false;var classes=RuntimeObject.ClassReads;PrepSkillInfoUi.Tick();
         Assert(popup.Get<bool>("isDisposed")&&badge.Get<bool>("isDisposed")&&Read<ICollection>("Players").Count==0&&Read<IntPtr>("_hover")==IntPtr.Zero,"both off clears every owned presentation and observed slot");Assert(ReferenceEquals(Field("_heroLoad").GetValue(null),pending)&&pending.ResultReads==0&&RuntimeObject.ClassReads==classes,"both off retains incomplete awaiter without starting more native loads");
-        GameUi.Root=null;pending.Values["IsCompleted"]=true;CharacterGuideUi.Tick();CharacterGuideUi.Tick();Assert(pending.ResultReads==1&&Field("_heroLoad").GetValue(null)==null,"late package completion is safely observed exactly once even with both off and no UI root");
-        GameUi.Root=s.Root;Plugin.CharacterGuide.Value=true;CharacterGuideUi.Tick();Assert(Read<ICollection>("Players").Count==4&&Read<IntPtr>("_hover")==s.Players[0].Pointer,"guide re-enable resumes public hover independently of roles");
-        foreach(var player in s.Players)player.Get("mapType")!.Scalar=1;Set("_scanAt",0f);Set("_room",null);CharacterGuideUi.Tick();Assert(Read<ICollection>("Players").Count==0,"unknown/PvP player slots do not enter the guide tracker");
+        GameUi.Root=null;pending.Values["IsCompleted"]=true;PrepSkillInfoUi.Tick();PrepSkillInfoUi.Tick();Assert(pending.ResultReads==1&&Field("_heroLoad").GetValue(null)==null,"late package completion is safely observed exactly once even with both off and no UI root");
+        GameUi.Root=s.Root;Plugin.PrepSkillInfo.Value=true;PrepSkillInfoUi.Tick();Assert(Read<ICollection>("Players").Count==4&&Read<IntPtr>("_hover")==s.Players[0].Pointer,"guide re-enable resumes public hover independently of roles");
+        foreach(var player in s.Players)player.Get("mapType")!.Scalar=1;Set("_scanAt",0f);Set("_room",null);PrepSkillInfoUi.Tick();Assert(Read<ICollection>("Players").Count==0,"unknown/PvP player slots do not enter the guide tracker");
         Assert(Compatibility.Blocked.Count==0,"normal independent-setting cases never trip a compatibility breaker");
-        s=new Scene();CharacterGuideUi.Tick();PublicGuideData(s);CharacterGuideUi.Tick();badge=SeedBadge();template=Read<RuntimeObject>("_cardTemplate");Set("_scanAt",Time.unscaledTime+10);RuntimeObject.FailLocal=true;Time.unscaledTime+=.25f;CharacterGuideUi.Tick();
-        Assert(Compatibility.Blocked.TryGetValue("CharacterGuide",out var failure)&&failure is MissingMethodException&&failure.Message.Contains("GetLocal",StringComparison.Ordinal)&&Compatibility.Allowed("CharacterRoles"),"native description failure blocks only CharacterGuide");
+        s=new Scene();PrepSkillInfoUi.Tick();PublicGuideData(s);PrepSkillInfoUi.Tick();badge=SeedBadge();template=Read<RuntimeObject>("_cardTemplate");Set("_scanAt",Time.unscaledTime+10);RuntimeObject.FailLocal=true;Time.unscaledTime+=.25f;PrepSkillInfoUi.Tick();
+        Assert(Compatibility.Blocked.TryGetValue("PrepSkillInfo",out var failure)&&failure is MissingMethodException&&failure.Message.Contains("GetLocal",StringComparison.Ordinal)&&Compatibility.Allowed("CharacterRoles"),"native description failure blocks only PrepSkillInfo");
         Assert(!badge.Get<bool>("isDisposed")&&!template.Get<bool>("isDisposed")&&((IDictionary)Field("SwapPositions").GetValue(null)!).Count==4,"guide-only failure preserves normal owned role badge/template/swap presentation");
-        Plugin.CharacterGuide.Value=false;CharacterGuideUi.Tick();Plugin.CharacterGuide.Value=true;CharacterGuideUi.Tick();Assert(Compatibility.Allowed("CharacterRoles")&&!badge.Get<bool>("isDisposed"),"blocked guide OFF/re-ON never blocks or clears roles");
-        s=new Scene();CharacterGuideUi.Tick();popup=SeedPopup();s.Players[0].Get("isChoose")!.Values["selectedIndex"]=1;s.Players[0].Get("com_ChangeSlot")!.Get("btn_ChangeSlot")!.FailCall="LocalToRoot";Set("_scanAt",0f);CharacterGuideUi.Tick();
-        Assert(!Compatibility.Allowed("CharacterRoles")&&Compatibility.Allowed("CharacterGuide")&&Read<ICollection>("Players").Count==4,"role alignment failure blocks only CharacterRoles and retains public guide tracking");
+        Plugin.PrepSkillInfo.Value=false;PrepSkillInfoUi.Tick();Plugin.PrepSkillInfo.Value=true;PrepSkillInfoUi.Tick();Assert(Compatibility.Allowed("CharacterRoles")&&!badge.Get<bool>("isDisposed"),"blocked guide OFF/re-ON never blocks or clears roles");
+        s=new Scene();PrepSkillInfoUi.Tick();popup=SeedPopup();s.Players[0].Get("isChoose")!.Values["selectedIndex"]=1;s.Players[0].Get("com_ChangeSlot")!.Get("btn_ChangeSlot")!.FailCall="LocalToRoot";Set("_scanAt",0f);PrepSkillInfoUi.Tick();
+        Assert(!Compatibility.Allowed("CharacterRoles")&&Compatibility.Allowed("PrepSkillInfo")&&Read<ICollection>("Players").Count==4,"role alignment failure blocks only CharacterRoles and retains public guide tracking");
         Assert(!popup.Get<bool>("isDisposed")&&Read<IntPtr>("_hover")==s.Players[0].Pointer&&s.Players.All(p=>p.Get("com_ChangeSlot")!.Get<float>("x")==20f),"role-only failure restores owned swaps without clearing guide popup/hover");
-        Plugin.CharacterRoles.Value=false;CharacterGuideUi.Tick();Plugin.CharacterRoles.Value=true;CharacterGuideUi.Tick();Assert(Compatibility.Allowed("CharacterGuide")&&!popup.Get<bool>("isDisposed"),"blocked role OFF/re-ON never blocks or clears guide");
-        CharacterGuideUi.Clear();
+        Plugin.CharacterRoles.Value=false;PrepSkillInfoUi.Tick();Plugin.CharacterRoles.Value=true;PrepSkillInfoUi.Tick();Assert(Compatibility.Allowed("PrepSkillInfo")&&!popup.Get<bool>("isDisposed"),"blocked role OFF/re-ON never blocks or clears guide");
+        PrepSkillInfoUi.Clear();
     }
 }
 }

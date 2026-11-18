@@ -18,8 +18,8 @@ internal static class Compatibility
         if (Blocked.TryGetValue(feature, out var reason)) return ModText.Text(reason);
         if (Previewed.Contains(feature)) return ModText.Text("사용 불가 미리보기 · Ctrl+Shift+F10으로 복구");
         // A part switch is unavailable whenever the breaker of the feature that draws it has tripped.
-        if (feature is "Details" or "KoMinimum" or "EncounterAdvice" or "DefenseAdvice" or "CardAdvice" or "KoCardPreview" or "KoSpectator") return Reason("Enabled");
-        if (feature is "ShootingStarShow") return Reason("ShootingStar") ?? Reason("Enabled");
+        if (feature is "AdviceDetails" or "KoDiceTarget" or "EncounterAdvice" or "DefenseAdvice" or "CardAdvice" or "KoCardHover" or "KoSpectator") return Reason("ActionAdvice");
+        if (feature is "ShootingStarShow") return Reason("ShootingStar") ?? Reason("ActionAdvice");
         if (feature is "CounterSound" or "CounterAnimation" or "CounterIcons") return Reason("CounterIndicators");
         if (feature is "StatusHand" or "StatusEffects") return Reason("BattleStatus");
         if (feature is "PlayerTabHand" or "PlayerTabRole" or "PlayerTabSkill") return Reason("PlayerTab");

@@ -66,14 +66,14 @@ internal static partial class TestCommands
         Check(cancels.Length == 1, "Exact native monster-selection cancel callback originates in the source async method");
         Contains(Operands(cancels[0]), new[] { "GameLogic.CardSignal::resetCardList", "FairyGUI.Window::Hide" }, "Native cancel lifecycle");
         NoPattern(Operands(cancels[0]), "UI.CardWindow::|FairyGUI.Window::HideImmediately", "Monster cancel retains empty CardWindow");
-        var game = ReadSource(context, "src/GameUi.cs"); var preview = ReadSource(context, "src/CardPreviewUi.cs"); var hand = ReadSource(context, "src/HandLayoutUi.cs");
-        var interaction = Fragment(hand, @"(?s)        if \(clickMode\)\r?\n        \{.*?(?=        if \(_expanded is \{ \} missing)", "Grouped hand interaction branch");
+        var game = ReadSource(context, "src/GameUi.cs"); var preview = ReadSource(context, "src/PingDetailsUi.cs"); var hand = ReadSource(context, "src/HandLayoutUi.cs");
+        var interaction = Fragment(hand, @"(?s)        // Monster cancel can leave an empty CardWindow on stage.*?(?=        if \(_expanded is \{ \} missing)", "Grouped hand interaction branch");
         Pattern(interaction, @"PollPileClick\(path, pointer, unit, inputLocked \|\| pending > 0 \|\| usingCard \|\| FieldCameraReturnUi.ConsumedInput\)", "Native lock ownership retained in grouped input");
         const string ns = "MigratedHandPointer";
         var harness = Template(context, "focus-tests/csharp-migration/hand-pointer-input.template.cs", pin).Replace("__NS__", ns, StringComparison.Ordinal)
             .Replace("__POINTER__", MethodFragment(game, "internal static IReadOnlyList<RuntimeObject> PointerPath"), StringComparison.Ordinal)
             .Replace("__TARGETS__", MethodFragment(preview, "private static void UpdatePingTargets"), StringComparison.Ordinal).Replace("__UPDATE__", MethodFragment(preview, "private static void Update"), StringComparison.Ordinal)
-            .Replace("__CLICK__", MethodFragment(hand, "private static void PollPileClick"), StringComparison.Ordinal).Replace("__LAYOUT__", WithoutNamespace(ReadSource(context, "src/CardPreviewLayout.cs")), StringComparison.Ordinal)
+            .Replace("__CLICK__", MethodFragment(hand, "private static void PollPileClick"), StringComparison.Ordinal).Replace("__LAYOUT__", WithoutNamespace(ReadSource(context, "src/PingDetailsLayout.cs")), StringComparison.Ordinal)
             .Replace("__HAND_LAYOUT__", WithoutNamespace(ReadSource(context, "src/HandLayout.cs")), StringComparison.Ordinal).Replace("__INTERACTION__", interaction, StringComparison.Ordinal);
         RunEmbedded(context, stage, "hand-pointer-input", harness, ns + ".Check.Run()", pin);
         var legacy = harness.Replace("path.Any(item => item.TypeName == \"CardWindow\")", "GameUi.Find(root, \"CardWindow\", maxDepth: 1) != null", StringComparison.Ordinal); Check(legacy != harness, "Exact legacy CardWindow mutant bound");
@@ -82,20 +82,14 @@ internal static partial class TestCommands
     private static void HandSubmit(DevContext context, string stage, Action<string> pin)
     {
         using var native = Native(context);
-        Check(native.MainModule.GetType("UI.UIHandCard_Button_Card").Fields.Single(field => field.Name == "effectGuide").FieldType.FullName == "FairyGUI.GGraph", "Native submit guide graph");
-        var usable = NativeAsyncMoveNext(native, "UI.UIHandCard_Button_Card", "UpdateUsableState"); Pattern(Operands(usable), "effectGuide", "Guide field loading"); Pattern(Operands(usable), "ShowEffectInUI", "Guide effect loading"); Check(usable.Body.Instructions.Any(instruction => instruction.OpCode.Name == "ldc.i4.s" && Convert.ToInt32(instruction.Operand) == 22), "Native guide effect is 22");
-        Pattern(Operands(NativeMethod(native, "UI.UIHandCard_Button_Card", "DisplayCard")), "_EnableUse.*SetActive", "Native guide availability");
-        var rotation = NativeMethod(native, "FairyGUI.DisplayObject", "set_rotation"); Pattern(string.Join(" ", rotation.Body.Instructions.Select(instruction => instruction.OpCode.Name)), "ldarg.1 neg stfld", "Clockwise display rotation value"); Pattern(Operands(rotation), "Vector3::z.*set_localEulerAngles", "Native clockwise Euler rotation");
-        Pattern(Operands(NativeMethod(native, "FairyGUI.GGraph", "SetNativeObject")), "GObject::get_rotation.*DisplayObject::set_rotation", "Late loaded effect inherits rotation");
         Contains(Operands(NativeAsyncMoveNext(native, "UI.HandCardPanel", "DragEndEvent")), new[] { "UIHandCardPanel::hotZone", "GObject::LocalToGlobal", "GObject::get_actualWidth", "GObject::get_actualHeight" }, "Native card drop bounds");
         var source = ReadSource(context, "src/HandLayoutUi.cs"); var methods = new Dictionary<string, string>();
-        foreach (var name in new[] { "UpdateDropZone", "UpdateDropHint", "SetGuideDirection", "ClearDropHint" }) methods[name] = MethodFragment(source, "private static void " + name);
+        foreach (var name in new[] { "UpdateDropZone" }) methods[name] = MethodFragment(source, "private static void " + name);
         var toLocal = Fragment(source, @"(?s)    private static Vector2 ToLocal\(.*?;", "Native root-to-local drop path"); var update = MethodFragment(source, "private static void Update");
-        var zone = update.IndexOf("if (_dropBottom is { } dropBottom) UpdateDropZone(root, width, unit, clickMode, dropBottom * height);", StringComparison.Ordinal);
+        var zone = update.IndexOf("if (_dropBottom is { } dropBottom) UpdateDropZone(root, width, height, dropBottom * height);", StringComparison.Ordinal);
         Check(zone >= 0 && zone < update.IndexOf("if (CardPointerBusy(dragging))", StringComparison.Ordinal)
             && update.Contains("_dropBottom = HandLayout.DropBottom(pileTop, open, unit) / height;", StringComparison.Ordinal), "Drop zone follows a resize through a drag; its bottom follows the resting cards");
-        Contains(source, new[] { "SetGuideDirection(old, false)", "SetGuideDirection(Entries[key], false)", "SetGuideDirection(e, false)", "Step(ClearDropHint);", "if (mode != _mode) { Clear(); _mode = mode; }", "PlayerIsWatcher", "FightWindow", "VisibleCombatAdvisor.IsPve", "_hotPosition", "_hotSize" }, "Submit cleanup/gates");
-        foreach (var forbidden in new[] { "SetActive", "SetField(", "\"visible\"", "\"alpha\"", "\"touchable\"", "\"SetXY\"", "\"SetSize\"" }) Check(!methods["SetGuideDirection"].Contains(forbidden, StringComparison.Ordinal), "Guide direction does not mutate unrelated state: " + forbidden);
+        Contains(source, new[] { "if (!Plugin.GroupHand.Value || root == null) { Clear(); return; }", "PlayerIsWatcher", "FightWindow", "VisibleCombatAdvisor.IsPve", "_hotPosition", "_hotSize" }, "Submit cleanup/gates");
         NoPattern(methods["UpdateDropZone"], @"\.Set\(", "Drop geometry retains native state/controller");
         const string ns = "MigratedHandSubmit";
         var harness = Template(context, "focus-tests/csharp-migration/hand-submit.template.cs", pin).Replace("__NS__", ns, StringComparison.Ordinal).Replace("__LAYOUT__", WithoutNamespace(ReadSource(context, "src/HandLayout.cs")), StringComparison.Ordinal).Replace("__TOLOCAL__", toLocal, StringComparison.Ordinal);
@@ -118,7 +112,14 @@ internal static partial class TestCommands
         Check(!source.Contains("Plugin.CardTargetButtons", StringComparison.Ordinal)
             && !ReadSource(context, "src/Plugin.cs").Contains("CardTargetButtons", StringComparison.Ordinal), "Target button priority has no saved preference gate");
         var driver = ReadSource(context, "src/ModUi.cs"); var target = driver.IndexOf("CardTargetButtonsUi.Tick();", StringComparison.Ordinal);
-        Check(target > driver.IndexOf("PvpSafety.Poll()", StringComparison.Ordinal) && target < driver.IndexOf("CardPreviewUi.Tick();", StringComparison.Ordinal) && target < driver.IndexOf("HandLayoutUi.Tick();", StringComparison.Ordinal), "PvE target ordering precedes pointer consumers");
+        Check(target > driver.IndexOf("PvpSafety.Poll()", StringComparison.Ordinal) && target < driver.IndexOf("PingDetailsUi.Tick();", StringComparison.Ordinal) && target < driver.IndexOf("HandLayoutUi.Tick();", StringComparison.Ordinal), "PvE target ordering precedes pointer consumers");
+        // Another player's card result lets clicks through its empty area (CardResultClicks, 2026-11-17).
+        foreach (var name in new[] { "com_CardResult", "com_UseCard", "com_ChooseCard" })
+            Check(native.MainModule.GetType("UI.UICardWindow").Fields.Any(field => field.Name == name), "Native card window part: " + name);
+        Check(driver.Contains("CardTargetButtonsUi.Tick(); CardResultClicks.Tick();", StringComparison.Ordinal)
+            && driver.Split("CardTargetButtonsUi.Clear, CardResultClicks.Clear,").Length == 3, "Card result clicks tick with the target buttons and clear with PvP and the core breaker");
+        RunEmbedded(context, stage, "card-result-clicks", Template(context, "focus-tests/csharp-migration/card-result-clicks.template.cs", pin)
+            .Replace("__SOURCE__", WithoutNamespace(ReadSource(context, "src/CardResultClicks.cs")), StringComparison.Ordinal), "CardResultClicksTest.Check.Run()", pin);
         RunEmbedded(context, stage, "card-target-buttons", Template(context, "focus-tests/csharp-migration/card-target-buttons.template.cs", pin).Replace("__SOURCE__", source, StringComparison.Ordinal), "TargetButtonsTest.Check.Run()", pin);
     }
 }

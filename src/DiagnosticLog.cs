@@ -31,13 +31,18 @@ internal sealed class DiagnosticLog
     // ModUi tick segments, in call order; mark i ends segment i - 1.
     internal static readonly string[] TickFeatures = { "core", "battleMenu", "autoThanks", "characterGuide", "font", "language",
         "updateNotice", "fieldZoom", "fieldDice", "cardTargets", "cardPreview", "hand", "shushu", "battleStatus", "encounter",
-        "fieldBuffs", "settings" };
+        "fieldBuffs", "walkDirection", "playerTab", "probes", "settings", "warmup" };
     private readonly double[] _featureMax = new double[TickFeatures.Length];
     private readonly long[] _featureBytes = new long[TickFeatures.Length];
+    private readonly double[] _featureTotal = new double[TickFeatures.Length];
     private double _spikeMs, _spikeTopMs;
     private string _spikeTop = "none";
     private bool _spikeClrGc, _spikeNativeGc;
     private int _clrGcs, _nativeGcsInTick, _nativeGcsOutside;
+    // JIT time on the main thread inside ticks and the game heap the ticks grew without a native collection (2026-11-18:
+    // first-use hitches and boxed value results), for the window and for its slowest tick.
+    private double _jitMs, _spikeJitMs;
+    private long _nativeGrowth;
 
     internal DiagnosticLog(string directory, Action<string> warning)
     {
@@ -211,12 +216,15 @@ internal sealed class DiagnosticLog
 
     // Called just before Performance for the same frame. GC flags are attached to the slowest mod tick of the window;
     // a native GC between ticks is counted separately because it lands in the game's own frame time.
-    internal void TickSpikes(long[] marks, long[] bytes, double milliseconds, int clrGcs, bool nativeGcInTick, bool nativeGcOutside)
+    internal void TickSpikes(long[] marks, long[] bytes, double milliseconds, int clrGcs, bool nativeGcInTick, bool nativeGcOutside,
+        double jitMs = 0, long nativeGrowth = 0)
     {
         lock (_gate)
         {
             if (_writer == null) return;
             _clrGcs += clrGcs;
+            _jitMs += jitMs;
+            if (!nativeGcInTick && nativeGrowth > 0) _nativeGrowth += nativeGrowth;
             if (nativeGcInTick) _nativeGcsInTick++;
             if (nativeGcOutside) _nativeGcsOutside++;
             double total = 0, topMs = 0;
@@ -228,10 +236,11 @@ internal sealed class DiagnosticLog
                 var ms = (marks[i + 1] - marks[i]) * milliseconds;
                 total += ms;
                 _featureMax[i] = Math.Max(_featureMax[i], ms);
+                _featureTotal[i] += ms;
                 if (ms > topMs) { topMs = ms; top = TickFeatures[i]; }
             }
             if (total <= _spikeMs) return;
-            _spikeMs = total; _spikeTop = top; _spikeTopMs = topMs; _spikeClrGc = clrGcs > 0; _spikeNativeGc = nativeGcInTick;
+            _spikeMs = total; _spikeTop = top; _spikeTopMs = topMs; _spikeClrGc = clrGcs > 0; _spikeNativeGc = nativeGcInTick; _spikeJitMs = jitMs;
         }
     }
 
@@ -240,19 +249,24 @@ internal sealed class DiagnosticLog
         var features = new StringBuilder();
         for (var i = 0; i < TickFeatures.Length; i++)
             features.Append(FormattableString.Invariant($"{(i == 0 ? "" : "; ")}{TickFeatures[i]}={_featureMax[i]:F2}"));
-        Write(FormattableString.Invariant($"performance_spike tick_max_ms={_spikeMs:F3}; top={_spikeTop}; top_ms={_spikeTopMs:F3}; clr_gc={_spikeClrGc}; native_gc={_spikeNativeGc}; window_clr_gcs={_clrGcs}; window_native_gcs_in_tick={_nativeGcsInTick}; window_native_gcs_between_ticks={_nativeGcsOutside}"));
+        Write(FormattableString.Invariant($"performance_spike tick_max_ms={_spikeMs:F3}; top={_spikeTop}; top_ms={_spikeTopMs:F3}; clr_gc={_spikeClrGc}; native_gc={_spikeNativeGc}; window_clr_gcs={_clrGcs}; window_native_gcs_in_tick={_nativeGcsInTick}; window_native_gcs_between_ticks={_nativeGcsOutside}; jit_ms={_spikeJitMs:F2}; window_jit_ms={_jitMs:F2}; native_tick_bytes_per_frame={_nativeGrowth / Math.Max(1, _frames)}"));
         Write("performance_features_max_ms " + features);
         features.Clear();
         for (var i = 0; i < TickFeatures.Length; i++)
             features.Append(FormattableString.Invariant($"{(i == 0 ? "" : "; ")}{TickFeatures[i]}={_featureBytes[i] / Math.Max(1, _frames)}"));
         Write("performance_features_bytes_per_frame " + features);
+        features.Clear();
+        for (var i = 0; i < TickFeatures.Length; i++)
+            features.Append(FormattableString.Invariant($"{(i == 0 ? "" : "; ")}{TickFeatures[i]}={_featureTotal[i] / Math.Max(1, _frames):F3}"));
+        Write("performance_features_avg_ms " + features);
     }
 
     private void ResetPerformance()
     {
-        Array.Clear(_featureMax); Array.Clear(_featureBytes);
+        Array.Clear(_featureMax); Array.Clear(_featureBytes); Array.Clear(_featureTotal);
         _spikeMs = _spikeTopMs = 0; _spikeTop = "none"; _spikeClrGc = _spikeNativeGc = false;
         _clrGcs = _nativeGcsInTick = _nativeGcsOutside = 0;
+        _jitMs = _spikeJitMs = 0; _nativeGrowth = 0;
         _sampleStart = -1;
         _uiTotal = _uiMax = _gameMax = _popupMax = _statusMax = _frameMax = _coreMax = 0;
         _sampleBytes = _frames = _slowFrames = 0;

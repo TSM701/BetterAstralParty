@@ -108,7 +108,7 @@ sealed class RuntimeObject {
     public RuntimeObject? Get(string key)=>key=="CamB"?throw new Exception("CamB is a native field, not getter"):key=="Current"?Items[index]:Data.GetValueOrDefault(key) as RuntimeObject;
     public T Get<T>(string key)=>key is "Duration" or "TimeInBlend"?throw new Exception("Native blend times are fields, not getters"):key=="draggable"?(T)(object)(Data.GetValueOrDefault(key) is true):(T)Data[key];
     public RuntimeObject? Field(string key)=>key=="CamB"?Data.GetValueOrDefault(key) as RuntimeObject:Get(key);
-    public T Field<T>(string key)=>key=="m_CachedPtr"?(T)(object)(Dead?IntPtr.Zero:Pointer):key is "Duration" or "TimeInBlend"?(T)Data[key]:Get<T>(key); public T Value<T>()=>Get<T>("value");
+    public T Field<T>(string key)=>key=="m_CachedPtr"?(T)(object)(Dead?IntPtr.Zero:Pointer):key is "Duration" or "TimeInBlend"?(T)Data[key]:Get<T>(key); public T Value<T>()=>Get<T>("value"); public string? String()=>Data.GetValueOrDefault("value") as string;
     public void SetField<T>(string key,T value) where T:unmanaged { if(key!="m_FollowOffset"&&key!="CameraSpeed")throw new Exception("Forbidden field write"); if(Dead)throw new Exception("Disposed write"); Data[key]=value;Writes++; }
     static RuntimeObject Box(object value)=>new(){Data=new(){{"value",value}}};
     public static IntPtr FindClass(string ns,string name) { var key=ns+"."+name; if(!Classes.TryGetValue(key,out var p))Classes[key]=p=(IntPtr)(++next);return p; }
@@ -138,6 +138,7 @@ static class GameUi {
 }
 static class PvpSafety { public static bool Suspended; }
 static class ModUi { public static bool IsOpen; }
+static class FightPip { internal static bool FieldOpen(bool pointer = true) => false; internal static bool HoldsField => false; }
 static class FieldCameraReturnUi {
     public static bool Available,Visible,ConsumedInput;
     public static void Tick(bool visible)=>Visible=visible&&Available;
@@ -153,14 +154,16 @@ static class FieldIndicatorOpacity {
     public static void Clear()=>Progress=0;
 }
 static class FieldFreeCamera {
-    public static bool Holding; public static RuntimeObject? Camera; public static int ClearAttempts,ClearFailures;
+    public static bool Holding, Moved; public static RuntimeObject? Camera; public static int ClearAttempts,ClearFailures;
+    public static void Touched()=>Moved=true; public static void MoveAnchor(Vector3 position)=>Moved=false;
     public static bool LastBlocked,PanAllowed,PanOnUi,PanIndicator,Yield; public static int Enters;
     public static bool Update(RuntimeObject scene,RuntimeObject brain,RuntimeObject? free,RuntimeObject? player,bool blocked){LastBlocked=blocked;if(blocked)PanAllowed=false;return Holding&&!blocked&&!Yield;}
     public static void Pan(RuntimeObject free,bool allowed,bool onUi,bool fieldIndicator=false){PanAllowed=allowed;PanOnUi=onUi;PanIndicator=fieldIndicator;}
-    public static void Enter(RuntimeObject scene,RuntimeObject brain,RuntimeObject active,RuntimeObject body,Camera output){
+    public static void Enter(RuntimeObject scene,RuntimeObject brain,RuntimeObject active,RuntimeObject body,Camera output)=>Enter(scene,brain,active,body,output.transform.position,output.transform.rotation);
+    public static void Enter(RuntimeObject scene,RuntimeObject brain,RuntimeObject active,RuntimeObject body,Vector3 position,Quaternion rotation,bool player=true){
         Enters++;
         var ownedBody=new RuntimeObject{TypeName="CinemachineTransposer",Data=new(body.Data)};
-        var anchor=new RuntimeObject{Data=new(){{"position",output.transform.position-body.Field<Vector3>("m_FollowOffset")}}};
+        var anchor=new RuntimeObject{Data=new(){{"position",position-body.Field<Vector3>("m_FollowOffset")}}};
         Camera=new RuntimeObject{TypeName="CinemachineVirtualCamera",Data=new(){
             {"body",ownedBody},{"Follow",anchor},{"transform",active.Get("transform")!}}};Holding=true;
     }
@@ -825,8 +828,16 @@ public static class Check {
             FieldZoomUi.Clear();Assert(s.Offset.z==-10);OutwardRecoveryCases++;
         }
     }
+    // UnityMath repeats Unity's own value math (Mathf.DeltaAngle, Vector3 == zero, magnitude) without interop calls.
+    static void ValueMath(){
+        foreach(var (from,to,turn) in new[]{(10f,350f,-20f),(350f,10f,20f),(0f,180f,180f),(0f,-180f,180f),(0f,540f,180f),(30f,30f,0f),(-725f,10f,15f)})
+            Assert(Math.Abs(UnityMath.DeltaAngle(from,to)-turn)<.0001f);
+        Assert(UnityMath.IsZero(new Vector3(9e-6f,0,0))&&!UnityMath.IsZero(new Vector3(1.1e-5f,0,0))&&UnityMath.IsZero(new Vector3()));
+        Assert(UnityMath.Magnitude(new Vector3(3,4,12))==13&&UnityMath.Sub(new Vector3(5,6,7),new Vector3(1,2,3)).z==4);
+        var v=UnityMath.V2(1.5f,-2);Assert(v.x==1.5f&&v.y==-2);var w=UnityMath.V3(1,2,3);Assert(w.x==1&&w.y==2&&w.z==3);
+    }
     public static void Run(){
-        FieldPointerTest.Check.Run();Vector3Bridge.Run();Geometry();var s=new Scene();FieldZoomUi.Tick();Assert(Scans==0&&s.Body.Writes==0);
+        ValueMath();FieldPointerTest.Check.Run();Vector3Bridge.Run();Geometry();var s=new Scene();FieldZoomUi.Tick();Assert(Scans==0&&s.Body.Writes==0);
         s.Wheel(1);Assert(s.Offset.z>-10&&s.Offset.z<-9);int scans=Scans;
         FieldZoomUi.Tick();Assert(Scans==scans&&s.Body.Writes==2);s.Finish();Assert(Math.Abs(s.Offset.z+9)<.00001);
         FieldZoomUi.Clear();Assert(s.Offset.z==-10);

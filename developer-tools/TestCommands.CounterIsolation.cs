@@ -7,7 +7,7 @@ internal static partial class TestCommands
         var source = ReadSource(context,"src/BattleStatusUi.cs");
         var tick = Derive(source,@"(?s)    internal static void Tick\(\).*?(?=    private static void Scan)","Actual public rows tick with isolated counter");
         var boundary = Derive(source,@"(?s)    private static void UpdateCounter\(.*?\r?\n    \}","Actual counter-only exception boundary");
-        Contains(boundary,new[]{"Compatibility.Allowed(CounterFeature)","RefreshCounter(actorUi); PositionCounter();","Compatibility.Block(CounterFeature, ex, ClearCounter, EncounterCounterUi.Clear)"},"Counter failures clean up only counter indicators");
+        Contains(boundary,new[]{"Compatibility.Allowed(CounterFeature)","AttackerCounter.Refresh(director?.Get(\"attacker\")?.Field(\"_UI\")); AttackerCounter.Position();","DefenderCounter.Refresh(director?.Get(\"victim\")?.Field(\"_UI\")); DefenderCounter.Position();","Compatibility.Block(CounterFeature, ex, ClearCounter, EncounterCounterUi.Clear)"},"Counter failures clean up only counter indicators");
         Check(!boundary.Contains("ClearRows",StringComparison.Ordinal) && !boundary.Contains("BattleStatusUi.Clear",StringComparison.Ordinal),"Counter breaker never owns public row cleanup");
         var encounter = GeneralWithoutNamespace(ReadSource(context,"src/EncounterCounterUi.cs")).Replace("using UnityEngine;","",StringComparison.Ordinal);
         Check(encounter.Contains("Compatibility.Block(BattleStatusUi.CounterFeature, ex, Clear, BattleStatusUi.ClearCounter)",StringComparison.Ordinal)

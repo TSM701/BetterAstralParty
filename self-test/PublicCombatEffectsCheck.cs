@@ -76,7 +76,8 @@ internal static class PublicCombatEffectsCheck
         Check(gold == new ReleaseGain(7, 7, 1) && gold.Damage == "7", "gold boss bonus counts the Starlight held before this release");
         Check(ShootingStar.Calculate(null, (2, 1), false, 5) == new ReleaseGain(2, 2, 1), "gold on a normal monster is exact");
         Check(ShootingStar.Calculate((1, 1), (2, 1), false, 0) == new ReleaseGain(3, 3, 2), "both relics on a normal monster");
-        Check(ShootingStar.Calculate((1, 1), (2, 1), true, 5) == new ReleaseGain(8, 8, 2), "both relics against a boss add only the held Starlight");
+        Check(ShootingStar.Calculate((1, 1), (2, 1), true, 5) == new ReleaseGain(9, 9, 2), "both relics against a boss: gold also counts the Starlight purple just granted");
+        Check(ShootingStar.Calculate((1, 1), (2, 1), true, 0) == new ReleaseGain(4, 4, 2), "both relics against a boss with no Starlight held (2026-11-15: 1 + 3)");
         // Observed 2026-10-23: gold vs a boss with 15 Starlight and Weakness Mark (+1) dealt 18.
         Check(ShootingStar.Calculate(null, (2, 1), true, 15, new HitModifiers(1)) == new ReleaseGain(18, 18, 1), "release damage takes incoming modifiers");
         Check(ShootingStar.Calculate((1, 1), null, false, 0, new HitModifiers(-3)) == new ReleaseGain(0, 0, 1), "incoming reduction clamps at zero");

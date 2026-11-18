@@ -74,9 +74,12 @@ internal static class GameUi
             || Plugin.UpdateSession?.Status == ReleaseSessionStatus.AwaitingInput
             || FocusWindow() != null || _root.Get<bool>("hasModalWindow")
             || _root.Get<bool>("modalWaiting") || _root.Get<bool>("hasAnyPopup");
-        // Verified native NONE=0; a disposed team has TeamId=0 with stale MatchStatus.
-        return new(true, Visible(_home), currentHome, controlsReady, blocked, match.Get<long>("TeamId"),
-            room.Field("roomStateType")!.Value<int>(), logic.Get<long>("connectRoomId"));
+        // Verified native NONE=0; a disposed team has TeamId=0 with stale MatchStatus. A room state without a localRoom is a
+        // disposed room, as PvpSafety reads it: a replay played to its end leaves roomStateType at 5 (RoomController.Dispose
+        // keeps it), which refused the home Esc question and the update toast until restart (user-reported 2026-11-18).
+        var state = room.Field("roomStateType")!.Value<int>();
+        if (state != 0 && room.Get("localRoom") == null) state = 0;
+        return new(true, Visible(_home), currentHome, controlsReady, blocked, match.Get<long>("TeamId"), state, logic.Get<long>("connectRoomId"));
     }
 
     // The window that has the keys: the top of UIManager.propUpWindows. BaseWindow.OnShown pushes every window there and hands it
@@ -131,10 +134,10 @@ internal static class GameUi
                 RuntimeObject.RequireClasses("CoreUi", ("FairyGUI", "GTextField"), ("FairyGUI", "GComponent"), ("FairyGUI", "GGraph"));
                 try { UpdateHome(); }
                 catch (Exception ex) { FailHomeMenu(ex); }
-                if (gameplay && Compatibility.Allowed("Enabled"))
+                if (gameplay && Compatibility.Allowed("ActionAdvice"))
                 {
                     try { UpdateFight(); }
-                    catch (Exception ex) { Compatibility.Block("Enabled", ex, ClearAdvice); }
+                    catch (Exception ex) { Compatibility.Block("ActionAdvice", ex, ClearAdvice); }
                 }
             }
             if (gameplay && _root != null) CharacterNameUi.Tick(_root);
@@ -143,7 +146,7 @@ internal static class GameUi
                 try { FollowHomeMenu(); HandleMenuInput(); }
                 catch (Exception ex) { FailHomeMenu(ex); }
             }
-            if (gameplay && Compatibility.Allowed("Enabled"))
+            if (gameplay && Compatibility.Allowed("ActionAdvice"))
             {
                 try
                 {
@@ -153,9 +156,9 @@ internal static class GameUi
                     _observerSummary?.Tick();
                     CardDiceUi.PollResolved();
                     CardUi.Animate();
-                    RemainingHpUi.Animate();
+                    FinalDamageUi.Animate();
                 }
-                catch (Exception ex) { Compatibility.Block("Enabled", ex, ClearAdvice); }
+                catch (Exception ex) { Compatibility.Block("ActionAdvice", ex, ClearAdvice); }
                 if (Compatibility.Allowed("ShootingStar"))
                 {
                     try { ShootingStarUi.Tick(); }
@@ -612,13 +615,13 @@ internal static class GameUi
         try { if (_menuLanguageRevision != ModText.Revision) ClearHomeMenu(); }
         catch (Exception ex) { FailHomeMenu(ex); }
         try { ClearAdviceDisplay(); }
-        catch (Exception ex) { Compatibility.Block("Enabled", ex, ClearAdvice); }
-        try { CardPreviewUi.Reset(); }
-        catch (Exception ex) { Compatibility.Block("CardPopups", ex, CardPreviewUi.Reset); }
+        catch (Exception ex) { Compatibility.Block("ActionAdvice", ex, ClearAdvice); }
+        try { PingDetailsUi.Reset(); }
+        catch (Exception ex) { Compatibility.Block("PingDetails", ex, PingDetailsUi.Reset); }
         try { BattleStatusUi.Clear(); }
         catch (Exception ex) { Compatibility.Block("BattleStatus", ex, BattleStatusUi.Clear); }
-        try { FieldBuffUi.Clear("language"); }
-        catch (Exception ex) { Compatibility.Block("FieldBuffs", ex, () => FieldBuffUi.Clear("compatibility")); }
+        try { PlayerIndicatorUi.Clear("language"); }
+        catch (Exception ex) { Compatibility.Block("PlayerIndicators", ex, () => PlayerIndicatorUi.Clear("compatibility")); }
     }
 
     private static void FailHomeMenu(Exception error) => Compatibility.Block("HomeMenu", error, ClearHomeMenu);
@@ -804,25 +807,25 @@ internal static class GameUi
     private static void UpdateFight()
     {
         HideAdvice(keepDice: true);
-        if (!Plugin.Enabled.Value && !Plugin.KoMinimum.Value && !Plugin.FinalDamage.Value) { Plugin.Diagnostics.EndCombat(); CardUi.Clear(); RemainingHpUi.Clear(); return; }
-        if (HomeAvailable) RuntimeObject.RequireClasses("Enabled", ("GameLogic", "GameLogicManager"), ("Core.Scene", "BattleSceneController"));
+        if (!Plugin.ActionAdvice.Value && !Plugin.KoDiceTarget.Value && !Plugin.FinalDamage.Value) { Plugin.Diagnostics.EndCombat(); CardUi.Clear(); FinalDamageUi.Clear(); return; }
+        if (HomeAvailable) RuntimeObject.RequireClasses("ActionAdvice", ("GameLogic", "GameLogicManager"), ("Core.Scene", "BattleSceneController"));
         var fight = Visible(_fight) ? _fight : Find(_root!, "FightWindow");
         if (fight == null) ReleaseWatch.Poll(RuntimeObject.StaticField(_logicClass, "_inst"), -1);
-        if (fight == null) { _fightEnded = false; Plugin.Diagnostics.EndCombat(); Plugin.Diagnostics.State("fightStep", "hidden"); _lastAdvice = ""; CardUi.Clear(); RemainingHpUi.ResetCapture(); return; }
+        if (fight == null) { _fightEnded = false; Plugin.Diagnostics.EndCombat(); Plugin.Diagnostics.State("fightStep", "hidden"); _lastAdvice = ""; CardUi.Clear(); FinalDamageUi.ResetCapture(); return; }
         _fight = fight;
         var ui = fight.Get("contentPane");
         // A window can be on stage before its asynchronously loaded content is attached.
         if (ui == null || ui.Get<bool>("isDisposed"))
         {
-            CardUi.Clear(); RemainingHpUi.ResetCapture();
+            CardUi.Clear(); FinalDamageUi.ResetCapture();
             Plugin.Diagnostics.State("fightReady", "waiting-content");
             return;
         }
-        if (ui.TypeName != "UIFightWindow") { RemainingHpUi.Clear(); return; }
+        if (ui.TypeName != "UIFightWindow") { FinalDamageUi.Clear(); return; }
         var stepController = ui.Field("step");
         if (stepController == null)
         {
-            CardUi.Clear(); RemainingHpUi.ResetCapture();
+            CardUi.Clear(); FinalDamageUi.ResetCapture();
             Plugin.Diagnostics.State("fightReady", "waiting-step");
             return;
         }
@@ -837,11 +840,11 @@ internal static class GameUi
         var spectating = ui.Field("playerState")!.Get<int>("selectedIndex") == 2;
         var spectatorCards = spectating && (step == 4 || step == 2 && !_fightEnded);
         if (step != 3) CardUi.Clear(keepDice: step is 4 or 5 or 6 || spectatorCards);
-        if (step is not (1 or 3 or 5 or 6) && !spectatorCards) { CardDiceUi.Hide(); RemainingHpUi.ResetCapture(); return; }
+        if (step is not (1 or 3 or 5 or 6) && !spectatorCards) { CardDiceUi.Hide(); FinalDamageUi.ResetCapture(); return; }
         var logic = RuntimeObject.StaticField(_logicClass, "_inst");
         var room = logic?.Get("room")?.Get("curRoomInfo");
         var mapType = room?.Field("info")?.Get<int>("MapType") ?? 0;
-        if (!VisibleCombatAdvisor.IsPve(mapType)) { Plugin.Diagnostics.EndCombat(); CardUi.Clear(); RemainingHpUi.Clear(); return; }
+        if (!VisibleCombatAdvisor.IsPve(mapType)) { Plugin.Diagnostics.EndCombat(); CardUi.Clear(); FinalDamageUi.Clear(); return; }
         if (Plugin.Diagnostics.IsRecording)
         {
             // Diagnostic failure must not disable the advisor or damage view.
@@ -866,7 +869,7 @@ internal static class GameUi
             }
             catch (Exception ex) { Plugin.Diagnostics.Error("combatSnapshot", ex); }
         }
-        if (step == 1) { RemainingHpUi.ResetCapture(); if (Plugin.Enabled.Value) UpdateEncounter(fight, ui, mapType); return; }
+        if (step == 1) { FinalDamageUi.ResetCapture(); if (Plugin.ActionAdvice.Value) UpdateEncounter(fight, ui, mapType); return; }
         var director = RuntimeObject.StaticField(_battleClass, "inst")?.Field("directorManager");
         var atk = director?.Get("attacker")?.Field("_UI");
         var def = director?.Get("victim")?.Field("_UI");
@@ -883,7 +886,7 @@ internal static class GameUi
             Plugin.Diagnostics.State("combat.inputs", $"hp={hp}; attackMin={atk.Field("minATK")!.Value<int>()}; "
                 + $"attackMax={atk.Field("maxATK")!.Value<int>()}; defenseMin={def!.Field("minDEF")!.Value<int>()}; "
                 + $"defenseMax={def.Field("maxDEF")!.Value<int>()}");
-        RemainingHpUi.Update(fight, ui, attackerUi, defenderUi, step, hp, step == 5 ? ServerFight.Decided(director) : null);
+        FinalDamageUi.Update(fight, ui, attackerUi, defenderUi, step, hp, step == 5 ? ServerFight.Decided(director) : null);
         if (Plugin.Diagnostics.IsRecording)
         {
             string PublicNumber(RuntimeObject? label) => Visible(label)
@@ -897,6 +900,8 @@ internal static class GameUi
         var incomingBonus = PublicCombatEffects.Read(fight.Get("defenderData"), "defender", fight.Get("attackerData"));
         if (incomingBonus == null) { CardDiceUi.Clear(); return; }
         var defenderPlayer = fight.Get("defenderData")?.Get<int>("characterType") == 1;
+        var (defenseMin, defenseMax) = PublicCombatEffects.Defense(def!.Field("minDEF")!.Value<int>(), def.Field("maxDEF")!.Value<int>(),
+            fight.Get("defenderData")?.Get("Property")?.Field("DEF")?.Get<int>("Value") ?? 0, incomingBonus.Value.IgnoreDefense);
         // Who may see the rolled card values and a played Powerful Attack is CardKoMinimum.SeesRolled / SeesBoost (self-tested).
         var viewer = ui.Field("playerState")!.Get<int>("selectedIndex");
         var rolled = CardKoMinimum.SeesRolled(viewer, step) ? ServerFight.Rolled(director) : null;
@@ -911,18 +916,18 @@ internal static class GameUi
             int.TryParse(attackerUi.Field("txt_Life")!.Get("text")!.String(), NumberStyles.Integer,
                 CultureInfo.InvariantCulture, out var attackerHp);
             CardUi.Update(fight, ui, CardKoMinimum.WithRolled(new(mapType, hp, atk.Field("minATK")!.Value<int>(), atk.Field("maxATK")!.Value<int>(),
-                def.Field("minDEF")!.Value<int>(), def.Field("maxDEF")!.Value<int>())
+                defenseMin, defenseMax)
                 { Modifiers = incomingBonus.Value, Boost = boost,
                     CounterAvailable = counter?.Get<bool>("Value"), AttackerHp = attackerHp, DefenderPlayer = defenderPlayer }, rolled),
                 attackerUi.Field("com_Point")!);
             return;
         }
         if (step == 5 && ui.Field("playerState")!.Get<int>("selectedIndex") is var role && (role is 0 or 1 || role == 2 && Plugin.KoSpectator.Value)
-            && Plugin.KoMinimum.Value)
+            && Plugin.KoDiceTarget.Value)
             CardDiceUi.BindResolved(ui, atk, def!, new(mapType, hp, atk.Field("minATK")!.Value<int>(),
-                atk.Field("maxATK")!.Value<int>(), def!.Field("minDEF")!.Value<int>(), def.Field("maxDEF")!.Value<int>())
+                atk.Field("maxATK")!.Value<int>(), defenseMin, defenseMax)
                 { Modifiers = incomingBonus.Value, Boost = boost, DefenderPlayer = defenderPlayer }, rolled);
-        if (!Plugin.Enabled.Value || !Plugin.DefenseAdvice.Value) return;
+        if (!Plugin.ActionAdvice.Value || !Plugin.DefenseAdvice.Value) return;
         var point = attackerUi.Field("com_Point")!.Field("txt_Point")!;
         if (!Visible(point) || !int.TryParse(point.Get("text")!.String(), NumberStyles.Integer,
                 CultureInfo.InvariantCulture, out var die)) return;
@@ -930,7 +935,7 @@ internal static class GameUi
         if (!CardKoMinimum.RevealedDie(attackerUi.Field("showPoint")!.Get<int>("selectedIndex"),
                 Visible(point), die, incomingBonus.Value.AttackDice.ZeroOnly)) return;
         var input = new VisibleCombat(mapType, hp, atk.Field("minATK")!.Value<int>(), atk.Field("maxATK")!.Value<int>(),
-            die, def.Field("minDEF")!.Value<int>(), def.Field("maxDEF")!.Value<int>(), !fight.Field("dodgeNoAvailable")!.Value<bool>())
+            die, defenseMin, defenseMax, !fight.Field("dodgeNoAvailable")!.Value<bool>())
             { Modifiers = incomingBonus.Value, Boost = boost };
         if (_calculationInput != input)
         {
@@ -955,8 +960,9 @@ internal static class GameUi
                 _observerParent = ui.Pointer;
             }
             var scale = Plugin.UiScale.Value;
-            _observerSummary.Show(advice.Value, scale, (ui.Get<float>("width") - 360 * scale) / 2,
-                ui.Get<float>("height") - 220 * scale);
+            // Its bottom stays 112 above the screen's at UI scale 1, where the 96-high panel ended; a taller one grows upwards.
+            _observerSummary.Show(advice.Value, scale, (ui.Get<float>("width") - ChoiceVisual.Width * scale) / 2,
+                ui.Get<float>("height") - (112 + ChoiceVisual.Height) * scale);
             return;
         }
         EnsureBadges(defend, dodge);
@@ -1014,9 +1020,10 @@ internal static class GameUi
         if (counter == null) return;
         var selfBonus = PublicCombatEffects.Read(fight.Get("attackerData"), "encounter.self", enemy);
         if (selfBonus == null || enemyBonus == null) return;
+        // Blooming Cactus on the local attacker drops the monster's DEF from its attack (no cards: the label is the stat).
         var input = new EncounterInput(mapType, player.Field("HP")!.Get<int>("Value"),
             player.Field("ATK")!.Get<int>("Value"), player.Field("DEF")!.Get<int>("Value"),
-            hp.Value, atk.Value, def.Value, counter.Get<bool>("Value"))
+            hp.Value, atk.Value, enemyBonus.Value.IgnoreDefense ? 0 : def.Value, counter.Get<bool>("Value"))
             { Modifiers = selfBonus.Value, EnemyModifiers = enemyBonus.Value };
         if (_encounterInput != input)
         {
@@ -1096,13 +1103,13 @@ internal static class GameUi
 
     private static void ClearAdvice()
     {
-        ClearAdviceDisplay(); RemainingHpUi.Clear();
+        ClearAdviceDisplay(); FinalDamageUi.Clear();
     }
 
     // A language switch only redraws text: the current hit's final damage stays and is relabelled in place.
     private static void ClearAdviceDisplay()
     {
-        HideAdvice(); CardUi.Clear(); RemainingHpUi.RefreshLanguage(); ShootingStarUi.Clear();
+        HideAdvice(); CardUi.Clear(); FinalDamageUi.RefreshLanguage(); ShootingStarUi.Clear();
         _defBadge?.Dispose(); _defBadge = null;
         _dodgeBadge?.Dispose(); _dodgeBadge = null;
         _observerSummary?.Dispose(); _observerSummary = null;

@@ -48,7 +48,10 @@
     <Compile Include="..\src\AdviceText.cs" Link="AdviceText.cs" />
     <Compile Include="..\src\CharacterNames.cs" Link="CharacterNames.cs" />
     <Compile Include="..\src\FieldNameText.cs" Link="FieldNameText.cs" />
-    <Compile Include="..\src\CardPreviewLayout.cs" Link="CardPreviewLayout.cs" />
+    <Compile Include="..\src\PingDetailsLayout.cs" Link="PingDetailsLayout.cs" />
     <Compile Include="..\src\BattleStatusLayout.cs" Link="BattleStatusLayout.cs" />
+    <Compile Include="..\src\ReceivedLikes.cs" Link="ReceivedLikes.cs" />
+    <Compile Include="..\src\FightPipLayout.cs" Link="FightPipLayout.cs" />
+    <Compile Include="..\src\ReplayKeeperPlan.cs" Link="ReplayKeeperPlan.cs" />
   </ItemGroup>
 </Project>

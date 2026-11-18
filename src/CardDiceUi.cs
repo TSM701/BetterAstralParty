@@ -24,7 +24,7 @@ internal static class CardDiceUi
         PreRollCombat input, CardBonus? card, bool hover, bool unsupported, int fixedDie = 0, int? finalDamage = null, int fixedDefense = 0,
         bool revealed = false)
     {
-        if (!Plugin.KoMinimum.Value) { Clear(); return; }
+        if (!Plugin.KoDiceTarget.Value) { Clear(); return; }
         // revealed: fixedDie is a shown roll, which is 0 for a 0-only attacker (Moses's 약점), so 0 alone cannot mean "no roll yet".
         if (!revealed) { _resolvedUi = _attacker = _defender = null; _final = false; } // New card phase/hover owns the display.
         if (_key is { } old && old.Language != ModText.Revision) Clear(keepObservation: true);
@@ -86,7 +86,7 @@ internal static class CardDiceUi
                 ? CardKoMinimum.Survival(input, card, thresholdDie, possible: false)
                 : CardKoMinimum.Calculate(input, card, thresholdDie, possible: false);
             var damage = pair == null ? null : CardKoMinimum.OutcomeRange(input, card, thresholdDie);
-            // Supplied only by RemainingHpUi from the server's decided hit (ServerFight).
+            // Supplied only by FinalDamageUi from the server's decided hit (ServerFight).
             if (finalDamage is >= 0) damage = ((long)finalDamage.Value, (long)finalDamage.Value);
             var status = CardDiceLayout.Status(pair, damage, input.Hp, survival);
             var unconditional = status is "KO 불가" or "확정 KO";
@@ -148,7 +148,7 @@ internal static class CardDiceUi
     internal static void BindResolved(RuntimeObject ui, RuntimeObject attacker, RuntimeObject defender, PreRollCombat input,
         (int? Attack, int? Defense)? rolled = null)
     {
-        if (!Plugin.KoMinimum.Value) { Clear(); return; }
+        if (!Plugin.KoDiceTarget.Value) { Clear(); return; }
         // A counterattack swaps the director's actors: its roll starts a new exchange.
         if (_attacker?.Pointer != attacker.Pointer || _defender?.Pointer != defender.Pointer) _final = false;
         _resolvedUi = ui; _attacker = attacker; _defender = defender; _resolvedInput = input; _rolled = rolled;
@@ -168,7 +168,7 @@ internal static class CardDiceUi
     internal static void PollResolved()
     {
         if (_resolvedUi == null) return;
-        if (!Plugin.KoMinimum.Value || !GameUi.Visible(_resolvedUi))
+        if (!Plugin.KoDiceTarget.Value || !GameUi.Visible(_resolvedUi))
         { Clear(); return; }
         if (!GameUi.Visible(_attacker) || !GameUi.Visible(_defender)
             || _resolvedUi.Field("step")!.Get<int>("selectedIndex") != 5 || _final)
@@ -184,11 +184,13 @@ internal static class CardDiceUi
         var attackState = attack.Field("showPoint")!.Get<int>("selectedIndex");
         if (!CardKoMinimum.RevealedDie(attackState, GameUi.Visible(number), die, _resolvedInput.Modifiers.AttackDice.ZeroOnly))
         { Hide(); return; } // Retain the last revealed condition briefly; the server's decided hit settles it (ShowFinal).
+        var (defenseMin, defenseMax) = PublicCombatEffects.Defense(_defender.Field("minDEF")!.Value<int>(), _defender.Field("maxDEF")!.Value<int>(),
+            _defender.Field("defenderData")?.Get("Property")?.Field("DEF")?.Get<int>("Value") ?? 0, _resolvedInput.Modifiers.IgnoreDefense);
         var input = CardKoMinimum.WithRolled(_resolvedInput with {
             AttackMin = _attacker.Field("minATK")!.Value<int>(),
             AttackMax = _attacker.Field("maxATK")!.Value<int>(),
-            DefenseMin = _defender.Field("minDEF")!.Value<int>(),
-            DefenseMax = _defender.Field("maxDEF")!.Value<int>()
+            DefenseMin = defenseMin,
+            DefenseMax = defenseMax
         }, _rolled);
         Show(_resolvedUi, point, input, null, false, false, die, revealed: true);
     }
@@ -196,7 +198,7 @@ internal static class CardDiceUi
     internal static void Animate()
     {
         if (_panel == null || _panel.Get<bool>("isDisposed") || !_panel.Get<bool>("visible")) return;
-        if (!Plugin.KoMinimum.Value)
+        if (!Plugin.KoDiceTarget.Value)
         { Clear(); return; }
         var now = Time.unscaledTime;
         var alpha = CardDiceLayout.Alpha(now, _shownAt, _hideAt);

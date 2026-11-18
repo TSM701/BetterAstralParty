@@ -9,6 +9,10 @@ namespace BetterAstralParty.Development;
 
 internal static class PackagingWhole
 {
+    // The complete installation ZIP (user-decided 2026-11-16): "-install" sorts it above -source and -update in GitHub's
+    // alphabetical asset list. Releases up to 2026.11.1 keep BetterAstralParty-<version>.zip; no client reads this name.
+    internal static string InstallName(string version) => "BetterAstralParty-" + version + "-install.zip";
+
     internal static bool CrlfOnly(byte[] bytes)
     {
         for (var i = 0; i < bytes.Length; i++) if (bytes[i] == (byte)'\n' && (i == 0 || bytes[i - 1] != (byte)'\r')) return false;
@@ -114,7 +118,7 @@ internal static class PackagingWhole
         boundary.Write("payload/tools/approved-install-bundles.json", catalog);
         var packageManifest = PackagingBoundary.Bytes(new { schema = 1, version, kind, buildIdentity = build, files = rows.Values.OrderBy(row => row.path, StringComparer.Ordinal).ToArray() }); boundary.Write("payload/package-manifest.json", packageManifest);
         foreach (var owned in GaPackageContract.OwnedPaths()) boundary.Copy(captured[OwnedSource(owned)].Source, "update-payload/" + owned);
-        var wholeName = "BetterAstralParty-" + version + (approved ? "" : "-unsigned-candidate") + ".zip"; var updateName = "BetterAstralParty-" + version + "-update.zip";
+        var wholeName = approved ? InstallName(version) : "BetterAstralParty-" + version + "-unsigned-candidate.zip"; var updateName = "BetterAstralParty-" + version + "-update.zip";
         var wholeHash = boundary.Files.Archive(wholeName, "payload", true); var updateHash = boundary.Files.Archive(updateName, "update-payload", true);
         if (updateHash != previewHash) throw new InvalidDataException("Deterministic ZIP differs from verified preview.");
         foreach (var pair in new[] { (wholeName, wholeHash), (updateName, updateHash) }) boundary.Write(pair.Item1 + ".sha256", Encoding.ASCII.GetBytes(pair.Item2 + "  " + pair.Item1 + '\n'));

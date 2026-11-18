@@ -38,7 +38,7 @@ internal static unsafe class HomePortrait
     {
         try
         {
-            var config = CharacterGuideUi.Config(Hero);
+            var config = PrepSkillInfoUi.Config(Hero);
             foreach (var name in new[] { "ProfileColor", "NameBGColor", "CardFrontColor" })
                 if (config != null && config.HasGetter(name) && Hex(config.Get(name)?.String()) is { } color)
                 {
@@ -142,8 +142,8 @@ internal static unsafe class HomePortrait
             RenderTexture.ReleaseTemporary(target);
         }
         var raw = texture.GetRawTextureData();
-        var pixels = new byte[raw.Length];
-        for (var i = 0; i < pixels.Length; i++) pixels[i] = raw[i];
+        var pixels = RuntimeObject.Bytes(raw.Pointer);
+        GC.KeepAlive(raw);
         // Rows bottom-up; each texel's centre in button units.
         for (var row = 0; row < height; row++)
             for (var column = 0; column < width; column++)
@@ -241,7 +241,7 @@ internal static unsafe class HomePortrait
         _portrait!.Set("visible", false);
     }
 
-    private static Color? Hex(string? text) =>
+    internal static Color? Hex(string? text) =>
         text is { Length: 7 } && text[0] == '#' && uint.TryParse(text[1..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var rgb)
             ? new Color((rgb >> 16 & 255) / 255f, (rgb >> 8 & 255) / 255f, (rgb & 255) / 255f) : null;
 }

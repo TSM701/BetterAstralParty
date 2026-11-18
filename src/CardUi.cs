@@ -11,7 +11,7 @@ internal static class CardUi
     private static readonly List<IntPtr> Stale = new();
     private static PreRollCombat? _input;
 
-    private static bool CardAdviceOn => Plugin.Enabled.Value && Plugin.CardAdvice.Value;
+    private static bool CardAdviceOn => Plugin.ActionAdvice.Value && Plugin.CardAdvice.Value;
 
     internal static void Update(RuntimeObject fight, RuntimeObject ui, PreRollCombat input, RuntimeObject attackPoint)
     {
@@ -23,7 +23,7 @@ internal static class CardUi
             // Spectators have no local ready button. Use public actor stats only,
             // before accessing cardItemList or the local hand/hover path.
             Clear(keepDice: true);
-            if (Plugin.KoMinimum.Value && Plugin.KoSpectator.Value) CardDiceUi.Show(ui, attackPoint, input, null, false, false);
+            if (Plugin.KoDiceTarget.Value && Plugin.KoSpectator.Value) CardDiceUi.Show(ui, attackPoint, input, null, false, false);
             else CardDiceUi.Clear();
             return;
         }
@@ -32,7 +32,7 @@ internal static class CardUi
         if (!GameUi.Visible(ready))
         {
             Clear(keepDice: true);
-            if (Plugin.KoMinimum.Value) CardDiceUi.Show(ui, attackPoint, input, null, false, false);
+            if (Plugin.KoDiceTarget.Value) CardDiceUi.Show(ui, attackPoint, input, null, false, false);
             else CardDiceUi.Clear();
             return;
         }
@@ -64,12 +64,12 @@ internal static class CardUi
             candidates.Add((card, face, bonus, card.Field("_EnableUse")!.Value<bool>() && !ShushuShieldUi.BlocksCard(card.Pointer)));
         }
 
-        var hit = Plugin.KoMinimum.Value && Plugin.KoCardPreview.Value
+        var hit = Plugin.KoDiceTarget.Value && Plugin.KoCardHover.Value
             ? GameUi.PointerPath().FirstOrDefault(item => item.TypeName == "UIHandCard_Button_Card") : null;
         var hovered = default((RuntimeObject Card, RuntimeObject Face, CardBonus? Bonus, bool Usable));
         foreach (var candidate in candidates)
             if (candidate.Card.Pointer == hit?.Pointer) { hovered = candidate; break; }
-        if (Plugin.KoMinimum.Value)
+        if (Plugin.KoDiceTarget.Value)
         {
             var preview = hovered.Card != null && hovered.Usable && ready.Get<bool>("touchable");
             CardDiceUi.Show(ui, attackPoint, input, preview ? hovered.Bonus : null, preview, preview && hovered.Bonus == null);

@@ -8,22 +8,17 @@ internal static class BattleStatusUi
     internal const string CounterFeature = "CounterIndicators";
     private static readonly List<Row> Rows = new();
     private static IntPtr _logicClass, _battleClass, _helperClass, _commonClass, _parent, _stageClass;
-    private static RuntimeObject? _fight, _ui, _tooltip, _tooltipItem, _counter, _unknownTag, _unknownText;
-    private static NativeUi.Surface? _tooltipBackground, _unknownTagBackground;
+    private static RuntimeObject? _fight, _ui, _tooltip, _tooltipItem, _counter, _unknownTag;
+    private static NativeUi.Surface? _tooltipBackground;
+    private static string? _unknownText; // The tag's text in the language it was made in.
     private static float _scanAt, _hoverAt, _tipRefreshAt;
     private static float _rootWidth, _rootHeight, _uiWidth, _uiHeight;
     private static string _tipText = "";
     private static IntPtr _hovered;
     private static int _difficulty;
     private static Camera? _camera;
-    private static RuntimeObject? _counterIcon, _counterParent, _counterHeader;
-    private static IntPtr _counterDefender;
-    private static bool _counterAvailable, _counterShown;
-    // A counter hidden only while the settings window is open or the game is unfocused returns without its reveal
-    // motion and sound; it is the same Counter, not a new one.
-    private static IntPtr _quietCounter;
-    private static float _counterVisibleSince = -1;
-    private static (float X, float Y, float Size, float Alpha)? _counterPosition;
+    // One owned counter icon per fight actor (user-requested 2026-11-15 for the attacker too).
+    private static readonly CounterMark AttackerCounter = new(true), DefenderCounter = new(false);
 
     private sealed class Row
     {
@@ -229,9 +224,9 @@ internal static class BattleStatusUi
         if (!Compatibility.Allowed("BattleStatus")) return;
         try
         {
-            if (!Plugin.BattleStatus.Value || !Application.isFocused || ModUi.IsOpen)
+            if (!Plugin.BattleStatus.Value || ModUi.IsOpen)
             {
-                _quietCounter = Plugin.BattleStatus.Value && _counterShown ? _counterDefender : IntPtr.Zero;
+                AttackerCounter.Quiet(Plugin.BattleStatus.Value); DefenderCounter.Quiet(Plugin.BattleStatus.Value);
                 Clear(); return;
             }
             if (GameUi.HomeAvailable) RuntimeObject.RequireClasses("BattleStatus", ("GameLogic", "GameLogicManager"), ("Core.Scene", "BattleSceneController"), ("UI", "UIHelper"), ("UI", "CommonUIManager"));
@@ -252,8 +247,12 @@ internal static class BattleStatusUi
             var director = RuntimeObject.StaticField(_battleClass, "inst")?.Field("directorManager");
             // Spectators can see DEFENSE before their local FightWindow reaches a choice step.
             // Follow the world-space header every frame, independently of the slower buff scan.
-            if (Plugin.CounterIcons.Value) UpdateCounter(director?.Get("victim")?.Field("_UI"));
+            if (Plugin.CounterIcons.Value) UpdateCounter(director);
             else ClearCounter();
+            // Counter icons take no input, so they stay while another window has focus (2026-11-15: in about a quarter of that
+            // day's fights with counter stacks the game was unfocused for most of the fight and they showed none). The rows
+            // take hover input and still wait for focus.
+            if (!Application.isFocused) { ClearRows(); return; }
             // Both row parts off: no row, counter icons stay independent.
             if (!Plugin.StatusHand.Value && !Plugin.StatusEffects.Value) { ClearRows(); return; }
             // Do not spend another polling interval waiting to construct/bind the first spectator rows.
@@ -307,80 +306,113 @@ internal static class BattleStatusUi
         foreach (var row in Rows) row.Refresh();
     }
 
-    private static void UpdateCounter(RuntimeObject? actorUi)
+    private static void UpdateCounter(RuntimeObject? director)
     {
         if (!Compatibility.Allowed(CounterFeature)) return;
-        try { RefreshCounter(actorUi); PositionCounter(); }
+        try
+        {
+            AttackerCounter.Refresh(director?.Get("attacker")?.Field("_UI")); AttackerCounter.Position();
+            DefenderCounter.Refresh(director?.Get("victim")?.Field("_UI")); DefenderCounter.Position();
+        }
         catch (Exception ex) { Compatibility.Block(CounterFeature, ex, ClearCounter, EncounterCounterUi.Clear); }
-    }
-
-    private static void RefreshCounter(RuntimeObject? actorUi)
-    {
-        if (actorUi == null || actorUi.Get<bool>("isDisposed")) { ClearCounter(); return; }
-        var parent = actorUi.Field("com_Defend");
-        var defender = actorUi.Field("defenderData");
-        var header = parent?.Call("GetChild", "n24");
-        if (_counterParent?.Pointer != parent?.Pointer || _counterHeader?.Pointer != header?.Pointer
-            || _counterDefender != (defender?.Pointer ?? IntPtr.Zero) || _counterIcon?.Get<bool>("isDisposed") == true)
-        {
-            ClearCounter();
-            _counterParent = parent; _counterHeader = header;
-            _counterDefender = defender?.Pointer ?? IntPtr.Zero;
-        }
-        // Public Counter also tracks heroes via BattleProperty.OnCanCounterChanged.
-        _counterAvailable = defender?.Get("Property")?.Field("Counter")?.Get<bool>("Value") == true;
-        // Prepare while the native header is still hidden; PositionCounter owns its reveal.
-        if (!_counterAvailable || parent == null || header == null) return;
-        if (_counterIcon == null)
-            _counterIcon = NativeUi.CounterIndicator(parent!);
-    }
-
-    private static void PositionCounter()
-    {
-        if (_counterIcon == null || _counterIcon.Get<bool>("isDisposed")) return;
-        // n24 is a GImage, not a container. Follow its own visibility/alpha every frame
-        // while sharing its parent transform; do not reparent or alter the native header.
-        var visible = _counterAvailable && GameUi.Visible(_counterHeader)
-            && _counterHeader!.Get<float>("alpha") > 0;
-        if (!BattleStatusLayout.CounterReady(visible, Time.unscaledTime, ref _counterVisibleSince))
-        {
-            if (_counterShown)
-            {
-                _counterIcon.Call("GetTransition", "MaxPoint")!.Call("Stop", false, false);
-                _counterIcon.Set("visible", false);
-            }
-            _counterShown = false;
-            return;
-        }
-        var header = _counterHeader!;
-        var size = 72 * Plugin.UiScale.Value * Math.Min(Math.Abs(header.Get<float>("scaleX")), Math.Abs(header.Get<float>("scaleY")));
-        var anchor = BattleStatusLayout.CounterAnchor(header.Get<float>("xMin"), header.Get<float>("yMin"),
-            header.Get<float>("width") * header.Get<float>("scaleX"), size);
-        var position = (anchor.X, anchor.Y, size, header.Get<float>("alpha"));
-        if (_counterPosition != position)
-        {
-            _counterPosition = position;
-            _counterIcon.Call("SetScale", size / 160, size / 160);
-            _counterIcon.Call("SetXY", anchor.X, anchor.Y);
-            _counterIcon.Set("alpha", position.Item4);
-        }
-        if (!_counterShown)
-        {
-            _counterIcon.Set("visible", true);
-            if (_counterDefender != _quietCounter) NativeUi.Play(_counterIcon, "MaxPoint");
-            _quietCounter = IntPtr.Zero;
-            _counterShown = true;
-        }
     }
 
     internal static void ClearCounter()
     {
-        GameUi.Dispose(_counterIcon);
-        _counterIcon = _counterParent = _counterHeader = null;
-        _counterDefender = IntPtr.Zero;
-        _counterAvailable = _counterShown = false;
-        _counterVisibleSince = -1;
-        _counterPosition = null;
+        AttackerCounter.Clear();
+        DefenderCounter.Clear();
+    }
+
+    // DEFENSE's icon sits on its header's top-right corner, ATTACK's mirrored on the top-left, away from each side's dice.
+    private sealed class CounterMark
+    {
+        private readonly bool _attacker;
+        private RuntimeObject? _icon, _parent, _header;
+        private IntPtr _owner;
+        private bool _available, _shown;
+        // A counter hidden only while the settings window is open returns without its reveal motion and sound; it is the
+        // same Counter, not a new one. Lost focus no longer hides it (2026-11-15).
+        private IntPtr _quiet;
+        private float _visibleSince = -1;
+        private (float X, float Y, float Size, float Alpha)? _position;
+
+        internal CounterMark(bool attacker) => _attacker = attacker;
+
+        // Before Clear: remember a shown counter whose owner may return unchanged.
+        internal void Quiet(bool keep) => _quiet = keep && _shown ? _owner : IntPtr.Zero;
+
+        internal void Refresh(RuntimeObject? actorUi)
+        {
+            if (actorUi == null || actorUi.Get<bool>("isDisposed")) { Clear(); return; }
+            var parent = actorUi.Field(_attacker ? "com_Attack" : "com_Defend");
+            var owner = actorUi.Field(_attacker ? "attackerData" : "defenderData");
+            var header = parent?.Call("GetChild", "n24");
+            if (_parent?.Pointer != parent?.Pointer || _header?.Pointer != header?.Pointer
+                || _owner != (owner?.Pointer ?? IntPtr.Zero) || _icon?.Get<bool>("isDisposed") == true)
+            {
+                Clear();
+                _parent = parent; _header = header;
+                _owner = owner?.Pointer ?? IntPtr.Zero;
+            }
+            // Two public sources: CanCounter (BattleProperty.Counter, what the native encounter screen shows for monsters)
+            // and a hero's counter stacks (CounterCount, shown property 10008 반격), which the server tracks apart from it.
+            // On 2026-11-15 an attacker showing 10008 at 1 to 3 got no icon from CanCounter alone.
+            var property = owner?.Get("Property");
+            _available = property?.Field("Counter")?.Get<bool>("Value") == true
+                || property?.Field("CounterCount")?.Field("property")?.Get<int>("Value") > 0;
+            // Prepare while the native header is still hidden; Position owns its reveal.
+            if (!_available || parent == null || header == null) return;
+            if (_icon == null)
+                _icon = NativeUi.CounterIndicator(parent!);
+        }
+
+        internal void Position()
+        {
+            if (_icon == null || _icon.Get<bool>("isDisposed")) return;
+            // n24 is a GImage, not a container. Follow its own visibility/alpha every frame
+            // while sharing its parent transform; do not reparent or alter the native header.
+            var visible = _available && GameUi.Visible(_header)
+                && _header!.Get<float>("alpha") > 0;
+            if (!BattleStatusLayout.CounterReady(visible, Time.unscaledTime, ref _visibleSince))
+            {
+                if (_shown)
+                {
+                    _icon.Call("GetTransition", "MaxPoint")!.Call("Stop", false, false);
+                    _icon.Set("visible", false);
+                }
+                _shown = false;
+                return;
+            }
+            var header = _header!;
+            var size = 72 * Plugin.UiScale.Value * Math.Min(Math.Abs(header.Get<float>("scaleX")), Math.Abs(header.Get<float>("scaleY")));
+            var anchor = BattleStatusLayout.CounterAnchor(header.Get<float>("xMin"), header.Get<float>("yMin"),
+                header.Get<float>("width") * header.Get<float>("scaleX"), size, _attacker);
+            var position = (anchor.X, anchor.Y, size, header.Get<float>("alpha"));
+            if (_position != position)
+            {
+                _position = position;
+                _icon.Call("SetScale", size / 160, size / 160);
+                _icon.Call("SetXY", anchor.X, anchor.Y);
+                _icon.Set("alpha", position.Item4);
+            }
+            if (!_shown)
+            {
+                _icon.Set("visible", true);
+                if (_owner != _quiet) NativeUi.PlayCounter(_icon);
+                _quiet = IntPtr.Zero;
+                _shown = true;
+            }
+        }
+
+        internal void Clear()
+        {
+            GameUi.Dispose(_icon);
+            _icon = _parent = _header = null;
+            _owner = IntPtr.Zero;
+            _available = _shown = false;
+            _visibleSince = -1;
+            _position = null;
+        }
     }
 
     private static void Hover()
@@ -447,16 +479,9 @@ internal static class BattleStatusUi
                 _counter!.Call("SetXY", 14f, bottom + 14);
                 _counter.Set("text", counters);
                 var tipHeight = bottom + (counted ? 60 : 98);
+                if (!counted && _unknownText != ModText.Text("계산 미반영")) UnknownTag();
                 _unknownTag!.Set("visible", !counted);
-                if (!counted)
-                {
-                    _unknownText!.Set("text", ModText.Text("계산 미반영"));
-                    var tagWidth = 44 + _unknownText.Get<float>("textWidth");
-                    _unknownText.Call("SetSize", tagWidth - 34, 30f);
-                    _unknownTag.Call("SetSize", tagWidth, 32f);
-                    _unknownTagBackground!.Resize(tagWidth, 32f);
-                    _unknownTag.Call("SetXY", 14f, bottom + 52);
-                }
+                if (!counted) _unknownTag.Call("SetXY", 14f, bottom + 52);
                 _tooltip!.Call("SetSize", 390f, tipHeight);
                 _tooltipBackground!.Resize(390f, tipHeight);
             }
@@ -478,7 +503,8 @@ internal static class BattleStatusUi
 
     private static RuntimeObject UnknownMarker(RuntimeObject parent)
     {
-        var marker = NativeUi.QuestionMark(parent, MarkerSize);
+        // The notes' "?" (NoteUi, user-chosen 2026-11-16): light grey with a black rim and a dark mark.
+        var marker = NoteUi.Badge(parent, MarkerSize / 2, MarkerSize / 2, MarkerSize / 2);
         marker.Set("visible", false);
         return marker;
     }
@@ -519,14 +545,16 @@ internal static class BattleStatusUi
             label.Set("autoSize", 2); // Native wrapping, grow height instead of shrinking Korean text.
         }
         _counter = NativeUi.Label(_tooltip, "", 14, 170, 362, 30, 19);
-        // Dark capsule under the counters: this effect is not part of the combat calculations.
-        _unknownTag = NativeUi.Component(_tooltip, 160, 32);
-        _unknownTag.Set("touchable", false);
-        _unknownTagBackground = new NativeUi.Surface(_unknownTag, 160, 32, fixedOpacity: true, fill: NativeUi.DarkFill);
-        var mark = NativeUi.Label(_unknownTag, "?", 6, 1, 24, 30, 17);
-        mark.Set("align", 1); mark.Set("verticalAlign", 1);
-        _unknownText = NativeUi.Label(_unknownTag, "", 30, 1, 120, 30, 17);
-        _unknownText.Set("verticalAlign", 1);
+        UnknownTag();
+    }
+
+    // The capsule under the counters, in the settlement-styled note look (NoteUi): this effect is not part of the combat
+    // calculations. Made again when the mod language changes, since its width follows the text.
+    private static void UnknownTag()
+    {
+        GameUi.Dispose(_unknownTag);
+        _unknownText = ModText.Text("계산 미반영");
+        _unknownTag = new NoteUi.Capsule(_tooltip!, "계산 미반영", mutedIcon: false, leadingBadge: true, trailingBadge: false).Root;
         _unknownTag.Set("visible", false);
     }
 
@@ -541,8 +569,9 @@ internal static class BattleStatusUi
         foreach (var row in Rows) GameUi.Dispose(row.Panel);
         Rows.Clear();
         GameUi.Dispose(_tooltip);
-        _tooltip = _tooltipItem = _counter = _unknownTag = _unknownText = _ui = _fight = null;
-        _tooltipBackground = _unknownTagBackground = null;
+        _tooltip = _tooltipItem = _counter = _unknownTag = _ui = _fight = null;
+        _unknownText = null;
+        _tooltipBackground = null;
         _parent = _hovered = IntPtr.Zero; _tipText = "";
         _camera = null;
     }
