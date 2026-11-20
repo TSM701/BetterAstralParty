@@ -51,6 +51,18 @@ which still covers the views before the server decides a hit.
   no Teru fight followed any of the marked hero's six attacks. Teru's ordinary attacks
   with 1 to 4 stacks matched the server (5 hits). Both join the neutral list.
 
+## 2026-11-20 — dodge when it survives more often
+
+User decision ("회피가 살 확률이 더 높으면 회피 추천하는게 맞는듯"): the Defend/Dodge
+recommendation picks Dodge when, in every public outcome, a dodge is knocked out less often
+than defending, or a dodge takes nothing while defending can lose HP. An equal KO chance, a
+mixed result across outcomes and an unavailable dodge recommend Defend; the Shushu shield
+still always recommends Dodge. It replaces the rule below. Example: HP 5 against ATK 7 with
+an attack die of 4 and DEF 1 is a KO on five of six defense faces and four of six dodge
+faces, so it now recommends Dodge; with DEF 2 both are four of six and it defends. Card and
+encounter advice model every defender's reply with the same rule, so their KO chances and
+HP losses for a defender who would now dodge change with it.
+
 ## 2026-11-06 — dodge only against a certain KO
 
 User decision: the Defend/Dodge recommendation no longer compares worst-case KO chance and

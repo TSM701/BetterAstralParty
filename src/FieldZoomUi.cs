@@ -266,7 +266,7 @@ internal static class FieldZoomUi
     {
         if (!Application.isFocused || ModUi.IsOpen || Input.touchCount != 0 || root.Get<bool>("modalWaiting")
             || GameUi.LiveDrag() != null
-            || GameUi.Find(root, "FightWindow", maxDepth: 1) is { } fight && !EncounterHidden(fight) && !FightPip.FieldOpen(pointer: !pan || Input.GetMouseButton(0))
+            || GameUi.Find(root, "FightWindow", maxDepth: 1) is { } fight && !EncounterHidden(fight) && !FightPip.FieldOpen(pointer: Input.GetMouseButton(0))
             || GameUi.Find(root, "SettingWindow", maxDepth: 1) != null
             || GameUi.Find(root, "SettingInBattleWindow", maxDepth: 1) != null
             || GameUi.Find(root, "SinglePlayerSettingInBattleWindow", maxDepth: 1) != null

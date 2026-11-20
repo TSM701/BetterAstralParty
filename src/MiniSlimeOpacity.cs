@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace BetterAstralParty;
 
-// 미니 슬라임 불투명도 / Mini Slime Opacity (필드·카메라, 20-100 %, default 100 %; user-requested 2026-11-18, rules in
+// 미니 슬라임 불투명도 / Mini Slime Opacity (필드 표시, 20-100 %, default 100 %; user-requested 2026-11-18, rules in
 // .claude/rules/field.md). Lulu's Mini Slimes are land-buff summons (SummonInfoConfigure 11211 of character 112, born effect
 // 11203 "Summon_112_Heal"): BattleLogic.summon (SummonLogic) keeps them in _landSummonDict, each LandBuffData's Summon holding
 // the effect object (Core.Effect, from EffectManager's pool). The slime body (the "zhuti" particle renderers, material

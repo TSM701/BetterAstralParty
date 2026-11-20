@@ -46,6 +46,18 @@ internal static partial class TestCommands
         var vanillaEntry = ReadSource(context, "tools/AstralParty-Vanilla.cmd");
         Pattern(vanillaEntry, @"type nul > ""%REQUEST%\\vanilla-launch\.request"" 2>nul\r?\nif errorlevel 1 \([^)]*exit /b 1\r?\n\)\r?\nstart """" ""steam://launch/2622000/dialog""",
             "Vanilla entry lets Steam start the owned app only after its request is written");
+        // User-decided 2026-11-18: choice 2 keeps the shared loader itself off for one launch, for a loader that fails before plugins.
+        // User-chosen 2026-11-19: typed 1, 2 or Q confirmed with Enter, since choice.exe beeped at other keys and after Alt+Tab.
+        // The typed text loses its quotes and is compared only inside quotes, so nothing in it can run.
+        Pattern(vanillaEntry, @":ask\r?\nset ""BAP_CHOICE=""\r?\nset /p ""BAP_CHOICE=[^""]+""\r?\nif not defined BAP_CHOICE goto again\r?\n(?:rem [^\r\n]*\r?\n)?set ""BAP_CHOICE=%BAP_CHOICE:""=%""\r?\nif ""%BAP_CHOICE%""==""2"" goto unmodded\r?\nif /i ""%BAP_CHOICE%""==""q"" exit /b 0\r?\nif ""%BAP_CHOICE%""==""1"" goto withoutbap\r?\n:again\r?\n",
+            "Vanilla entry starts nothing until 1 or 2 is typed and confirmed, and Q closes it");
+        Contains(vanillaEntry, new[] { "if %BAP_TRIES% GEQ 50 exit /b 0", "goto ask", ":withoutbap", "\"%SystemRoot%\\System32\\chcp.com\" 65001 <nul >nul" }, "Vanilla entry asks again a bounded number of times, and chcp leaves typed input alone");
+        NoPattern(vanillaEntry, @"(?mi)^(?!rem ).*choice\.exe", "Vanilla entry uses no beeping key prompt");
+        // The menu screen (user-requested 2026-11-18, after a boxed console tool): only colour sequences, no other escape use.
+        Check(Regex.Matches(vanillaEntry, "\u001b").Count == 1 && vanillaEntry.Contains("set \"E=\u001b\"", StringComparison.Ordinal), "Vanilla entry keeps its one escape character for console colours");
+        Pattern(vanillaEntry, @"(?m)^:unmodded\r?\n(?:rem [^\r\n]*\r?\n)*start """" ""steam://run/2622000//--doorstop-enabled false/""\r?\nexit /b 0",
+            "Vanilla entry's unmodded choice passes the loader switch off through Steam");
+        NoPattern(vanillaEntry, @"(?mi)^(?!rem ).*(doorstop_config\.ini|doorstop-enabled true)", "Vanilla entry never touches loader settings or turns the loader on");
         foreach (var (name, batchText) in new[] { ("Mod", modEntry), ("Vanilla", vanillaEntry) })
         {
             Contains(batchText, new[] { "\"%SystemRoot%\\System32\\tasklist.exe\"", "\"%SystemRoot%\\System32\\find.exe\"" }, name + " entry calls system tools by full path");
@@ -57,7 +69,7 @@ internal static partial class TestCommands
         foreach (var batch in Directory.GetFiles(context.Root, "*.cmd").Concat(Directory.GetFiles(Path.Combine(context.Root, "tools"), "*.cmd")))
         {
             Check(PackagingWhole.CrlfOnly(File.ReadAllBytes(batch)), "CRLF batch file: " + Path.GetFileName(batch));
-            NoPattern(File.ReadAllText(batch), @"(?mi)^\s*(tasklist|find|findstr|chcp)\b|\|\s*(find|findstr)\b", Path.GetFileName(batch) + " never relies on PATH for system tools");
+            NoPattern(File.ReadAllText(batch), @"(?mi)^\s*(tasklist|find|findstr|chcp|choice)\b|\|\s*(find|findstr)\b", Path.GetFileName(batch) + " never relies on PATH for system tools");
         }
         var image = BuildProject(context, "focus-tests/update-runtime-isolation/SharedLoaderFixture.csproj", stage, pin);
         Ensure(context.Run(Dotnet(context), new[] { image, scratch, Path.Combine(context.Root, "artifacts") }, env: EnvironmentFor(stage), timeoutMilliseconds: 60000, logPath: Path.Combine(stage, "shared-loader.log")), "Actual native shared-loader policy");

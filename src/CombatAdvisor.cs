@@ -146,7 +146,8 @@ public static class CombatAdvisor
         var recommendation = input.Modifiers.ShushuShield ? RecommendedAction.Dodge : Choose(defend, dodge);
         var reason = !includeReason ? "" : recommendation == RecommendedAction.Defend ? "방어"
             : input.Modifiers.ShushuShield ? "회피: 슈슈 쉴드"
-            : dodge.ExpectedDamage == 0 ? "회피: 회피 시 피해 없음" : "회피: 방어 시 확정 전투불능";
+            : dodge.ExpectedDamage == 0 ? "회피: 회피 시 피해 없음"
+            : defend.KnockoutChance >= 1 ? "회피: 방어 시 확정 전투불능" : "회피: 회피 생존 확률이 더 높음";
 
         return new CombatAdvice(defend, dodge, recommendation, reason);
     }
@@ -214,11 +215,12 @@ public static class CombatAdvisor
         return modifiers.MinimumHp > 0 ? Math.Min(damage, Math.Max(0, hp - modifiers.MinimumHp)) : damage;
     }
 
-    // User policy (2026-11-06), shared by the Defend/Dodge advice and the defender's reply that card and
-    // encounter advice model: defend, unless defending is a certain KO while a dodge can survive, or a dodge
-    // takes nothing (a fixed dodge face) while defending can lose HP. Ties defend.
+    // User policy (2026-11-20, replacing 2026-11-06's dodge only against a certain KO), shared by the Defend/Dodge advice
+    // and the defender's reply that card and encounter advice model: dodge when a dodge is knocked out less often than
+    // defending, or when a dodge takes nothing (a fixed dodge face) while defending can lose HP. Ties defend.
+    private const double SameChance = 1e-9;
     private static RecommendedAction Choose(ChoiceStats defend, ChoiceStats dodge) =>
-        defend.KnockoutChance >= 1 && dodge.KnockoutChance < 1 || dodge.ExpectedDamage == 0 && defend.ExpectedDamage > 0
+        dodge.KnockoutChance < defend.KnockoutChance - SameChance || dodge.ExpectedDamage == 0 && defend.ExpectedDamage > 0
             ? RecommendedAction.Dodge : RecommendedAction.Defend;
 
     // Callers select the endpoint favorable to the local side, not an average of

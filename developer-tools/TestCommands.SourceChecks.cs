@@ -250,7 +250,7 @@ internal static partial class TestCommands
         var trace = Regex.Match(source, @"(?s)private static void TraceInput\(.*?(?=    private static bool ToggleEnabled)");
         Check(trace.Success && trace.Value.Contains("Plugin.Diagnostics.Write(", StringComparison.Ordinal) && !Regex.IsMatch(trace.Value, @"(?:\.Call\(|\.Get<|\.Get\(|\.Field\()"), "Sampled trace reads no extra native objects");
         var features = new[] { "ActionAdvice", "AdviceDetails", "KoDiceTarget", "PingDetails", "BattleStatus", "ShushuShield", "PlayerIndicators", "NameStyle", "GroupHand", "FieldZoom",
-            "ShushuDefendLock", "AutoThanks", "CharacterRoles", "PrepSkillInfo", "IndicatorFade", "IndicatorHide", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "DicePin", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "ShootingStarShow", "KoCardHover", "KoSpectator", "StatusHand", "StatusEffects", "CounterIcons", "ShushuMaster", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill", "OldReplays", "WalkDirection", "SendAllLikes", "ShopBulkBuy", "ReceivedLikes", "FightPip", "FightPipStart", "ReplaySaveLimit" };
+            "ShushuDefendLock", "AutoThanks", "CharacterRoles", "PrepSkillInfo", "IndicatorFade", "IndicatorDisplay", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "DicePin", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "ShootingStarShow", "KoCardHover", "KoSpectator", "StatusHand", "StatusEffects", "CounterIcons", "ShushuMaster", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill", "OldReplays", "WalkDirection", "SendAllLikes", "ShopBulkBuy", "ReceivedLikes", "FightPip", "FightPipStart", "ReplaySaveLimit", "AutoThanksDelay" };
         for (var row = 0; row < features.Length; row++) Check(source.Contains($"AddToggle(\"{features[row]}\", 440, MenuLayout.ToggleY({row}));", StringComparison.Ordinal), "Feature right column: " + features[row]);
         var general = new[] { "UpdateChannel", "Update", "UpdateDownload", "AutoUpdate", "UpdateAuth", "UpdateSignOut", "DiagnosticsCollect",
             "SuppressNotices", "UpdateNotifications", "SettingsAutoKeep", "SettingsSave", "SettingsLoad", "SettingsReset" };
@@ -302,7 +302,31 @@ internal static partial class TestCommands
 
     private static void SettingsPreferenceInventory(DevContext context, string source, string plugin)
     {
-        var added = new[] { "ShushuDefendLock", "AutoThanks", "CharacterRoles", "PrepSkillInfo", "IndicatorFade", "IndicatorHide", "DicePin", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications", "PlayerTabSkill", "OldReplays", "SendAllLikes", "ShopBulkBuy", "ReceivedLikes", "FightPip", "ReplaySaveLimit" };
+        // Settings-file keys of the public releases up to 2026.11.3 (list made for 2026.11.2 on 2026-11-20, user-approved): a key renamed or dropped resets that
+        // setting for every player, and no check held them before. Every one must still be bound; add a release's new keys when
+        // it is published (CLAUDE.md Code names: settings-file keys are never renamed).
+        var released = new[] {
+            ("일반", "활성화"), ("화면", "최종 피해 표시"), ("전투 추천", "상세 확률 표시"), ("화면", "KO 최소 조건 표시"), ("화면", "캐릭터 본명 표시"), ("화면", "카드 확대 팝업"),
+            ("화면", "손패 기능별 정렬"), ("화면", "전투 공개 상태"), ("화면", "슈슈 쉴드 표시"), ("화면", "슈슈 쉴드 방어 제한"), ("편의", "자동 감사합니다"), ("편의", "좋아요 일괄 전송"),
+            ("편의", "받은 좋아요 표시"), ("편의", "스타 코인 상점 일괄 구매"), ("화면", "캐릭터 준비 설명"), ("화면", "플레이어 목록 탭"), ("화면", "플레이어 목록 탭 손패 장수"),
+            ("화면", "플레이어 목록 탭 역할"), ("화면", "플레이어 목록 탭 스킬 쿨타임"), ("화면", "캐릭터 역할 표시"), ("화면", "줌 아웃 인디케이터 반투명"), ("화면", "원거리 인디케이터 숨김"),
+            ("화면", "주사위 화면 고정"), ("전투 추천", "인카운트 추천"), ("전투 추천", "방어·회피 추천"), ("전투 추천", "카드 추천"), ("전투 추천", "슈팅 스타 표시"),
+            ("화면", "KO 카드 호버 조건"), ("화면", "KO 관전 전투 표시"), ("화면", "전투 상태 손패 장수"), ("화면", "전투 상태 공개 효과"), ("화면", "반격 아이콘"),
+            ("화면", "슈슈 쉴드 전체"), ("화면", "미반영 효과 도움말 확인함"), ("화면", "모드 설정 버튼 위치"), ("화면", "반격 표시 소리"), ("화면", "반격 표시 애니메이션"),
+            ("편의", "시작 공지 자동 열기 방지"), ("편의", "리플레이 보관"), ("편의", "창 전환 후 핑 모드 해제"), ("실험", "구버전 리플레이 재생"), ("화면", "전투 PIP"),
+            ("화면", "전투 PIP 전체 화면으로 시작"), ("화면", "전투 PIP 안내 완료"), ("화면", "전투 PIP 자리"), ("화면", "미니 슬라임 불투명도"), ("화면", "전투 PIP 불투명도"),
+            ("업데이트", "업데이트 알림 팝업"), ("업데이트", "자동 업데이트 확인"), ("화면", "필드 버프 표시"), ("화면", "이동 방향 강조"), ("화면", "필드 휠 줌"),
+            ("화면", "필드 인디케이터 점 높이"), ("화면", "UI 배율"), ("화면", "배경 불투명도"), ("일반", "언어"), ("일반", "업데이트 채널"), ("업데이트", "자동 다운로드"),
+            ("업데이트", "종료 후 적용"), ("진단", "충돌 진단 로그"), ("화면", "줌 아웃 반투명 정도"), ("화면", "접힌 손패 불투명도"), ("화면", "휠 줌 감도"), ("화면", "인디케이터 숨김 거리"),
+            ("화면", "최대 줌 아웃"), ("화면", "자유 시점 WASD 속도"), ("일반", "설정 자동 보관"), ("환경", "비활성 창 음소거"), ("환경", "매칭 성사 시 창 포커스"),
+            ("환경", "입력 대기 알림"),
+            // 2026.11.3 (2026-11-20).
+            ("화면", "사용자 정의 프레임 사용"), ("화면", "사용자 정의 프레임"), ("편의", "자동 감사합니다 무작위 지연"), ("화면", "인디케이터 표시 방식"), ("화면", "줌 아웃 불투명도 시작 거리")
+        };
+        Check(released.Length == 75, "Released settings-file key list");
+        foreach (var (section, key) in released)
+            Check(plugin.Contains("Config.Bind(\"" + section + "\", \"" + key + "\"", StringComparison.Ordinal), "Released settings-file key still bound: " + section + "/" + key);
+        var added = new[] { "ShushuDefendLock", "AutoThanks", "CharacterRoles", "PrepSkillInfo", "IndicatorFade", "DicePin", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications", "PlayerTabSkill", "OldReplays", "SendAllLikes", "ShopBulkBuy", "ReceivedLikes", "FightPip", "ReplaySaveLimit", "AutoThanksDelay" };
         var layout = ReadSource(context, "src/MenuLayout.cs"); var text = ReadSource(context, "src/ModText.cs");
         var enabled = MethodFragment(source, "private static bool ToggleEnabled"); var apply = MethodFragment(source, "private static void ApplyCore");
         var help = layout[layout.IndexOf("internal static (string Title, string Body) Help(", StringComparison.Ordinal)..];
@@ -348,7 +372,8 @@ internal static partial class TestCommands
         Contains(ReadSource(context, "src/Compatibility.cs"), new[] { "if (feature is \"CounterSound\" or \"CounterAnimation\" or \"CounterIcons\") return Reason(\"CounterIndicators\");" }, "Counter preference errors follow the isolated counter breaker rather than public battle rows");
         Contains(ReadSource(context, "src/Compatibility.cs"), new[] { "\"EncounterAdvice\" or \"DefenseAdvice\" or \"CardAdvice\" or \"KoCardHover\" or \"KoSpectator\") return Reason(\"ActionAdvice\");",
             "if (feature is \"ShootingStarShow\") return Reason(\"ShootingStar\") ?? Reason(\"ActionAdvice\");", "if (feature is \"StatusHand\" or \"StatusEffects\") return Reason(\"BattleStatus\");",
-            "if (feature is \"PlayerTabHand\" or \"PlayerTabRole\" or \"PlayerTabSkill\") return Reason(\"PlayerTab\");" }, "Part switches show unavailable while the breaker of the feature that draws them has tripped");
+            "if (feature is \"PlayerTabHand\" or \"PlayerTabRole\" or \"PlayerTabSkill\") return Reason(\"PlayerTab\");",
+            "if (feature is \"AutoThanksDelay\") return Reason(\"AutoThanks\");" }, "Part switches show unavailable while the breaker of the feature that draws them has tripped");
     }
 
     private static void SettingsScroll(DevContext context)

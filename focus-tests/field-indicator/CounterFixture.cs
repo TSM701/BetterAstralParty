@@ -11,7 +11,7 @@ namespace UnityEngine {
     public static class Screen { public static int height=>throw new Exception("Unexpected screen read in counter fixture"); }
     public readonly record struct Vector3(float x,float y,float z) { public static Vector3 zero=>default; }
     public readonly record struct Color(float r,float g,float b);
-    public static class Time { public static float unscaledTime; }
+    public static class Time { public static float unscaledTime, deltaTime = 1f / 60f; }
     public static class Application { public static bool isFocused=true; }
     public static class Input { public static bool Down,Up,Held; public static Vector3 mousePosition; public static bool GetMouseButtonDown(int b)=>b==0&&Down; public static bool GetMouseButtonUp(int b)=>b==0&&Up; public static bool GetMouseButton(int b)=>b==0&&Held; }
 }
@@ -114,6 +114,7 @@ internal static class FieldStatePlates { internal static readonly List<RuntimeOb
 internal sealed class FloatSetting {internal float Value=1f;}
 internal static class ModUi {internal static bool IsOpen;}
 internal static class FieldIndicatorOpacity {internal static bool Hidden;}
+internal static class FightPip {internal static bool ShowsField = false;}
 internal static class FieldNameFont {internal static bool Apply(RuntimeObject label,RuntimeObject? ui)=>true;}
 internal static class VisibleCombatAdvisor {internal static bool IsPve(int map)=>map==2;}
 internal sealed class Setting {internal bool Value=true;}

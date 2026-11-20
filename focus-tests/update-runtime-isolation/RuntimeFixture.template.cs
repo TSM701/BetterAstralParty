@@ -26,6 +26,7 @@ static class Time { internal static int frameCount; internal static float realti
 static class Input { internal static bool GetMouseButton(int button) => false; }
 static class Application { internal static bool isFocused = true; }
 static class StallWatch { internal const int ModStart = -2; internal static void Focus(bool focused) { } internal static void Enter(int segment) { } }
+static class FrameProbe { internal static bool Running => false; internal static bool PausesMod => false; internal static void Tick() { } internal static void ModTime(long started) { } }
 static class StartupGuard { internal const float HealthySeconds = 90f; internal static int HealthyCalls; internal static void Healthy() { HealthyCalls++; } }
 static class RuntimeObject { internal static int Flushes; internal static void FlushLedger(bool due = false) { Flushes++; } }
 enum AutomaticUpdateStatus { Idle, CheckingInstallation }
@@ -120,6 +121,7 @@ static class ShushuShieldUi {
     internal static void ClearDisplay() { Probe.Visit("shield.clear", true); }
 }
 static class MatchFocus { internal static void Tick() { Probe.Visit("native.matchFocus"); } }
+static class CustomFrameRate { internal static void Apply() { Probe.Visit("customFrame.apply"); } internal static void TickUi() { Probe.Visit("customFrame.ui", true); } }
 static class PvpSafety {
     internal static bool Suspended { get { return Probe.Suspended; } }
     internal static bool Broken { get { return Probe.Broken; } }
@@ -168,6 +170,7 @@ public static class Runner {
         Probe.Require(Probe.Discovery && Probe.Count("updates.tick") == 1 && Probe.Count("automatic.tick") == 1 && Probe.NativeCalls == 0 && Probe.HomeReads == 0 && Probe.OwnedCleanupAttempts == 1 && Probe.Calls.IndexOf("automatic.tick") < Probe.Calls.IndexOf("owned.cameraClear"), "CoreUi-blocked frame must run both backends then owned camera cleanup without general native reads"); cases++;
         Probe.Require(Probe.Count("native.matchFocus") == 1 && Probe.Count("native.pvp") == 1 && Probe.Count("native.audio") == 1
             && Probe.Calls.IndexOf("native.audio") < Probe.Calls.IndexOf("owned.cameraClear"), "Shared UI failure must not suppress independent focus restoration or audio"); cases++;
+        Probe.Require(Probe.Count("customFrame.apply") == 1 && Probe.Count("customFrame.ui") == 0, "Custom frame rate is reached before the shared UI gate (its own breaker decides) and builds no settings parts"); cases++;
         Probe.Reset(); Probe.Core = false; Probe.Pause = Probe.Suspended = true; ModUi.Tick(); Time.frameCount++; ModUi.Tick();
         Probe.Require(Probe.Count("native.matchFocus") == 2 && Probe.Count("native.pvp") == 2 && Probe.Count("native.audioRestore") == 2
             && Probe.Count("native.audio") == 0 && Probe.NativeCalls == 0 && Probe.HomeReads == 0, "Blocked shared UI retains fresh PvP audio restoration without accessing failed UI bindings"); cases++;
@@ -198,6 +201,7 @@ public static class Runner {
             "Optional notification decoration failure disables only its own feature; other UI, updates, focus and audio continue without retrying failed bindings"); cases++;
         Probe.Reset(); Probe.Pause = Probe.Suspended = true; ModUi.Tick(); Time.frameCount++; ModUi.Tick();
         Probe.Require(Probe.Count("automatic.tick") == 2 && Probe.Count("native.cleanup") == 1 && Probe.Count("native.audioRestore") == 2 && Probe.Count("native.ping") == 0 && Probe.Count("native.homeEsc") == 0 && Probe.Count("healthy.tail") == 0, "PvP still suspends gameplay, restores audio and cleans once while backend remains independent"); cases++;
+        Probe.Require(Probe.Count("customFrame.apply") == 2 && Probe.Count("customFrame.ui") == 2, "Custom frame rate, a display setting, keeps working in PvP"); cases++;
         Probe.Reset(); Probe.Pause = Probe.Suspended = true; ModUi.Tick();
         Probe.Require(Probe.Count("home.only") == 0 && Probe.Count("diagnostic.gate.PvpExcluded") == 1, "A known PvP state keeps the home-only path closed"); cases++;
         Probe.Reset(); Probe.Pause = Probe.Suspended = Probe.Broken = true; ModUi.Tick(); Time.frameCount++; ModUi.Tick();

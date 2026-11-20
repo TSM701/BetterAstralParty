@@ -6,7 +6,9 @@ namespace BetterAstralParty;
 internal static class AutoThanksUi
 {
     private const string Feature = "AutoThanks";
-    private static (IntPtr Window, IntPtr Cts, int Id)? _episode;
+    internal const float MinDelay = 0.3f, MaxDelay = 1.5f;
+    private static (IntPtr Window, IntPtr Cts, int Id)? _episode, _pending;
+    private static float _sendAt;
 
     internal static void Tick()
     {
@@ -60,13 +62,34 @@ internal static class AutoThanksUi
             if (callback?.Field("<>4__this")?.Pointer != window.Pointer) return;
             // shortcut: native gratitude IDs are 50000..50002; re-audit if its recommendation producer changes.
             if (callback.Field<int>("chatId") is not (50000 or 50001 or 50002)) return;
+            // Random Delay (issue #20): one wait drawn per recommendation, then every check above again when it is up. The
+            // native recommendation lasts 5 s, so even the longest wait sends inside it.
+            if (Plugin.AutoThanksDelay.Value)
+            {
+                var now = Time.unscaledTime;
+                if (_pending != episode) { _pending = episode; _sendAt = now + HumanDelay(System.Random.Shared); }
+                if (now < _sendAt) return;
+            }
             // Native Call's bool is not a send acknowledgement; never retry an uncertain dispatch.
-            _episode = episode;
+            _episode = episode; _pending = null;
             click.Call("Call");
             Plugin.Diagnostics.State("autoThanks", "native-recommendation-confirmed");
         }
         catch (Exception ex) { Compatibility.Block(Feature, ex); }
     }
 
-    internal static void Clear() => _episode = null;
+    // A person's reaction to a popup: log-normal around 0.75 s, nine in ten between about 0.42 and 1.33 s, drawn again
+    // outside 0.3-1.5 s so neither end piles up.
+    internal static float HumanDelay(System.Random random)
+    {
+        for (var i = 0; i < 8; i++)
+        {
+            var normal = Math.Sqrt(-2 * Math.Log(1 - random.NextDouble())) * Math.Cos(2 * Math.PI * random.NextDouble());
+            var delay = (float)(0.75 * Math.Exp(0.35 * normal));
+            if (delay is >= MinDelay and <= MaxDelay) return delay;
+        }
+        return 0.75f;
+    }
+
+    internal static void Clear() => _episode = _pending = null;
 }

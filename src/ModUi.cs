@@ -195,8 +195,13 @@ internal static partial class ModUi
     {
         StallWatch.Focus(Application.isFocused);
         StallWatch.Enter(StallWatch.ModStart);
+        // Development builds: the frame bottleneck test (Ctrl+Shift+F3) times this tick, and its BAP-paused step skips it.
+        FrameProbe.Tick();
+        if (FrameProbe.PausesMod) { StallWatch.Enter(-1); return; }
+        var started = FrameProbe.Running ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
         try { TickCore(); }
         finally { StallWatch.Enter(-1); }
+        if (started != 0) FrameProbe.ModTime(started);
     }
 
     private static void TickCore()
@@ -220,6 +225,8 @@ internal static partial class ModUi
         catch (Exception ex) { DiagnosticHub.Failure(DiagnosticFeature.Coordinator, DiagnosticPhase.None, DiagnosticCode.Unknown, ex); try { Plugin.Updates.FrameFailed(); } catch { } } // Updater failure cannot stop the UI frame.
         // These observers do not depend on the shared FairyGUI controls.
         MatchFocus.Tick();
+        // A display setting, so it holds in PvP too (user-decided 2026-11-19).
+        CustomFrameRate.Apply();
         var pauseGameplay = PvpSafety.Poll();
         if (Compatibility.Allowed("MuteUnfocused"))
         {
@@ -233,6 +240,7 @@ internal static partial class ModUi
             DiagnosticHub.Gate(DiagnosticFeature.CoreUi, DiagnosticCode.CompatibilityBlocked);
             return;
         }
+        CustomFrameRate.TickUi();
         if (Compatibility.Allowed(UpdateNotificationUi.Feature))
         {
             try { GameUi.RefreshReleaseNotification(); GameUi.RefreshUpdateProgress(); }
@@ -323,7 +331,7 @@ internal static partial class ModUi
             PlayerIndicatorUi.Tick(); Mark(16);
             WalkDirectionUi.Tick(); Mark(17);
             PlayerTabUi.Tick(); Mark(18);
-            MonsterMoveProbe.Tick(); FightDataProbe.Tick(); NancyProbe.Tick(); NativePassProbe.Tick(); Mark(19);
+            MonsterMoveProbe.Tick(); FightDataProbe.Tick(); NancyProbe.Tick(); NativePassProbe.Tick(); MatchWaitProbe.Tick(); Mark(19);
             if (measure) fieldEnd = System.Diagnostics.Stopwatch.GetTimestamp();
             if (measure) statusEnd = System.Diagnostics.Stopwatch.GetTimestamp();
             try { TickSettings(); }
@@ -477,7 +485,7 @@ internal static partial class ModUi
 
     private static BepInEx.Configuration.ConfigEntry<float> SliderEntry(string action) => action switch
     {
-        "IndicatorHeight" => Plugin.IndicatorHeight, "IndicatorFadeStrength" => Plugin.IndicatorFadeStrength,
+        "IndicatorHeight" => Plugin.IndicatorHeight, "IndicatorFadeStrength" => Plugin.IndicatorFadeStrength, "IndicatorFadeDistance" => Plugin.IndicatorFadeDistance,
         "FoldedHandOpacity" => Plugin.FoldedHandOpacity, "FightPipOpacity" => Plugin.FightPipOpacity, "MiniSlimeOpacity" => Plugin.MiniSlimeOpacity, "Scale" => Plugin.UiScale, "FreeCameraSpeed" => Plugin.FreeCameraSpeed,
         "ZoomSensitivity" => Plugin.ZoomSensitivity, "ZoomOutLimit" => Plugin.ZoomOutLimit, "IndicatorHideDistance" => Plugin.IndicatorHideDistance, _ => Plugin.Opacity
     };
@@ -821,7 +829,7 @@ internal static partial class ModUi
         AddToggle("CharacterRoles", 440, MenuLayout.ToggleY(12));
         AddToggle("PrepSkillInfo", 440, MenuLayout.ToggleY(13));
         AddToggle("IndicatorFade", 440, MenuLayout.ToggleY(14));
-        AddToggle("IndicatorHide", 440, MenuLayout.ToggleY(15));
+        AddToggle("IndicatorDisplay", 440, MenuLayout.ToggleY(15));
         AddToggle("CounterSound", 440, MenuLayout.ToggleY(16));
         AddToggle("CounterAnimation", 440, MenuLayout.ToggleY(17));
         AddToggle("PingFocus", 440, MenuLayout.ToggleY(18));
@@ -849,6 +857,7 @@ internal static partial class ModUi
         AddToggle("FightPip", 440, MenuLayout.ToggleY(40));
         AddToggle("FightPipStart", 440, MenuLayout.ToggleY(41));
         AddToggle("ReplaySaveLimit", 440, MenuLayout.ToggleY(42));
+        AddToggle("AutoThanksDelay", 440, MenuLayout.ToggleY(43));
         TraceSettingsOpen(DiagnosticPhase.SettingsReparent);
         foreach (var (button, action) in Controls.Values)
             if (!MenuLayout.FixedControl(action)) MoveIntoSettings(button, MenuLayout.SettingY(action) + MenuLayout.ChildOffsetY(action));
@@ -1477,8 +1486,15 @@ internal static partial class ModUi
     private static string AutoUpdateMode() => MenuLayout.AutoUpdateMode(Plugin.AutomaticChecks.Value, Plugin.Automatic.AutoDownload, Plugin.Automatic.ApplyAfterExit);
 
     // Locked: a parent or the switch an option tunes is OFF. The option dims, ignores clicks and drags, and keeps its value.
-    private static bool Locked(string action) => MenuLayout.Parent(action) is { } parent && !ToggleEnabled(parent)
-        || MenuLayout.SubParent(action) is { } sub && !ToggleEnabled(sub);
+    // Indicator Display and its tray (2026-11-20): none acts without the wheel zoom, whatever the display mode (the fade also
+    // fades the native plates under Native); the hide distance only under Hide When Far as well.
+    private static bool Locked(string action) => action switch
+    {
+        "IndicatorHideDistance" => !ToggleEnabled("FieldZoom") || !MenuLayout.UsesDistance(Plugin.IndicatorDisplay.Value),
+        "IndicatorDisplay" or "IndicatorFade" => !ToggleEnabled("FieldZoom"),
+        "IndicatorFadeStrength" or "IndicatorFadeDistance" => !ToggleEnabled("FieldZoom") || !ToggleEnabled("IndicatorFade"),
+        _ => MenuLayout.Parent(action) is { } parent && !ToggleEnabled(parent) || MenuLayout.SubParent(action) is { } sub && !ToggleEnabled(sub)
+    };
 
     private static bool ToggleEnabled(string action) => action switch
     {
@@ -1490,6 +1506,7 @@ internal static partial class ModUi
         "ShushuShield" => Plugin.ShushuShield.Value,
         "ShushuDefendLock" => Plugin.ShushuDefendLock.Value,
         "AutoThanks" => Plugin.AutoThanks.Value,
+        "AutoThanksDelay" => Plugin.AutoThanksDelay.Value,
         "SendAllLikes" => Plugin.SendAllLikes.Value,
         "ShopBulkBuy" => Plugin.ShopBulkBuy.Value,
         "ReceivedLikes" => Plugin.ReceivedLikes.Value,
@@ -1501,7 +1518,7 @@ internal static partial class ModUi
         "PlayerTabRole" => Plugin.PlayerTabRole.Value,
         "PlayerTabSkill" => Plugin.PlayerTabSkill.Value,
         "IndicatorFade" => Plugin.IndicatorFade.Value,
-        "IndicatorHide" => Plugin.IndicatorHide.Value,
+        "IndicatorDisplay" => MenuLayout.IndicatorDisplayMode(Plugin.IndicatorDisplay.Value) != "Native",
         "DicePin" => Plugin.DicePin.Value,
         "EncounterAdvice" => Plugin.EncounterAdvice.Value,
         "DefenseAdvice" => Plugin.DefenseAdvice.Value,
@@ -1549,6 +1566,7 @@ internal static partial class ModUi
             "NameStyle" => NamesMode,
             "FightPipStart" => StartMode,
             "WalkDirection" => MenuLayout.WalkDirectionMode(Plugin.WalkDirection.Value),
+            "IndicatorDisplay" => MenuLayout.IndicatorDisplayMode(Plugin.IndicatorDisplay.Value),
             "InputAttention" => InputAttentionState.Normalize(Plugin.InputAttention.Value),
             "UpdateChannel" => Plugin.UpdateChannel.Value,
             "AutoUpdate" => AutoUpdateMode(),
@@ -1685,6 +1703,7 @@ internal static partial class ModUi
             "FightPipStart" => StartMode,
             "GroupHand" => Plugin.GroupHand.Value ? "Click" : "Native",
             "WalkDirection" => MenuLayout.WalkDirectionMode(Plugin.WalkDirection.Value),
+            "IndicatorDisplay" => MenuLayout.IndicatorDisplayMode(Plugin.IndicatorDisplay.Value),
             "UpdateChannel" => Plugin.UpdateChannel.Value,
             "AutoUpdate" => AutoUpdateMode(),
             _ => InputAttentionState.Normalize(Plugin.InputAttention.Value)
@@ -1762,6 +1781,7 @@ internal static partial class ModUi
                 Plugin.GroupHand.Value = value != "Native";
                 break;
             case "WalkDirection": Plugin.WalkDirection.Value = value; break; // WalkDirectionUi follows the mode on its next frame.
+            case "IndicatorDisplay": Plugin.IndicatorDisplay.Value = value; Isolated("FieldZoom", FieldIndicatorOpacity.Clear); break;
             case "InputAttention": Isolated("InputAttention", InputAttention.Stop); Plugin.InputAttention.Value = value; break;
             case "UpdateChannel": Plugin.UpdateChannel.Value = value; Plugin.Updates.CheckTransition(DateTimeOffset.UtcNow); break;
             case "AutoUpdate":
@@ -1858,6 +1878,7 @@ internal static partial class ModUi
             case "ShushuShield": Plugin.ShushuShield.Value = !Plugin.ShushuShield.Value; if (!Plugin.ShushuShield.Value) ShushuShieldUi.ClearDisplay(); break;
             case "ShushuDefendLock": Plugin.ShushuDefendLock.Value = !Plugin.ShushuDefendLock.Value; if (!Plugin.ShushuDefendLock.Value) ShushuShieldUi.ClearRestrictions(); break;
             case "AutoThanks": Plugin.AutoThanks.Value = !Plugin.AutoThanks.Value; break;
+            case "AutoThanksDelay": Plugin.AutoThanksDelay.Value = !Plugin.AutoThanksDelay.Value; break;
             case "SendAllLikes": Plugin.SendAllLikes.Value = !Plugin.SendAllLikes.Value; break;
             case "ShopBulkBuy": Plugin.ShopBulkBuy.Value = !Plugin.ShopBulkBuy.Value; break;
             case "ReceivedLikes": Plugin.ReceivedLikes.Value = !Plugin.ReceivedLikes.Value; break;
@@ -1871,7 +1892,6 @@ internal static partial class ModUi
             case "OldReplays": Plugin.OldReplays.Value = !Plugin.OldReplays.Value; break;
             case "FightPip": Plugin.FightPip.Value = !Plugin.FightPip.Value; break;
             case "IndicatorFade": Plugin.IndicatorFade.Value = !Plugin.IndicatorFade.Value; Isolated("FieldZoom", FieldIndicatorOpacity.Clear); break;
-            case "IndicatorHide": Plugin.IndicatorHide.Value = !Plugin.IndicatorHide.Value; Isolated("FieldZoom", FieldIndicatorOpacity.Clear); break;
             case "DicePin": Plugin.DicePin.Value = !Plugin.DicePin.Value; FieldDiceUi.Clear(); break;
             case "EncounterAdvice": Plugin.EncounterAdvice.Value = !Plugin.EncounterAdvice.Value; break;
             case "DefenseAdvice": Plugin.DefenseAdvice.Value = !Plugin.DefenseAdvice.Value; break;
@@ -2237,6 +2257,7 @@ internal static partial class ModUi
                 if (action == "InputAttention") state = InputAttentionState.Label(Plugin.InputAttention.Value);
                 if (action == "GroupHand") state = MenuLayout.OptionLabel(action, Plugin.GroupHand.Value ? "Click" : "Native");
                 if (action == "WalkDirection") state = MenuLayout.OptionLabel(action, MenuLayout.WalkDirectionMode(Plugin.WalkDirection.Value));
+                if (action == "IndicatorDisplay") state = MenuLayout.OptionLabel(action, Plugin.IndicatorDisplay.Value);
                 if (action == "AutoUpdate") state = MenuLayout.OptionLabel(action, AutoUpdateMode());
                 if (action == "FightPipStart") state = MenuLayout.OptionLabel(action, StartMode);
                 if (blocked) state = "사용 불가";

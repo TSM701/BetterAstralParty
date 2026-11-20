@@ -11,7 +11,7 @@ public sealed class Plugin : BasePlugin
 {
     public const string Guid = "kr.betterastralparty.mod";
     public const string Name = "BetterAstralParty";
-    public const string Version = "2026.11.2-dev.46";
+    public const string Version = "2026.11.3-dev.22";
     public const int InstallBundleProtocol = 1;
     public const string UpdateProtocol = "5";
     public const string SettingsSchema = "1";
@@ -26,6 +26,9 @@ public sealed class Plugin : BasePlugin
     internal static ConfigEntry<bool> ShushuShield { get; private set; } = null!;
     internal static ConfigEntry<bool> ShushuDefendLock { get; private set; } = null!;
     internal static ConfigEntry<bool> AutoThanks { get; private set; } = null!;
+    internal static ConfigEntry<bool> AutoThanksDelay { get; private set; } = null!;
+    internal static ConfigEntry<bool> CustomFrameOn { get; private set; } = null!;
+    internal static ConfigEntry<int> CustomFrame { get; private set; } = null!;
     internal static ConfigEntry<bool> SendAllLikes { get; private set; } = null!;
     internal static ConfigEntry<bool> ShopBulkBuy { get; private set; } = null!;
     internal static ConfigEntry<bool> ReceivedLikes { get; private set; } = null!;
@@ -37,6 +40,7 @@ public sealed class Plugin : BasePlugin
     internal static ConfigEntry<bool> CharacterRoles { get; private set; } = null!;
     internal static ConfigEntry<bool> IndicatorFade { get; private set; } = null!;
     internal static ConfigEntry<bool> IndicatorHide { get; private set; } = null!;
+    internal static ConfigEntry<string> IndicatorDisplay { get; private set; } = null!;
     internal static ConfigEntry<bool> DicePin { get; private set; } = null!;
     internal static ConfigEntry<bool> UnknownHelpSeen { get; private set; } = null!;
     internal static ConfigEntry<string> HomeMenuPosition { get; private set; } = null!;
@@ -72,6 +76,7 @@ public sealed class Plugin : BasePlugin
     internal static ConfigEntry<bool> MuteUnfocused { get; private set; } = null!;
     internal static ConfigEntry<bool> SettingsAutoKeep { get; private set; } = null!;
     internal static ConfigEntry<float> IndicatorFadeStrength { get; private set; } = null!;
+    internal static ConfigEntry<float> IndicatorFadeDistance { get; private set; } = null!;
     internal static ConfigEntry<float> FoldedHandOpacity { get; private set; } = null!;
     internal static ConfigEntry<float> ZoomSensitivity { get; private set; } = null!;
     internal static ConfigEntry<float> IndicatorHideDistance { get; private set; } = null!;
@@ -88,6 +93,7 @@ public sealed class Plugin : BasePlugin
         KoDiceTarget.Value = ActionAdvice.Value && AdviceDetails.Value;
         ShushuShield.Value = BattleStatus.Value;
         ShushuDefendLock.Value = ShushuShield.Value;
+        IndicatorDisplay.Value = IndicatorHide.Value ? "HideFar" : "Native";
     }
     internal static ConfigEntry<bool> MatchFocus { get; private set; } = null!;
     internal static ConfigEntry<string> InputAttention { get; private set; } = null!;
@@ -215,6 +221,9 @@ public sealed class Plugin : BasePlugin
         ShushuShield = Config.Bind("화면", "슈슈 쉴드 표시", BattleStatus.Value, "[설정 창: 슈슈 쉴드 효과 / Settings: Shiyu-Shiyu Shield Effect] 전투 중 캐릭터에 슈슈 쉴드 효과를 표시합니다. / Shows Shiyu-Shiyu Shield effects on combat characters.");
         ShushuDefendLock = Config.Bind("화면", "슈슈 쉴드 방어 제한", ShushuShield.Value, "[설정 창: 슈슈 쉴드 방어 잠금 / Settings: Shiyu-Shiyu Shield Defend Lock] 쉴드가 있는 내가 방어자이면 방어 버튼·방어 카드를 잠급니다. / Locks Defend and defense cards when you are the shielded defender.");
         AutoThanks = Config.Bind("편의", "자동 감사합니다", true, "[설정 창: 감사합니다 자동 전송 / Settings: Auto Thanks] 게임 기본 감사합니다 추천을 추천마다 한 번 전송합니다. / Confirm each native Thanks recommendation at most once.");
+        CustomFrameOn = Config.Bind("화면", "사용자 정의 프레임 사용", false, "[게임 설정: 화면 설정 > 주사율 > 사용자 정의 / Game settings: Display > Refresh Rate > Custom] V-Sync가 꺼져 있을 때 게임 프레임을 아래 수로 제한합니다. 게임이 저장하는 선택은 바꾸지 않습니다. / While V-Sync is off, limits the game's frame rate to the number below; the game's own saved choice stays.");
+        CustomFrame = Config.Bind("화면", "사용자 정의 프레임", 240, new ConfigDescription("사용자 정의 프레임 수(30~999)입니다. / The custom frame rate (30-999).", new AcceptableValueRange<int>(CustomFrameRatePlan.Min, CustomFrameRatePlan.Max)));
+        AutoThanksDelay = Config.Bind("편의", "자동 감사합니다 무작위 지연", true, "[설정 창: 감사합니다 자동 전송 > 무작위 지연 / Settings: Auto Thanks > Random Delay] 자동 전송을 0.3~1.5초 사이에서 무작위로 늦춥니다. / Delays each automatic send by a random 0.3-1.5 s.");
         SendAllLikes = Config.Bind("편의", "좋아요 일괄 전송", true, "[설정 창: 좋아요 일괄 전송 / Settings: Send All Likes] 게임 결과 화면의 확인 버튼 위 버튼을 누르면 다른 플레이어 모두에게 좋아요를 보냅니다. / A button above Confirm on the results screen sends likes to every other player when pressed.");
         ReceivedLikes = Config.Bind("편의", "받은 좋아요 표시", true, "[설정 창: 받은 좋아요 표시 / Settings: Received Likes] 게임 결과 화면 카드마다 받은 좋아요를 보낸 사람의 캐릭터 아이콘으로 표시합니다. / Shows each results card's received likes as their senders' character icons.");
         ShopBulkBuy = Config.Bind("편의", "스타 코인 상점 일괄 구매", true, "[설정 창: 상점 일괄 구매 / Settings: Shop Bulk Purchase] 스타 코인 상점 카드 아래에 무료 일괄 수령과 일괄 구매 버튼을 둡니다. 일괄 구매는 상품 목록에서 고른 상품을 한 번에 사고, 무료 일괄 수령은 무료 상품을 바로 받습니다. / Adds Claim All Free and Bulk Buy under the Star Coin Shop cards: Bulk Buy buys the goods ticked in its list at once, Claim All Free takes the free goods.");
@@ -225,10 +234,14 @@ public sealed class Plugin : BasePlugin
         PlayerTabSkill = Config.Bind("화면", "플레이어 목록 탭 스킬 쿨타임", true, "[설정 창: 플레이어 목록 탭 > 스킬 쿨타임 / Settings: Player List Tab > Skill Cooldown] 액티브 스킬의 남은 턴/전체 턴을 표시합니다. / Shows each active skill's turns left/total.");
         CharacterRoles = Config.Bind("화면", "캐릭터 역할 표시", true, "[설정 창: 역할 표시 / Settings: Role Labels] 게임 내부 분류로 캐릭터 역할을 표시합니다. / Shows characters' internal role classifications.");
         IndicatorFade = Config.Bind("화면", "줌 아웃 인디케이터 반투명", true, "[설정 창: 줌 아웃 시 불투명도 / Settings: Opacity When Zoomed Out] 필드 줌 아웃 시 플레이어·몬스터 인디케이터의 불투명도를 낮춥니다. / Lowers field player/monster indicator opacity when zoomed out.");
-        IndicatorHide = Config.Bind("화면", "원거리 인디케이터 숨김", true, "[설정 창: 멀면 숨기기 / Settings: Hide When Far] 멀리 줌 아웃하면 필드 인디케이터를 숨기고 확대하면 다시 표시합니다. / Hides far-zoom field indicators and restores them when zooming in.");
+        // Hide When Far became a choice of Indicator Display (2026-11-20); its key stays only to carry the old choice over.
+        IndicatorHide = Config.Bind("화면", "원거리 인디케이터 숨김", true, "[이전 설정: 멀면 숨기기 / Old setting: Hide When Far] 인디케이터 표시 방식이 처음 생길 때 그 값을 정합니다. ON은 멀면 숨기기, OFF는 기본입니다. / Sets Indicator Display once when it first appears: ON becomes Hide When Far, OFF Default.");
+        IndicatorDisplay = Config.Bind("화면", "인디케이터 표시 방식", IndicatorHide.Value ? "HideFar" : "Native",
+            "[설정 창: 인디케이터 표시 방식 / Settings: Indicator Display] 필드 인디케이터를 보여주는 방식입니다. Native: 기본, HideFar: 멀면 숨기기. / How field indicators show. Native (Default) or HideFar (Hide When Far).");
+        IndicatorDisplay.Value = MenuLayout.IndicatorDisplayMode(IndicatorDisplay.Value);
         DicePin = Config.Bind("화면", "주사위 화면 고정", true, "[설정 창: 주사위 화면 고정 / Settings: Pin Dice to Screen] 줌·자유 시점에서도 굴린 주사위를 기본 시점과 같은 화면 위치·크기로 보여줍니다. OFF는 게임 기본처럼 필드 위에 둡니다. / Keeps thrown dice at the default view's screen position and size while zoomed or in free view; OFF leaves them on the field as in the base game.");
         EncounterAdvice = Config.Bind("전투 추천", "인카운트 추천", true, "[설정 창: 인카운트 추천 / Settings: Encounter Advice] 조우 화면에서 공격·놓아주기를 추천합니다. / Recommends Attack or Let Go on the encounter screen.");
-        DefenseAdvice = Config.Bind("전투 추천", "방어·회피 추천", true, "[설정 창: 방어·회피 추천 / Settings: Defend/Dodge Advice] 방어를 추천하고, 방어해도 반드시 쓰러질 때는 회피를 추천합니다. / Recommends Defend, or Dodge when Defend is a sure KO.");
+        DefenseAdvice = Config.Bind("전투 추천", "방어·회피 추천", true, "[설정 창: 방어·회피 추천 / Settings: Defend/Dodge Advice] 방어를 추천하고, 회피로 살 확률이 더 높을 때는 회피를 추천합니다. / Recommends Defend, or Dodge when Dodge survives more often.");
         CardAdvice = Config.Bind("전투 추천", "카드 추천", true, "[설정 창: 카드 추천 / Settings: Card Advice] 쓸 만한 카드 위에 효과를 표시합니다. / Marks useful cards with their effect.");
         ShootingStarShow = Config.Bind("전투 추천", "슈팅 스타 표시", true, "[설정 창: 슈팅 스타 표시 / Settings: Shooting Star] 놓아줄 때 몬스터에게 주는 피해와 얻는 스타라이트를 보여줍니다. / Shows the damage dealt to the monster and the Starlight gained when you let it go.");
         KoCardHover = Config.Bind("화면", "KO 카드 호버 조건", true, "[설정 창: 카드 호버 조건 / Settings: Card Hover Target] 카드에 마우스를 올리면 카드 사용 후 조건으로 보여줍니다. / Hovering a card shows the target after using it.");
@@ -308,16 +321,23 @@ public sealed class Plugin : BasePlugin
             return;
         }
         // Keep the saved key so upgrades preserve each user's existing choice.
+        // Default 1: down to 30 % (user-decided 2026-11-20 after testing the even fade, from their own setting).
         IndicatorFadeStrength = Config.Bind("화면", "줌 아웃 반투명 정도", 1f, new ConfigDescription(
-            "[설정 창: 줌 아웃 시 불투명도 슬라이더 / Settings: Opacity When Zoomed Out slider] 저장값 0은 가장 멀리서 불투명도 100%, 1은 30%, 1.43은 0%입니다. / Stored value: 0 is 100% opacity at the farthest zoom-out, 1 is 30%, 1.43 is 0%.",
+            "[설정 창: 줌 아웃 시 불투명도 슬라이더 / Settings: Opacity When Zoomed Out slider] 저장값 0은 가장 흐려졌을 때 불투명도 100%, 1은 30%, 1.43은 0%입니다. / Stored value: 0 is 100% opacity when most faded, 1 is 30%, 1.43 is 0%.",
             new AcceptableValueRange<float>(0f, 100f / 70f)));
+        // Where the zoom-out opacity starts (user-requested 2026-11-20); default 0, from the first zoom-out (user-decided the same
+        // day after testing, from their own setting, with a 30 % hide distance and 30 % opacity).
+        IndicatorFadeDistance = Config.Bind("화면", "줌 아웃 불투명도 시작 거리", 0f, new ConfigDescription(
+            "[설정 창: 적용 거리 / Settings: Start Distance] 줌 아웃 시 불투명도가 낮아지기 시작하는 줌 아웃 거리입니다. 0은 줌 아웃하자마자 낮아집니다. / Zoom-out distance at which Opacity When Zoomed Out starts; 0 starts as soon as you zoom out.",
+            new AcceptableValueRange<float>(0f, 1f)));
         FoldedHandOpacity = Config.Bind("화면", "접힌 손패 불투명도", 0.75f, new ConfigDescription(
             "[설정 창: 접힌 카드 불투명도 / Settings: Folded Card Opacity] 묶여 접힌 카드의 불투명도입니다. / Opacity of folded grouped cards.",
             new AcceptableValueRange<float>(0f, 1f)));
         ZoomSensitivity = Config.Bind("화면", "휠 줌 감도", 1f, new ConfigDescription(
             "[설정 창: 줌 감도 / Settings: Zoom Sensitivity] 휠 한 칸에 확대·축소되는 양입니다. 100%가 기본입니다. / How far one wheel tick zooms; 100% is the default.",
             new AcceptableValueRange<float>(0.1f, 3f)));
-        IndicatorHideDistance = Config.Bind("화면", "인디케이터 숨김 거리", 0.2f, new ConfigDescription(
+        // Default 30 % (user-decided 2026-11-20 after testing the even fade into hiding, from their own setting; 20 % before).
+        IndicatorHideDistance = Config.Bind("화면", "인디케이터 숨김 거리", 0.3f, new ConfigDescription(
             "[설정 창: 숨김 거리 / Settings: Hide Distance] 멀면 숨기기에서 인디케이터가 숨는 줌 아웃 거리입니다. / Zoom-out distance at which Hide When Far hides indicators.",
             new AcceptableValueRange<float>(0f, 1f)));
         ZoomOutLimit = Config.Bind("화면", "최대 줌 아웃", 1f, new ConfigDescription(
@@ -469,7 +489,7 @@ public sealed class Plugin : BasePlugin
          Diagnostics.State("settings",
         FormattableString.Invariant($"advice={ActionAdvice.Value}; details={AdviceDetails.Value}; koMinimum={KoDiceTarget.Value}; names={UseRealNames.Value}; cardPopups={PingDetails.Value}; battleStatus={BattleStatus.Value}; shushuShield={ShushuShield.Value}; fieldBuffs={PlayerIndicators.Value}; fieldZoom={FieldZoom.Value}; matchFocus={MatchFocus.Value}; muteUnfocused={MuteUnfocused.Value}; inputAttention={InputAttention.Value}; scale={UiScale.Value:F2}; opacity={Opacity.Value:F2}"));
         Diagnostics.State("settings.features",
-            FormattableString.Invariant($"autoThanks={AutoThanks.Value}; sendAllLikes={SendAllLikes.Value}; shopBulkBuy={ShopBulkBuy.Value}; receivedLikes={ReceivedLikes.Value}; keepReplays={ReplaySaveLimit.Value}; characterGuide={PrepSkillInfo.Value}; characterRoles={CharacterRoles.Value}; indicatorFade={IndicatorFade.Value}; indicatorHide={IndicatorHide.Value}; diceLock={DicePin.Value}; counterSound={CounterSound.Value}; counterAnimation={CounterAnimation.Value}; suppressNotices={SuppressNotices.Value}; pingFocus={PingFocus.Value}; oldReplays={OldReplays.Value}; fightPip={FightPip.Value}; fightPipStartFull={FightPipStartFull.Value}; updateNotifications={UpdateNotifications.Value}; automaticChecks={AutomaticChecks.Value}; shushuShieldRestrictions={ShushuDefendLock.Value}; finalDamage={FinalDamage.Value}; encounterAdvice={EncounterAdvice.Value}; defenseAdvice={DefenseAdvice.Value}; cardAdvice={CardAdvice.Value}; shootingStar={ShootingStarShow.Value}; koCardPreview={KoCardHover.Value}; koSpectator={KoSpectator.Value}; statusHand={StatusHand.Value}; statusEffects={StatusEffects.Value}; counterIcons={CounterIcons.Value}; shushuMaster={ShushuMaster.Value}; playerTab={PlayerTab.Value}; playerTabHand={PlayerTabHand.Value}; playerTabRole={PlayerTabRole.Value}; playerTabSkill={PlayerTabSkill.Value}; walkDirection={WalkDirection.Value}"));
+            FormattableString.Invariant($"autoThanks={AutoThanks.Value}; autoThanksDelay={AutoThanksDelay.Value}; customFrame={(CustomFrameOn.Value ? CustomFrame.Value : 0)}; sendAllLikes={SendAllLikes.Value}; shopBulkBuy={ShopBulkBuy.Value}; receivedLikes={ReceivedLikes.Value}; keepReplays={ReplaySaveLimit.Value}; characterGuide={PrepSkillInfo.Value}; characterRoles={CharacterRoles.Value}; indicatorFade={IndicatorFade.Value}; indicatorHide={IndicatorHide.Value}; indicatorDisplay={IndicatorDisplay.Value}; diceLock={DicePin.Value}; counterSound={CounterSound.Value}; counterAnimation={CounterAnimation.Value}; suppressNotices={SuppressNotices.Value}; pingFocus={PingFocus.Value}; oldReplays={OldReplays.Value}; fightPip={FightPip.Value}; fightPipStartFull={FightPipStartFull.Value}; updateNotifications={UpdateNotifications.Value}; automaticChecks={AutomaticChecks.Value}; shushuShieldRestrictions={ShushuDefendLock.Value}; finalDamage={FinalDamage.Value}; encounterAdvice={EncounterAdvice.Value}; defenseAdvice={DefenseAdvice.Value}; cardAdvice={CardAdvice.Value}; shootingStar={ShootingStarShow.Value}; koCardPreview={KoCardHover.Value}; koSpectator={KoSpectator.Value}; statusHand={StatusHand.Value}; statusEffects={StatusEffects.Value}; counterIcons={CounterIcons.Value}; shushuMaster={ShushuMaster.Value}; playerTab={PlayerTab.Value}; playerTabHand={PlayerTabHand.Value}; playerTabRole={PlayerTabRole.Value}; playerTabSkill={PlayerTabSkill.Value}; walkDirection={WalkDirection.Value}"));
     }
 
     private static ReleaseUpdateResult? _diagnosticRelease;

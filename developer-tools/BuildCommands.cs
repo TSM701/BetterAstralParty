@@ -30,6 +30,11 @@ internal static class BuildCommands
             : Path.Combine(Directory.GetParent(context.Root)!.FullName, "8vJXnINT"));
         var bepinex = Path.GetFullPath(options.TryGetValue("bepinex-root", out var loader) ? loader! : Path.Combine(context.Root, ".deps", "bepinex"));
         var configuration = options.ContainsKey("release") ? "Release" : "Debug";
+        // --keep-going (2026-11-20, user-approved): a failing check no longer ends the run; every check runs, the failures are
+        // listed and the build still fails without a build-result.json, so one run shows every stub a change broke. Safety
+        // failures (SDK PATH, source inventory, native input, persistent PATH) still stop at once.
+        var keepGoing = options.ContainsKey("keep-going");
+        var failedChecks = new List<string>();
         if (!options.TryGetValue("compatibility-path", out var compatibilityPath)) throw new ArgumentException("Explicit reviewed --compatibility-path input is required.");
         Directory.CreateDirectory(output);
         var leases = new List<FileStream>();
@@ -76,8 +81,13 @@ internal static class BuildCommands
             BuildProject(context, Path.Combine(context.Root, "src", "BetterAstralParty.csproj"), Path.Combine(output, "plugin"),
                 Path.Combine(output, "plugin-obj"), configuration, environment, pluginProperties);
             CompileNative(context, "Setup", Path.Combine(output, "setup"), versionOverride);
-            foreach (var check in checks.Where(value => value != "sdk-path-safety" && value != "release-updates-and-readiness"))
-                Check(context, check, output, game, bepinex);
+            foreach (var check in checks.Where(value => value != "sdk-path-safety" && value != "release-updates-and-readiness")) {
+                try { Check(context, check, output, game, bepinex); }
+                catch (Exception error) when (keepGoing) {
+                    failedChecks.Add(check);
+                    Console.WriteLine("BAP-CHECK-FAILED: " + check + ": " + error.Message);
+                }
+            }
             var selfTests = new List<string>();
             if (checks.Contains("release-updates-and-readiness", StringComparer.Ordinal)) selfTests.Add("--release-updates-only");
             if (checks.Contains("settings-input", StringComparer.Ordinal) || checks.Contains("settings-scroll", StringComparer.Ordinal)) selfTests.Add("--settings-only");
@@ -90,6 +100,7 @@ internal static class BuildCommands
             DevContext.RequireInventory(sourcePaths, Sources(context.Root));
             if (context.Hash(context.NativeAssemblyPath) != nativeHash) throw new IOException("Native metadata input changed; build approval refused.");
             if (!String.Equals(before, DevContext.PersistentPaths(), StringComparison.Ordinal)) throw new InvalidOperationException("Persistent PATH changed; build approval refused.");
+            if (failedChecks.Count != 0) throw new InvalidDataException(failedChecks.Count + " check(s) failed with --keep-going: " + String.Join(", ", failedChecks));
             var files = new[] { "plugin/BetterAstralParty.dll", "setup/BetterAstralParty-Setup.exe" }
                 .Select(relative => new { path = relative, bytes = new FileInfo(Path.Combine(output, relative)).Length, sha256 = context.Hash(Path.Combine(output, relative)) }).ToArray();
             var productVersion = PackagingImage.PluginVersion(File.ReadAllBytes(Path.Combine(output, "plugin", "BetterAstralParty.dll")));
@@ -132,14 +143,15 @@ internal static class BuildCommands
         for (var index = 0; index < args.Length; index++) {
             var name = args[index].TrimStart('-');
             if (name.Equals("Release", StringComparison.OrdinalIgnoreCase)) name = "release";
+            else if (name.Equals("KeepGoing", StringComparison.OrdinalIgnoreCase)) name = "keep-going";
             else if (name.Equals("OutputDirectory", StringComparison.OrdinalIgnoreCase)) name = "output-directory";
             else if (name.Equals("GameRoot", StringComparison.OrdinalIgnoreCase)) name = "game-root";
             else if (name.Equals("BepInExRoot", StringComparison.OrdinalIgnoreCase)) name = "bepinex-root";
             else if (name.Equals("CompatibilityPath", StringComparison.OrdinalIgnoreCase)) name = "compatibility-path";
             else if (name.Equals("NativeAssembly", StringComparison.OrdinalIgnoreCase)) name = "native-assembly";
-            if (name != "release" && name != "output-directory" && name != "game-root" && name != "bepinex-root" && name != "compatibility-path" && name != "native-assembly" && name != "checks" && name != "version") throw new ArgumentException("Unknown build option: " + args[index]);
+            if (name != "release" && name != "keep-going" && name != "output-directory" && name != "game-root" && name != "bepinex-root" && name != "compatibility-path" && name != "native-assembly" && name != "checks" && name != "version") throw new ArgumentException("Unknown build option: " + args[index]);
             string? value = null;
-            if (name != "release") { if (++index >= args.Length) throw new ArgumentException("Missing build option value: " + name); value = args[index]; }
+            if (name != "release" && name != "keep-going") { if (++index >= args.Length) throw new ArgumentException("Missing build option value: " + name); value = args[index]; }
             if (!result.TryAdd(name, value)) throw new ArgumentException("Duplicate build option: " + name);
         }
         return result;

@@ -28,7 +28,7 @@ namespace UnityEngine
     }
     public readonly record struct Color(float r, float g, float b);
     public static class Application { public static bool isFocused = true; }
-    public static class Time { public static float unscaledTime; }
+    public static class Time { public static float unscaledTime, deltaTime = 1f / 60f; }
     public static class Input
     {
         public static bool Down, Up, Held;
@@ -123,6 +123,7 @@ __PRODUCTION__
     { internal static bool IsPve(int map) => map == 2; }
     internal static class ModUi { internal static bool IsOpen; }
     internal static class FieldIndicatorOpacity { internal static bool Hidden; }
+    internal static class FightPip { internal static bool ShowsField = false; }
     internal sealed class Setting { internal bool Value = true; }
     internal sealed class Diagnostics
     {
@@ -232,17 +233,41 @@ __PRODUCTION__
             Assert(PlayerIndicatorUi.ActivePlateCount == 0, "setting OFF still disposes zoom-hidden clones");
             plate = Reset(); FieldIndicatorOpacity.Hidden = true; ModUi.IsOpen = true; Frame(plate, 100, 100);
             Assert(PlayerIndicatorUi.ActivePlateCount == 0, "settings still clear zoom-hidden clones");
-            // Pair separation runs on rectangles read once: two overlapping plates split the overlap, a fixed plate pushes
-            // the moving one by all of it, and a later pair sees the earlier move (the native sequential order).
+            // Stacking on wanted places (issue #19): the lowest plate keeps its place, each higher one rises just clear of
+            // every stacked or fixed plate it overlaps, ties go in list order, distant plates stay.
             var rects = new List<(float X, float Y, float Width, float Height)> { (0, 0, 10, 10), (0, 6, 10, 10), (50, 0, 10, 10) };
-            PlayerIndicatorUi.SeparateRects(rects, null);
-            Assert(rects[0].Y == -2 && rects[1].Y == 8 && rects[2].Y == 0, "overlapping plates split the vertical overlap; distant plates stay");
+            PlayerIndicatorUi.StackRects(rects, null);
+            Assert(rects[0].Y == -4 && rects[1].Y == 6 && rects[2].Y == 0, "the higher of two overlapping plates rises clear; distant plates stay");
             rects = new() { (0, 0, 10, 10) };
-            PlayerIndicatorUi.SeparateRects(rects, new() { (0, 4, 10, 10) });
-            Assert(rects[0].Y == -6, "a fixed monster plate pushes the hero plate by the whole overlap");
-            rects = new() { (0, 0, 10, 10), (0, 5, 10, 10), (0, 10, 10, 10) };
-            PlayerIndicatorUi.SeparateRects(rects, null);
-            Assert(rects[0].Y == -2.5f && rects[1].Y == 3.75f && rects[2].Y == 13.75f, "later pairs see earlier moves, as the native pass does");
+            PlayerIndicatorUi.StackRects(rects, new() { (0, 4, 10, 10) });
+            Assert(rects[0].Y == -6, "a fixed monster plate lifts the hero plate clear of it");
+            rects = new() { (0, 5, 10, 10), (0, 5, 10, 10), (0, 5, 10, 10), (3, 5, 20, 8) };
+            PlayerIndicatorUi.StackRects(rects, null);
+            Assert(rects[0].Y == 5 && rects[1].Y == -5 && rects[2].Y == -15 && rects[3].Y == -24, "a crowd on one spot stacks upward in list order, a wider plate clears all of it");
+            var copy = new List<(float X, float Y, float Width, float Height)> { (0, 5, 10, 10), (0, 5, 10, 10), (0, 5, 10, 10), (3, 5, 20, 8) };
+            PlayerIndicatorUi.StackRects(copy, null);
+            var same = copy.Count == rects.Count;
+            for (var i = 0; same && i < rects.Count; i++) same = copy[i] == rects[i];
+            Assert(same, "the same wanted places always give the same stack");
+            for (var i = 0; i < rects.Count; i++)
+                for (var j = i + 1; j < rects.Count; j++)
+                    Assert(Math.Abs(rects[i].Y - rects[j].Y) >= (rects[i].Height + rects[j].Height) * 0.5f - 0.01f
+                        || Math.Abs(rects[i].X - rects[j].X) >= (rects[i].Width + rects[j].Width) * 0.5f - 0.01f, "no two stacked plates overlap");
+            // Easing at UpdateOffset's rate toward a stack that does not change comes to rest: the shaking crowd of the
+            // old split, which re-split current places after every ease, cannot recur.
+            Assert(Math.Abs(PlayerIndicatorUi.LerpStep(1f / 60f) - 35f / 60f) < 1e-6f && PlayerIndicatorUi.LerpStep(1f) == 1f && PlayerIndicatorUi.LerpStep(0f) == 0f, "UpdateOffset's lerp step, clamped");
+            var ys = new float[] { 5, 5, 5, 5 };
+            for (var frame = 0; frame < 120; frame++)
+            {
+                var wanted = new List<(float X, float Y, float Width, float Height)> { (0, 5, 10, 10), (0, 5, 10, 10), (0, 5, 10, 10), (3, 5, 20, 8) };
+                PlayerIndicatorUi.StackRects(wanted, null);
+                for (var i = 0; i < ys.Length; i++) ys[i] += (wanted[i].Y - ys[i]) * PlayerIndicatorUi.LerpStep(1f / 60f);
+            }
+            var rested = (float[])ys.Clone();
+            for (var i = 0; i < ys.Length; i++) ys[i] += (rects[i].Y - ys[i]) * PlayerIndicatorUi.LerpStep(1f / 60f);
+            var still = true;
+            for (var i = 0; i < ys.Length; i++) still &= Math.Abs(ys[i] - rects[i].Y) < 0.001f && ys[i] == rested[i];
+            Assert(still, "a still crowd comes to rest on its stack and stays");
             Console.WriteLine("PASS: " + _checks + " production field-indicator input assertions; actual native rendering remains untested.");
         }
     }

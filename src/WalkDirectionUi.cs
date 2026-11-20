@@ -188,7 +188,7 @@ internal static class WalkDirectionUi
         var logic = RuntimeObject.StaticField(_logicClass, "_inst");
         var room = logic?.Get("room")?.Get("curRoomInfo");
         if (!VisibleCombatAdvisor.IsPve(room?.Field("info")?.Get<int>("MapType") ?? 0)
-            || logic!.Get("fight")?.Field("fightStatus")?.Value<bool>() == true) { Clear(); return; }
+            || logic!.Get("fight")?.Field("fightStatus")?.Value<bool>() == true && !FightPip.ShowsField) { Clear(); return; }
         var battle = logic.Get("battle");
         var battleUi = battle?.Field("battleInfo")?.Get("ui");
         var players = battle?.Field("PlayerDatas");

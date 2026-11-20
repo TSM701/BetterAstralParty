@@ -91,8 +91,8 @@ internal static class PlayerIndicatorUi
             catch { GameUi.Dispose(Ui); throw; }
         }
 
-        // The (object) arguments keep the params form: field-buffs pins this method's bytecode to the 0.4.30 renderer, and the
-        // allocation-free generic Call/Set overloads (2026-11-13) would otherwise bind here.
+        // The (object) arguments keep the params form this renderer has had since 0.4.30; field-buffs pinned its bytecode until
+        // 2026-11-20 (pin retired at the user's decision), so the allocation-free generic Call/Set overloads may now bind here.
         internal void Refresh(RuntimeObject player, RuntimeObject buffs, RuntimeObject properties)
         {
             var attr = player.Get("Property")!;
@@ -194,7 +194,7 @@ internal static class PlayerIndicatorUi
         var logic = RuntimeObject.StaticField(_logicClass, "_inst");
         var room = logic?.Get("room")?.Get("curRoomInfo");
         if (!VisibleCombatAdvisor.IsPve(room?.Field("info")?.Get<int>("MapType") ?? 0)) { Clear("not-pve"); return; }
-        if (logic?.Get("fight")?.Field("fightStatus")?.Value<bool>() == true) { Clear("fight-active"); return; }
+        if (logic?.Get("fight")?.Field("fightStatus")?.Value<bool>() == true && !FightPip.ShowsField) { Clear("fight-active"); return; }
         UpdateBuffPopup();
         var battle = logic?.Get("battle");
         var info = battle?.Field("battleInfo");
@@ -251,10 +251,11 @@ internal static class PlayerIndicatorUi
         RefreshCounters(battleUi!);
     }
 
-    // Mirrors the native per-frame plate pass for the owned layer: owner projection, side offset and lerp,
-    // pairwise vertical separation, marker line and step-phase input. Monster plates stay native.
+    // Mirrors the native per-frame plate pass for the owned layer: owner projection, side offset and lerp, marker line and
+    // step-phase input; overlapping plates are stacked on where they want to be (StackRects). Monster plates stay native.
     private static readonly List<(float X, float Y, float Width, float Height)> Obstacles = new(), Rects = new();
-    private static readonly List<float> Before = new();
+    // Each placed plate's y before this pass and the y it wants (its target's), index-aligned with Placed.
+    private static readonly List<float> Before = new(), Wanted = new();
     // Visible monster plates the last layout pass read, for the performance log.
     internal static int MonsterPlateCount => Obstacles.Count;
 
@@ -270,24 +271,30 @@ internal static class PlayerIndicatorUi
         var root = GameUi.Root!;
         float width = root.Get<float>("width"), height = root.Get<float>("height");
         var scale = FieldZoomUi.IndicatorScale;
-        var marker = MarkerLift * scale * Math.Clamp(Plugin.IndicatorHeight.Value, 0f, 1f);
+        // Character-sized indicators (user-decided 2026-11-20, readability traded for the characters' scale): the layer is drawn
+        // at the zoom's scale and the plates are laid out inside it at native-zoom distances, so each plate, its side offset, the
+        // stacking and the guide line shrink and grow with the characters around their own points.
+        if (layer.Get<float>("scaleX") != scale) layer.Call("SetScale", scale, scale);
+        var marker = MarkerLift * Math.Clamp(Plugin.IndicatorHeight.Value, 0f, 1f);
         var enabled = camera.enabled;
         float screenHeight = Screen.height;
-        Placed.Clear();
+        var step = LerpStep(Time.deltaTime);
+        Placed.Clear(); Before.Clear(); Wanted.Clear();
         foreach (var plate in Plates.Values)
         {
             var ui = plate.Ui;
             var owner = ui.Result<Vector3>("GetOwnerPos");
             var screen = UnityMath.IsZero(owner) || !enabled ? default : camera.WorldToScreenPoint(owner);
             var local = screen.z > 0 ? layer.Result<Vector2, Vector2>("GlobalToLocal", UnityMath.V2(screen.x, screenHeight - screen.y)) : default;
-            var target = UnityMath.V2(local.x, local.y - PlateLift * scale);
-            var shown = screen.z > 0 && target.x >= 0 && target.y >= 0 && target.x <= width && target.y <= height;
+            var target = UnityMath.V2(local.x, local.y - PlateLift);
+            var shown = screen.z > 0 && target.x >= 0 && target.y >= 0 && target.x <= width / scale && target.y <= height / scale;
             if (ui.Get<bool>("visible") != shown) ui.Set("visible", shown);
             if (!shown) continue;
+            Before.Add(ui.Get<float>("y"));
             ui.Call("UpdateOffset", target);
-            Placed.Add((plate, local));
+            Placed.Add((plate, local)); Wanted.Add(target.y);
         }
-        Separate();
+        Separate(step);
         var self = _battleUi.Field("_SelfPlayer")?.Field("CharacterInst");
         var stepping = self != null && self.Get<int>("canStep") > 0;
         foreach (var (plate, owner) in Placed)
@@ -301,8 +308,9 @@ internal static class PlayerIndicatorUi
         }
     }
 
-    // Native pair rule: overlapping plates split the vertical overlap. Native monster plates are fixed obstacles.
-    private static void Separate()
+    // Overlapping hero plates are stacked on their wanted places, monster plates as fixed obstacles, and each plate's y
+    // then eases there at UpdateOffset's own rate (it eased toward the unstacked target this pass; that y is replaced).
+    private static void Separate(float step)
     {
         // Native monster plates never move during this pass; read their rectangles once instead of once per hero plate.
         Obstacles.Clear();
@@ -316,46 +324,71 @@ internal static class PlayerIndicatorUi
         foreach (var other in FieldMonsterPlates.Plates)
             if (!other.Get<bool>("isDisposed") && other.Get<bool>("visible")) Obstacles.Add(Rect(other));
         Rects.Clear();
-        foreach (var (plate, _) in Placed) Rects.Add(Rect(plate.Ui));
-        Before.Clear();
-        foreach (var rect in Rects) Before.Add(rect.Y);
-        SeparateRects(Rects, Obstacles);
-        for (var i = 0; i < Rects.Count; i++)
-            if (Rects[i].Y != Before[i]) Placed[i].Plate.Ui.Set("y", Rects[i].Y);
+        for (var i = 0; i < Placed.Count; i++) Rects.Add(WantedRect(Placed[i].Plate.Ui, Wanted[i]));
+        StackRects(Rects, Obstacles);
+        for (var i = 0; i < Rects.Count; i++) Ease(Placed[i].Plate.Ui, Before[i], Rects[i].Y, step);
     }
 
     internal static (float X, float Y, float Width, float Height) Rect(RuntimeObject ui) =>
         (ui.Get<float>("x"), ui.Get<float>("y"), ui.Get<float>("width"), ui.Get<float>("height"));
 
-    // The native pair rule on rectangles read once: a fixed plate pushes only the moving one by the whole overlap.
-    // Reading every pair natively cost thousands of boxed calls a frame once dozens of monsters crowded the field.
-    internal static void SeparateRects(List<(float X, float Y, float Width, float Height)> rects, List<(float X, float Y, float Width, float Height)>? fixedPlates)
+    // A plate where it wants to be: the x UpdateOffset just eased (its side offset settles within a few frames) and the
+    // y of its target, which UpdateOffset eases toward without an offset.
+    internal static (float X, float Y, float Width, float Height) WantedRect(RuntimeObject ui, float wantedY) =>
+        (ui.Get<float>("x"), wantedY, ui.Get<float>("width"), ui.Get<float>("height"));
+
+    // UpdateOffset's own step, Vector2.Lerp(xy, target, Time.deltaTime * 35) with Lerp's clamp.
+    internal static float LerpStep(float deltaTime) => Math.Clamp(deltaTime * 35f, 0f, 1f);
+
+    // The plate's y from where it was before this pass toward its stacked place, as UpdateOffset eases.
+    internal static void Ease(RuntimeObject ui, float from, float to, float step)
     {
+        var y = from + (to - from) * step;
+        if (ui.Get<float>("y") != y) ui.Set("y", y);
+    }
+
+    // Overlapping plates are stacked on where they want to be (2026-11-19, issue #19, plates shaking in crowds): the
+    // lowest plate keeps its place, then each one above it in turn (ties in list order) rises just clear of every
+    // stacked or fixed plate it overlaps. The answer depends only on the wanted places, so plates whose owners stand
+    // still come to rest. The native pair rule this replaces split the overlap of the plates' current places once a
+    // frame, half each way, after UpdateOffset had eased them back toward their targets, and with three or more plates
+    // overlapping a split undid an earlier one, so in crowds the two fought every frame and the plates shook (on the
+    // native layout too; zooming out crowds the plates more).
+    private static readonly List<int> StackOrder = new(), Stacked = new();
+
+    internal static void StackRects(List<(float X, float Y, float Width, float Height)> rects, List<(float X, float Y, float Width, float Height)>? fixedPlates)
+    {
+        StackOrder.Clear(); Stacked.Clear();
+        // Lowest on screen (largest y) first, ties in list order: an insertion sort without allocation.
         for (var i = 0; i < rects.Count; i++)
         {
+            var at = StackOrder.Count;
+            while (at > 0 && rects[StackOrder[at - 1]].Y < rects[i].Y) at--;
+            StackOrder.Insert(at, i);
+        }
+        var bound = rects.Count + (fixedPlates?.Count ?? 0);
+        foreach (var i in StackOrder)
+        {
             var a = rects[i];
-            for (var j = i + 1; j < rects.Count; j++)
+            // Each rise clears one plate for good (the plate only ever moves up), so a pass per plate is enough.
+            for (var pass = 0; pass <= bound; pass++)
             {
-                var b = rects[j];
-                var overlapX = (a.Width + b.Width) * 0.5f - Math.Abs(a.X - b.X);
-                var overlapY = (a.Height + b.Height) * 0.5f - Math.Abs(a.Y - b.Y);
-                if (overlapX <= 0 || overlapY <= 0) continue;
-                var shift = overlapY * 0.5f;
-                var up = a.Y + 0.1f < b.Y;
-                a.Y = up ? a.Y - shift : a.Y + shift;
-                b.Y = up ? b.Y + shift : b.Y - shift;
-                rects[j] = b;
+                var moved = false;
+                foreach (var j in Stacked)
+                    if (Overlaps(a, rects[j])) { a.Y = rects[j].Y - (rects[j].Height + a.Height) * 0.5f; moved = true; }
+                if (fixedPlates != null)
+                    foreach (var other in fixedPlates)
+                        if (Overlaps(a, other)) { a.Y = other.Y - (other.Height + a.Height) * 0.5f; moved = true; }
+                if (!moved) break;
             }
-            if (fixedPlates != null)
-                foreach (var other in fixedPlates)
-                {
-                    var overlapX = (a.Width + other.Width) * 0.5f - Math.Abs(a.X - other.X);
-                    var overlapY = (a.Height + other.Height) * 0.5f - Math.Abs(a.Y - other.Y);
-                    if (overlapX > 0 && overlapY > 0) a.Y = a.Y + 0.1f < other.Y ? a.Y - overlapY : a.Y + overlapY;
-                }
             rects[i] = a;
+            Stacked.Add(i);
         }
     }
+
+    // Overlap beyond a hundredth of a unit, so plates stacked edge to edge do not count.
+    private static bool Overlaps((float X, float Y, float Width, float Height) a, (float X, float Y, float Width, float Height) b) =>
+        (a.Width + b.Width) * 0.5f - Math.Abs(a.X - b.X) > 0.01f && (a.Height + b.Height) * 0.5f - Math.Abs(a.Y - b.Y) > 0.01f;
 
     private static void RefreshCounters(RuntimeObject battleUi)
     {
@@ -416,11 +449,16 @@ internal static class PlayerIndicatorUi
         if (badge.Shown != shown) { badge.Icon.Set("visible", shown); badge.Shown = shown; }
     }
 
+    private static void ClearCounters()
+    {
+        foreach (var badge in Counters.Values) GameUi.Dispose(badge.Icon);
+        Counters.Clear(); CounterSeen.Clear(); CounterOwners.Clear();
+    }
+
     internal static void Clear(string reason)
     {
         RestoreBuffPopup();
-        foreach (var badge in Counters.Values) GameUi.Dispose(badge.Icon);
-        Counters.Clear(); CounterSeen.Clear(); CounterOwners.Clear();
+        ClearCounters();
         Plugin.Diagnostics.State("field.gate", reason);
         if (Plates.Count > 0) Plugin.Diagnostics.Write($"field clear: {reason}; count={Plates.Count}");
         foreach (var plate in Plates.Values) GameUi.Dispose(plate.Ui);

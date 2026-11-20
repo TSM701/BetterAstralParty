@@ -6,7 +6,8 @@ namespace BetterAstralParty;
 // runs in FairyGUI's LateUpdate, after the mod, and lifts every direct UICom_AttrInfo child of com_AttrInfos by fixed
 // 200/120 px, so a zoomed-out monster's plate floats away from it. While the field zoom differs from the native distance,
 // the native plates move into an owned layer inside com_AttrInfos, which the native pass skips, and are laid out here
-// with the same native steps (UpdateOffset, pairwise split, UpdateGuideLine) and lifts scaled by the zoom. The dot height
+// with the native UpdateOffset and UpdateGuideLine, overlapping plates stacked on their wanted places
+// (PlayerIndicatorUi.StackRects, 2026-11-19, issue #19), and lifts scaled by the zoom. The dot height
 // stays native: the hero indicator position slider does not apply here. Plates return to com_AttrInfos at native zoom, on
 // feature OFF and on cleanup. Native Dispose removes a plate from whichever parent holds it.
 internal static class FieldMonsterPlates
@@ -16,9 +17,10 @@ internal static class FieldMonsterPlates
     private static readonly List<(RuntimeObject Ui, Vector2 Owner)> Placed = new();
     // Plates whose touchable or buff mark the mod turned off while the local player moves; Clear turns back only these.
     private static readonly HashSet<IntPtr> Untouchable = new(), BuffHidden = new();
-    // Native pair rule of UpdateAttrInfoPosition (overlapping plates split the vertical overlap) on rectangles read once.
+    // Overlapping plates stacked on where they want to be, on rectangles read once; each placed plate's y before this pass
+    // and the y it wants (its target's), index-aligned with Placed.
     private static readonly List<(float X, float Y, float Width, float Height)> Rects = new();
-    private static readonly List<float> Before = new();
+    private static readonly List<float> Before = new(), Wanted = new();
     private static RuntimeObject? _parent, _layer, _sentinel, _battleUi;
     private static IntPtr _plateClass, _sceneClass;
     private static float _scanAt;
@@ -60,7 +62,7 @@ internal static class FieldMonsterPlates
         }
         if (!(ZoomFollows(scale) || _forceAdopt) || PvpSafety.Suspended || GameUi.Root == null) { Clear(); return; }
         var logic = RuntimeObject.StaticField(RuntimeObject.FindClass("GameLogic", "GameLogicManager"), "_inst");
-        if (logic?.Get("fight")?.Field("fightStatus")?.Value<bool>() == true) { Clear(); return; }
+        if (logic?.Get("fight")?.Field("fightStatus")?.Value<bool>() == true && !FightPip.ShowsField) { Clear(); return; }
         var battleUi = logic?.Get("battle")?.Field("battleInfo")?.Get("ui");
         var parent = battleUi?.Field("com_AttrInfos");
         if (!GameUi.Visible(parent)) { Clear(); return; }
@@ -102,6 +104,10 @@ internal static class FieldMonsterPlates
 
     private static void Layout(float scale)
     {
+        // Character-sized indicators (user-decided 2026-11-20, readability traded for the characters' scale): the layer is drawn
+        // at the zoom's scale and the plates are laid out inside it at native-zoom distances, so each plate, its side offset, the
+        // stacking and the guide line shrink and grow with the characters around their own points.
+        if (_layer!.Get<float>("scaleX") != scale) _layer.Call("SetScale", scale, scale);
         if (Adopted.Count == 0) return;
         if (_sceneClass == IntPtr.Zero) _sceneClass = RuntimeObject.FindClass("Core.Scene", "BattleSceneController");
         var cameraObject = RuntimeObject.StaticField(_sceneClass, "inst")?.Get("mainCamera");
@@ -121,7 +127,8 @@ internal static class FieldMonsterPlates
         float xx = (alongX.x - origin.x) / 1000, xy = (alongX.y - origin.y) / 1000, yx = (alongY.x - origin.x) / 1000, yy = (alongY.y - origin.y) / 1000;
         _frame++;
         var index = 0;
-        Placed.Clear(); Full.Clear();
+        var step = PlayerIndicatorUi.LerpStep(Time.deltaTime);
+        Placed.Clear(); Full.Clear(); Before.Clear(); Wanted.Clear();
         // Per plate and frame: no wrapper for a value result, no argument array (2026-11-13; zoomed out this layer
         // allocated about 12 KB a frame).
         foreach (var ui in Adopted)
@@ -133,8 +140,8 @@ internal static class FieldMonsterPlates
             var screen = UnityMath.IsZero(owner) || !enabled ? default : camera.WorldToScreenPoint(owner);
             float sx = screen.x, sy = screenHeight - screen.y;
             var local = screen.z > 0 ? UnityMath.V2(origin.x + xx * sx + yx * sy, origin.y + xy * sx + yy * sy) : default;
-            var target = UnityMath.V2(local.x, local.y - PlateLift * scale);
-            var shown = screen.z > 0 && target.x > 0 && target.y > 0 && target.x < width && target.y < height;
+            var target = UnityMath.V2(local.x, local.y - PlateLift);
+            var shown = screen.z > 0 && target.x > 0 && target.y > 0 && target.x < width / scale && target.y < height / scale;
             if (ui.Get<bool>("visible") != shown) ui.Set("visible", shown);
             // shortcut: native also fades a plate to 0.5 over a movement arrow; here every plate yields input while
             // the local player moves, like the hero plates. Mirror the arrow test if the fade is missed in game.
@@ -153,23 +160,23 @@ internal static class FieldMonsterPlates
                 ui.Call("UpdateOffset", target);
             state.Owner = owner; state.Target = target; state.Width = plateWidth; state.Place = place; state.Placed = true;
             if (full) Full.Add(ui.Pointer);
-            Placed.Add((ui, local));
+            Placed.Add((ui, local)); Before.Add(place.y); Wanted.Add(target.y);
         }
-        Rects.Clear(); Before.Clear();
-        foreach (var (ui, _) in Placed) { var rect = PlayerIndicatorUi.Rect(ui); Rects.Add(rect); Before.Add(rect.Y); }
-        PlayerIndicatorUi.SeparateRects(Rects, null);
-        for (var i = 0; i < Rects.Count; i++)
-            if (Rects[i].Y != Before[i]) Placed[i].Ui.Set("y", Rects[i].Y);
+        // Stacked on the wanted places, so a crowd whose owners stand still comes to rest and the settled skip above holds.
+        Rects.Clear();
+        for (var i = 0; i < Placed.Count; i++) Rects.Add(PlayerIndicatorUi.WantedRect(Placed[i].Ui, Wanted[i]));
+        PlayerIndicatorUi.StackRects(Rects, null);
+        for (var i = 0; i < Rects.Count; i++) PlayerIndicatorUi.Ease(Placed[i].Ui, Before[i], Rects[i].Y, step);
         foreach (var (ui, owner) in Placed)
         {
             var state = States[ui.Pointer];
             var line = ui.FieldPointer("graph_Line");
             var guide = (owner.x, owner.y, ui.Get<float>("x"), ui.Get<float>("y"), ui.Field<Vector2>("Offset").x,
-                RuntimeObject.GetOf<float>(line, "x"), RuntimeObject.GetOf<float>(line, "width"), MarkerLift * scale);
+                RuntimeObject.GetOf<float>(line, "x"), RuntimeObject.GetOf<float>(line, "width"), MarkerLift);
             if (Full.Contains(ui.Pointer) || !state.Guided || state.Guide != guide)
             {
                 var mapped = _layer!.Result<Vector2, Vector2>("TransformPoint", owner, ui);
-                var point = UnityMath.V2(mapped.x, mapped.y - MarkerLift * scale);
+                var point = UnityMath.V2(mapped.x, mapped.y - MarkerLift);
                 ui.Call("UpdateGuideLine", point);
                 state.Guide = guide; state.Guided = true;
             }

@@ -37,7 +37,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 | 카드·칩 핑 상세 팝업 | 캐릭터 역할·준비 설명 | 게임 안에서 적용되는 자동 업데이트 |
 
 > [!NOTE]
-> PvP 방·경기가 감지되면 모드 편의 기능이 일시 중지되고, PvP에서 나오면 저장된 설정대로 다시 작동합니다. 업데이트와 진단은 PvP에서도 계속됩니다.
+> PvP 방·경기가 감지되면 모드 편의 기능이 일시 중지되고, PvP에서 나오면 저장된 설정대로 다시 작동합니다. 업데이트와 진단, 사용자 정의 프레임은 PvP에서도 계속됩니다.
 
 ### 지원 환경
 
@@ -60,7 +60,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 5. Steam에서 Astral Party를 실행하세요. 첫 실행은 로더 초기화와 파일 다운로드로 몇 분 걸리고 인터넷 연결이 필요할 수 있습니다. 그동안 창이 멈추거나 ‘응답 없음’이 떠도 닫지 말고 기다려 주세요.
 
 > [!TIP]
-> 모드 없이 실행하려면 게임 폴더의 `AstralParty-Vanilla.cmd`를 실행하세요. 그 실행에서만 BetterAstralParty가 꺼지고 다른 BepInEx 모드는 그대로 유지합니다. 전환 전 게임을 종료하고 Steam의 실행 옵션은 바꾸지 마세요.
+> 모드 없이 실행하려면 게임 폴더의 `AstralParty-Vanilla.cmd`를 실행하고 번호를 고르세요. `1`은 그 실행에서만 BetterAstralParty를 끄고 다른 BepInEx 모드는 그대로 켭니다. `2`는 모든 모드를 끄고 순정으로 실행하며, Steam이 실행 옵션 확인 창을 띄웁니다. 전환 전 게임을 종료하고 Steam의 실행 옵션은 바꾸지 마세요.
 
 <details>
 <summary>설치되는 파일과 추가 안내</summary>
@@ -84,7 +84,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 <summary>모드 기능 탭</summary>
 
 전투 추천
-- 행동 추천: 기본 ON. 공개 정보를 바탕으로 공격·놓아주기, 방어·회피, 카드 사용을 추천합니다. 방어·회피는 방어를 추천하고, 방어해도 반드시 쓰러질 때는 회피를 추천합니다. 다른 플레이어나 몬스터가 방어할 때는 화면 아래 패널에 방어와 회피 각각의 전투불능 확률과 피해를 보여 주고, 방어자가 고르면 고른 쪽을 표시합니다. 선택을 자동 입력하지 않으며, 모드 전체를 끄는 스위치가 아닙니다. 슈팅 스타 칩이 있으면 놓아주기 버튼에 놓아줄 때 몬스터에게 주는 피해와 얻는 스타라이트를 표시합니다.
+- 행동 추천: 기본 ON. 공개 정보를 바탕으로 공격·놓아주기, 방어·회피, 카드 사용을 추천합니다. 방어·회피는 방어를 추천하고, 회피로 살 확률이 더 높을 때는 회피를 추천합니다. 다른 플레이어나 몬스터가 방어할 때는 화면 아래 패널에 방어와 회피 각각의 전투불능 확률과 피해를 보여 주고, 방어자가 고르면 고른 쪽을 표시합니다. 선택을 자동 입력하지 않으며, 모드 전체를 끄는 스위치가 아닙니다. 슈팅 스타 칩이 있으면 놓아주기 버튼에 놓아줄 때 몬스터에게 주는 피해와 얻는 스타라이트를 표시합니다.
 - 추천 상세 수치: 기본 ON. 행동 추천에 마우스를 올리면 피해와 전투불능 확률을 표시합니다. OFF는 수치만 숨기고 추천 아이콘은 유지합니다.
 - KO 주사위 조건: 기본 ON. 공격하거나 다른 사람 전투에서 몬스터가 방어할 때는 KO 주사위 조건, 내가 방어하거나 다른 사람 전투에서 플레이어가 방어할 때는 생존 주사위 조건을 표시합니다. 조건은 카드 보너스가 가장 낮게 나와도 결과가 확정되는 주사위이고, 그런 주사위 조합을 가장 많이 담는 조건을 보여 줍니다. 관전 중이거나, 내가 공격하고 카드 선택이 끝나면 카드 보너스는 실제로 나온 값으로 계산합니다. 양쪽 선택이 끝나면 서버가 정한 주사위로 확정 KO 또는 KO 불가를 바로 표시합니다. 카드 호버 조건도 포함합니다. 계산에 반영되지 않은 효과가 전투에 있으면 아래에 그 효과 아이콘과 "미반영 효과"를 표시하고, 물음표에 마우스를 올리면 설명이 뜹니다.
 - 최종 피해: 기본 ON. 양쪽 선택이 끝나 주사위 연출이 시작되면 서버가 정한 피해량을 표시합니다.
@@ -96,18 +96,22 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 - 반격 아이콘 애니메이션·소리: 각각 기본 ON. 애니메이션 OFF는 정적인 반격 아이콘을 표시합니다.
 - 전투 PIP: 기본 ON. 내가 구경만 하는 전투를 작은 창으로 띄워 두고 필드를 그대로 보면서 드래그·확대·클릭할 수 있습니다. 관전 전투는 게임 기본 전체 화면으로 시작하고, 왼쪽 위 "PIP 모드"를 누르면 작은 창이 됩니다. 창은 끌어서 옮기고 모서리를 끌어 크기를 바꿀 수 있으며, 자리와 크기는 기억됩니다. 창을 누르면 다시 전체 화면이 되고, "PIP 모드"나 Esc로 돌아옵니다. 경기를 시작할 때의 화면은 "시작 화면"에서 고르며 기본은 전체 화면입니다. 경기 중에 바꾸면 그 경기의 다음 관전 전투도 그 화면으로 시작합니다. 작은 창 안 전투 장면의 불투명도는 "PIP 불투명도"에서 20~100%로 정합니다. 이모지·채팅 창을 열면 작게 비켜나고, 위에 겹친 채팅 말풍선은 흐리게 보입니다. 내 전투는 원래대로 전체 화면입니다. 처음 전체 화면으로 관전 전투를 볼 때 한 번 안내가 나오며, "확인"을 누르거나 "PIP 모드"·Esc로 작은 창을 띄우면 닫힙니다.
 
-필드·카메라
-- 플레이어 인디케이터: 기본 ON. 필드에 플레이어 이름·HP·공개 효과와 추가 반격 아이콘을 표시합니다. 효과 아이콘을 짧게 클릭하면 게임 기본 설명을 엽니다. 휠 줌으로 확대·축소해도 캐릭터 옆 위치를 유지합니다.
+필드 표시
+- 플레이어 인디케이터: 기본 ON. 필드에 플레이어 이름·HP·공개 효과와 추가 반격 아이콘을 표시합니다. 효과 아이콘을 짧게 클릭하면 게임 기본 설명을 엽니다. 휠 줌으로 확대·축소해도 캐릭터 옆 위치를 유지하고, 크기도 캐릭터와 함께 바뀝니다.
 - 인디케이터 높이: 기본 100%. 플레이어 인디케이터의 점을 캐릭터 발밑(0%)부터 원래 위치(100%) 사이 높이에 표시합니다. 슬라이더로 조절합니다.
+- 인디케이터 표시 방식: 기본·멀면 숨기기 중 선택하며 처음에는 멀면 숨기기입니다. 멀면 숨기기는 멀리 줌 아웃하면 인디케이터를 숨깁니다. 이전 버전에서 멀면 숨기기를 꺼 두었다면 기본으로 시작합니다.
+- 숨김 거리: 기본 30%, 0~100%. 멀면 숨기기에서 인디케이터가 숨는 줌 아웃 거리입니다.
+- 줌 아웃 시 불투명도: 기본 ON. 휠 줌을 사용할 때 게임 인디케이터에 적용합니다.
+- 줌 아웃 시 불투명도 슬라이더: 기본 30%, 0~100%. 인디케이터가 가장 흐려졌을 때의 불투명도입니다. 멀면 숨기기에서는 숨김 거리에서, 기본에서는 가장 멀리 줌 아웃했을 때 이 값이 됩니다. 100%는 원래대로, 0%는 보이지 않습니다.
+- 적용 거리: 기본 0%, 0~100%. 줌 아웃 시 불투명도가 낮아지기 시작하는 줌 아웃 거리이며, 여기서부터 슬라이더 값까지 고르게 낮아집니다. 0%는 줌 아웃하자마자 낮아집니다.
 - 이동 방향 강조: 기본 화살표만. 플레이어와 몬스터 발밑의 이동 방향 표시를 캐릭터·몬스터·나무에 가려지지 않게 위에 다시 그립니다. 화살표만은 각 원이 가리키는 자리에 화살표를 바닥에 눕혀 그립니다. 원과 화살표는 원까지 그리며 캐릭터 뒤쪽 절반은 점선으로 표시합니다. 끄기는 게임 기본 표시만 남깁니다.
-- 휠 줌·자유 시점: 기본 ON. PvE 필드에서 휠 줌과 자유 시점을 사용하며 턴이 바뀌어도 유지합니다. 턴 바의 핀 오른쪽 자유 시점 카메라 종료 버튼으로 기본 시점에 복귀합니다. 플레이어 칸의 얼굴을 누르면 그 플레이어로 시점이 옮겨지고, 이름·칩 부분을 누르면 줌을 유지한 채 상세정보만 열립니다. 줌 중에도 몬스터 인디케이터는 몬스터 옆 같은 자리에 표시됩니다. 주사위 화면 고정(기본 ON)을 켜 두면 굴린 주사위가 줌과 자유 시점에서도 기본 시점과 같은 화면 위치·크기로 보이고, 끄면 게임 기본처럼 필드 위에 남아 줌에 따라 크기가 바뀝니다.
-- 줌 아웃 시 불투명도·멀면 숨기기: 각각 기본 ON. 휠 줌을 사용할 때 인디케이터에 적용합니다.
-- 줌 아웃 시 불투명도 슬라이더: 기본 30%, 0~100%. 가장 멀리 줌 아웃했을 때 인디케이터의 불투명도를 슬라이더로 조절합니다. 100%는 원래대로, 0%는 보이지 않습니다.
+- 미니 슬라임 불투명도: 기본 100%, 20~100%. 루루의 잠재력으로 칸 위에 생기는 미니 슬라임의 불투명도입니다.
+
+카메라
+- 휠 줌·자유 시점: 기본 ON. PvE 필드에서 휠 줌과 자유 시점을 사용하며 턴이 바뀌어도 유지합니다. 턴 바의 핀 오른쪽 자유 시점 카메라 종료 버튼으로 기본 시점에 복귀합니다. 플레이어 칸의 얼굴을 누르면 그 플레이어로 시점이 옮겨지고, 이름·칩 부분을 누르면 줌을 유지한 채 상세정보만 열립니다. 줌 중에도 몬스터 인디케이터는 몬스터 옆 같은 자리에 표시되고, 크기도 캐릭터와 함께 바뀝니다. 주사위 화면 고정(기본 ON)을 켜 두면 굴린 주사위가 줌과 자유 시점에서도 기본 시점과 같은 화면 위치·크기로 보이고, 끄면 게임 기본처럼 필드 위에 남아 줌에 따라 크기가 바뀝니다.
 - 줌 감도: 기본 100%, 10~300%. 휠 한 칸에 확대·축소되는 양입니다.
 - 최대 줌 아웃: 기본 100%, 0~100%. 휠로 멀어질 수 있는 최대 거리이며, 100%는 필드 전체가 보이는 거리이고 0%는 기본 시점보다 멀어지지 않습니다.
 - WASD 속도: 기본 100%, 10~300%. WASD로 자유 시점을 움직이는 속도입니다.
-- 숨김 거리: 기본 20%, 0~100%. 멀면 숨기기에서 인디케이터가 숨고 다시 나타나는 줌 아웃 거리입니다.
-- 미니 슬라임 불투명도: 기본 100%, 20~100%. 루루의 잠재력으로 칸 위에 생기는 미니 슬라임의 불투명도입니다.
 
 손패·카드
 - 손패 묶기: 기본·클릭 펼치기 중 선택하며 처음에는 기본입니다. 내 PvE 필드 손패를 기능별로 묶고, 묶음을 클릭하면 가로로 펼칩니다. 카드는 위쪽 제출 영역으로 드래그해서 냅니다.
@@ -121,7 +125,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 - 플레이어 목록 탭: 기본 ON. 필드 왼쪽 플레이어 목록의 코인·별 바 아래 탭에 공개 손패 장수, 역할, 스킬 쿨타임을 표시합니다. 스킬 쿨타임은 게임 정보 창처럼 스톱워치와 남은 턴/전체 턴으로 보여주며, 0이면 액티브 스킬을 바로 쓸 수 있습니다. 다른 플레이어의 쿨타임은 정보 창처럼 게임 서버에서 받아 옵니다. 손패 장수, 역할, 스킬 쿨타임은 각각 끌 수 있습니다.
 
 편의 기능
-- 감사합니다 자동 전송: 기본 ON. 게임 기본 감사합니다 추천이 전송 가능할 때 추천 한 건당 한 번 전송합니다. PvP·관전·재생에서는 전송하지 않습니다.
+- 감사합니다 자동 전송: 기본 ON. 게임 기본 감사합니다 추천이 전송 가능할 때 추천 한 건당 한 번 전송합니다. PvP·관전·재생에서는 전송하지 않습니다. 하위 옵션 무작위 지연은 기본 ON이며, 켜 두면 자동 전송을 0.3~1.5초 사이에서 무작위로 늦춥니다.
 - 좋아요 일괄 전송: 기본 ON. PvE 게임 결과 화면의 확인 버튼 위에 좋아요 버튼을 둡니다. 누르면 아직 좋아요를 보내지 않은 다른 플레이어 모두에게 게임의 좋아요 버튼을 차례로 눌러 보냅니다. 자동으로는 보내지 않고, 보낼 사람이 없으면 회색으로 바뀝니다. 버튼이 보이는 동안 채팅 말풍선은 버튼 왼쪽으로 비켜 납니다. PvP·관전·재생에서는 나오지 않습니다.
 - 받은 좋아요 표시: 기본 ON. PvE 게임 결과 화면의 각 카드 오른쪽 위에 그 플레이어가 받은 좋아요를 하나에 도장 하나씩 찍습니다. 도장은 보낸 사람의 캐릭터 아이콘에 작은 좋아요 배지를 붙인 모양입니다. 내가 이모티콘을 차단한 플레이어가 보낸 좋아요는 게임이 받지 않아 세지 않고, 그 플레이어의 카드에 "보낸 좋아요 미표시"를 붙입니다. 마우스를 올리면 이유가 나옵니다. 친구 목록에서 차단한 플레이어는 게임이 경기마다 이모티콘을 자동으로 차단합니다.
 - 상점 일괄 구매: 기본 ON. 스타 코인 상점 카드 아래 오른쪽에 무료 일괄 수령과 일괄 구매 버튼을 둡니다. 무료 일괄 수령은 누르면 무료 상품을 바로 받고, 받을 것이 없으면 회색으로 바뀝니다. 일괄 구매는 살 수 있는 상품 목록을 열고, 무료·배지·50% 이상 할인·전부 버튼으로 해당 상품을 한꺼번에 넣고 빼거나 상품마다 체크한 뒤 합계와 남을 스타 코인을 보고 구매를 누르면 그 상품만 삽니다. 구매는 목록 창 안에서 하나씩 진행되며 중간에 중지할 수 있고, 끝나면 목록으로 돌아갑니다. 구매가 실패로 멈췄을 때만 그 결과를 잠깐 보여 줍니다. 여러 개를 사도 획득 창은 한 번에 모아서 뜹니다.
@@ -166,6 +170,8 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 
 </details>
 
+게임 설정의 화면 설정 > 주사율 목록 맨 아래에 모드가 사용자 정의를 추가합니다. 누르면 그 줄 아래에 입력 칸이 열리고, 30~999 사이 숫자를 입력한 뒤 Enter나 확인을 누르면 V-Sync가 꺼져 있는 동안 게임 프레임을 그 숫자로 제한합니다. 목록에서 게임의 다른 프레임을 고르면 사용자 정의가 꺼집니다. 게임이 저장하는 선택은 바꾸지 않으므로, 모드를 제거하면 게임은 목록에서 고른 프레임으로 시작합니다.
+
 ### 업데이트
 
 - 자동 업데이트는 1.4.0 설치부터 지원합니다. 자동 업데이트를 자동 적용으로 두면 검증된 업데이트를 게임 실행 중에 적용하고 다음 실행부터 새 버전을 사용합니다. 게임을 종료할 필요가 없고 별도 창도 열리지 않습니다.
@@ -187,7 +193,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 - 자동 업데이트 파일과 임시 작업 파일은 게임 폴더의 `BetterAstralParty.Update/`에 모입니다. 제거 후 다시 설치할 때 남기는 이전 업데이트 기록은 그 안의 `history/`에 보관합니다.
 - 게임 핫픽스로 파일 해시나 카탈로그가 달라진 것만으로 설치·실행을 막지 않습니다. 실제로 맞지 않는 선택 기능만 중단합니다.
 - 안전 모드로 실행한 다음 실행에서도 다시 묻습니다. 새 BetterAstralParty 버전이나 바뀐 게임 빌드에서는 묻지 않고 평소처럼 시작합니다. 안전 모드에서 새 버전을 자동으로 적용할 수 없으면(자동 적용이 꺼져 있거나 자동 업데이트가 꺼진 상태) 확인 창이 설치 ZIP으로 설치하라고 안내합니다.
-- 모드를 켠 상태로 게임 자체가 시작되지 않으면 `AstralParty-Vanilla.cmd`로 실행하거나 `Create-Diagnostics.cmd`로 진단 ZIP을 만들고 최신 전체 패키지를 설치하세요.
+- 모드를 켠 상태로 게임 자체가 시작되지 않으면 `AstralParty-Vanilla.cmd`에서 `1`을 골라 BetterAstralParty만 끄고 실행해 보세요. 그래도 시작되지 않으면 `2`를 골라 모든 모드를 끄고 실행하세요. `Create-Diagnostics.cmd`로 진단 ZIP을 만들고 최신 전체 패키지를 설치하는 방법도 있습니다.
 
 </details>
 
@@ -260,7 +266,7 @@ BetterAstralParty 자체 코드는 [MIT 라이선스](LICENSE)로 제공합니�
 | Card/chip ping detail popups | Character roles and preparation details | Automatic updates applied in game |
 
 > [!NOTE]
-> When a PvP room or match is detected, mod conveniences pause and resume with your saved settings after leaving PvP. Updates and diagnostics continue during PvP.
+> When a PvP room or match is detected, mod conveniences pause and resume with your saved settings after leaving PvP. Updates, diagnostics and the custom frame rate continue during PvP.
 
 ### Requirements
 
@@ -283,7 +289,7 @@ BetterAstralParty 자체 코드는 [MIT 라이선스](LICENSE)로 제공합니�
 5. Start Astral Party from Steam. First-time loader initialization and file downloads may take a few minutes and require internet access. If the window freezes or shows Not Responding meanwhile, keep it open and wait.
 
 > [!TIP]
-> To play without the mod, run `AstralParty-Vanilla.cmd` in the game folder. Only that launch runs without BetterAstralParty; other BepInEx mods stay available. Close the game before switching and leave Astral Party's Steam launch options unchanged.
+> To play without the mod, run `AstralParty-Vanilla.cmd` in the game folder and choose a number. `1` runs only that launch without BetterAstralParty; other BepInEx mods stay on. `2` starts the game without any mod, and Steam asks you to confirm its launch options. Close the game before switching and leave Astral Party's Steam launch options unchanged.
 
 <details>
 <summary>Installed files and more</summary>
@@ -307,7 +313,7 @@ Open Mod Settings in the lobby using its button or F8, or from the Mod Settings 
 <summary>Mod Features tab</summary>
 
 Battle Advice
-- Action Advice: ON by default. Recommends Attack/Let Go, Defend/Dodge and cards from public information without selecting actions. Defend/Dodge recommends Defend, or Dodge when defending is a sure KO. When another player or a monster defends, a panel at the bottom shows the KO chance and damage of each choice and marks the choice once it is made. It is not a master switch for the whole mod. With a Shooting Star chip, the Let Go button shows the damage dealt to the monster and the Starlight gained when you let it go.
+- Action Advice: ON by default. Recommends Attack/Let Go, Defend/Dodge and cards from public information without selecting actions. Defend/Dodge recommends Defend, or Dodge when dodging survives more often. When another player or a monster defends, a panel at the bottom shows the KO chance and damage of each choice and marks the choice once it is made. It is not a master switch for the whole mod. With a Shooting Star chip, the Let Go button shows the damage dealt to the monster and the Starlight gained when you let it go.
 - Advice Details: ON by default. Hover over action advice to see damage and KO probabilities. OFF hides the numbers but keeps recommendation icons.
 - KO Dice Target: ON by default. Shows the KO dice target when you attack or a monster defends in another player's combat, and the survival dice target when you defend or a player defends in another player's combat. A target is the roll that decides the outcome even at the lowest card bonus, chosen to cover the most such dice combinations. While spectating, or once your attack cards are locked, card bonuses count at the values actually rolled. Once both sides have chosen, it shows the certain or impossible KO from the dice the server decided. Includes card-hover conditions. When the combat has effects the calculation does not count, their icons appear below with "Effects not counted"; hover the question mark for an explanation.
 - Final Damage: ON by default. Shows the damage the server decided as soon as both sides have chosen and the dice show starts.
@@ -319,18 +325,22 @@ Battle Display
 - Counter Icon Animation / Sound: both ON by default. Animation OFF keeps a static counter icon.
 - Fight PiP: ON by default. A fight you only watch can show in a small window while the field stays in view, and you can still drag, zoom and click the field. Watched fights start as the game's full-screen fight, and "PiP Mode" at the top left turns them into the small window. Drag the window to move it and drag a corner to size it; it remembers where you left it. Click the window for full screen again and use "PiP Mode" or Esc to bring it back. "Start View" sets how each match starts, Full Screen by default, and a switch during a match carries to that match's later watched fights. "PiP Opacity" sets how opaque the fight inside the small window is, from 20% to 100%. While the emoji or chat panel is open it steps aside, and chat bubbles over it turn faint. Your own fights stay full screen. The first watched fight you see full screen shows a short guide once; "OK", "PiP Mode" or Esc closes it.
 
-Field / Camera
-- Player Indicators: ON by default. Shows field player names, HP, public effects and added counter icons. A short click on an effect opens its native description. It stays beside the character when you zoom with wheel zoom.
+Field Display
+- Player Indicators: ON by default. Shows field player names, HP, public effects and added counter icons. A short click on an effect opens its native description. It stays beside the character when you zoom with wheel zoom, and its size follows the character's.
 - Indicator Height: 100% by default. Places the player indicator marker between the character's base (0%) and its original height (100%), adjusted with a slider.
+- Indicator Display: Native or Hide When Far; the default is Hide When Far. Hide When Far hides indicators when you zoom far out. If Hide When Far was off in an earlier version, it starts as Native.
+- Hide Distance: 30% by default, 0–100%. The zoom-out distance at which Hide When Far hides indicators.
+- Opacity When Zoomed Out: ON by default. Applies to the game's indicators while wheel zoom is in use.
+- Opacity When Zoomed Out slider: 30% by default, 0–100%. The indicators' opacity when most faded, reached at the Hide Distance under Hide When Far and at the farthest zoom-out under Native; 100% is unchanged and 0% hides them.
+- Start Distance: 0% by default, 0–100%. The zoom-out distance at which Opacity When Zoomed Out starts, lowering the opacity evenly from there to the slider's value; 0% starts as soon as you zoom out.
 - Move Direction Highlight: Arrows Only by default. Redraws the walk-direction marks under players and monsters on top, so characters, monsters and trees no longer hide them. Arrows Only draws an arrow where each circle points, lying flat on the ground. Circles and Arrows also draws the circles, with the half behind the character dashed. Off leaves only the game's own marks.
-- Wheel Zoom and Free Camera: ON by default. Enables PvE field wheel zoom and a Free Camera that persist across turns. Select Exit Free Camera to the right of the turn-bar pin to restore the default view. Clicking a player's portrait moves the view to that player; clicking the name and chip area opens the details and keeps the zoom. Monster indicators stay in the same place beside the monster while zoomed. With Pin Dice to Screen (ON by default), rolled dice keep the default view's screen position and size while zoomed or in Free Camera; turn it off to leave them on the field as in the base game, so zoom changes their size.
-- Opacity When Zoomed Out / Hide When Far: both ON by default. Apply to field indicators while wheel zoom is in use.
-- Opacity When Zoomed Out slider: 30% by default, 0–100%. A slider for indicator opacity at the farthest zoom-out; 100% is unchanged and 0% hides them.
+- Mini Slime Opacity: 100% by default, 20–100%. Opacity of the Mini Slimes Lulu's Potential puts on panels.
+
+Camera
+- Wheel Zoom and Free Camera: ON by default. Enables PvE field wheel zoom and a Free Camera that persist across turns. Select Exit Free Camera to the right of the turn-bar pin to restore the default view. Clicking a player's portrait moves the view to that player; clicking the name and chip area opens the details and keeps the zoom. Monster indicators stay in the same place beside the monster while zoomed, and their size follows the characters'. With Pin Dice to Screen (ON by default), rolled dice keep the default view's screen position and size while zoomed or in Free Camera; turn it off to leave them on the field as in the base game, so zoom changes their size.
 - Zoom Sensitivity: 100% by default, 10–300%. How far one wheel tick zooms.
 - Max Zoom-Out: 100% by default, 0–100%. How far the wheel can zoom out; 100% shows the whole field and 0% stays at the default view.
 - WASD Speed: 100% by default, 10–300%. How fast WASD moves the Free Camera.
-- Hide Distance: 20% by default, 0–100%. The zoom-out distance at which Hide When Far hides indicators and shows them again.
-- Mini Slime Opacity: 100% by default, 20–100%. Opacity of the Mini Slimes Lulu's Potential puts on panels.
 
 Hand and Cards
 - Group Hand: Native or Click; the default is Native. Groups your PvE field hand by function, and a clicked group expands horizontally. Drag cards to the submission area above the cards to play them.
@@ -344,7 +354,7 @@ Characters
 - Player List Tab: ON by default. A tab under each coin/star bar of the field player list shows the public hand count, the role and the skill cooldown. The skill cooldown shows a stopwatch with turns left/total, as the game's info window does; 0 means the active skill is ready. Other players' cooldowns come from the game server, as in the info window. Hand Count, Role and Skill Cooldown can each be turned off.
 
 Convenience
-- Auto Thanks: ON by default. Sends the game's Thanks suggestion once each time it appears. Never sends in PvP, spectating or replays.
+- Auto Thanks: ON by default. Sends the game's Thanks suggestion once each time it appears. Never sends in PvP, spectating or replays. Its Random Delay option, ON by default, delays each automatic send by a random 0.3-1.5 s.
 - Send All Likes: ON by default. Adds a like button above Confirm on the PvE results screen. Pressing it presses the game's own like button for every other player you have not liked yet. It never sends on its own and turns gray when no one is left. While it shows, chat bubbles move to its left. Hidden in PvP, spectating and replays.
 - Received Likes: ON by default. Stamps one stamp per received like at the top right of each card on the PvE results screen: its sender's character icon with a small like badge. Likes from players whose emojis you blocked are not counted, since the game drops their messages, and that player's card shows "Sent Likes Hidden"; hover it for why. The game blocks the emojis of players blocked in your friend list in every match.
 - Shop Bulk Purchase: ON by default. Adds Claim All Free and Bulk Buy under the right of the Star Coin Shop cards. Claim All Free takes the free goods at once and turns gray when there is nothing to claim. Bulk Buy opens a list of the goods you can buy; tick them one by one or add and remove a group at once with the Free, Badges, 50%+ Off and All buttons, check the total and the Star Coins left, and press Buy to buy only those. The purchase runs one item at a time inside the list, Stop ends it before the next item, and the list then comes back. Only a purchase stopped by a failure shows its result for a moment. Several items bought at once share one reward window.
@@ -389,6 +399,8 @@ Updates
 
 </details>
 
+The mod adds Custom at the bottom of the game's Display > Refresh Rate list. Choosing it opens a box under that row; type a number from 30 to 999 and press Enter or OK, and while V-Sync is off the game's frame rate is limited to that number. Choosing one of the game's frame rates turns Custom off. The game's own saved choice is never changed, so after uninstalling the mod the game starts at the frame rate chosen in its list.
+
 ### Updates
 
 - Automatic updates are supported from the 1.4.0 installation. With Automatic Updates set to Apply Automatically, a verified update is applied while the game runs and used from the next launch. You do not need to close the game, and no separate window opens.
@@ -410,7 +422,7 @@ Updates
 - Automatic-update downloads and temporary working files are kept in `BetterAstralParty.Update/` inside the game folder. The earlier update record kept when you reinstall after a removal goes to its `history/` folder.
 - Changed game hashes or catalogs after a hotfix alone do not block installation or launch. Only an incompatible optional feature stops.
 - The start after a safe-mode run asks again. A new BetterAstralParty version or a changed game build starts normally without asking. If safe mode cannot apply a new version by itself (Apply Automatically is off, or automatic updates are turned off), a message box asks you to install the complete ZIP.
-- If the game itself cannot start with the mod, start it with `AstralParty-Vanilla.cmd` or create a diagnostics ZIP with `Create-Diagnostics.cmd`, and install the latest complete package.
+- If the game itself cannot start with the mod, run `AstralParty-Vanilla.cmd` and choose `1` to start without BetterAstralParty. If it still cannot start, choose `2` to start without any mod. You can also create a diagnostics ZIP with `Create-Diagnostics.cmd` and install the latest complete package.
 
 </details>
 

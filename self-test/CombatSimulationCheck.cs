@@ -50,8 +50,8 @@ internal static class CombatSimulationCheck
             {
                 var d = Stats(hp, attack, defense, die, false, effect);
                 var e = Stats(hp, attack, defense, die, true, effect);
-                // The defender dodges only against a certain KO it can survive, or when the dodge takes nothing.
-                var chooseDodge = dodge && (d.KnockoutChance > 1 - 1e-9 && e.KnockoutChance < 1 - 1e-9
+                // The defender dodges when a dodge is knocked out less often, or when the dodge takes nothing.
+                var chooseDodge = dodge && (e.KnockoutChance < d.KnockoutChance - 1e-9
                     || e.ExpectedDamage < 1e-9 && d.ExpectedDamage > 1e-9);
                 var choice = chooseDodge ? e : d;
                 damage += choice.ExpectedDamage; ko += choice.KnockoutChance; zero += choice.NoDamageChance;

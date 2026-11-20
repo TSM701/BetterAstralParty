@@ -18,6 +18,7 @@ CombatEffectsCheck.Run();
 ReceivedLikesCheck.Run();
 FightPipCheck.Run();
 ReplayKeeperCheck.Run();
+CustomFrameRateCheck.Run();
 
 if (Array.IndexOf(args, "--compare-assembly") is var comparison && comparison >= 0)
 {
@@ -294,7 +295,7 @@ foreach (var action in new[] { "ActionAdvice", "AdviceDetails", "PingDetails", "
 }
 if (MenuLayout.SliderRange("Scale") != (75, 150) || MenuLayout.SliderRange("Opacity") != (0, 100) || MenuLayout.Percent(75) != "75%")
     throw new Exception("슬라이더 범위·표기 불일치");
-// The zoomed-out slider shows opacity; the file keeps the fade strength (1 = the original curve, 30 % at the far end).
+// The zoomed-out slider shows opacity; the file keeps the fade strength (1 = down to 30 %).
 if (MenuLayout.SliderRange("IndicatorFadeStrength") != (0, 100) || MenuLayout.SliderPercent("IndicatorFadeStrength", 1f) != 30 || MenuLayout.SliderPercent("IndicatorFadeStrength", 100f / 70f) != 0
     || MenuLayout.SliderPercent("IndicatorFadeStrength", 0f) != 100 || MenuLayout.SliderPercent("IndicatorFadeStrength", .8f) != 44
     || MenuLayout.SliderStored("IndicatorFadeStrength", 30) != 1f || MenuLayout.SliderStored("IndicatorFadeStrength", 100) != 0f
@@ -1108,7 +1109,7 @@ ChoiceStats EnumerateExchange(int hp, int attack, int defense, bool canDodge)
         var evade = Enumerable.Range(1, 6).Select(d => d > a || d == 6 && a == 6 ? 0 : Math.Min(hp, attack + a)).ToArray();
         var blockKo = block.Count(d => d == hp);
         var evadeKo = evade.Count(d => d == hp);
-        var chosen = canDodge && (blockKo == 6 && evadeKo < 6 || evade.Sum() == 0 && block.Sum() > 0) ? evade : block;
+        var chosen = canDodge && (evadeKo < blockKo || evade.Sum() == 0 && block.Sum() > 0) ? evade : block;
         total += chosen.Sum(); ko += chosen.Count(d => d == hp); safe += chosen.Count(d => d == 0);
     }
     return new(total / 36, ko / 36, safe / 36);
@@ -1178,10 +1179,14 @@ if (dodgeBetter.Recommendation != RecommendedAction.Dodge || !dodgeBetter.Dodge.
 // The observer panel's figures: the same ranges and KO chances as the quick text, without labels.
 if (quick.DefendDamage != "1.5" || quick.DefendKnockout != "0%" || quick.DodgeDamage != "8" || quick.DodgeKnockout != "83.33%")
     throw new Exception("관전 패널 피해·전투불능 수치 오류");
-// Defending survives a 6 here, so a lower dodge KO chance (4/6 < 5/6) no longer recommends dodge.
+// Defending survives only a 6 here (KO 5/6) while a dodge survives a 5 or 6 (KO 4/6), so dodge (2026-11-20); one more
+// DEF makes defending survive a 5 too (KO 4/6), an equal chance, which defends.
 var survivable = VisibleCombatAdvisor.Calculate(new(9, 5, 7, 7, 4, 1, 1, true))!.Value;
-if (survivable.Recommendation != RecommendedAction.Defend)
-    throw new Exception("방어로 살 수 있는데 회피 추천");
+var equalChance = VisibleCombatAdvisor.Calculate(new(9, 5, 7, 7, 4, 2, 2, true))!.Value;
+if (survivable.Recommendation != RecommendedAction.Dodge || !survivable.Dodge.Contains("회피 추천"))
+    throw new Exception("회피가 더 잘 사는데 방어 추천");
+if (equalChance.Recommendation != RecommendedAction.Defend)
+    throw new Exception("생존 확률이 같은데 회피 추천");
 foreach (var advice in new[] { tied, weaklyBetter, dodgeBetter, quick, blockedDodge, uncertain })
     if (advice.Defend.Contains("선택") || advice.Dodge.Contains("선택"))
         throw new Exception("방어자 이득 비교를 행동 예측처럼 표시함");
@@ -1201,7 +1206,7 @@ foreach (var canDodge in new[] { false, true })
     {
         var block = Enumerable.Range(1, 6).Select(d => Math.Min(hp, Math.Max(1, atk + die - def - d))).ToArray();
         var evade = Enumerable.Range(1, 6).Select(d => d > die || d == 6 && die == 6 ? 0 : Math.Min(hp, atk + die)).ToArray();
-        dodgeEverywhere &= block.All(d => d == hp) && evade.Any(d => d < hp) || evade.Sum() == 0 && block.Sum() > 0;
+        dodgeEverywhere &= evade.Count(d => d >= hp) < block.Count(d => d >= hp) || evade.Sum() == 0 && block.Sum() > 0;
     }
     var expected = canDodge && dodgeEverywhere ? RecommendedAction.Dodge : RecommendedAction.Defend;
     var actual = VisibleCombatAdvisor.Calculate(new(9, hp, atkMin, atkMin + 3, die, defMin, defMin + 3, canDodge))!.Value;
@@ -1210,7 +1215,7 @@ foreach (var canDodge in new[] { false, true })
         throw new Exception($"단일 추천 독립 열거 불일치: {hp}/{atkMin}/{defMin}/{die}/{canDodge}");
     singleChoiceCases++;
 }
-Console.WriteLine($"방어·회피 {singleChoiceCases}개 조건: 독립 주사위 열거·방어 확정 KO일 때만 회피·항상 한쪽 추천 검증 통과");
+Console.WriteLine($"방어·회피 {singleChoiceCases}개 조건: 독립 주사위 열거·회피가 더 잘 살 때만 회피·항상 한쪽 추천 검증 통과");
 
 foreach (var scale in new[] { 0.75f, 1f, 1.5f })
 {

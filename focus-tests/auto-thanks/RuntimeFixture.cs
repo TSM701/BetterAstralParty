@@ -6,6 +6,7 @@ using UnityEngine;
 namespace UnityEngine
 {
     public static class Application { public static bool isFocused = true; }
+    public static class Time { public static float unscaledTime; }
     public static class Input
     {
         public static int touchCount;
@@ -167,6 +168,7 @@ namespace AutoThanksTest
     internal static class Plugin
     {
         internal static class AutoThanks { internal static bool Value = true; }
+        internal static class AutoThanksDelay { internal static bool Value; }
         internal static class Diagnostics
         {
             internal static int States;
@@ -199,6 +201,8 @@ namespace AutoThanksTest
             Application.isFocused = true; Input.Reset(); Compatibility.Blocked = false; Compatibility.OtherBlocked = true; Compatibility.Blocks = 0; Compatibility.Error = null;
             Plugin.Diagnostics.States = 0; Plugin.Diagnostics.Fail = false;
             Plugin.AutoThanks.Value = true;
+            // The cases below were written for an immediate send; the Random Delay cases turn it on themselves.
+            Plugin.AutoThanksDelay.Value = false;
             Window.Parent = Root; Button.Parent = Window;
             Ref(Window, "_btn_QuickReply", Button); Ref(Window, "quickReplyCts", Cts); Ref(Window, "_showQuickReply", new("Transition"));
             Val(Window, "isShowing", true); Val(Button, "touchable", true); Val(Button, "grayed", false); Ref(Button, "onClick", Listener);
@@ -243,6 +247,41 @@ namespace AutoThanksTest
             Gate(name, (w, blocked) => { var n = node(w); if (blocked) { saved = n.References.GetValueOrDefault(member); World.Ref(n, member, null); } else World.Ref(n, member, saved); });
         }
         private static void BoolGate(string name, Func<World, RuntimeObject> node, string member, bool blockedValue) => Gate(name, (w, blocked) => World.Val(node(w), member, blocked ? blockedValue : !blockedValue));
+        // Frames at 60 fps on the unscaled clock the delay reads.
+        private static void Seconds(float seconds) { for (var t = 0f; t < seconds; t += 1f / 60f) { Time.unscaledTime += 1f / 60f; AutoThanksUi.Tick(); } }
+        private static World Delayed() { var w = new World(); Plugin.AutoThanksDelay.Value = true; return w; }
+        private static void RandomDelay()
+        {
+            // The draw: a person's reaction time, inside 0.3-1.5 s, most near 0.75 s and slower ones longer than fast ones.
+            Case("random delay draws a human reaction time"); var random = new Random(20261119); var draws = new float[20000];
+            for (var i = 0; i < draws.Length; i++) draws[i] = AutoThanksUi.HumanDelay(random);
+            Array.Sort(draws);
+            Assert(draws[0] >= AutoThanksUi.MinDelay && draws[^1] <= AutoThanksUi.MaxDelay, "Every wait stays inside 0.3-1.5 s");
+            float At(double share) => draws[(int)(share * (draws.Length - 1))];
+            Assert(At(0.5) is > 0.71f and < 0.79f && At(0.1) is > 0.44f and < 0.52f && At(0.9) is > 1.07f and < 1.20f, "Median about 0.75 s, tenth and ninetieth percentiles about 0.48 and 1.13 s: " + At(0.1) + "/" + At(0.5) + "/" + At(0.9));
+            Assert(At(0.9) - At(0.5) > At(0.5) - At(0.1), "Slow waits spread further than fast ones");
+            Assert(draws.Distinct().Count() > draws.Length * 9 / 10, "Waits differ from one another");
+            // The wait: nothing before the shortest draw, the send once by the longest, every check run again when it fires.
+            Case("random delay holds the send"); var w = Delayed(); Seconds(AutoThanksUi.MinDelay - 0.02f);
+            Assert(w.Listener.Attempts == 0, "No send before the shortest wait");
+            Seconds(AutoThanksUi.MaxDelay); Assert(w.Listener.Attempts == 1 && w.NativeHandlerCalls == 1, "One send by the longest wait");
+            Seconds(3f); Assert(w.Listener.Attempts == 1 && Compatibility.Blocks == 0, "The delayed episode stays consumed");
+            Case("manual press during the wait wins"); w = Delayed(); Seconds(0.2f); World.Val(w.Cts, "IsCancellationRequested", true); Seconds(3f);
+            Assert(w.Listener.Attempts == 0, "A recommendation the player answered is not sent after the wait");
+            Case("recommendation gone during the wait"); w = Delayed(); Seconds(0.2f); w.Button.Visible = false; Seconds(3f);
+            Assert(w.Listener.Attempts == 0, "A recommendation that left is not sent");
+            Case("new recommendation during the wait sends once"); w = Delayed(); Seconds(0.2f); World.Val(w.Cts, "id", 42); Seconds(AutoThanksUi.MinDelay - 0.02f);
+            Assert(w.Listener.Attempts == 0, "The new recommendation draws its own wait");
+            Seconds(3f); Assert(w.Listener.Attempts == 1, "Only the current recommendation is sent, once");
+            Case("button held when the wait ends"); w = Delayed(); Seconds(0.2f); Input.Held[0] = true; Seconds(AutoThanksUi.MaxDelay + 0.5f);
+            Assert(w.Listener.Attempts == 0, "No send while the mouse is held");
+            Input.Reset(); Seconds(1f / 60f); Assert(w.Listener.Attempts == 1, "Sends on release when the wait is over");
+            Case("random delay OFF during the wait"); w = Delayed(); Seconds(0.1f); Plugin.AutoThanksDelay.Value = false; Seconds(1f / 60f);
+            Assert(w.Listener.Attempts == 1, "Turning the delay off sends at once");
+            Case("scene cleanup drops the wait"); w = Delayed(); Seconds(0.2f); AutoThanksUi.Clear(); Seconds(AutoThanksUi.MinDelay - 0.02f);
+            Assert(w.Listener.Attempts == 0, "A fresh wait is drawn after cleanup");
+            Seconds(3f); Assert(w.Listener.Attempts == 1, "Then one send");
+        }
         public static void Run()
         {
             Assertions = Cases = 0; Names.Clear();
@@ -449,6 +488,7 @@ namespace AutoThanksTest
             Case("compatibility denied"); w = new World(); Compatibility.Blocked = true; Frames(); Assert(w.Listener.Attempts == 0 && Compatibility.Blocks == 0, "Denied feature does no work");
             Case("other participant turn does not veto Thanks"); w = new World(); World.Val(w.Battle, "fixtureOtherPlayerTurn", true); Frames(); Assert(w.Listener.Attempts == 1, "Active local participant may accept native Thanks during another player's turn");
             Case("explicit scene cleanup"); w = new World(); AutoThanksUi.Tick(); AutoThanksUi.Clear(); Frames(); Assert(w.Listener.Attempts == 2, "Explicit scene-owned cleanup resets latch");
+            RandomDelay();
             Console.WriteLine("PASS: " + Assertions + " assertions across " + Cases + " AutoThanks production-source substitute cases. No native sender/game executed.");
         }
     }

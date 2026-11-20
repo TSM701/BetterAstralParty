@@ -12,8 +12,9 @@ namespace BetterAstralParty;
 //   into a screen-sized RenderTexture shown under FightWindow's content, FairyGUI's stage camera leaves the PK camera's URP
 //   stack (the field camera's stack draws the UI) and the field camera is on again.
 // - The field HUD the game hides for a fight shows (BattleInfoPanel, its player bars, HandCardPanel), the hand dealt again
-//   and untouchable. What the game last set on each panel is followed (readyFight writes 0 or 1, from the encounter step
-//   on), so full screen and every exit give the HUD the game's own state.
+//   with its cards untouchable, its skill button taking clicks only in the ping mode and its move button none. What the game
+//   last set on each panel is followed (readyFight writes 0 or 1, from the encounter step on), so full screen and every
+//   exit give the HUD the game's own state.
 // - A black ring frames it (thin frame, user-chosen 2026-11-17), with a names capsule (blinking live light) on its top edge
 //   and an enlarge button on its bottom edge. A drag moves it, a corner sizes it in the screen's aspect, and the place is
 //   kept in the settings file (전투 PIP 자리). A still click on it (only when it is what the pointer hits, not a window over
@@ -70,9 +71,12 @@ internal static class FightPip
 
     // The window showing the PK camera's texture full size at its own origin while the PIP has the camera, else null.
     internal static RuntimeObject? Picture => _session is { Redirected: true } s ? s.Window : null;
+    // The small window shows the fight with the field in view (2026-11-20, user-reported: player indicators and Move Direction
+    // Highlight vanished during a PIP fight): the field overlays that clear for a fight keep showing while this holds.
+    internal static bool ShowsField => _session is { Waiting: false, Expanded: false, Closing: false };
 
-    // FieldZoomUi lets the field have input while the PIP shows the fight: the keys (WASD) wherever the pointer rests, the
-    // pointer only outside the PIP (user-reported 2026-11-17: WASD stopped while the pointer rested over the PIP).
+    // FieldZoomUi lets the field have input while the PIP shows the fight: the keys (WASD) and the wheel wherever the pointer
+    // rests, a press only outside the PIP (user-reported: WASD stopped over the PIP 2026-11-17, the wheel 2026-11-19).
     internal static bool FieldOpen(bool pointer = true)
     {
         if (_session is not { Expanded: false } s || s.Grow > 0f || s.Pressed) return false;
@@ -502,7 +506,8 @@ internal static class FightPip
         // BattleInfoPanel.ui, its player bars, HandCardPanel.ui; the scale the game last set on each and the one this set.
         private readonly RuntimeObject?[] _panels;
         private readonly float[] _kept, _set;
-        private readonly bool _handTouchable;
+        // The hand's card container, skill and move buttons (HandCardPanel.ui container_Card, com_Skill.btn_Skill, btn_Move); see Hud.
+        private readonly Clickable? _cards, _skill, _move;
         private readonly string _names;
         private readonly RuntimeObject _screen;
         private RuntimeObject? _image, _native, _pkObject, _stage, _corner;
@@ -536,7 +541,9 @@ internal static class FightPip
             _panels = new[] { hud, hud?.Field("com_BattlePlayer"), _hand };
             _kept = _panels.Select(panel => panel?.Get<float>("scaleX") ?? 1f).ToArray();
             _set = _panels.Select(_ => float.NaN).ToArray();
-            _handTouchable = _hand?.Get<bool>("touchable") ?? true;
+            _cards = Clickable.Of(_hand?.Field("container_Card"));
+            _skill = Clickable.Of(_hand?.Field("com_Skill")?.Field("btn_Skill"));
+            _move = Clickable.Of(_hand?.Field("btn_Move"));
             _names = Name(window.Get("attackerData")) + " → " + Name(window.Get("defenderData"));
             // The dark screen the picture shows on before the platform opens; the texture goes above it.
             float width = root.Get<float>("width"), height = root.Get<float>("height");
@@ -584,8 +591,13 @@ internal static class FightPip
             _aside = FightPipLayout.Step(_aside, aside ? 1f : 0f, dt, FightPipLayout.AsideSeconds);
             Cameras(context, platform && !Closing && Grow < 1f);
             Place(rootWidth, rootHeight, now, mapTool, rest);
-            if (!Closing) { Hud(Grow < 1f); if (Grow < 1f) Cards(); }
-            else if (_hand != null && !_hand.Get<bool>("isDisposed") && _hand.Get<bool>("touchable") != _handTouchable) _hand.Set("touchable", _handTouchable);
+            // Cards first: dealing them sets the container as readyFight(true) had it, and Hud then holds it.
+            if (!Closing)
+            {
+                if (Grow < 1f) Cards();
+                Hud(Grow < 1f, context.Scene?.Field("MarkManager")?.Get<bool>("IsActive") == true, NoOwnAction(context.Logic));
+            }
+            else { _cards?.Hold(null); _skill?.Hold(null); _move?.Hold(null); }
             if (Grow < 1f && !Closing) { FadeBubbles(root, Frame.Hit); RaiseLandTip(root, Window); }
             else { RestoreBubbles(); RestoreLandTip(); }
             HoldsEsc = Expanded && !Closing;
@@ -916,7 +928,15 @@ internal static class FightPip
         }
 
         // The field HUD the game hides for a fight shows in the PiP; full screen gives it back to the game's fight state.
-        private void Hud(bool shown)
+        // The hand panel keeps the touchability the game gave it, so the grouped hand's piles open and the skill takes the
+        // ping (MarkDetectionSystem.DetectUI walks up from GRoot.touchTarget), which the whole panel made untouchable stopped
+        // (user-reported 2026-11-18). The card container takes input while no action of the local player can be open
+        // (NoOwnAction), as on other players' turns, where RefreshUsableCards leaves it touchable: native hover, drag and
+        // the card ping (UIHandCard_Button_Card is an IMarkTarget) work in both layouts (user-reported 2026-11-19: neither
+        // took input or pings). Otherwise it stays untouchable, as readyFight(true) left it. The skill button takes clicks
+        // only while the ping (mark) mode is on, whose release ExitMarkMode consumes before FairyGUI's click, so
+        // ReleaseActiveSkill returns (MarkInputConsume.IsConsumed); the move button takes none.
+        private void Hud(bool shown, bool marking, bool idle)
         {
             for (var i = 0; i < _panels.Length; i++)
             {
@@ -927,8 +947,41 @@ internal static class FightPip
                 if (panel.Get<float>("scaleX") != scale) panel.Call("SetScale", scale, scale);
                 _set[i] = scale;
             }
-            var touchable = !shown && _handTouchable;
-            if (_hand != null && !_hand.Get<bool>("isDisposed") && _hand.Get<bool>("touchable") != touchable) _hand.Set("touchable", touchable);
+            _cards?.Hold(shown ? idle : null);
+            _skill?.Hold(shown ? marking : null);
+            _move?.Hold(shown ? false : null);
+        }
+
+        // No action of the local player can be open: none is (ActionLogic.CardSN 0; a drop or quick use reads it first), or
+        // it is another player's turn. The second is needed because CardSN keeps the last card turn's serial: only a cancel
+        // (OnCancelUseEffectC2S), a skill (Skill.SkillReleaseAction) and the match's end (Dispose) clear it, not the dice,
+        // so CardSN alone (2026.11.3-dev.5) would leave the cards untouchable after one's own card turn.
+        private static bool NoOwnAction(RuntimeObject logic)
+        {
+            if (logic.Get("action")?.Field<long>("CardSN") == 0) return true;
+            var self = logic.Get("account")?.Call("GetPlayerID")?.Value<long>();
+            var turn = logic.Get("battle")?.Get<long>("curPlayerId");
+            return self is > 0 && turn is long current && current != self;
+        }
+
+        // One object's touchable: held to a value or given back (null). A value other than the one this set is the game's.
+        private sealed class Clickable
+        {
+            private readonly RuntimeObject _item;
+            private bool _kept;
+            private bool? _set;
+            private Clickable(RuntimeObject item) { _item = item; _kept = item.Get<bool>("touchable"); }
+            internal static Clickable? Of(RuntimeObject? item) => item == null ? null : new Clickable(item);
+
+            internal void Hold(bool? value)
+            {
+                if (_item.Get<bool>("isDisposed")) return;
+                var current = _item.Get<bool>("touchable");
+                if (_set != current) _kept = current;
+                var want = value ?? _kept;
+                if (current != want) _item.Set("touchable", want);
+                _set = value == null ? null : want;
+            }
         }
 
         // The field's cards. Every fight sends them back to the pool as it starts (FightLogic's recycleCard, watched fights
@@ -989,7 +1042,7 @@ internal static class FightPip
                     var kept = Mirror(i);
                     panel.Call("SetScale", kept, kept);
                 }
-                if (_hand != null && !_hand.Get<bool>("isDisposed")) _hand.Set("touchable", _handTouchable);
+                _cards?.Hold(null); _skill?.Hold(null); _move?.Hold(null);
             });
             Step("corner", () => GameUi.Dispose(_corner));
             return failed;

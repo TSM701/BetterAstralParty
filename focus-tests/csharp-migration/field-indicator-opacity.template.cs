@@ -64,7 +64,12 @@ internal static class GameUi {
 }
 internal static class PvpSafety { internal static bool Suspended; }
 internal sealed class OpacitySetting { internal bool Value=true; }
-internal static class Plugin { internal static readonly OpacitySetting IndicatorFade=new(), IndicatorHide=new(); internal static readonly StrengthSetting IndicatorFadeStrength=new(), IndicatorHideDistance=new(){Value=.6f}; }
+internal static class Plugin { internal static readonly OpacitySetting IndicatorFade=new(); internal static readonly ModeSetting IndicatorDisplay=new(); internal static readonly StrengthSetting IndicatorFadeStrength=new(), IndicatorHideDistance=new(){Value=.6f}, IndicatorFadeDistance=new(){Value=0}; }
+internal sealed class ModeSetting { internal string Value="HideFar"; }
+internal static class MenuLayout {
+    internal static string IndicatorDisplayMode(string? value) => value == "Native" ? value : "HideFar";
+    internal static bool UsesDistance(string? value) => IndicatorDisplayMode(value) == "HideFar";
+}
 internal sealed class StrengthSetting { internal float Value=1f; }
 __SOURCE__
 public static class OpacityCheck {
@@ -75,7 +80,7 @@ public static class OpacityCheck {
         internal readonly RuntimeObject Root=new("Root"),Field=new("Field"),Monster=new("MonsterParent"),Player=new("PlayerParent");
         internal Scene() {
             FieldIndicatorOpacity.Clear();PvpSafety.Suspended=false;GameUi.Root=Root;
-            Plugin.IndicatorFade.Value=Plugin.IndicatorHide.Value=true;
+            Plugin.IndicatorFade.Value=true;Plugin.IndicatorDisplay.Value="HideFar";
             Field.References["parent"]=Root;Field.References["com_AttrInfos"]=Monster;Field.References["com_PlayerAttrInfos"]=Player;
             var panel=new RuntimeObject("BattlePanel");panel.References["ui"]=Field;
             var battle=new RuntimeObject("Battle");battle.References["battleInfo"]=panel;
@@ -83,17 +88,26 @@ public static class OpacityCheck {
         }
     }
     public static void Run() {
-        var s=new Scene();s.Player.NativeAlpha(.5f);FieldIndicatorOpacity.Tick(.5f);Equal(s.Monster.Alpha,.45f);Equal(s.Player.Alpha,.225f);
-        for(int i=0;i<100;i++)FieldIndicatorOpacity.Tick(.5f);
+        var s=new Scene();s.Player.NativeAlpha(.5f);FieldIndicatorOpacity.Tick(.3f);Equal(s.Monster.Alpha,.65f);Equal(s.Player.Alpha,.325f);
+        for(int i=0;i<100;i++)FieldIndicatorOpacity.Tick(.3f);
         Assert(s.Monster.Writes==1&&s.Player.Writes==1);
         // The mod hero clones share the monster parent; native player overlays use the other parent.
-        Equal(.8f*s.Player.Display.Alpha,.18f);Equal(.4f*s.Monster.Display.Alpha,.18f);
+        Equal(.8f*s.Player.Display.Alpha,.26f);Equal(.4f*s.Monster.Display.Alpha,.26f);
         FieldIndicatorOpacity.Tick(0);Equal(s.Monster.Alpha,1);Equal(s.Player.Alpha,.5f);
         int writes=s.Monster.Writes+s.Player.Writes;FieldIndicatorOpacity.Clear();Assert(writes==s.Monster.Writes+s.Player.Writes);
-        var weak=new Scene();Plugin.IndicatorFadeStrength.Value=.5f;FieldIndicatorOpacity.Tick(.5f);Equal(weak.Monster.Alpha,.725f);Plugin.IndicatorFadeStrength.Value=0;FieldIndicatorOpacity.Tick(.5f);Equal(weak.Monster.Alpha,1);Plugin.IndicatorFadeStrength.Value=100f/70f;FieldIndicatorOpacity.Tick(1f);Equal(weak.Monster.Alpha,0);Plugin.IndicatorFadeStrength.Value=1;FieldIndicatorOpacity.Clear();
+        var weak=new Scene();Plugin.IndicatorFadeStrength.Value=.5f;FieldIndicatorOpacity.Tick(.3f);Equal(weak.Monster.Alpha,.825f);Plugin.IndicatorFadeStrength.Value=0;FieldIndicatorOpacity.Tick(.3f);Equal(weak.Monster.Alpha,1);Plugin.IndicatorFadeStrength.Value=100f/70f;FieldIndicatorOpacity.Tick(1f);Equal(weak.Monster.Alpha,0);Plugin.IndicatorFadeStrength.Value=1;FieldIndicatorOpacity.Clear();
+        // The fade (2026-11-20): opaque up to the Start Distance, then straight down, without a jump, to the slider's opacity at
+        // the hide distance under Hide When Far (60 % here) and at the farthest zoom-out under Native.
+        var near=new Scene();Plugin.IndicatorFadeDistance.Value=.5f;FieldIndicatorOpacity.Tick(.4f);Equal(near.Monster.Alpha,1);
+        FieldIndicatorOpacity.Tick(.5f);Equal(near.Monster.Alpha,1);
+        FieldIndicatorOpacity.Tick(.55f);Equal(near.Monster.Alpha,.65f);FieldIndicatorOpacity.Tick(1f);Equal(near.Monster.Alpha,.3f);
+        Plugin.IndicatorFadeDistance.Value=1;FieldIndicatorOpacity.Tick(.99f);Equal(near.Monster.Alpha,1);FieldIndicatorOpacity.Tick(1f);Equal(near.Monster.Alpha,.3f);
+        Plugin.IndicatorFadeDistance.Value=0;FieldIndicatorOpacity.Clear();
+        var wide=new Scene();Plugin.IndicatorDisplay.Value="Native";FieldIndicatorOpacity.Tick(.5f);Equal(wide.Monster.Alpha,.65f);
+        FieldIndicatorOpacity.Tick(1f);Equal(wide.Monster.Alpha,.3f);Plugin.IndicatorDisplay.Value="HideFar";FieldIndicatorOpacity.Clear();
         foreach(float alpha in new[]{0f,.1f,.5f,1f,1.5f}) {
-            s=new Scene();s.Monster.NativeAlpha(alpha);s.Player.NativeAlpha(alpha);FieldIndicatorOpacity.Tick(.5f);
-            Equal(s.Monster.Alpha,alpha*.45f);Equal(s.Player.Alpha,alpha*.45f);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,alpha);Equal(s.Player.Alpha,alpha);
+            s=new Scene();s.Monster.NativeAlpha(alpha);s.Player.NativeAlpha(alpha);FieldIndicatorOpacity.Tick(.3f);
+            Equal(s.Monster.Alpha,alpha*.65f);Equal(s.Player.Alpha,alpha*.65f);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,alpha);Equal(s.Player.Alpha,alpha);
         }
         s=new Scene();float previous=1;
         for(int i=1;i<=59;i++){FieldIndicatorOpacity.Tick(i*.01f);Assert(s.Monster.Alpha<previous&&!FieldIndicatorOpacity.Hidden);previous=s.Monster.Alpha;}
@@ -128,9 +142,9 @@ public static class OpacityCheck {
         // Do not overwrite another owner that has already restored the display.
         s=new Scene();FieldIndicatorOpacity.Tick(1);s.Monster.Display.Visible=true;int displayWrites=s.Monster.Display.Writes;
         FieldIndicatorOpacity.Clear();Assert(s.Monster.Display.Visible&&s.Monster.Display.Writes==displayWrites);
-        s=new Scene();FieldIndicatorOpacity.Tick(.5f);s.Monster.NativeAlpha(.8f);FieldIndicatorOpacity.Tick(.5f);Equal(s.Monster.Alpha,.36f);
-        FieldIndicatorOpacity.Tick(.5f);Equal(s.Monster.Alpha,.36f);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,.8f);
-        s=new Scene();FieldIndicatorOpacity.Tick(.5f);s.Monster.NativeAlpha(.7f);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,.7f);Equal(s.Player.Alpha,1);
+        s=new Scene();FieldIndicatorOpacity.Tick(.3f);s.Monster.NativeAlpha(.8f);FieldIndicatorOpacity.Tick(.3f);Equal(s.Monster.Alpha,.52f);
+        FieldIndicatorOpacity.Tick(.3f);Equal(s.Monster.Alpha,.52f);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,.8f);
+        s=new Scene();FieldIndicatorOpacity.Tick(.3f);s.Monster.NativeAlpha(.7f);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,.7f);Equal(s.Player.Alpha,1);
         s=new Scene();FieldIndicatorOpacity.Tick(1);var replacement=new RuntimeObject("MonsterParent");replacement.NativeAlpha(.5f);s.Field.References["com_AttrInfos"]=replacement;
         FieldIndicatorOpacity.Tick(1);Equal(s.Monster.Alpha,1);Assert(s.Monster.Display.Visible);Equal(replacement.Alpha,.15f);Assert(!replacement.Display.Visible);
         FieldIndicatorOpacity.Clear();Equal(replacement.Alpha,.5f);Assert(replacement.Display.Visible);
@@ -142,10 +156,10 @@ public static class OpacityCheck {
         }
         s=new Scene();FieldIndicatorOpacity.Tick(1);s.Monster.Disposed=s.Monster.Display.Disposed=true;int before=s.Monster.Writes;FieldIndicatorOpacity.Clear();Assert(s.Monster.Writes==before);Equal(s.Player.Alpha,1);Assert(s.Player.Display.Visible);
         foreach(float invalid in new[]{float.NaN,float.PositiveInfinity,float.NegativeInfinity}) {
-            s=new Scene();s.Monster.NativeAlpha(invalid);FieldIndicatorOpacity.Tick(.5f);Assert(s.Monster.Writes==0);Equal(s.Player.Alpha,.45f);FieldIndicatorOpacity.Clear();Equal(s.Player.Alpha,1);
+            s=new Scene();s.Monster.NativeAlpha(invalid);FieldIndicatorOpacity.Tick(.3f);Assert(s.Monster.Writes==0);Equal(s.Player.Alpha,.65f);FieldIndicatorOpacity.Clear();Equal(s.Player.Alpha,1);
             s=new Scene();FieldIndicatorOpacity.Tick(1);FieldIndicatorOpacity.Tick(invalid);Assert(!FieldIndicatorOpacity.Hidden&&s.Monster.Display.Visible);Equal(s.Monster.Alpha,1);
         }
-        s=new Scene();FieldIndicatorOpacity.Tick(.5f);s.Monster.NativeAlpha(float.NaN);FieldIndicatorOpacity.Tick(.5f);Assert(float.IsNaN(s.Monster.Alpha));Equal(s.Player.Alpha,.45f);
+        s=new Scene();FieldIndicatorOpacity.Tick(.3f);s.Monster.NativeAlpha(float.NaN);FieldIndicatorOpacity.Tick(.3f);Assert(float.IsNaN(s.Monster.Alpha));Equal(s.Player.Alpha,.65f);
         s=new Scene();FieldIndicatorOpacity.Tick(1);s.Monster.FailRestoreOnce=true;
         bool threw=false;try{FieldIndicatorOpacity.Clear();}catch(InvalidOperationException){threw=true;}
         Assert(threw);Equal(s.Player.Alpha,1);Equal(s.Monster.Alpha,.3f);Assert(s.Monster.Display.Visible&&s.Player.Display.Visible);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,1);
@@ -153,8 +167,8 @@ public static class OpacityCheck {
         threw=false;try{FieldIndicatorOpacity.Clear();}catch(InvalidOperationException){threw=true;}
         Assert(threw);Equal(s.Player.Alpha,1);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,1);Assert(s.Monster.Display.Visible);
         s=new Scene();s.Monster.FailSetAfterWriteOnce=true;
-        threw=false;try{FieldIndicatorOpacity.Tick(.5f);}catch(InvalidOperationException){threw=true;}
-        Assert(threw);Equal(s.Monster.Alpha,.45f);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,1);Equal(s.Player.Alpha,1);
+        threw=false;try{FieldIndicatorOpacity.Tick(.3f);}catch(InvalidOperationException){threw=true;}
+        Assert(threw);Equal(s.Monster.Alpha,.65f);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,1);Equal(s.Player.Alpha,1);
         s=new Scene();s.Monster.Display.FailSetAfterWriteOnce=true;
         threw=false;try{FieldIndicatorOpacity.Tick(1);}catch(InvalidOperationException){threw=true;}
         Assert(threw&&!s.Monster.Display.Visible);FieldIndicatorOpacity.Clear();Assert(s.Monster.Display.Visible);Equal(s.Monster.Alpha,1);
@@ -163,54 +177,59 @@ public static class OpacityCheck {
         Assert(threw&&!s.Monster.Display.Visible&&s.Player.Display.Visible);FieldIndicatorOpacity.Clear();Assert(s.Monster.Display.Visible);
         // A later fade change must not forget an earlier owned value when native Set fails before writing.
         foreach(bool afterWrite in new[]{false,true}) {
-            s=new Scene();FieldIndicatorOpacity.Tick(.5f);
+            s=new Scene();FieldIndicatorOpacity.Tick(.3f);
             s.Monster.FailSetBeforeWriteOnce=!afterWrite;s.Monster.FailSetAfterWriteOnce=afterWrite;
             threw=false;try{FieldIndicatorOpacity.Tick(.7f);}catch(InvalidOperationException){threw=true;}
-            Assert(threw);Equal(s.Monster.Alpha,afterWrite?.39f:.45f);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,1);
+            Assert(threw);Equal(s.Monster.Alpha,afterWrite?.3f:.65f);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,1);
         }
         // Getter or restore errors retain either successful or uncertain written ownership for the next cleanup.
         foreach(bool afterWrite in new[]{false,true}) {
-            s=new Scene();FieldIndicatorOpacity.Tick(.5f);
+            s=new Scene();FieldIndicatorOpacity.Tick(.3f);
             s.Monster.FailSetBeforeWriteOnce=!afterWrite;s.Monster.FailSetAfterWriteOnce=afterWrite;
             try{FieldIndicatorOpacity.Tick(.7f);}catch(InvalidOperationException){}
             s.Monster.FailAlphaReadOnce=true;threw=false;
             try{FieldIndicatorOpacity.Clear();}catch(InvalidOperationException){threw=true;}
             Assert(threw);Equal(s.Player.Alpha,1);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,1);
-            s=new Scene();FieldIndicatorOpacity.Tick(.5f);
+            s=new Scene();FieldIndicatorOpacity.Tick(.3f);
             s.Monster.FailSetBeforeWriteOnce=!afterWrite;s.Monster.FailSetAfterWriteOnce=afterWrite;
             try{FieldIndicatorOpacity.Tick(.7f);}catch(InvalidOperationException){}
             s.Monster.FailRestoreOnce=true;threw=false;
             try{FieldIndicatorOpacity.Clear();}catch(InvalidOperationException){threw=true;}
             Assert(threw);Equal(s.Player.Alpha,1);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,1);
-            s=new Scene();FieldIndicatorOpacity.Tick(.5f);
+            s=new Scene();FieldIndicatorOpacity.Tick(.3f);
             s.Monster.FailSetBeforeWriteOnce=!afterWrite;s.Monster.FailSetAfterWriteOnce=afterWrite;
             try{FieldIndicatorOpacity.Tick(.7f);}catch(InvalidOperationException){}
             s.Monster.NativeAlpha(.8f);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,.8f);
         }
-        s=new Scene();FieldIndicatorOpacity.Tick(.5f);s.Monster.FailAlphaReadOnce=true;threw=false;
+        s=new Scene();FieldIndicatorOpacity.Tick(.3f);s.Monster.FailAlphaReadOnce=true;threw=false;
         try{FieldIndicatorOpacity.Tick(.7f);}catch(InvalidOperationException){threw=true;}
         Assert(threw);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,1);
         s=new Scene();s.Monster.FailSetBeforeWriteOnce=true;
-        try{FieldIndicatorOpacity.Tick(.5f);}catch(InvalidOperationException){}
+        try{FieldIndicatorOpacity.Tick(.3f);}catch(InvalidOperationException){}
         s.Monster.NativeAlpha(0);FieldIndicatorOpacity.Clear();Equal(s.Monster.Alpha,0);
         s=new Scene();FieldIndicatorOpacity.Tick(0);Assert(s.Monster.Writes==0&&s.Player.Writes==0);
         // Fade and distant hiding are independent and restore only their own current presentation.
         foreach(bool fade in new[]{false,true})foreach(bool hide in new[]{false,true}) {
-            s=new Scene();s.Player.NativeAlpha(.5f);Plugin.IndicatorFade.Value=fade;Plugin.IndicatorHide.Value=hide;
+            s=new Scene();s.Player.NativeAlpha(.5f);Plugin.IndicatorFade.Value=fade;Plugin.IndicatorDisplay.Value=hide?"HideFar":"Native";
             FieldIndicatorOpacity.Tick(1);Equal(s.Monster.Alpha,fade?.3f:1f);Equal(s.Player.Alpha,fade?.15f:.5f);
             Assert(FieldIndicatorOpacity.Hidden==hide&&s.Monster.Display.Visible==!hide&&s.Player.Display.Visible==!hide);
-            Plugin.IndicatorFade.Value=Plugin.IndicatorHide.Value=false;FieldIndicatorOpacity.Tick(1);
+            Plugin.IndicatorFade.Value=false;Plugin.IndicatorDisplay.Value="Native";FieldIndicatorOpacity.Tick(1);
             Equal(s.Monster.Alpha,1);Equal(s.Player.Alpha,.5f);Assert(!FieldIndicatorOpacity.Hidden&&s.Monster.Display.Visible&&s.Player.Display.Visible);
         }
-        s=new Scene();FieldIndicatorOpacity.Tick(1);Plugin.IndicatorHide.Value=false;FieldIndicatorOpacity.Tick(1);
+        s=new Scene();FieldIndicatorOpacity.Tick(1);Plugin.IndicatorDisplay.Value="Native";FieldIndicatorOpacity.Tick(1);
         Equal(s.Monster.Alpha,.3f);Assert(!FieldIndicatorOpacity.Hidden&&s.Monster.Display.Visible);
-        Plugin.IndicatorFade.Value=false;Plugin.IndicatorHide.Value=true;FieldIndicatorOpacity.Tick(1);
+        Plugin.IndicatorFade.Value=false;Plugin.IndicatorDisplay.Value="HideFar";FieldIndicatorOpacity.Tick(1);
         Equal(s.Monster.Alpha,1);Assert(FieldIndicatorOpacity.Hidden&&!s.Monster.Display.Visible);
-        Plugin.IndicatorHide.Value=false;s.Monster.NativeAlpha(.8f);s.Monster.NativeGroup(false);FieldIndicatorOpacity.Tick(1);
+        Plugin.IndicatorDisplay.Value="Native";s.Monster.NativeAlpha(.8f);s.Monster.NativeGroup(false);FieldIndicatorOpacity.Tick(1);
         Equal(s.Monster.Alpha,.8f);Assert(!s.Monster.Display.Visible&&s.Player.Display.Visible);
-        Plugin.IndicatorFade.Value=Plugin.IndicatorHide.Value=true;FieldIndicatorOpacity.Tick(.55f);
+        Plugin.IndicatorFade.Value=true;Plugin.IndicatorDisplay.Value="HideFar";FieldIndicatorOpacity.Tick(.55f);
         Assert(!FieldIndicatorOpacity.Hidden);FieldIndicatorOpacity.Tick(.6f);Assert(FieldIndicatorOpacity.Hidden);
         FieldIndicatorOpacity.Clear();
+        // A value left by the archived capsule choices reads as Hide When Far (2026-11-20); PvP still clears.
+        s=new Scene();Plugin.IndicatorDisplay.Value="CapsuleFar";FieldIndicatorOpacity.Tick(.6f);
+        Assert(FieldIndicatorOpacity.Hidden&&!s.Monster.Display.Visible&&!s.Player.Display.Visible);
+        PvpSafety.Suspended=true;FieldIndicatorOpacity.Tick(.6f);Assert(!FieldIndicatorOpacity.Hidden&&s.Monster.Display.Visible);PvpSafety.Suspended=false;
+        Plugin.IndicatorDisplay.Value="HideFar";FieldIndicatorOpacity.Clear();
     }
 }
 }

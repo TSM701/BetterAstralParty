@@ -11,7 +11,7 @@ internal static partial class TestCommands
     internal static readonly string[] GeneralSupported = {
         "typography", "relic-background", "character-guide", "character-names", "probability-ui", "ko-minimum",
         "encounter-recommendation", "fight-readiness", "runtime-arguments", "runtime-getters", "button-pivots", "surfaces",
-        "input-attention", "pvp-safety", "matching-event-audit", "auto-thanks", "shushu-shield", "ping-focus", "ping-popups", "battle-status", "remaining-hp-projection", "startup-notice"
+        "input-attention", "pvp-safety", "matching-event-audit", "auto-thanks", "shushu-shield", "ping-focus", "ping-popups", "battle-status", "remaining-hp-projection", "startup-notice", "custom-frame-rate"
     };
 
     private static bool TryGeneral(DevContext context, string name, string stage, string scratch, Dictionary<string, string> options, Action<string> pin)
@@ -39,6 +39,7 @@ internal static partial class TestCommands
             case "battle-status": BattleStatus(context, stage, pin); break;
             case "remaining-hp-projection": RemainingHpProjection(context, stage, pin); break;
             case "startup-notice": StartupNotice(context, options, pin); break;
+            case "custom-frame-rate": CustomFrameRate(context); break;
             default: return false;
         }
         return true;
@@ -341,7 +342,8 @@ internal static partial class TestCommands
             ("defense-last-outcome", "defKoLow = Math.Min(defKoLow, result.Defend.KnockoutChance);", "defKoLow = result.Defend.KnockoutChance;", "own defense shows minimum risk"),
             ("dodge-last-outcome", "dodgeKoLow = Math.Min(dodgeKoLow, result.Dodge.KnockoutChance);", "dodgeKoLow = result.Dodge.KnockoutChance;", "all visible dodge endpoints"),
             ("encounter-self-maximum", "Probability(SelfKoMin)", "Probability(SelfKoMax)", "enemy maximum / own minimum encounter display"),
-            ("dodge-on-risk", "defend.KnockoutChance >= 1", "defend.KnockoutChance > 0", "dodge only when defense is a certain KO")
+            ("dodge-on-certain-ko", "dodge.KnockoutChance < defend.KnockoutChance - SameChance", "defend.KnockoutChance >= 1 && dodge.KnockoutChance < 1", "dodge only when it survives more often in every outcome"),
+            ("dodge-on-equal-risk", "dodge.KnockoutChance < defend.KnockoutChance - SameChance", "dodge.KnockoutChance <= defend.KnockoutChance", "dodge only when it survives more often in every outcome")
         };
         foreach (var (name, from, to, reason) in mutants) {
             Check(code.Contains(from, StringComparison.Ordinal), "Probability mutation anchor " + name);

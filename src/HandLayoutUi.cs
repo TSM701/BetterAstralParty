@@ -137,7 +137,10 @@ internal static class HandLayoutUi
         }
         if (ModUi.IsOpen) { _pressedPile = null; _outsidePress = false; Report("settings-busy"); return; }
         // ForbidOperate locks input during normal actions/timeouts, not the visible hand layout.
-        var inputLocked = !_container!.Get<bool>("touchable");
+        var cardsLocked = !_container!.Get<bool>("touchable");
+        // A fight Fight PiP shows beside the field locks the cards (readyFight), not the piles: they still open to be looked
+        // at (user-reported 2026-11-18), while the cards stay untouchable.
+        var inputLocked = cardsLocked && !FightPip.ShowsHand;
         RuntimeObject.Lap("hand.gates", ref lap);
         var live = Live; live.Clear();
         var ready = Ready; ready.Clear();
@@ -180,7 +183,7 @@ internal static class HandLayoutUi
             // The container ancestry was checked once above; only inspect each remaining branch.
             var shown = Shown(card, _container) && Shown(entry.Face, card);
             var waiting = Distributing(card);
-            var usePending = UsePending(card, inputLocked);
+            var usePending = UsePending(card, cardsLocked);
             if (!shown) hidden++;
             if (waiting) distributing++;
             if (foreignMotion) foreign++;
@@ -309,7 +312,7 @@ internal static class HandLayoutUi
         RuntimeObject.Lap("hand.place", ref lap);
         _dropBottom = HandLayout.DropBottom(pileTop, open, unit) / height;
         if (Plugin.Diagnostics.IsRecording && Time.unscaledTime >= _diagnosticAt)
-            Report($"layout; tracked={cards.Count}; ready={ready.Count}; hidden={hidden}; distributing={distributing}; foreign={foreign}; inputLocked={inputLocked}; pending={pending}; motions={motions.Values.Sum(v => v.Count)}; expanded={_expanded}; nativeZoom={RuntimeObject.StaticField(_pool, "ShowCardStatus")!.Value<int>()}");
+            Report($"layout; tracked={cards.Count}; ready={ready.Count}; hidden={hidden}; distributing={distributing}; foreign={foreign}; inputLocked={cardsLocked}; viewOnly={cardsLocked && !inputLocked}; pending={pending}; motions={motions.Values.Sum(v => v.Count)}; expanded={_expanded}; nativeZoom={RuntimeObject.StaticField(_pool, "ShowCardStatus")!.Value<int>()}");
         if (ready.Count == 0) return;
         // Native ZoomCard runs only for world presses. Fresh hit testing avoids arming on
         // card/pile/target UI input; both grouped modes share this presentation correction.
@@ -364,13 +367,14 @@ internal static class HandLayoutUi
         {
             // An owned, transparent hit surface consumes only folded-pile presses. Native
             // card handlers remain untouched and receive all expanded-card drag events.
-            PileTargets[group] = target = NativeUi.Component(_container!, 1, 1);
+            // It sits in the hand panel beside the card container, which a PiP fight leaves untouchable (see inputLocked).
+            PileTargets[group] = target = NativeUi.Component(_ui!, 1, 1);
             target.Set("opaque", true); target.Set("touchable", true); target.Set("sortingOrder", 200);
         }
         // Once open only its caption is a toggle; the vacated card footprint must
         // not become an invisible wall over the field.
-        var a = ToContainer(root, slot.X, _expanded == group ? height - 37 * unit : slot.Y);
-        var b = ToContainer(root, slot.X + slot.Width, height - 8 * unit);
+        var a = ToLocal(_ui!, root, slot.X, _expanded == group ? height - 37 * unit : slot.Y);
+        var b = ToLocal(_ui!, root, slot.X + slot.Width, height - 8 * unit);
         target.Call("SetXY", a.x, a.y); target.Call("SetSize", b.x - a.x, b.y - a.y);
         target.Set("visible", enabled);
     }

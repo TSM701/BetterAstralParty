@@ -11,6 +11,22 @@ internal static partial class TestCommands
         var source = GeneralWithoutNamespace(ReadSource(context, "src/PingFocusGuard.cs"));
         RunGeneralFixture(context, stage, "using System;\n" + source + "\n" + GeneralPingFocus0, "PingFocusCheck.Run()", pin);
         var plugin = ReadSource(context, "src/Plugin.cs"); var ui = ReadSource(context, "src/ModUi.cs");
+        // Fight PiP's critical restore (2026-11-20, user-approved source pin, product code unchanged): a session is dropped in one
+        // place, End, which restores first; the restore runs the camera step on its own; the camera step puts the stage camera back
+        // into the PK camera's stack and takes the PK camera off its RenderTexture; cleanup and the breaker end the session.
+        // Without that the next full-screen fight shows no UI or a black picture (fight-pip.md, Critical failure).
+        var pip = ReadSource(context, "src/FightPip.cs");
+        var end = Regex.Match(pip, @"(?s)private static void End\(string reason.*?\n    \}\n").Value;
+        Check(Regex.Matches(pip, @"\b_session = null;").Count == 1 && end.Contains("_session = null;", StringComparison.Ordinal)
+            && end.IndexOf("session.Restore(", StringComparison.Ordinal) > end.IndexOf("_session = null;", StringComparison.Ordinal),
+            "Fight PiP drops a session only in End, which restores it");
+        Contains(pip, new[] {
+            "if (_session != null) End(\"cleanup\");",
+            "catch (Exception ex) { Compatibility.Block(Feature, ex, Clear); }",
+            "Step(\"camera\", () => { if (_redirected) Unredirect(); });",
+            "if (stack != null && IndexOf(stack, _stage) < 0) stack.Call(\"Insert\", Math.Min(_stageIndex, stack.Get<int>(\"Count\")), _stage);",
+            "if (_pk!.targetTexture?.Pointer == _texture?.Pointer) _pk.targetTexture = null;"
+        }, "Fight PiP restores the stage camera and the PK camera's target on every end");
         Check(!Regex.IsMatch(source, "MonoBehaviour|ClassInjector|OnApplicationFocus") && !Regex.IsMatch(plugin, "AddComponent|ClassInjector|PingApplicationFocusPatch")
             && ui.Contains("PingFocusGuard.Tick();", StringComparison.Ordinal) && !ui.Contains("\"OnApplicationFocus\"", StringComparison.Ordinal), "Ping cancellation uses the existing polling driver, not native type injection");
         using var native = Native(context); var types = native.MainModule.GetTypes().ToDictionary(type => type.FullName, StringComparer.Ordinal);
@@ -53,6 +69,35 @@ internal static partial class TestCommands
         var hover = Il(detection.Methods.Single(method => method.Name == "ExitCurrentHover"));
         Contains(hover, new[] { "IMarkTarget::OnMarkHoverExit", "_hoverTimer", "_hoverTriggered" }, "Native hover cleanup");
         Check(!Regex.IsMatch(hover, "OnMarkSelected|Request|C2S"), "Hover cleanup never confirms a ping");
+        // Fight PiP leaves the hand panel touchable and the skill button touchable only in the ping mode (2026-11-18): the UI
+        // target is the first IMarkTarget up from GRoot.touchTarget, the skill component is one, the button's click is
+        // ReleaseActiveSkill, and that returns on the frame the ping's release consumed.
+        var skill = types["UI.UIHandCard_Com_Skill"]; var handUi = types["UI.UIHandCardPanel"]; var handPanel = types["UI.HandCardPanel"];
+        Check(Il(detection.Methods.Single(method => method.Name == "DetectUI")).Contains("GRoot::get_touchTarget", StringComparison.Ordinal)
+            && skill.Interfaces.Any(row => row.InterfaceType.FullName == "Core.Mark.IMarkTarget") && skill.Fields.Any(field => field.Name == "btn_Skill")
+            && handUi.Fields.Any(field => field.Name == "com_Skill") && handUi.Fields.Any(field => field.Name == "btn_Move")
+            && Regex.IsMatch(Il(handPanel.Methods.Single(method => method.Name == "AddEvent")), @"UIHandCard_Com_Skill::btn_Skill[\s\S]*HandCardPanel::ReleaseActiveSkill")
+            && Regex.IsMatch(Il(handPanel.Methods.Single(method => method.Name == "ReleaseActiveSkill")), @"MarkInputConsume::IsConsumed\(\)\s+IL_\w+: brfalse\.s IL_\w+\s+IL_\w+: ret")
+            && exit.Contains("MarkInputConsume::Consume", StringComparison.Ordinal),
+            "Fight PiP's skill ping: the skill takes the mark hover, and the release that confirms it never uses the skill");
+        // Fight PiP leaves the card container touchable while ActionLogic.CardSN is 0 (2026-11-19), as other players' turns
+        // leave it: RefreshUsableCards makes it touchable, and a drop (DragEndEvent) or a quick use reads CardSN first.
+        var dragEnd = handPanel.NestedTypes.Single(type => type.Name.StartsWith("<DragEndEvent>", StringComparison.Ordinal)).Methods.Single(method => method.Name == "MoveNext");
+        Check(Regex.IsMatch(Il(handPanel.Methods.Single(method => method.Name == "RefreshUsableCards")), @"UIHandCardPanel::container_Card\s+IL_\w+: ldc\.i4\.1\s+IL_\w+: callvirt System\.Void FairyGUI\.GObject::set_touchable")
+            && Regex.IsMatch(Il(dragEnd), @"ActionLogic::CardSN[\s\S]*HandCardPanel::ForbidOperate")
+            && Il(handPanel.Methods.Single(method => method.Name == "DealQuickCard")).Contains("ActionLogic::CardSN", StringComparison.Ordinal)
+            && types["GameLogic.ActionLogic"].Fields.Any(field => field.Name == "CardSN" && field.FieldType.FullName == "System.Int64"),
+            "Fight PiP's idle hand: cards take hover and drag, and nothing uses a card without a CardSN");
+        // ...or on another player's turn (2026-11-19): CardSN keeps the last card turn's serial, since the dice do not clear
+        // it, so FightPip.NoOwnAction also compares the turn player's id; a hand card is a ping target once its container
+        // takes input. Chips take pings through the 칩 보기 button and the chip window's items, and a fight only scales the
+        // info panel that holds the button (BattleInfoPanel.ReadyFight), so the PiP leaves them alone.
+        Check(!Il(types["GameLogic.ActionLogic"].Methods.Single(method => method.Name == "DealThrowDice")).Contains("ActionLogic::CardSN", StringComparison.Ordinal)
+            && types["GameLogic.BattleLogic"].Methods.Any(method => method.Name == "get_curPlayerId" && !method.IsStatic && method.ReturnType.FullName == "System.Int64")
+            && types["GameLogic.AccountLogic"].Methods.Any(method => method.Name == "GetPlayerID" && method.Parameters.Count == 0 && method.ReturnType.FullName == "System.Int64")
+            && new[] { "UI.UIHandCard_Button_Card", "UI.UIBattleInfo_Button_ShowRelic", "UI.UIBattleRelicInfo_Button_Relic" }.All(name => types[name].Interfaces.Any(row => row.InterfaceType.FullName == "Core.Mark.IMarkTarget"))
+            && !Il(types["UI.BattleInfoPanel"].Methods.Single(method => method.Name == "ReadyFight")).Contains("set_touchable", StringComparison.Ordinal),
+            "Fight PiP's hand on other players' turns, and card and chip pings during a fight");
         Check(source.IndexOf("detection.SetField(\"_currentTarget\"", StringComparison.Ordinal) < source.IndexOf("Call(\"ExitMark\")", StringComparison.Ordinal)
             && source.Contains("detection.SetField(\"_currentTarget\", (RuntimeObject?)null)", StringComparison.Ordinal), "Clear pending target before exit dispatch");
     }

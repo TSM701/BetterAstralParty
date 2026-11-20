@@ -30,7 +30,7 @@ internal static class FieldStatePlates
     {
         if (!FieldMonsterPlates.ZoomFollows(scale) || PvpSafety.Suspended || GameUi.Root == null) { Clear(); return; }
         var logic = RuntimeObject.StaticField(RuntimeObject.FindClass("GameLogic", "GameLogicManager"), "_inst");
-        if (logic?.Get("fight")?.Field("fightStatus")?.Value<bool>() == true) { Clear(); return; }
+        if (logic?.Get("fight")?.Field("fightStatus")?.Value<bool>() == true && !FightPip.ShowsField) { Clear(); return; }
         var battleUi = logic?.Get("battle")?.Field("battleInfo")?.Get("ui");
         var now = Time.unscaledTime;
         var scan = now >= _scanAt;
@@ -47,7 +47,7 @@ internal static class FieldStatePlates
                 group.Layer.Call("SetSize", parent.Get<float>("width"), parent.Get<float>("height"));
             if (scan) Adopt(group);
             if (group == UpgradeTips) DropRemovedTips();
-            // Hide When Far hides only the state plates; upgrade tips stay visible and keep following their character.
+            // The far modes hide only the state plates; upgrade tips stay visible and keep following their character.
             if (cameraObject != null && (group == UpgradeTips || !FieldIndicatorOpacity.Hidden)) Layout(group, FieldZoomUi.CameraOf(cameraObject), scale);
         }
     }
@@ -87,6 +87,9 @@ internal static class FieldStatePlates
     private static void Layout(Group group, Camera camera, float scale)
     {
         if (group.Adopted.Count == 0) return;
+        // Character-sized (user-decided 2026-11-20): each plate's anchor (pivot) is its character's point, so the layer drawn at
+        // the zoom's scale shrinks and grows the content around it, in place of lowering it by its lift times (1 - scale).
+        if (group.Layer!.Get<float>("scaleX") != scale) group.Layer.Call("SetScale", scale, scale);
         var enabled = camera.enabled;
         float screenHeight = Screen.height;
         foreach (var ui in group.Adopted)
@@ -98,7 +101,7 @@ internal static class FieldStatePlates
             if (ui.Get<bool>("visible") != shown) ui.Set("visible", shown);
             if (!shown) continue;
             var local = group.Layer!.Result<Vector2, Vector2>("GlobalToLocal", UnityMath.V2(screen.x, screenHeight - screen.y));
-            ui.Call("SetXY", local.x, local.y + ContentLift(ui) * (1 - scale));
+            ui.Call("SetXY", local.x, local.y);
         }
     }
 
@@ -106,22 +109,6 @@ internal static class FieldStatePlates
     private static Vector3? Owner(RuntimeObject ui) => ui.TypeName == "UICom_PlayerAttrInfo"
         ? ui.Result<Vector3>("GetOwnerPos")
         : ui.FieldPointer("Target") is var target && target != IntPtr.Zero ? RuntimeObject.GetOf<Vector3>(target, "position") : null;
-
-    // Pixels between the plate's anchor (the character's screen point) and the bottom of its visible content above it.
-    internal static float ContentLift(RuntimeObject ui)
-    {
-        var anchor = ui.Field<bool>("_pivotAsAnchor") ? ui.Get<float>("pivotY") * ui.Get<float>("height") : 0;
-        var bottom = float.NegativeInfinity;
-        // Children through the pointers the plate holds, not a wrapper each.
-        for (int i = 0, count = ui.Get<int>("numChildren"); i < count; i++)
-        {
-            var child = ui.CallPointer("GetChildAt", i);
-            if (child != IntPtr.Zero && RuntimeObject.GetOf<bool>(child, "visible"))
-                bottom = Math.Max(bottom, RuntimeObject.GetOf<float>(child, "yMin") + RuntimeObject.GetOf<float>(child, "height"));
-        }
-        GC.KeepAlive(ui);
-        return float.IsFinite(bottom) ? Math.Max(0, anchor - bottom) : 0;
-    }
 
     private static void Release(Group group)
     {

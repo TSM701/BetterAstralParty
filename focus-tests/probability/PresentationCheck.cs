@@ -39,7 +39,7 @@ public static class PresentationCheck
         Check(KoLine(uncertain.DefendQuick) == "전투불능 0%", "own defense shows minimum risk");
         Check(uncertain.DefendQuick.Split('\n')[0].Contains('~'), "damage range retained");
         Check(KoLine(uncertain.DodgeQuick) == "전투불능 50%", "own dodge shows minimum risk");
-        Check(uncertain.Recommendation == RecommendedAction.Defend, "dodge only when defense is a certain KO");
+        Check(uncertain.Recommendation == RecommendedAction.Defend, "dodge only when it survives more often in every outcome");
 
         foreach (var hp in new[] { 1, 2, 5 })
         foreach (var attack in new[] { 0, 2, 5 })
@@ -57,10 +57,10 @@ public static class PresentationCheck
             Check(available ? KoLine(advice.DodgeQuick)
                 == "전투불능 " + CombatAdvisor.Probability(outcomes.Min(x => x.Dodge.KnockoutChance)) + "%" : advice.DodgeQuick == "회피 불가",
                 "all visible dodge endpoints and availability");
-            var dodgeEverywhere = outcomes.All(x => x.Defend.KnockoutChance == 1 && x.Dodge.KnockoutChance < 1
+            var dodgeEverywhere = outcomes.All(x => x.Dodge.KnockoutChance < x.Defend.KnockoutChance - 1e-9
                 || x.Dodge.ExpectedDamage == 0 && x.Defend.ExpectedDamage > 0);
             var recommendation = available && dodgeEverywhere ? RecommendedAction.Dodge : RecommendedAction.Defend;
-            Check(advice.Recommendation == recommendation, "dodge only when defense is a certain KO");
+            Check(advice.Recommendation == recommendation, "dodge only when it survives more often in every outcome");
         }
 
         foreach (var hp in new[] { 1, 5, 10 })

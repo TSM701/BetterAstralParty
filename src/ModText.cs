@@ -189,10 +189,10 @@ internal static class ModText
         ["내가 쉴드를 가진 방어자이면\n방어 버튼과 방어 카드를 잠급니다."] = "Locks Defend and defense cards\nwhen you defend with a shield.",
         ["방어 버튼과 카드를 잠그지 않습니다."] = "Leaves Defend and cards unlocked.",
         ["자동으로 보내지 않습니다."] = "Sends nothing automatically.",
+        ["추천이 뜨면 바로 보냅니다."] = "Sends the suggestion\nas soon as it appears.",
         ["역할을 보여주지 않습니다."] = "Shows no roles.",
         ["설명을 보여주지 않습니다."] = "Shows no descriptions.",
         ["줌 아웃해도 그대로 보여줍니다."] = "Keeps indicators opaque\nwhen zoomed out.",
-        ["거리와 상관없이 보여줍니다."] = "Shows indicators at any distance.",
         ["알림음을 내지 않습니다."] = "Plays no chime.",
         ["반격 아이콘을 멈춘 채 보여줍니다."] = "Shows counter icons without motion.",
         ["핑 선택 모드를 그대로 둡니다."] = "Leaves ping mode as it is.",
@@ -203,6 +203,11 @@ internal static class ModText
         ["자동으로 적용하지 않습니다."] = "Applies nothing automatically.",
         ["슈슈 쉴드 방어 잠금"] = "Shiyu-Shiyu Shield Defend Lock",
         ["감사합니다 자동 전송"] = "Auto Thanks",
+        ["무작위 지연"] = "Random Delay",
+        ["사용자 정의"] = "Custom",
+        ["프레임 직접 입력"] = "Custom Frame Rate",
+        ["30~999 · Enter 적용"] = "30-999 · Enter to apply",
+        ["30~999 사이로 입력하세요"] = "Enter a number from 30 to 999",
         ["역할 표시"] = "Role Labels",
         ["역할"] = "Role",
         ["플레이어 목록 탭"] = "Player List Tab",
@@ -217,6 +222,9 @@ internal static class ModText
         ["준비 화면 스킬 설명"] = "Skill Info in Preparation",
         ["줌 아웃 시 불투명도"] = "Opacity When Zoomed Out",
         ["멀면 숨기기"] = "Hide When Far",
+        ["인디케이터 표시 방식"] = "Indicator Display",
+        ["필드 플레이어·몬스터 인디케이터를\n보여주는 방식입니다."] = "How field player and monster\nindicators show.",
+        ["거리와 상관없이\n게임 인디케이터를 보여줍니다."] = "Shows the native indicators\nat any distance.",
         ["주사위 화면 고정"] = "Pin Dice to Screen",
         ["줌·자유 시점에서도 굴린 주사위를\n기본 시점과 같은 위치·크기로 보여줍니다."] = "Shows rolled dice at the default\nview's position and size while zoomed.",
         ["게임 기본처럼 필드 위에 두어\n줌에 따라 크기가 바뀝니다."] = "Leaves dice on the field as in the\nbase game, so zoom changes their size.",
@@ -228,6 +236,7 @@ internal static class ModText
         ["자동 업데이트 확인"] = "Automatic Update Checks",
         ["업데이트 알림 팝업"] = "Update Notification Popups",
         ["게임 기본 감사합니다 추천을\n추천마다 한 번 보냅니다."] = "Sends the game's Thanks suggestion\nonce each time it appears.",
+        ["자동 전송을 0.3~1.5초 사이에서\n무작위로 늦춥니다."] = "Delays each automatic send\nby a random 0.3-1.5 s.",
         ["좋아요 일괄 전송"] = "Send All Likes",
         ["게임 결과 화면"] = "Match results screen",
         ["확인 버튼 위의 버튼을 누르면\n다른 플레이어 모두에게 좋아요를 보냅니다."] = "Press the button above Confirm\nto send likes to every other player.",
@@ -295,21 +304,22 @@ internal static class ModText
         ["전투 추천"] = "Battle Advice",
         ["행동 추천"] = "Action Advice",
         ["전투 표시"] = "Battle Display",
-        ["필드·카메라"] = "Field / Camera",
+        ["필드 표시"] = "Field Display",
+        ["카메라"] = "Camera",
         ["카드"] = "Cards",
         ["손패·카드"] = "Hand and Cards",
         ["자동 업데이트"] = "Automatic Updates",
         ["줌 감도"] = "Zoom Sensitivity",
-        ["숨김 거리"] = "Hide Distance",
+        ["적용 거리"] = "Start Distance",
+        ["불투명도가 낮아지기 시작하는\n줌 아웃 거리입니다.\n0%는 줌 아웃하자마자 낮아집니다."] = "Zoom-out distance at which\nopacity starts to drop.\n0% drops it as soon as you zoom out.",
         ["최대 줌 아웃"] = "Max Zoom-Out",
         ["WASD 속도"] = "WASD Speed",
         ["WASD로 자유 시점을 움직이는 속도입니다."] = "How fast WASD moves the Free Camera.",
         ["휠 한 칸에 확대·축소되는 양입니다."] = "How far one wheel tick zooms.",
         ["휠로 멀어질 수 있는 최대 거리입니다.\n100%는 필드 전체가 보이는 거리입니다."] = "How far the wheel can zoom out.\n100% shows the whole field.",
-        ["인디케이터가 숨는 줌 아웃 거리입니다.\n값이 작을수록 더 일찍 숨습니다."] = "Zoom-out distance at which indicators hide.\nLower values hide them sooner.",
         ["접힌 카드 불투명도"] = "Folded Card Opacity",
         ["불투명도"] = "Opacity",
-        ["가장 멀리 줌 아웃했을 때의 불투명도입니다.\n100%는 원래대로, 0%는 보이지 않습니다."] = "Opacity at the farthest zoom-out.\n100% is unchanged; 0% hides them.",
+        ["가장 흐려졌을 때의 불투명도입니다.\n멀면 숨기기는 숨기 직전에 닿습니다.\n100%는 원래대로, 0%는 보이지 않습니다."] = "Opacity when most faded.\nHide When Far reaches it just before hiding.\n100% is unchanged; 0% hides them.",
         ["묶여 접힌 카드의 불투명도입니다.\n100%는 원래대로, 0%는 보이지 않습니다."] = "Opacity of folded grouped cards.\n100% is unchanged; 0% hides them.",
         ["설정 보관"] = "Settings Backup",
         ["모든 설정 초기화"] = "Reset All Settings",
@@ -474,7 +484,7 @@ internal static class ModText
         ["조우 화면에서 추천하지 않습니다."] = "No advice on the encounter screen.",
         ["인카운트 선택 버튼"] = "Encounter choice buttons",
         ["방어·회피 추천"] = "Defend/Dodge Advice",
-        ["방어를 추천하고, 방어해도 반드시\n쓰러질 때는 회피를 추천합니다."] = "Recommends Defend, or Dodge\nwhen Defend is a sure KO.",
+        ["방어를 추천하고, 회피로 살 확률이\n더 높을 때는 회피를 추천합니다."] = "Recommends Defend, or Dodge\nwhen Dodge survives more often.",
         ["방어·회피를 추천하지 않습니다."] = "No Defend/Dodge advice.",
         ["방어·회피 버튼"] = "Defend and Dodge buttons",
         ["카드 추천"] = "Card Advice",
@@ -567,6 +577,25 @@ internal static class ModText
         English.Keys.OrderByDescending(k => k.Length).Select(Regex.Escape)), RegexOptions.CultureInvariant);
     internal static string SearchCount(int count) =>
         count.ToString(System.Globalization.CultureInfo.InvariantCulture) + (Korean ? "개" : " found");
+    // The development-only frame test's capsule (FrameProbe).
+    internal static string FrameTestStatus(int step, int steps, string name, int seconds, string? paused)
+    {
+        var stepName = Korean
+            ? name switch { "base" => "기준", "scale50" => "렌더 크기 50%", "noShadows" => "그림자 끔", "noPost" => "후처리 끔", "msaa1" => "MSAA 1x", "modPaused" => "BAP 멈춤", "base2" => "기준 다시", _ => name }
+            : name switch { "base" => "Base", "scale50" => "Render Scale 50%", "noShadows" => "Shadows Off", "noPost" => "Post-processing Off", "msaa1" => "MSAA 1x", "modPaused" => "BAP Paused", "base2" => "Base Again", _ => name };
+        if (paused != null) return Korean ? $"프레임 측정 {step}/{steps} · {stepName} · 일시정지: {FrameTestReason(paused)}" : $"Frame test {step}/{steps} · {stepName} · paused: {FrameTestReason(paused)}";
+        return Korean ? $"프레임 측정 {step}/{steps} · {stepName} · {seconds}초" : $"Frame test {step}/{steps} · {stepName} · {seconds} s";
+    }
+    internal static string FrameTestEnd(string reason) => reason switch
+    {
+        "done" => Korean ? "프레임 측정 완료 · 결과는 진단 로그에 있습니다" : "Frame test done · results are in the diagnostics log",
+        "no diagnostics" => Korean ? "프레임 측정은 진단 로그가 켜져 있어야 합니다" : "The frame test needs the diagnostics log on",
+        "no field" => Korean ? "프레임 측정은 필드에서만 할 수 있습니다" : "The frame test runs on the field only",
+        _ => (Korean ? "프레임 측정 중단: " : "Frame test stopped: ") + FrameTestReason(reason),
+    };
+    private static string FrameTestReason(string reason) => Korean
+        ? reason switch { "fight" => "전투", "settings" => "모드 설정", "game settings" => "게임 설정", "unfocused" => "창 전환", "cancelled" => "다시 누름", "scene changed" => "장면 전환", "pvp" => "PvP", _ => reason }
+        : reason switch { "fight" => "fight", "settings" => "mod settings", "game settings" => "game settings", "unfocused" => "window switched", "cancelled" => "pressed again", "scene changed" => "scene changed", "pvp" => "PvP", _ => reason };
     internal static string SearchEmpty(string query) => Korean ? $"‘{query}’에 맞는 설정이 없습니다" : $"No settings match ‘{query}’";
 
     internal static string Text(string text)

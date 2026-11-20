@@ -290,8 +290,23 @@ internal static partial class TestCommands
         foreach (var (name, value) in new[] { ("Pve", 4), ("CampaignPve", 6), ("PracticePve", 9), ("Pvenovice", 10), ("MutatorPve", 12) }) Check((int)types["MapModeType"].Fields.Single(field => field.Name == name).Constant == value, "Native PvE mode " + name);
         Check(Il(types["GameLogic.MatchData"].Methods.Single(method => method.Name == "Dispose")).Contains("_teamId", StringComparison.Ordinal), "Disposed matchmaking clears native team identity");
         var source = GeneralWithoutNamespace(ReadSource(context, "src/PvpSafety.cs")); var driver = ReadSource(context, "src/ModUi.cs"); var gate = driver.IndexOf("PvpSafety.Poll()", StringComparison.Ordinal);
-        foreach (var name in new[] { "PingFocusGuard.Tick()", "InputAttention.Tick()", "HomeEscQuit.Tick()", "FocusAudio.Tick()", "GameUi.Tick()", "PrepSkillInfoUi.Tick()", "ModFont.Tick()", "PingDetailsUi.Tick()", "HandLayoutUi.Tick()", "BattleStatusUi.Tick()", "EncounterCounterUi.Tick()", "PlayerIndicatorUi.Tick()", "ShushuShieldUi.Tick()", "MonsterMoveProbe.Tick()", "FightDataProbe.Tick()", "NancyProbe.Tick()", "NativePassProbe.Tick()", "JitWarmup.Tick()", "FightPip.Tick()", "WalkDirectionUi.Tick()", "SendAllLikesUi.Tick()", "ReceivedLikesUi.Tick()", "ShopBulkUi.Tick()" })
-            Check(gate >= 0 && driver.IndexOf(name, StringComparison.Ordinal) > gate, "Feature after PvP gate " + name);
+        // Derived, not listed by hand (2026-11-20, user-approved: the hand list had missed 11 ticks, the capsules among them).
+        // Gameplay ticks run only after the PvP early return, and each has its cleanup in PvpCleanup, apart from ticks that show
+        // and hold nothing in a match; before the gate only the update and focus observers tick.
+        var core = driver[driver.IndexOf("private static void TickCore()", StringComparison.Ordinal)..];
+        core = core[..core.IndexOf("\n    }\n", StringComparison.Ordinal)];
+        var poll = core.IndexOf("PvpSafety.Poll()", StringComparison.Ordinal);
+        var paused = core.IndexOf("if (pauseGameplay)", poll, StringComparison.Ordinal);
+        var open = core.IndexOf("\n        _pvpCleaned = false;\n", paused, StringComparison.Ordinal); // The line, not the catch inside the cleanup loop.
+        Check(gate >= 0 && poll > 0 && paused > poll && open > paused && core.IndexOf("return;", paused, StringComparison.Ordinal) is var back && back > paused && back < open,
+            "Gameplay ticks start after the PvP early return");
+        var cleanup = Regex.Match(driver, @"(?s)Action\[\] PvpCleanup\s*=\s*\{.*?\};").Value;
+        var quiet = new[] { "HomeEscQuit", "SmoothShape", "ModFont", "MonsterMoveProbe", "FightDataProbe", "NancyProbe", "NativePassProbe", "MatchWaitProbe", "JitWarmup" };
+        string[] Ticks(string text) => Regex.Matches(text, @"\b([A-Z][A-Za-z0-9]*)\.Tick\(").Select(match => match.Groups[1].Value).Distinct().ToArray();
+        var gameplay = Ticks(core[open..]);
+        Check(cleanup.Length > 0 && gameplay.Length >= 30 && gameplay.Contains("PlayerIndicatorUi") && gameplay.Contains("FightPip"), "Gameplay ticks found after the PvP gate");
+        foreach (var name in gameplay) Check(quiet.Contains(name) || Regex.IsMatch(cleanup, @"\b" + name + @"\.[A-Z]"), "PvP cleanup for every gameplay tick: " + name);
+        foreach (var name in Ticks(core[..poll])) Check(name is "Updates" or "Automatic" or "MatchFocus", "Only observers tick before the PvP gate: " + name);
         foreach (var name in new[] { "Request", "SetField(", ".Set(", ".Call(" }) Check(!source.Contains(name, StringComparison.Ordinal), "Read-only PvP gate " + name);
         Check(driver.Contains("if (PvpSafety.Suspended) FocusAudio.Restore(); else FocusAudio.Tick();", StringComparison.Ordinal) && driver.IndexOf("FocusAudio.Tick()", StringComparison.Ordinal) < driver.IndexOf("if (pauseGameplay)", StringComparison.Ordinal), "Startup audio independent of gameplay readiness");
         RunGeneralFixture(context, stage, GeneralPvpSafety0.Replace("__NS__", "BapPvpSafety", StringComparison.Ordinal).Replace("__SOURCE__", source, StringComparison.Ordinal), "BapPvpSafety.Check.Run()", pin);
@@ -315,6 +330,17 @@ internal static partial class TestCommands
         var windows = ReadSource(context, "src/WindowsMatchFocus.cs");
         Check(!Regex.IsMatch(windows, "SendInput|keybd_event|SystemParametersInfo|Process\\.Start|Kill\\("), "Focus utility sends no synthetic input or process commands");
         Contains(ReadSource(context, "src/ModUi.cs"), new[] { "MatchFocus.Tick();" }, "Approved active focus polling integration");
+        // Matchmaking wait record (MatchWaitProbe, 2026-11-18): the match window keeps the estimate's end and its next re-request
+        // as server-second stamps, sets the end from the native estimate on every answer, and re-requests once the countdown is out.
+        var info = types["UI.MatchInfoWindow"]; var data = types["GameLogic.MatchData"];
+        Check(types["UI.UIManager"].Fields.Any(field => field.Name == "_cachedMatchInfoWindow" && field.FieldType.FullName == "UI.MatchInfoWindow")
+            && info.Fields.Any(field => field.Name == "_estimatedWaitTimeEnd" && field.FieldType.FullName == "System.Int32")
+            && info.Fields.Any(field => field.Name == "_nextEstimatedWaitTimeRefresh" && field.FieldType.FullName == "System.Int32")
+            && Regex.IsMatch(Il(info.Methods.Single(method => method.Name == "OnEstimatedWaitTimeChange")), @"MatchData::get_EstimatedWaitTime\(\)\s+IL_\w+: add\s+IL_\w+: stfld System\.Int32 UI\.MatchInfoWindow::_estimatedWaitTimeEnd")
+            && Regex.IsMatch(Il(info.NestedTypes.SelectMany(type => type.Methods).Single(method => method.Name == "<StartMatch>b__1")), @"stfld System\.Int32 UI\.MatchInfoWindow::_nextEstimatedWaitTimeRefresh[\s\S]*MatchLogic::RequestMatchEstimatedWaitTimeC2S")
+            && new[] { "get_MatchStatus", "get_TeamId", "get_MatchMapId", "get_MatchMode", "get_MatchDifficulty", "get_TeamPlayers", "get_EstimatedWaitTime" }.All(name => data.Methods.Any(method => method.Name == name))
+            && types["party.model.Player"].Methods.Any(method => method.Name == "get_IsBot") && types["party.model.Room"].Methods.Any(method => method.Name == "get_WaitTime"),
+            "Matchmaking wait record reads the native estimate the way the match window keeps it");
         Console.WriteLine("Historical inactive-scaffold assertion superseded by the approved active focus implementation; native RPC checks remain.");
     }
 }

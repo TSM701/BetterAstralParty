@@ -23,6 +23,7 @@ internal static class Compatibility
         if (feature is "CounterSound" or "CounterAnimation" or "CounterIcons") return Reason("CounterIndicators");
         if (feature is "StatusHand" or "StatusEffects") return Reason("BattleStatus");
         if (feature is "PlayerTabHand" or "PlayerTabRole" or "PlayerTabSkill") return Reason("PlayerTab");
+        if (feature is "AutoThanksDelay") return Reason("AutoThanks");
         if (feature is not ("MuteUnfocused" or "MatchFocus" or "Diagnostics" or "Notices")
             && Blocked.TryGetValue("CoreUi", out reason)) return reason;
         return null;

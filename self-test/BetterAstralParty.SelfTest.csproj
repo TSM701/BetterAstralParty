@@ -53,5 +53,6 @@
     <Compile Include="..\src\ReceivedLikes.cs" Link="ReceivedLikes.cs" />
     <Compile Include="..\src\FightPipLayout.cs" Link="FightPipLayout.cs" />
     <Compile Include="..\src\ReplayKeeperPlan.cs" Link="ReplayKeeperPlan.cs" />
+    <Compile Include="..\src\CustomFrameRatePlan.cs" Link="CustomFrameRatePlan.cs" />
   </ItemGroup>
 </Project>

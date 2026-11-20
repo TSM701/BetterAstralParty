@@ -185,13 +185,8 @@ internal static partial class TestCommands
         var nickname = Il("GameLogic.RoomPlayer", "GetNick", 1); Pattern(nickname, "IncoverMode", "Native display-name privacy"); Pattern(nickname, "GetDisplayNick", "Native display-name mapping"); Contains(source, new[] { "Call(\"GetNick\", false)" }, "Native displayed player nickname");
         Check(!source.Contains("Count\") == 0) continue", StringComparison.Ordinal), "Players without public buffs retain name/HP plate");
         NoPattern(source, "GetCharacterName|new Material|renderQueue\\s*=|\"_ZTest\"|StyleWorldGraphics|SortingGroup|_world|ScreenToWorldPoint|DelegateSupport|Il2CppSystem.Action|beforeUpdate|PositionAboveHeads|NativeUi.OutlineTree", "No unsafe custom positioning/native callback/world renderer");
-        var baselinePath = Path.Combine(context.Root, "artifacts/backup-before-0.4.30/BetterAstralParty.dll"); var builtPath = options.TryGetValue("plugin-path", out var selected) ? Path.GetFullPath(selected) : Path.Combine(context.Root, "artifacts/BetterAstralParty.dll"); pin(baselinePath); pin(builtPath);
-        using (var baseline = AssemblyDefinition.ReadAssembly(baselinePath)) using (var built = AssemblyDefinition.ReadAssembly(builtPath)) {
-            // The baseline still carries the class's name before 2026.11.2-dev.45 (FieldBuffUi).
-            var old = baseline.MainModule.GetTypes().Single(type => type.FullName == "BetterAstralParty.FieldBuffUi/Plate").Methods.Single(method => method.Name == "Refresh");
-            var current = built.MainModule.GetTypes().Single(type => type.FullName == "BetterAstralParty.PlayerIndicatorUi/Plate").Methods.Single(method => method.Name == "Refresh");
-            Check(Body(old).Replace("FieldBuffUi", "PlayerIndicatorUi", StringComparison.Ordinal) == Body(current), "Initial field plate renderer bytecode preserved");
-        }
+        // The 0.4.30 renderer's bytecode pin (Plate.Refresh against artifacts/backup-before-0.4.30) was retired on 2026-11-20 at the
+        // user's decision: it guarded nothing that cannot be undone, and a Debug build always failed it.
         Check(!source.Contains("Clear(\"unfocused\")", StringComparison.Ordinal) && source.Contains("if (!Application.isFocused) { _pressed = IntPtr.Zero; return; }", StringComparison.Ordinal) && source.IndexOf("Scan();", StringComparison.Ordinal) <= source.IndexOf("if (!Application.isFocused)", StringComparison.Ordinal), "Focus loss preserves plates and cancels click only");
         foreach (var reason in new[] { "setting-off", "settings-open", "fight-active", "parent-hidden", "parent-changed", "not-pve", "players-unavailable", "exception" }) Check(source.Contains("Clear(\"" + reason + "\")", StringComparison.Ordinal), "Plate hide diagnostic: " + reason);
         Contains(source, new[] { "if (!Plugin.Diagnostics.IsRecording || Time.unscaledTime < _diagnoseAt) return;", "_diagnoseAt = Time.unscaledTime + 1f;", "ownerMatches=", "ownerZero=", "animatorHidden=", "attached=", "if (state == _diagnosticState) return;", "Error(\"FieldBuff.inspect\", ex)" }, "Isolated deduplicated plate diagnostics");

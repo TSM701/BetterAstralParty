@@ -24,10 +24,12 @@ internal static class MenuLayout
     {
         ("전투 추천", false, new[] { "ActionAdvice", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "AdviceDetails", "ShootingStarShow", "KoDiceTarget", "KoCardHover", "KoSpectator", "FinalDamage" }),
         ("전투 표시", false, new[] { "BattleStatus", "StatusHand", "StatusEffects", "CounterIcons", "CounterAnimation", "CounterSound", "ShushuMaster", "ShushuShield", "ShushuDefendLock", "FightPip", "FightPipStart", "FightPipOpacity" }),
-        ("필드·카메라", false, new[] { "PlayerIndicators", "IndicatorHeight", "WalkDirection", "FieldZoom", "ZoomSensitivity", "ZoomOutLimit", "FreeCameraSpeed", "IndicatorFade", "IndicatorFadeStrength", "IndicatorHide", "IndicatorHideDistance", "DicePin", "MiniSlimeOpacity" }),
+        // 필드·카메라 split in two (user-decided 2026-11-20, plan 나): what the field draws, and the camera.
+        ("필드 표시", false, new[] { "PlayerIndicators", "IndicatorHeight", "IndicatorDisplay", "IndicatorHideDistance", "IndicatorFade", "IndicatorFadeStrength", "IndicatorFadeDistance", "WalkDirection", "MiniSlimeOpacity" }),
+        ("카메라", false, new[] { "FieldZoom", "ZoomSensitivity", "ZoomOutLimit", "FreeCameraSpeed", "DicePin" }),
         ("손패·카드", false, new[] { "GroupHand", "FoldedHandOpacity", "PingDetails" }),
         ("캐릭터", false, new[] { "NameStyle", "CharacterRoles", "PrepSkillInfo", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill" }),
-        ("편의 기능", false, new[] { "AutoThanks", "SendAllLikes", "ReceivedLikes", "ShopBulkBuy", "ReplaySaveLimit", "PingFocus" }),
+        ("편의 기능", false, new[] { "AutoThanks", "AutoThanksDelay", "SendAllLikes", "ReceivedLikes", "ShopBulkBuy", "ReplaySaveLimit", "PingFocus" }),
         ("실험 기능", false, new[] { "OldReplays" }),
         ("화면·언어", true, new[] { "Language", "Scale", "Opacity" }),
         ("알림·소리", true, new[] { "MuteUnfocused", "InputAttention", "MatchFocus", "SuppressNotices" }),
@@ -148,18 +150,22 @@ internal static class MenuLayout
         "StatusHand" or "StatusEffects" or "CounterIcons" or "CounterAnimation" or "CounterSound" => "BattleStatus",
         "ShushuShield" or "ShushuDefendLock" => "ShushuMaster",
         "IndicatorHeight" => "PlayerIndicators",
-        "ZoomSensitivity" or "ZoomOutLimit" or "FreeCameraSpeed" or "IndicatorFade" or "IndicatorFadeStrength" or "IndicatorHide" or "IndicatorHideDistance" or "DicePin" => "FieldZoom",
+        // Where far starts, and how indicators fade while zoomed out: the indicators' zoom settings in one tray (user-decided
+        // 2026-11-20, plan 가; Opacity When Zoomed Out sat in the Wheel Zoom tray before). ModUi.Locked locks them while the
+        // wheel zoom is OFF, not by the display mode, since the fade also acts on the native plates.
+        "IndicatorHideDistance" or "IndicatorFade" or "IndicatorFadeStrength" or "IndicatorFadeDistance" => "IndicatorDisplay",
+        "ZoomSensitivity" or "ZoomOutLimit" or "FreeCameraSpeed" or "DicePin" => "FieldZoom",
         "FoldedHandOpacity" => "GroupHand",
         "PlayerTabHand" or "PlayerTabRole" or "PlayerTabSkill" => "PlayerTab",
         "FightPipStart" or "FightPipOpacity" => "FightPip",
+        "AutoThanksDelay" => "AutoThanks",
         "UpdateAuth" or "UpdateSignOut" => "UpdateChannel",
         _ => null
     };
     // A slider or switch tuning a child switch sits in a smaller, darker capsule under that switch inside the parent tray.
     internal static string? SubParent(string action) => action switch
     {
-        "IndicatorFadeStrength" => "IndicatorFade",
-        "IndicatorHideDistance" => "IndicatorHide",
+        "IndicatorFadeStrength" or "IndicatorFadeDistance" => "IndicatorFade",
         "CounterAnimation" or "CounterSound" => "CounterIcons", // Both only shape the counter icon (2026-10-23).
         _ => null
     };
@@ -278,7 +284,7 @@ internal static class MenuLayout
         "WalkDirection" => "필드 캐릭터 발밑",
         "FieldZoom" => "필드",
         "IndicatorFade" => "필드 인디케이터",
-        "IndicatorHide" => "필드 인디케이터",
+        "IndicatorDisplay" => "필드 인디케이터",
         "DicePin" => "필드 주사위",
         "GroupHand" => "내 필드 손패",
         "PingDetails" => "카드·칩 핑 말풍선",
@@ -286,7 +292,7 @@ internal static class MenuLayout
         "CharacterRoles" => "준비 화면 초상화",
         "PrepSkillInfo" => "준비 화면 초상화에 마우스",
         "PlayerTab" or "PlayerTabHand" or "PlayerTabRole" or "PlayerTabSkill" => "필드 플레이어 목록",
-        "AutoThanks" => "PvE 퀵 채팅",
+        "AutoThanks" or "AutoThanksDelay" => "PvE 퀵 채팅",
         "SendAllLikes" or "ReceivedLikes" => "게임 결과 화면",
         "ShopBulkBuy" => "스타 코인 상점",
         "PingFocus" => "핑 선택 모드",
@@ -294,7 +300,7 @@ internal static class MenuLayout
         "FightPip" or "FightPipStart" or "FightPipOpacity" => "관전 전투",
         "Language" => "모드 글자 전체",
         "Scale" => "모드 전투 패널",
-        "IndicatorFadeStrength" or "IndicatorHideDistance" => "필드 인디케이터",
+        "IndicatorFadeStrength" or "IndicatorFadeDistance" or "IndicatorHideDistance" => "필드 인디케이터",
         "ZoomSensitivity" or "ZoomOutLimit" or "FreeCameraSpeed" or "MiniSlimeOpacity" => "필드",
         "FoldedHandOpacity" => "내 필드 손패",
         "Opacity" => "모드 전투 패널",
@@ -326,14 +332,14 @@ internal static class MenuLayout
     // (the native GSlider recomputes its bar from its width). The grip overhangs the bar end, so leave room before the value.
     internal const float SliderScale = 250f / 1010f;
     internal static float SliderBarWidth(string action) => RowBox(action).Width - 116 - SliderLabelWidth(action);
-    internal static readonly string[] Sliders = { "IndicatorHeight", "ZoomSensitivity", "ZoomOutLimit", "FreeCameraSpeed", "IndicatorFadeStrength", "IndicatorHideDistance", "FoldedHandOpacity", "FightPipOpacity", "MiniSlimeOpacity", "Scale", "Opacity" };
+    internal static readonly string[] Sliders = { "IndicatorHeight", "ZoomSensitivity", "ZoomOutLimit", "FreeCameraSpeed", "IndicatorFadeStrength", "IndicatorFadeDistance", "IndicatorHideDistance", "FoldedHandOpacity", "FightPipOpacity", "MiniSlimeOpacity", "Scale", "Opacity" };
     internal static bool IsSlider(string action) => Array.IndexOf(Sliders, action) >= 0;
     internal static (int Min, int Max) SliderRange(string action) => action switch
     {
         "Scale" => (75, 150), "ZoomSensitivity" or "FreeCameraSpeed" => (10, 300), "ZoomOutLimit" => (0, 100), "IndicatorHideDistance" => (0, 100), "FightPipOpacity" or "MiniSlimeOpacity" => (20, 100), _ => (0, 100)
     };
     // The zoomed-out slider shows the indicators' opacity at the farthest zoom-out. The file keeps the fade strength it always
-    // stored (0 = no fade, 1 = the original curve ending at 30 %, 100/70 ending at 0 %), so saved values and backups keep their look.
+    // stored (0 = no fade, 1 = down to 30 %, 100/70 down to 0 %), so saved values and backups keep their value.
     internal static int SliderPercent(string action, float stored) =>
         action == "IndicatorFadeStrength" ? 100 - (int)Math.Round(70 * stored) : (int)Math.Round(100 * stored);
     internal static float SliderStored(string action, int percent) =>
@@ -341,7 +347,7 @@ internal static class MenuLayout
     internal static string SliderLabel(string action) => action switch
     {
         "IndicatorHeight" => "위치 조정", "IndicatorFadeStrength" or "FoldedHandOpacity" or "FightPipOpacity" => "불투명도",
-        "ZoomSensitivity" => "줌 감도", "ZoomOutLimit" => "최대 줌 아웃", "FreeCameraSpeed" => "WASD 속도", "IndicatorHideDistance" => "숨김 거리",
+        "ZoomSensitivity" => "줌 감도", "ZoomOutLimit" => "최대 줌 아웃", "FreeCameraSpeed" => "WASD 속도", "IndicatorHideDistance" => "숨김 거리", "IndicatorFadeDistance" => "적용 거리",
         "Scale" => "표시 크기", "MiniSlimeOpacity" => "미니 슬라임 불투명도", _ => "배경 불투명도"
     };
     // Culture P0 can insert a space ("50 %") that wraps the sign; always "50%".
@@ -352,6 +358,7 @@ internal static class MenuLayout
         "NameStyle" => new[] { "Real", "Title" }, // A two-way style, not ON/OFF (dropdown since 2026-11-15).
         "GroupHand" => new[] { "Native", "Click" },
         "WalkDirection" => new[] { "Off", "Arrows", "Circles" },
+        "IndicatorDisplay" => new[] { "Native", "HideFar" },
         "InputAttention" => new[] { "Taskbar", "Windows", "Off" },
         "UpdateChannel" => new[] { "Stable", "PreRelease", "Beta" },
         "AutoUpdate" => new[] { "Off", "Check", "Download", "Apply" },
@@ -362,12 +369,17 @@ internal static class MenuLayout
     internal static bool IsDropdown(string action) => Options(action).Length > 0;
     // Move Direction Highlight's saved value; anything else (a hand edit, an unknown value) is the default, Arrows.
     internal static string WalkDirectionMode(string? value) => value is "Off" or "Circles" ? value : "Arrows";
+    // Indicator Display's saved value; anything else is the default, Capsules When Far (Hide When Far before 2026-11-20).
+    internal static string IndicatorDisplayMode(string? value) => value == "Native" ? value : "HideFar";
+    // The modes that act at the switch distance (its slider locks under the others).
+    internal static bool UsesDistance(string? value) => IndicatorDisplayMode(value) == "HideFar";
     internal static string OptionLabel(string action, string value) => action switch
     {
         "Language" => value == "Auto" ? "자동" : value,
         "NameStyle" => value == "Title" ? "이명" : "본명",
         "GroupHand" => value == "Click" ? "클릭 펼치기" : "기본",
         "WalkDirection" => value switch { "Off" => "끄기", "Circles" => "원과 화살표", _ => "화살표만" },
+        "IndicatorDisplay" => IndicatorDisplayMode(value) == "Native" ? "기본" : "멀면 숨기기",
         "InputAttention" => InputAttentionState.Label(value),
         "UpdateChannel" => value switch { "PreRelease" => "프리 릴리즈", "Beta" => "비공개 베타", _ => "릴리즈" },
         "AutoUpdate" => value switch { "Off" => "끄기", "Check" => "확인만", "Download" => "자동 받기", "Apply" => "자동 적용", _ => "사용자 지정" },
@@ -408,9 +420,15 @@ internal static class MenuLayout
             "Circles" => "발밑 원과 이동 방향 화살표를\n캐릭터보다 위에 그립니다.\n캐릭터 뒤쪽 원은 점선입니다.",
             _ => "발밑 원의 이동 방향 화살표를\n캐릭터보다 위에 그립니다."
         },
+        "IndicatorDisplay" => IndicatorDisplayMode(mode) switch
+        {
+            "Native" => "거리와 상관없이\n게임 인디케이터를 보여줍니다.",
+            _ => "멀리 줌 아웃하면 숨기고\n다시 확대하면 보여줍니다."
+        },
         "ShushuShield" when !enabled => "쉴드 효과를 그리지 않습니다.",
         "ShushuDefendLock" when !enabled => "방어 버튼과 카드를 잠그지 않습니다.",
         "AutoThanks" when !enabled => "자동으로 보내지 않습니다.",
+        "AutoThanksDelay" when !enabled => "추천이 뜨면 바로 보냅니다.",
         "SendAllLikes" when !enabled => "버튼을 보여주지 않습니다.",
         "ReceivedLikes" when !enabled => "받은 좋아요를 보여주지 않습니다.",
         "ShopBulkBuy" when !enabled => "버튼을 보여주지 않습니다.",
@@ -421,7 +439,6 @@ internal static class MenuLayout
         "PlayerTabRole" when !enabled => "역할을 보여주지 않습니다.",
         "PlayerTabSkill" when !enabled => "스킬 쿨타임을 보여주지 않습니다.",
         "IndicatorFade" when !enabled => "줌 아웃해도 그대로 보여줍니다.",
-        "IndicatorHide" when !enabled => "거리와 상관없이 보여줍니다.",
         "DicePin" when !enabled => "게임 기본처럼 필드 위에 두어\n줌에 따라 크기가 바뀝니다.",
         "CounterSound" when !enabled => "알림음을 내지 않습니다.",
         "CounterAnimation" when !enabled => "반격 아이콘을 멈춘 채 보여줍니다.",
@@ -480,6 +497,7 @@ internal static class MenuLayout
         "ShushuShield" => ("슈슈 쉴드 효과", "슈슈 쉴드가 있는 전투 캐릭터에\n쉴드 효과를 그립니다."),
         "ShushuDefendLock" => ("슈슈 쉴드 방어 잠금", "내가 쉴드를 가진 방어자이면\n방어 버튼과 방어 카드를 잠급니다."),
         "AutoThanks" => ("감사합니다 자동 전송", "게임 기본 감사합니다 추천을\n추천마다 한 번 보냅니다."),
+        "AutoThanksDelay" => ("무작위 지연", "자동 전송을 0.3~1.5초 사이에서\n무작위로 늦춥니다."),
         "SendAllLikes" => ("좋아요 일괄 전송", "확인 버튼 위의 버튼을 누르면\n다른 플레이어 모두에게 좋아요를 보냅니다."),
         "ReceivedLikes" => ("받은 좋아요 표시", "결과 화면 카드마다 받은 좋아요를\n보낸 사람의 캐릭터 아이콘으로 보여줍니다."),
         "ShopBulkBuy" => ("상점 일괄 구매", "상점 아래 일괄 구매 버튼으로 고른 상품을\n한 번에 사고, 무료 일괄 수령으로 무료 상품을 받습니다."),
@@ -490,7 +508,7 @@ internal static class MenuLayout
         "PlayerTabSkill" => ("스킬 쿨타임", "액티브 스킬의 남은 턴/전체 턴을\n보여줍니다."),
         "PrepSkillInfo" => ("준비 화면 스킬 설명", "준비 화면 초상화에 마우스를 올리면\n스킬·재사용 대기시간·잠재력이 나옵니다."),
         "IndicatorFade" => ("줌 아웃 시 불투명도", "줌 아웃할수록 플레이어·몬스터\n인디케이터의 불투명도를 낮춥니다."),
-        "IndicatorHide" => ("멀면 숨기기", "멀리 줌 아웃하면 숨기고\n다시 확대하면 보여줍니다."),
+        "IndicatorDisplay" => ("인디케이터 표시 방식", "필드 플레이어·몬스터 인디케이터를\n보여주는 방식입니다."),
         "DicePin" => ("주사위 화면 고정", "줌·자유 시점에서도 굴린 주사위를\n기본 시점과 같은 위치·크기로 보여줍니다."),
         "CounterSound" => ("소리", "반격 아이콘이 나타날 때\n알림음을 냅니다."),
         "CounterAnimation" => ("애니메이션", "인카운트·전투 반격 아이콘을\n움직여 보여줍니다."),
@@ -534,13 +552,14 @@ internal static class MenuLayout
         "ZoomOutLimit" => ("최대 줌 아웃", "휠로 멀어질 수 있는 최대 거리입니다.\n100%는 필드 전체가 보이는 거리입니다."),
         "FreeCameraSpeed" => ("WASD 속도", "WASD로 자유 시점을 움직이는 속도입니다."),
         "IndicatorHideDistance" => ("숨김 거리", "인디케이터가 숨는 줌 아웃 거리입니다.\n값이 작을수록 더 일찍 숨습니다."),
-        "IndicatorFadeStrength" => ("줌 아웃 시 불투명도", "가장 멀리 줌 아웃했을 때의 불투명도입니다.\n100%는 원래대로, 0%는 보이지 않습니다."),
+        "IndicatorFadeStrength" => ("줌 아웃 시 불투명도", "가장 흐려졌을 때의 불투명도입니다.\n멀면 숨기기는 숨기 직전에 닿습니다.\n100%는 원래대로, 0%는 보이지 않습니다."),
+        "IndicatorFadeDistance" => ("적용 거리", "불투명도가 낮아지기 시작하는\n줌 아웃 거리입니다.\n0%는 줌 아웃하자마자 낮아집니다."),
         "FoldedHandOpacity" => ("접힌 카드 불투명도", "묶여 접힌 카드의 불투명도입니다.\n100%는 원래대로, 0%는 보이지 않습니다."),
         "Scale" => ("표시 크기", "75%부터 150%까지 조절합니다."),
         "Opacity" => ("배경 불투명도", "0%에서도 글자·아이콘·테두리는\n그대로 보입니다."),
         "Close" => ("돌아가기", "설정을 닫고 돌아갑니다.\n변경 사항은 자동 저장됩니다."),
         "EncounterAdvice" => ("인카운트 추천", "조우 화면에서 공격·놓아주기를\n추천합니다."),
-        "DefenseAdvice" => ("방어·회피 추천", "방어를 추천하고, 방어해도 반드시\n쓰러질 때는 회피를 추천합니다."),
+        "DefenseAdvice" => ("방어·회피 추천", "방어를 추천하고, 회피로 살 확률이\n더 높을 때는 회피를 추천합니다."),
         "CardAdvice" => ("카드 추천", "쓸 만한 카드 위에\n효과를 표시합니다."),
         "ShootingStarShow" => ("슈팅 스타 표시", "놓아줄 때 몬스터에게 주는 피해와\n얻는 스타라이트를 보여줍니다."),
         "KoCardHover" => ("카드 호버 조건", "카드에 마우스를 올리면\n카드 사용 후 조건으로 보여줍니다."),

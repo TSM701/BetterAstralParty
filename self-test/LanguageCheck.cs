@@ -19,6 +19,14 @@ internal static class LanguageCheck
         foreach (var kind in new[] { MutedSender.Match, MutedSender.Friend })
             foreach (var row in MutedSenders.Rows(kind))
                 Check(ModText.Text(row) != row && !ModText.Text(row).Any(c => c is >= '가' and <= '힣'), "Muted note row in English: " + row);
+        // Custom Frame Rate's parts in the game's settings window (2026-11-19).
+        foreach (var text in new[] { "사용자 정의", "프레임 직접 입력", "30~999 · Enter 적용", "30~999 사이로 입력하세요", "확인" })
+            Check(ModText.Text(text) != text && !ModText.Text(text).Any(c => c is >= '가' and <= '힣'), "Custom frame text in English: " + text);
+        // The development frame test's capsule (2026-11-20).
+        foreach (var text in new[] { ModText.FrameTestStatus(2, 7, "scale50", 8, null), ModText.FrameTestStatus(5, 7, "msaa1", 0, "fight"),
+                     ModText.FrameTestEnd("done"), ModText.FrameTestEnd("no diagnostics"), ModText.FrameTestEnd("no field"), ModText.FrameTestEnd("scene changed") })
+            Check(!text.Any(c => c is >= '가' and <= '힣') && !text.Contains("scale50", StringComparison.Ordinal) && !text.Contains("scene changed:", StringComparison.Ordinal),
+                "Frame test capsule in English: " + text);
         var dots = MenuLayout.TickYs(new[] { 0f, 10f, 20f, 300f, 890f, 900f, 905f }, 905f, 400f);
         var sides = MenuLayout.BubbleSides(dots);
         Check(new[] { false, true }.All(side =>
@@ -37,9 +45,10 @@ internal static class LanguageCheck
             && MenuLayout.SettingY("CounterAnimation") == MenuLayout.SettingY("CounterIcons") + MenuLayout.ChildHeight + MenuLayout.LinesTop
             && MenuLayout.RowBox("CounterSound").X + MenuLayout.ToggleWidth("CounterSound") == MenuLayout.ChildX + MenuLayout.ChildWidth - 14
             && MenuLayout.HeadHeight("CounterIcons") == MenuLayout.ChildHeight + MenuLayout.LinesTop + MenuLayout.LineHeight + MenuLayout.LinesBottom
-            && MenuLayout.HeadHeight("IndicatorFade") == MenuLayout.ChildHeight + MenuLayout.LinesTop + MenuLayout.LineHeight + MenuLayout.LinesBottom
-            && MenuLayout.SettingY("IndicatorHide") == MenuLayout.SettingY("IndicatorFade") + MenuLayout.HeadHeight("IndicatorFade") + MenuLayout.RowGap,
-            "Counter animation and sound are two chips on one line inside Counter Icons' row; a tuning slider is one line");
+            && MenuLayout.HeadHeight("IndicatorFade") == MenuLayout.ChildHeight + MenuLayout.LinesTop + 2 * MenuLayout.LineHeight + MenuLayout.LinesBottom
+            && MenuLayout.SettingY("IndicatorFadeDistance") == MenuLayout.SettingY("IndicatorFadeStrength") + MenuLayout.LineHeight
+            && MenuLayout.SettingY("WalkDirection") == MenuLayout.SettingY("IndicatorFade") + MenuLayout.HeadHeight("IndicatorFade") + MenuLayout.TrayPad + MenuLayout.RowGap,
+            "Counter animation and sound are two chips on one line inside Counter Icons' row; each tuning slider is a line of its own (Opacity When Zoomed Out has two since 2026-11-20)");
         Check(MenuLayout.Parent("PlayerTabHand") == "PlayerTab" && MenuLayout.Parent("PlayerTabRole") == "PlayerTab" && MenuLayout.Parent("PlayerTabSkill") == "PlayerTab" && MenuLayout.Parent("PlayerTab") == null,
             "Player list tab parts sit under their master switch");
         Check(ModText.Text(MenuLayout.Help("ActionAdvice").Title + ": OFF") == "Action Advice: OFF", "Toggle separator in English");
@@ -95,7 +104,7 @@ internal static class LanguageCheck
         Check(ModText.Text("계산 정보 부족") == "Insufficient data", "Unknown data label");
         Check(ModText.Text("보장 조건 없음") == "No guaranteed roll", "No guaranteed threshold label");
         foreach (var action in new[] { "", "ActionAdvice", "AdviceDetails", "KoDiceTarget", "PingDetails", "BattleStatus", "ShushuShield", "PlayerIndicators",
-            "NameStyle", "Diagnostics", "MuteUnfocused", "FieldZoom", "MatchFocus", "Scale", "Opacity", "IndicatorFadeStrength", "FoldedHandOpacity", "FightPipOpacity", "MiniSlimeOpacity", "FreeCameraSpeed", "Close", "Language", "General", "Features",
+            "NameStyle", "Diagnostics", "MuteUnfocused", "FieldZoom", "MatchFocus", "Scale", "Opacity", "IndicatorFadeStrength", "IndicatorFadeDistance", "FoldedHandOpacity", "FightPipOpacity", "MiniSlimeOpacity", "FreeCameraSpeed", "Close", "Language", "General", "Features",
             "UpdateChannel", "UpdateCheck", "UpdateDownload" })
         {
             var (title, body) = MenuLayout.Help(action);
@@ -140,8 +149,8 @@ internal static class LanguageCheck
             Check(CardAdvisor.Parse(text, 1) == null, "Unsafe English card: " + text);
         ModText.Select("한국어"); // Existing calculation/presentation regression tests retain their baseline.
         var booleanActions = new[] { "ActionAdvice", "AdviceDetails", "KoDiceTarget", "PingDetails", "BattleStatus", "ShushuShield", "ShushuDefendLock",
-            "PlayerIndicators", "FieldZoom", "MatchFocus", "Diagnostics", "MuteUnfocused", "AutoThanks", "SendAllLikes", "ReceivedLikes", "ShopBulkBuy", "CharacterRoles", "PrepSkillInfo",
-            "IndicatorFade", "IndicatorHide", "DicePin", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "ShootingStarShow", "KoCardHover", "KoSpectator", "StatusHand", "StatusEffects", "CounterIcons", "ShushuMaster", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill", "OldReplays", "FightPip", "ReplaySaveLimit" };
+            "PlayerIndicators", "FieldZoom", "MatchFocus", "Diagnostics", "MuteUnfocused", "AutoThanks", "AutoThanksDelay", "SendAllLikes", "ReceivedLikes", "ShopBulkBuy", "CharacterRoles", "PrepSkillInfo",
+            "IndicatorFade", "DicePin", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "ShootingStarShow", "KoCardHover", "KoSpectator", "StatusHand", "StatusEffects", "CounterIcons", "ShushuMaster", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill", "OldReplays", "FightPip", "ReplaySaveLimit" };
         var padding = new[] { "이 기능을 끕니다", "다른 설정", "별도", "independent", "other settings" };
         foreach (var action in booleanActions)
         {
@@ -191,13 +200,14 @@ internal static class LanguageCheck
                 : title != section.Title && !title.Any(c => c is >= '가' and <= '힣')), "Category title translation: " + language + "/" + section.Title);
         }
         ModText.Select("English");
-        foreach (var action in new[] { "Language", "InputAttention", "GroupHand", "UpdateChannel", "WalkDirection", "NameStyle", "FightPipStart" })
+        foreach (var action in new[] { "Language", "InputAttention", "GroupHand", "UpdateChannel", "WalkDirection", "NameStyle", "FightPipStart", "IndicatorDisplay" })
         {
             var modes = action == "Language" ? new[] { "Auto", "한국어", "English" }
                 : action == "NameStyle" ? new[] { "Real", "Title" }
                 : action == "FightPipStart" ? new[] { "Small", "Full" }
                 : action == "InputAttention" ? new[] { "Off", "Windows", "Taskbar" }
                 : action == "WalkDirection" ? new[] { "Off", "Arrows", "Circles" }
+                : action == "IndicatorDisplay" ? new[] { "Native", "HideFar" }
                 : action == "UpdateChannel" ? new[] { "Stable", "PreRelease", "Beta" } : new[] { "Native", "Click" };
             var bodies = modes.Select(mode => MenuLayout.OptionHelp(action, mode)).ToArray();
             Check(bodies.Distinct().Count() == modes.Length, "Separate descriptions for every mode: " + action);
@@ -205,10 +215,10 @@ internal static class LanguageCheck
                 Check(!string.IsNullOrWhiteSpace(body) && !ModText.Text(body).Any(c => c is >= '가' and <= '힣')
                     && !padding.Any(phrase => ModText.Text(body).Contains(phrase, StringComparison.OrdinalIgnoreCase)), "Specific translated mode help: " + action);
         }
-        foreach (var action in new[] { "Language", "GroupHand", "InputAttention", "WalkDirection", "NameStyle", "FightPipStart" })
+        foreach (var action in new[] { "Language", "GroupHand", "InputAttention", "WalkDirection", "NameStyle", "FightPipStart", "IndicatorDisplay" })
         {
             var options = MenuLayout.Options(action);
-            var count = action is "GroupHand" or "NameStyle" or "FightPipStart" ? 2 : 3; // Hover expansion removed and Name Style a dropdown, 2026-11-15.
+            var count = action is "GroupHand" or "NameStyle" or "FightPipStart" or "IndicatorDisplay" ? 2 : 3; // Hover expansion removed and Name Style a dropdown, 2026-11-15.
             Check(options.Length == count && options.Distinct().Count() == count, "Explicit choices: " + action);
             foreach (var option in options)
                 Check(action == "Language" && option == "한국어"
@@ -217,13 +227,13 @@ internal static class LanguageCheck
         Check(MenuLayout.Options("ActionAdvice").Length == 0, "Binary settings remain toggles");
         Check(MenuLayout.Options("NameStyle").SequenceEqual(new[] { "Real", "Title" }), "Name Style dropdown order");
         // Two choices open a dropdown too: Group Hand's did not open once Hover left it (2026.11.2-dev.3).
-        Check(new[] { "Language", "NameStyle", "GroupHand", "WalkDirection", "InputAttention", "UpdateChannel", "AutoUpdate" }.All(MenuLayout.IsDropdown)
+        Check(new[] { "Language", "NameStyle", "GroupHand", "WalkDirection", "InputAttention", "UpdateChannel", "AutoUpdate", "IndicatorDisplay" }.All(MenuLayout.IsDropdown)
             && !MenuLayout.IsDropdown("ActionAdvice"), "Every row with choices opens its dropdown");
         Check(MenuLayout.Options("GroupHand").SequenceEqual(new[] { "Native", "Click" }), "Hand dropdown order");
         Check(MenuLayout.DropdownY(125, 60, 180) == 189, "Dropdown below");
         Check(MenuLayout.DropdownY(510, 60, 180) == 326, "Dropdown above footer");
         Check(MenuLayout.DropdownY(220, 60, 180, 450) == 36, "Dropdown follows actual footer boundary");
-        foreach (var action in new[] { "Language", "NameStyle", "GroupHand", "InputAttention", "WalkDirection", "FightPipStart" })
+        foreach (var action in new[] { "Language", "NameStyle", "GroupHand", "InputAttention", "WalkDirection", "FightPipStart", "IndicatorDisplay" })
         foreach (var option in MenuLayout.Options(action))
         {
             Check(MenuLayout.OptionHelp(action, option) == MenuLayout.StateHelp(action,
@@ -239,6 +249,17 @@ internal static class LanguageCheck
             && MenuLayout.OptionLabel("WalkDirection", "Arrows") == "화살표만" && MenuLayout.OptionLabel("WalkDirection", "Circles") == "원과 화살표"
             && MenuLayout.OptionHelp("WalkDirection", "Circles").Contains("점선") && !MenuLayout.OptionHelp("WalkDirection", "Arrows").Contains("점선"),
             "Move direction choices, labels and help");
+        // Indicator Display (2026-11-20): Hide When Far became one of its choices; an unknown saved value, the archived capsule
+        // choices included, is Hide When Far, and the hide distance sits under it, acting only there.
+        Check(MenuLayout.Options("IndicatorDisplay").SequenceEqual(new[] { "Native", "HideFar" })
+            && MenuLayout.IndicatorDisplayMode("CapsuleFar") == "HideFar" && MenuLayout.IndicatorDisplayMode("x") == "HideFar" && MenuLayout.IndicatorDisplayMode(null) == "HideFar" && MenuLayout.IndicatorDisplayMode("Native") == "Native"
+            && MenuLayout.UsesDistance("HideFar") && !MenuLayout.UsesDistance("Native")
+            && MenuLayout.OptionLabel("IndicatorDisplay", "Native") == "기본" && MenuLayout.OptionLabel("IndicatorDisplay", "HideFar") == "멀면 숨기기"
+            && MenuLayout.Parent("IndicatorHideDistance") == "IndicatorDisplay" && MenuLayout.Parent("IndicatorDisplay") == null
+            && MenuLayout.Parent("IndicatorFade") == "IndicatorDisplay" && MenuLayout.SubParent("IndicatorFadeDistance") == "IndicatorFade"
+            && MenuLayout.Parent("DicePin") == "FieldZoom"
+            && !MenuLayout.OptionHelp("IndicatorDisplay", "HideFar").Contains("캡슐") && MenuLayout.SliderLabel("IndicatorHideDistance") == "숨김 거리",
+            "Indicator display choices, labels, help and distance");
         Check(!MenuLayout.OptionHelp("NameStyle", "Real").Contains("이명")
             && !MenuLayout.OptionHelp("NameStyle", "Title").Contains("본명"), "Names help must not describe the other choice");
         Check(MenuLayout.OptionLabel("NameStyle", "Real") == "본명" && MenuLayout.OptionLabel("NameStyle", "Title") == "이명", "Name Style choice labels");

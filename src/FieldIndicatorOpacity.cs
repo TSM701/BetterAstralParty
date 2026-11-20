@@ -3,12 +3,17 @@ namespace BetterAstralParty;
 internal static class FieldIndicatorOpacity
 {
     private static readonly AlphaOwner Monsters = new(), Players = new();
+    // Hidden: under Hide When Far, from the hide distance, the name/HP plates (com_AttrInfos: native monster plates and the
+    // hero clones) and the state plates (com_PlayerAttrInfos) are off.
     internal static bool Hidden { get; private set; }
 
+    // Indicator Display (2026-11-20, Hide When Far became one of its choices): Native or HideFar. The capsule indicators were
+    // its other choices until they were pulled for a remake the same day (branch archive/capsule-indicators).
     internal static void Tick(float zoomOut)
     {
         var root = GameUi.Root;
-        if (!Plugin.IndicatorFade.Value && !Plugin.IndicatorHide.Value || !float.IsFinite(zoomOut) || zoomOut <= 0 || PvpSafety.Suspended || root == null) { Clear(); return; }
+        var hide = MenuLayout.UsesDistance(Plugin.IndicatorDisplay.Value);
+        if (!Plugin.IndicatorFade.Value && !hide || !float.IsFinite(zoomOut) || zoomOut <= 0 || PvpSafety.Suspended || root == null) { Clear(); return; }
         var logic = RuntimeObject.StaticField(RuntimeObject.FindClass("GameLogic", "GameLogicManager"), "_inst");
         var field = logic?.Get("battle")?.Field("battleInfo")?.Get("ui");
         if (!GameUi.Visible(field)) { Clear(); return; }
@@ -19,9 +24,17 @@ internal static class FieldIndicatorOpacity
         // One point both ways (user-requested 2026-11-10): the zoom eases one way and stops, so the boundary cannot flicker.
         // Hide distance 0-100 %; at 0 % any zoom-out hides and the native view always shows them.
         var hideAt = Math.Clamp(Plugin.IndicatorHideDistance.Value, 0f, 1f);
-        Hidden = Plugin.IndicatorHide.Value && zoomOut >= hideAt;
-        // Strength 1 keeps the original curve (30 % at the far end); lower blends toward opaque, 100/70 reaches 0 % at the far end.
-        var alpha = Plugin.IndicatorFade.Value ? Math.Max(0f, 1f - Math.Clamp(Plugin.IndicatorFadeStrength.Value, 0f, 100f / 70f) * (1f - .6f * (1f - zoomOut * .5f))) : 1f;
+        Hidden = hide && zoomOut >= hideAt;
+        // The fade (user-decided 2026-11-20): opaque up to the Start Distance, then straight down to the slider's opacity
+        // (1 - 0.7 x the stored strength: 30 % at 1, 0 % at 100/70), reached at the hide distance under Hide When Far, so the
+        // plates fade into hiding, or at the farthest zoom-out under Native. The original curve dropped to 1 - 0.4 x strength
+        // at its start, which read as a jump once the start moved off the first zoom-out, and under Hide When Far never
+        // reached the slider's value before the plates hid.
+        var start = Math.Clamp(Plugin.IndicatorFadeDistance.Value, 0f, 1f);
+        var end = hide ? hideAt : 1f;
+        var along = zoomOut < start ? 0f : end <= start ? 1f : Math.Min(1f, (zoomOut - start) / (end - start));
+        var lowest = Math.Max(0f, 1f - .7f * Math.Clamp(Plugin.IndicatorFadeStrength.Value, 0f, 100f / 70f));
+        var alpha = Plugin.IndicatorFade.Value ? 1f - (1f - lowest) * along : 1f;
         Monsters.Tick(field!.Field("com_AttrInfos"), alpha, Hidden);
         Players.Tick(field.Field("com_PlayerAttrInfos"), alpha, Hidden);
     }
