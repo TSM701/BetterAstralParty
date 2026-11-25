@@ -112,6 +112,7 @@ sealed class RuntimeObject {
     public void SetField<T>(string key,T value) where T:unmanaged { if(key!="m_FollowOffset"&&key!="CameraSpeed")throw new Exception("Forbidden field write"); if(Dead)throw new Exception("Disposed write"); Data[key]=value;Writes++; }
     static RuntimeObject Box(object value)=>new(){Data=new(){{"value",value}}};
     public static IntPtr FindClass(string ns,string name) { var key=ns+"."+name; if(!Classes.TryGetValue(key,out var p))Classes[key]=p=(IntPtr)(++next);return p; }
+    public static long LapStart()=>0; public static void Lap(string label,ref long start){}
     public static RuntimeObject? StaticField(IntPtr type,string key){
         if(key!=(type==FindClass("Core.Scene","BattleSceneController")?"inst":"_inst"))throw new Exception("Wrong singleton field "+key);
         return Statics.GetValueOrDefault(type);

@@ -22,9 +22,9 @@ internal static class FieldFreeCamera
     // ShowAddressInfo -> CameraManager.ControlFreeCamera), which the free view used to hide (issue #16, 2026-10-26).
     private const string PlayerInfo = "UIBattleInfo_Button_PlayerInfo", PlayerHead = "btn_Head", ShowSignal = "btn_ShowSignal";
     private static readonly string[] FocusTypes = { PlayerInfo, "UIButton_MonsterItem", "UIBattleInfo_Com_Minimap", ShowSignal };
-    private static string? _focusTarget;
+    private static string? _focusTarget, _follow;
     private static Vector2 _focusPress;
-    private static int _focusDrag = -1;
+    private static int _focusDrag = -1, _followFrame;
     // pathTypes runs from the hit object up to the root; the player head graph is listed by its name.
     internal static string? FocusTarget(IEnumerable<string> pathTypes, bool watcher = false)
     {
@@ -105,6 +105,13 @@ internal static class FieldFreeCamera
         { Clear(); return false; }
         var stack = _brain!.mFrameStack;
         var count = stack?.Count ?? 0;
+        // A focus click inside a Fight PiP's hold: its native handler ran in FairyGUI's LateUpdate, after the click's tick.
+        if (_follow != null && Time.frameCount != _followFrame)
+        {
+            var followed = _follow; _follow = null;
+            if (FightPip.HoldsField)
+                Plugin.Diagnostics.Write("fieldFreeCamera followed native focus in hold; target=" + followed + "; view=" + FieldZoomUi.FollowInHold(scene, player));
+        }
         // A focus click ends the free view even while the owned override is suspended (a native camera switch or
         // blend underneath, another frame on top); otherwise the free view came back over the native focus once the
         // override was acquired again (2026-10-24: skill monster targets needed a third click).
@@ -128,8 +135,11 @@ internal static class FieldFreeCamera
         else if (_focusTarget != null && Input.GetMouseButtonUp(0))
         {
             var target = _focusTarget; _focusTarget = null;
-            // A Fight PiP keeps the free view while it shows the field (FightPip.HoldsField).
-            if (!_returnPending && !FightPip.HoldsField)
+            // A Fight PiP keeps the free view while it shows the field (FightPip.HoldsField): the held view follows the camera
+            // the click moved underneath instead, and a return pressed earlier in the hold is called off (user-reported
+            // 2026-11-23: a chat ping's show-location button did nothing during a PIP fight).
+            if (FightPip.HoldsField) { _follow = target; _followFrame = Time.frameCount; _returnPending = false; }
+            else if (!_returnPending)
             {
                 // Same as the exit button, but leave the camera to the native click handler instead of returning home.
                 Plugin.Diagnostics.Write("fieldFreeCamera released for native focus; target=" + target + "; suspended=" + (_override < 0 ? "true" : "false")
@@ -298,6 +308,6 @@ internal static class FieldFreeCamera
         if (_anchor) UnityEngine.Object.Destroy(_anchor);
         _cameraObject = _anchor = null; _camera = null; _brain = null; _scene = null;
         _returnPending = _dragging = _indicatorPress = Moved = false;
-        _focusTarget = null;
+        _focusTarget = _follow = null;
     }
 }

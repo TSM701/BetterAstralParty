@@ -250,7 +250,7 @@ internal static partial class TestCommands
         var trace = Regex.Match(source, @"(?s)private static void TraceInput\(.*?(?=    private static bool ToggleEnabled)");
         Check(trace.Success && trace.Value.Contains("Plugin.Diagnostics.Write(", StringComparison.Ordinal) && !Regex.IsMatch(trace.Value, @"(?:\.Call\(|\.Get<|\.Get\(|\.Field\()"), "Sampled trace reads no extra native objects");
         var features = new[] { "ActionAdvice", "AdviceDetails", "KoDiceTarget", "PingDetails", "BattleStatus", "ShushuShield", "PlayerIndicators", "NameStyle", "GroupHand", "FieldZoom",
-            "ShushuDefendLock", "AutoThanks", "CharacterRoles", "PrepSkillInfo", "IndicatorFade", "IndicatorDisplay", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "DicePin", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "ShootingStarShow", "KoCardHover", "KoSpectator", "StatusHand", "StatusEffects", "CounterIcons", "ShushuMaster", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill", "OldReplays", "WalkDirection", "SendAllLikes", "ShopBulkBuy", "ReceivedLikes", "FightPip", "FightPipStart", "ReplaySaveLimit", "AutoThanksDelay" };
+            "ShushuDefendLock", "AutoThanks", "CharacterRoles", "PrepSkillInfo", "IndicatorFade", "IndicatorDisplay", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "DicePin", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "ShootingStarShow", "KoCardHover", "KoSpectator", "StatusHand", "StatusEffects", "CounterIcons", "ShushuMaster", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill", "OldReplays", "WalkDirection", "SendAllLikes", "ShopBulkBuy", "ReceivedLikes", "FightPip", "FightPipStart", "ReplaySaveLimit", "AutoThanksDelay", "IndicatorDetails" };
         for (var row = 0; row < features.Length; row++) Check(source.Contains($"AddToggle(\"{features[row]}\", 440, MenuLayout.ToggleY({row}));", StringComparison.Ordinal), "Feature right column: " + features[row]);
         var general = new[] { "UpdateChannel", "Update", "UpdateDownload", "AutoUpdate", "UpdateAuth", "UpdateSignOut", "DiagnosticsCollect",
             "SuppressNotices", "UpdateNotifications", "SettingsAutoKeep", "SettingsSave", "SettingsLoad", "SettingsReset" };
@@ -302,7 +302,7 @@ internal static partial class TestCommands
 
     private static void SettingsPreferenceInventory(DevContext context, string source, string plugin)
     {
-        // Settings-file keys of the public releases up to 2026.11.3 (list made for 2026.11.2 on 2026-11-20, user-approved): a key renamed or dropped resets that
+        // Settings-file keys of the public releases up to 2026.11.4 (list made for 2026.11.2 on 2026-11-20, user-approved): a key renamed or dropped resets that
         // setting for every player, and no check held them before. Every one must still be bound; add a release's new keys when
         // it is published (CLAUDE.md Code names: settings-file keys are never renamed).
         var released = new[] {
@@ -321,12 +321,14 @@ internal static partial class TestCommands
             ("화면", "최대 줌 아웃"), ("화면", "자유 시점 WASD 속도"), ("일반", "설정 자동 보관"), ("환경", "비활성 창 음소거"), ("환경", "매칭 성사 시 창 포커스"),
             ("환경", "입력 대기 알림"),
             // 2026.11.3 (2026-11-20).
-            ("화면", "사용자 정의 프레임 사용"), ("화면", "사용자 정의 프레임"), ("편의", "자동 감사합니다 무작위 지연"), ("화면", "인디케이터 표시 방식"), ("화면", "줌 아웃 불투명도 시작 거리")
+            ("화면", "사용자 정의 프레임 사용"), ("화면", "사용자 정의 프레임"), ("편의", "자동 감사합니다 무작위 지연"), ("화면", "인디케이터 표시 방식"), ("화면", "줌 아웃 불투명도 시작 거리"),
+            // 2026.11.4 (2026-11-25).
+            ("화면", "인디케이터 상세 정보 항상 표시")
         };
-        Check(released.Length == 75, "Released settings-file key list");
+        Check(released.Length == 76, "Released settings-file key list");
         foreach (var (section, key) in released)
             Check(plugin.Contains("Config.Bind(\"" + section + "\", \"" + key + "\"", StringComparison.Ordinal), "Released settings-file key still bound: " + section + "/" + key);
-        var added = new[] { "ShushuDefendLock", "AutoThanks", "CharacterRoles", "PrepSkillInfo", "IndicatorFade", "DicePin", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications", "PlayerTabSkill", "OldReplays", "SendAllLikes", "ShopBulkBuy", "ReceivedLikes", "FightPip", "ReplaySaveLimit", "AutoThanksDelay" };
+        var added = new[] { "ShushuDefendLock", "AutoThanks", "CharacterRoles", "PrepSkillInfo", "IndicatorFade", "DicePin", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications", "PlayerTabSkill", "OldReplays", "SendAllLikes", "ShopBulkBuy", "ReceivedLikes", "FightPip", "ReplaySaveLimit", "AutoThanksDelay", "IndicatorDetails" };
         var layout = ReadSource(context, "src/MenuLayout.cs"); var text = ReadSource(context, "src/ModText.cs");
         var enabled = MethodFragment(source, "private static bool ToggleEnabled"); var apply = MethodFragment(source, "private static void ApplyCore");
         var help = layout[layout.IndexOf("internal static (string Title, string Body) Help(", StringComparison.Ordinal)..];

@@ -38,12 +38,15 @@ internal static class FieldZoomUi
         try
         {
             if (!Compatibility.Allowed("FieldZoom")) { Clear(); return; }
-            Update();
-            FieldMonsterPlates.Tick(IndicatorScale);
-            FieldStatePlates.Tick(IndicatorScale);
+            // Laps per part (development builds; 2026-11-20): camera, monster plates, state plates, opacity.
+            var lap = RuntimeObject.LapStart();
+            Update(); RuntimeObject.Lap("zoom.update", ref lap);
+            FieldMonsterPlates.Tick(IndicatorScale); RuntimeObject.Lap("zoom.monsters", ref lap);
+            FieldStatePlates.Tick(IndicatorScale); RuntimeObject.Lap("zoom.states", ref lap);
             var distance = UnityMath.Magnitude(_original);
             FieldIndicatorOpacity.Tick(_fieldVisible && _owned && _zoomOutLimit > distance
                 ? Math.Clamp((UnityMath.Magnitude(_applied) - distance) / (_zoomOutLimit - distance), 0, 1) : 0);
+            RuntimeObject.Lap("zoom.opacity", ref lap);
         }
         catch (Exception ex) { Compatibility.Block("FieldZoom", ex, Clear); }
     }
@@ -84,10 +87,13 @@ internal static class FieldZoomUi
         var blocked = switching || status is not (0 or 1 or 2 or 3) || !Alive(cameraObject)
             || !CameraOf(cameraObject!).enabled || !CameraOf(cameraObject!).gameObject.activeInHierarchy
             || logic?.Get("battle")?.Field<bool>("clientFinishReady") != true;
+        var freeLap = RuntimeObject.LapStart();
         var owned = FieldFreeCamera.Update(scene, brain!, free, player, blocked);
+        RuntimeObject.Lap("zoom.free", ref freeLap);
         // While a PIP holds the field with the free view (FightPip.HoldsField) the return button shows only for a view the
         // player moved or zoomed (FieldFreeCamera.Moved); the hold alone is no free view of theirs.
         FieldCameraReturnUi.Tick(FieldFreeCamera.Holding && !blocked && (!FightPip.HoldsField || FieldFreeCamera.Moved));
+        RuntimeObject.Lap("zoom.return", ref freeLap);
         var wheel = Input.mouseScrollDelta.y;
         var wheelAllowed = wheel == 0 && _pendingWheel == 0 && Same(_target, _applied)
             || FieldInputAllowed(root) && !FieldCameraReturnUi.ConsumedInput
@@ -464,14 +470,28 @@ internal static class FieldZoomUi
 
     // The return button while a Fight PiP holds the field: the held view moves to the turn player's own camera at its own
     // distance, as the native return would show it (CameraManager.SwitchCamera to that character), and the hold stays.
-    internal static bool ReturnInHold()
+    internal static bool ReturnInHold() => MoveHold(RuntimeObject.StaticField(RuntimeObject.FindClass("GameLogic", "GameLogicManager"), "_inst")
+        ?.Get("battle")?.Call("GetCurrentPlayer")?.Field("CharacterInst")?.Field("vCamera")?.Field("vCamera"));
+
+    // A focus click while a Fight PiP holds the field (a chat ping's show-location button, a player head, a monster item,
+    // the minimap): its native handler moved the game's field camera under the hold, CameraManager.ControlFreeCamera to
+    // the free camera (character cameras at priority 0) or SwitchCamera to a character's (16, free camera closed). The held
+    // view moves there at that camera's own distance, as ending the free view shows it outside a hold. `player` is
+    // GetCurPlayerCamera's virtual camera this tick. Returns the view followed, for the diagnostics.
+    internal static string FollowInHold(RuntimeObject scene, RuntimeObject? player)
     {
-        var logic = RuntimeObject.StaticField(RuntimeObject.FindClass("GameLogic", "GameLogicManager"), "_inst");
-        var character = logic?.Get("battle")?.Call("GetCurrentPlayer")?.Field("CharacterInst")?.Field("vCamera")?.Field("vCamera");
-        var follow = character?.Get("Follow");
-        var native = character?.Call("GetCinemachineComponent", 0); // Audited Cinemachine Stage.Body.
+        if (Alive(player)) return MoveHold(player) ? "player" : "player-unsupported";
+        var free = scene.Field("freeCamera");
+        if (!Alive(free) || free!.Get<int>("Priority") <= 0 || free.Get("gameObject")?.Get<bool>("activeInHierarchy") != true) return "none";
+        return MoveHold(free) ? "free" : "free-unsupported";
+    }
+
+    private static bool MoveHold(RuntimeObject? camera)
+    {
+        var follow = camera?.Get("Follow");
+        var native = camera?.Call("GetCinemachineComponent", 0); // Audited Cinemachine Stage.Body.
         var held = FieldFreeCamera.Camera?.Call("GetCinemachineComponent", 0);
-        if (!Alive(character) || !Alive(follow) || !Alive(native) || native!.TypeName != "CinemachineTransposer" || !Alive(held)) return false;
+        if (!Alive(camera) || !Alive(follow) || !Alive(native) || native!.TypeName != "CinemachineTransposer" || !Alive(held)) return false;
         var offset = native.Field<Vector3>("m_FollowOffset");
         if (!Finite(offset)) return false;
         Restore();

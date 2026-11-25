@@ -114,6 +114,7 @@ internal static class FieldStatePlates { internal static readonly List<RuntimeOb
 internal sealed class FloatSetting {internal float Value=1f;}
 internal static class ModUi {internal static bool IsOpen;}
 internal static class FieldIndicatorOpacity {internal static bool Hidden;}
+internal static class IndicatorDetails { internal static bool Shown = false; internal static int ShowInfo(RuntimeObject plate) => 0; }
 internal static class FightPip {internal static bool ShowsField = false;}
 internal static class FieldNameFont {internal static bool Apply(RuntimeObject label,RuntimeObject? ui)=>true;}
 internal static class VisibleCombatAdvisor {internal static bool IsPve(int map)=>map==2;}

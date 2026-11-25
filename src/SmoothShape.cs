@@ -34,6 +34,18 @@ internal static unsafe class SmoothShape
     private static readonly Dictionary<(float, float, float, float, float), RuntimeObject> Sprites = new(); // Corners and line (0: fill).
     private static readonly Dictionary<string, RuntimeObject> Masks = new();
     private static readonly List<RuntimeObject> Others = new(); // Other mod root textures Tick checks (HomePortrait's bake).
+    private static readonly List<RuntimeObject> Trees = new(); // Mod components that clip their children (WatchTree).
+    private static readonly List<RuntimeObject> Managers = new();
+    private static readonly HashSet<IntPtr> SeenManagers = new();
+    private static IntPtr _containerClass;
+    // Owned materials unused this many frames are retired (about a minute at 300 fps, ten at 30).
+    private const int StaleFrames = 18000;
+    private static int _retired;
+    private static bool _guard = true;
+    private static readonly bool DevelopmentBuild = Plugin.Version.Contains("-dev.", StringComparison.Ordinal);
+    private const float ReproHold = 0.3f;
+    private static float _holdUntil;
+    private static AsyncOperation? _unload;
     private const int PageSize = 512, Padding = 2;
     private static bool _failed, _tickFailed;
     private static float _tickAt;
@@ -232,41 +244,131 @@ internal static unsafe class SmoothShape
     internal static void Watch(RuntimeObject root) => Others.Add(root);
     internal static void Unwatch(RuntimeObject root) => Others.RemoveAll(other => other.Pointer == root.Pointer);
 
-    // FairyGUI makes one material per clip context for a mod texture and hands it out for the texture's life without checking
-    // it. The game calls Resources.UnloadUnusedAssets on scene loads, which can destroy one that no image showed at that
-    // moment; every later image of that context then draws in Unity's error magenta (the card advice badges, 2026-11-02).
-    // Drop destroyed materials so FairyGUI makes new ones.
+    // A mod component that clips its children (an overflow clip or a stencil mask) is a clip context of its own, so every
+    // texture drawn in it, the game's art and fonts included, gets materials FairyGUI keeps for that context alone. Tick
+    // checks the material caches of every texture drawn in it too; a disposed component drops out by itself.
+    internal static void WatchTree(RuntimeObject component) => Trees.Add(component);
+
+    // FairyGUI makes one material per clip context for a texture and hands it out for the texture's life without checking
+    // it. The game calls Resources.UnloadUnusedAssets on scene loads, which destroys mod materials (every match start and
+    // results load logs some); every later image of that context then draws in Unity's error magenta (the card advice badges,
+    // 2026-11-02), and in a clipped context NGraphics.Update throws in UpdateContext.ApplyClippingProperties. Magic Academy's
+    // phase change is such a load in the middle of a match (MapLogic.MapSceneChange), and when FairyGUI drew the player list
+    // tabs before this once-a-second purge (0.2 s of exceptions in the failing run), the hand, the player bars and the
+    // in-battle menu drew only inside one tab for the rest of the match (user-reproduced 2026-11-24; again on a new match a
+    // minute after a surrender, while 2026.11.4-dev.8 guarded only materials used in the last minute). So every material of
+    // a texture the mod owns (the atlas pages, the other watched textures) is kept out of the unload
+    // (HideFlags.DontUnloadUnusedAsset), and one unused for StaleFrames is taken out of FairyGUI's cache first and then
+    // destroyed here, so FairyGUI never hands out a destroyed one and makes a new one if its clip context draws again. The
+    // game's own textures drawn in watched clip contexts keep their materials as the game has them; destroyed ones are dropped.
     internal static void Tick()
     {
-        if (_tickFailed || Pages.Count + Others.Count == 0 || Time.unscaledTime < _tickAt) return;
+        if (DevelopmentBuild) DevKeys();
+        if (_unload != null)
+        {
+            if (!_unload.isDone) return;
+            _unload = null; _holdUntil = Time.unscaledTime + ReproHold;
+            Plugin.Diagnostics.Write("smoothShape.repro unload done; purge held " + ReproHold + " s");
+        }
+        if (_tickFailed || Pages.Count + Others.Count + Trees.Count == 0 || Time.unscaledTime < _tickAt || Time.unscaledTime < _holdUntil) return;
         _tickAt = Time.unscaledTime + 1f;
+        try { Pass(destroy: false); }
+        catch (Exception ex) { _tickFailed = true; Plugin.Diagnostics.Error("SmoothShape.tick", ex); }
+    }
+
+    // Every material cache of the atlas pages, the other watched textures and the textures drawn in watched clip contexts.
+    private static int Pass(bool destroy)
+    {
+        _imageShader ??= RuntimeObject.StaticField(RuntimeObject.FindClass("FairyGUI", "ShaderConfig"), "imageShader")!.String();
+        var count = 0;
+        foreach (var root in Pages.Select(page => page.Root).Concat(Others)) count += Purge(root.Call("GetMaterialManager", _imageShader)!, "atlas", owned: true, destroy);
+        if (Trees.Count == 0) return count;
+        if (_containerClass == IntPtr.Zero) _containerClass = RuntimeObject.FindClass("FairyGUI", "Container");
+        Managers.Clear(); SeenManagers.Clear();
+        Trees.RemoveAll(tree => tree.Get<bool>("isDisposed"));
+        foreach (var tree in Trees) Collect(tree.Get("displayObject"), 0);
+        foreach (var manager in Managers) count += Purge(manager, "tree", owned: false, destroy);
+        Managers.Clear();
+        return count;
+    }
+
+    // Development builds only (2026-11-24, to reproduce the race on any map): Ctrl+Shift+F1 turns the unload guard off and
+    // on (applied at the next pass); Ctrl+Shift+F2 destroys every watched material and Ctrl+Shift+F4 runs
+    // Resources.UnloadUnusedAssets, each holding the purge ReproHold seconds as the late purge did in the failing run.
+    private static void DevKeys()
+    {
+        if (!(Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)) || !(Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))) return;
+        if (Input.GetKeyDown(KeyCode.F1))
+        {
+            _guard = !_guard; _tickAt = 0;
+            Plugin.Diagnostics.Write("smoothShape.guard=" + (_guard ? "on" : "off"));
+        }
+        else if (Input.GetKeyDown(KeyCode.F2))
+        {
+            _holdUntil = Time.unscaledTime + ReproHold;
+            Plugin.Diagnostics.Write("smoothShape.repro destroyed=" + Pass(destroy: true) + "; purge held " + ReproHold + " s");
+        }
+        else if (Input.GetKeyDown(KeyCode.F4) && _unload == null)
+        {
+            _unload = Resources.UnloadUnusedAssets();
+            Plugin.Diagnostics.Write("smoothShape.repro unload started; guard=" + (_guard ? "on" : "off"));
+        }
+    }
+
+    // Each display object's NGraphics material cache (its texture's MaterialManager), once per cache.
+    private static void Collect(RuntimeObject? display, int depth)
+    {
+        if (display == null) return;
+        if (display.Get("graphics")?.Field("_manager") is { } manager && SeenManagers.Add(manager.Pointer)) Managers.Add(manager);
+        if (depth >= 16 || !RuntimeObject.Is(display.Pointer, _containerClass)) return;
+        var children = display.Field("_children")!;
+        for (int i = 0, count = children.Get<int>("Count"); i < count; i++) Collect(children.Call("get_Item", i), depth + 1);
+    }
+
+    // Returns the live materials seen (or destroyed, for the development repro). `owned`: the mod's own texture, whose
+    // materials are guarded and retired here.
+    private static int Purge(RuntimeObject manager, string source, bool owned, bool destroy)
+    {
+        var live = 0;
+        var frame = Time.frameCount;
+        // MaterialManager._materials: material flags -> List<MaterialRef>.
+        var entries = manager.Field("_materials")!.Call("GetEnumerator")!;
         try
         {
-            _imageShader ??= RuntimeObject.StaticField(RuntimeObject.FindClass("FairyGUI", "ShaderConfig"), "imageShader")!.String();
-            foreach (var root in Pages.Select(page => page.Root).Concat(Others))
+            while (entries.Call("MoveNext")!.Value<bool>())
             {
-                // MaterialManager._materials: material flags -> List<MaterialRef>.
-                var entries = root.Call("GetMaterialManager", _imageShader)!.Field("_materials")!.Call("GetEnumerator")!;
-                try
+                var entry = entries.Get("Current")!;
+                var refs = entry.Get("Value")!;
+                for (var i = refs.Get<int>("Count") - 1; i >= 0; i--)
                 {
-                    while (entries.Call("MoveNext")!.Value<bool>())
+                    var item = refs.Call("get_Item", i)!;
+                    var pointer = item.FieldPointer("material");
+                    if (pointer != IntPtr.Zero && new Material(pointer) is var material && material)
                     {
-                        var entry = entries.Get("Current")!;
-                        var refs = entry.Get("Value")!;
-                        for (var i = refs.Get<int>("Count") - 1; i >= 0; i--)
+                        live++;
+                        if (destroy) { UnityEngine.Object.DestroyImmediate(material); continue; }
+                        if (!owned) continue;
+                        // MaterialRef.frame: the last frame GetMaterial handed it out.
+                        if (frame - item.Field<int>("frame") > StaleFrames)
                         {
-                            var item = refs.Call("get_Item", i)!;
-                            var pointer = item.FieldPointer("material");
-                            if (pointer != IntPtr.Zero && new Material(pointer)) continue;
                             refs.Call("RemoveAt", i);
-                            Plugin.Diagnostics.State("smoothShape.materialLost", $"count={++_lostMaterials}; flags={entry.Get<int>("Key")}; group={item.Field<uint>("group")}");
+                            UnityEngine.Object.Destroy(material);
+                            Plugin.Diagnostics.State("smoothShape.retired", (++_retired).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                            continue;
                         }
+                        var flags = material.hideFlags;
+                        var wanted = _guard ? flags | HideFlags.DontUnloadUnusedAsset : flags & ~HideFlags.DontUnloadUnusedAsset;
+                        if (wanted != flags) material.hideFlags = wanted;
+                        continue;
                     }
+                    if (destroy) continue;
+                    refs.Call("RemoveAt", i);
+                    Plugin.Diagnostics.State("smoothShape.materialLost", $"count={++_lostMaterials}; flags={entry.Get<int>("Key")}; group={item.Field<uint>("group")}; from={source}");
                 }
-                finally { entries.Call("Dispose"); }
             }
         }
-        catch (Exception ex) { _tickFailed = true; Plugin.Diagnostics.Error("SmoothShape.tick", ex); }
+        finally { entries.Call("Dispose"); }
+        return live;
     }
 
     private static uint Pack(Color color) => Byte(color.r) | (uint)Byte(color.g) << 8 | (uint)Byte(color.b) << 16 | (uint)Byte(color.a) << 24;

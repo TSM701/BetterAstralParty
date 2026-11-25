@@ -115,7 +115,8 @@ internal static class FieldMonsterPlates
         var camera = FieldZoomUi.CameraOf(cameraObject);
         var root = GameUi.Root!;
         float width = root.Get<float>("width"), height = root.Get<float>("height");
-        var info = _sentinel == null ? 0 : Math.Max(0, ShowInfo(_sentinel));
+        // Always Show Indicator Details (2026-11-20) switches them on; otherwise the native long press, as the sentinel mirrors it.
+        var info = IndicatorDetails.Shown ? 1 : _sentinel == null ? 0 : Math.Max(0, ShowInfo(_sentinel));
         var self = _battleUi?.Field("_SelfPlayer")?.Field("CharacterInst");
         var stepping = self != null && self.Get<int>("canStep") > 0;
         // Value math through UnityMath, and the camera and screen read once a pass (2026-11-18).

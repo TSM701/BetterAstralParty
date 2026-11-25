@@ -136,11 +136,9 @@ internal static class HandLayoutUi
             Report("card-pointer-busy"); return;
         }
         if (ModUi.IsOpen) { _pressedPile = null; _outsidePress = false; Report("settings-busy"); return; }
-        // ForbidOperate locks input during normal actions/timeouts, not the visible hand layout.
+        // ForbidOperate (for seconds after every fight while the move goes on) and a PiP fight's readyFight lock the cards,
+        // not the piles: they still open to be looked at while the cards stay untouchable (user-reported 2026-11-18, 2026-11-21).
         var cardsLocked = !_container!.Get<bool>("touchable");
-        // A fight Fight PiP shows beside the field locks the cards (readyFight), not the piles: they still open to be looked
-        // at (user-reported 2026-11-18), while the cards stay untouchable.
-        var inputLocked = cardsLocked && !FightPip.ShowsHand;
         RuntimeObject.Lap("hand.gates", ref lap);
         var live = Live; live.Clear();
         var ready = Ready; ready.Clear();
@@ -243,9 +241,9 @@ internal static class HandLayoutUi
         // Monster cancel can leave an empty CardWindow on stage; only its actual hit owns the click.
         var usingCard = (Input.GetMouseButtonDown(0) || Input.GetMouseButtonUp(0))
             && path.Any(item => item.TypeName == "CardWindow");
-        PollPileClick(path, pointer, unit, inputLocked || pending > 0 || usingCard || FieldCameraReturnUi.ConsumedInput);
-        // A native input lock folds the open row.
-        if (inputLocked) { _expanded = null; _focused = IntPtr.Zero; }
+        PollPileClick(path, pointer, unit, pending > 0 || usingCard || FieldCameraReturnUi.ConsumedInput);
+        // A pending card use folds the open row.
+        if (pending > 0) { _expanded = null; _focused = IntPtr.Zero; }
         if (_expanded is { } missing && !groups.Contains(missing)) _expanded = null;
         RuntimeObject.Lap("hand.pointer", ref lap);
         if (_expanded == null || !Entries.TryGetValue(_focused, out var focused) || focused.Group != _expanded)
@@ -307,12 +305,12 @@ internal static class HandLayoutUi
                 CaptionLayout[group] = captionLayout;
             }
             if (!caption.Get<bool>("visible")) caption.Set("visible", true);
-            UpdatePileTarget(group, captionSlot, root, height, unit, !inputLocked && pile.All(ready.Contains));
+            UpdatePileTarget(group, captionSlot, root, height, unit, pile.All(ready.Contains));
         }
         RuntimeObject.Lap("hand.place", ref lap);
         _dropBottom = HandLayout.DropBottom(pileTop, open, unit) / height;
         if (Plugin.Diagnostics.IsRecording && Time.unscaledTime >= _diagnosticAt)
-            Report($"layout; tracked={cards.Count}; ready={ready.Count}; hidden={hidden}; distributing={distributing}; foreign={foreign}; inputLocked={cardsLocked}; viewOnly={cardsLocked && !inputLocked}; pending={pending}; motions={motions.Values.Sum(v => v.Count)}; expanded={_expanded}; nativeZoom={RuntimeObject.StaticField(_pool, "ShowCardStatus")!.Value<int>()}");
+            Report($"layout; tracked={cards.Count}; ready={ready.Count}; hidden={hidden}; distributing={distributing}; foreign={foreign}; inputLocked={cardsLocked}; pending={pending}; motions={motions.Values.Sum(v => v.Count)}; expanded={_expanded}; nativeZoom={RuntimeObject.StaticField(_pool, "ShowCardStatus")!.Value<int>()}");
         if (ready.Count == 0) return;
         // Native ZoomCard runs only for world presses. Fresh hit testing avoids arming on
         // card/pile/target UI input; both grouped modes share this presentation correction.
@@ -367,7 +365,7 @@ internal static class HandLayoutUi
         {
             // An owned, transparent hit surface consumes only folded-pile presses. Native
             // card handlers remain untouched and receive all expanded-card drag events.
-            // It sits in the hand panel beside the card container, which a PiP fight leaves untouchable (see inputLocked).
+            // It sits in the hand panel beside the card container, which a native lock leaves untouchable (see cardsLocked).
             PileTargets[group] = target = NativeUi.Component(_ui!, 1, 1);
             target.Set("opaque", true); target.Set("touchable", true); target.Set("sortingOrder", 200);
         }

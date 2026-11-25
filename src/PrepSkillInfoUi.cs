@@ -212,6 +212,7 @@ internal static class PrepSkillInfoUi
             var panel = NativeUi.Component(parent, width, height);
             panel.Set("touchable", false);
             panel.Call("SetupOverflow", 1);
+            SmoothShape.WatchTree(panel);
             var image = RuntimeObject.New(RuntimeObject.FindClass("FairyGUI", "GImage"));
             image.Set("touchable", false); panel.Call("AddChild", image);
             var label = NativeUi.Label(panel, "", 4, 0, width - 8, labelHeight, 19, dark: true);
@@ -381,6 +382,7 @@ internal static class PrepSkillInfoUi
         var surface = new NativeUi.Surface(_popup, 620, 650, fixedOpacity: true);
         SmoothShape.Fill(surface.Graph, new Color(0.16f, 0.18f, 0.22f));
         var view = NativeUi.Component(_popup, 588, 618); view.Call("SetXY", 16f, 16f); view.Call("SetupOverflow", 1);
+        SmoothShape.WatchTree(view);
         _content = NativeUi.Component(view, 588, 618);
         var y = 0f;
         foreach (var entry in rows)

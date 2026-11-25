@@ -68,7 +68,7 @@ internal static partial class TestCommands
         NoPattern(Operands(cancels[0]), "UI.CardWindow::|FairyGUI.Window::HideImmediately", "Monster cancel retains empty CardWindow");
         var game = ReadSource(context, "src/GameUi.cs"); var preview = ReadSource(context, "src/PingDetailsUi.cs"); var hand = ReadSource(context, "src/HandLayoutUi.cs");
         var interaction = Fragment(hand, @"(?s)        // Monster cancel can leave an empty CardWindow on stage.*?(?=        if \(_expanded is \{ \} missing)", "Grouped hand interaction branch");
-        Pattern(interaction, @"PollPileClick\(path, pointer, unit, inputLocked \|\| pending > 0 \|\| usingCard \|\| FieldCameraReturnUi.ConsumedInput\)", "Native lock ownership retained in grouped input");
+        Pattern(interaction, @"PollPileClick\(path, pointer, unit, pending > 0 \|\| usingCard \|\| FieldCameraReturnUi.ConsumedInput\)", "Native use ownership retained in grouped input");
         const string ns = "MigratedHandPointer";
         var harness = Template(context, "focus-tests/csharp-migration/hand-pointer-input.template.cs", pin).Replace("__NS__", ns, StringComparison.Ordinal)
             .Replace("__POINTER__", MethodFragment(game, "internal static IReadOnlyList<RuntimeObject> PointerPath"), StringComparison.Ordinal)
@@ -78,6 +78,9 @@ internal static partial class TestCommands
         RunEmbedded(context, stage, "hand-pointer-input", harness, ns + ".Check.Run()", pin);
         var legacy = harness.Replace("path.Any(item => item.TypeName == \"CardWindow\")", "GameUi.Find(root, \"CardWindow\", maxDepth: 1) != null", StringComparison.Ordinal); Check(legacy != harness, "Exact legacy CardWindow mutant bound");
         RunEmbedded(context, stage, "hand-pointer-legacy-mutant", legacy.Replace(ns, ns + "Legacy", StringComparison.Ordinal), ns + "Legacy.Check.Run()", pin, expectedFailure: "retained empty CardWindow must not disable");
+        // Before 2026.11.4-dev.4 a native container lock blocked pile clicks (user-reported twice, 2026-11-18 and 2026-11-21).
+        var lockGate = harness.Replace("PollPileClick(path, pointer, unit, pending > 0", "PollPileClick(path, pointer, unit, inputLocked || pending > 0", StringComparison.Ordinal); Check(lockGate != harness, "Exact lock-gate mutant bound");
+        RunEmbedded(context, stage, "hand-pointer-lock-mutant", lockGate.Replace(ns, ns + "Lock", StringComparison.Ordinal), ns + "Lock.Check.Run()", pin, expectedFailure: "under a native container lock");
     }
     private static void HandSubmit(DevContext context, string stage, Action<string> pin)
     {

@@ -123,6 +123,7 @@ __PRODUCTION__
     { internal static bool IsPve(int map) => map == 2; }
     internal static class ModUi { internal static bool IsOpen; }
     internal static class FieldIndicatorOpacity { internal static bool Hidden; }
+    internal static class IndicatorDetails { internal static bool Shown = false; internal static int ShowInfo(RuntimeObject plate) => 0; }
     internal static class FightPip { internal static bool ShowsField = false; }
     internal sealed class Setting { internal bool Value = true; }
     internal sealed class Diagnostics

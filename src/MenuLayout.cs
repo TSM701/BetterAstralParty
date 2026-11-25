@@ -25,7 +25,7 @@ internal static class MenuLayout
         ("전투 추천", false, new[] { "ActionAdvice", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "AdviceDetails", "ShootingStarShow", "KoDiceTarget", "KoCardHover", "KoSpectator", "FinalDamage" }),
         ("전투 표시", false, new[] { "BattleStatus", "StatusHand", "StatusEffects", "CounterIcons", "CounterAnimation", "CounterSound", "ShushuMaster", "ShushuShield", "ShushuDefendLock", "FightPip", "FightPipStart", "FightPipOpacity" }),
         // 필드·카메라 split in two (user-decided 2026-11-20, plan 나): what the field draws, and the camera.
-        ("필드 표시", false, new[] { "PlayerIndicators", "IndicatorHeight", "IndicatorDisplay", "IndicatorHideDistance", "IndicatorFade", "IndicatorFadeStrength", "IndicatorFadeDistance", "WalkDirection", "MiniSlimeOpacity" }),
+        ("필드 표시", false, new[] { "PlayerIndicators", "IndicatorHeight", "IndicatorDisplay", "IndicatorHideDistance", "IndicatorFade", "IndicatorFadeStrength", "IndicatorFadeDistance", "IndicatorDetails", "WalkDirection", "MiniSlimeOpacity" }),
         ("카메라", false, new[] { "FieldZoom", "ZoomSensitivity", "ZoomOutLimit", "FreeCameraSpeed", "DicePin" }),
         ("손패·카드", false, new[] { "GroupHand", "FoldedHandOpacity", "PingDetails" }),
         ("캐릭터", false, new[] { "NameStyle", "CharacterRoles", "PrepSkillInfo", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill" }),
@@ -284,7 +284,7 @@ internal static class MenuLayout
         "WalkDirection" => "필드 캐릭터 발밑",
         "FieldZoom" => "필드",
         "IndicatorFade" => "필드 인디케이터",
-        "IndicatorDisplay" => "필드 인디케이터",
+        "IndicatorDisplay" or "IndicatorDetails" => "필드 인디케이터",
         "DicePin" => "필드 주사위",
         "GroupHand" => "내 필드 손패",
         "PingDetails" => "카드·칩 핑 말풍선",
@@ -324,7 +324,11 @@ internal static class MenuLayout
     internal static float SliderLabelX(string action) => RowBox(action).X + TextX(action);
     // The name's box; a long name widens it and shortens the bar instead of shrinking the text (2026-11-18: "미니 슬라임
     // 불투명도" shrank to about 12 px in the 98-wide box).
-    internal static float SliderLabelWidth(string action) => action == "MiniSlimeOpacity" ? 200 : 98;
+    // A name the game font draws wider than its box widens it, as measured when the settings are built (ModUi), and the bar
+    // shortens to no less than 100 instead of the name shrinking (user-reported 2026-11-22: English "Start Distance").
+    internal static readonly Dictionary<string, float> MeasuredSliderLabels = new();
+    internal static float SliderLabelWidth(string action) => Math.Max(action == "MiniSlimeOpacity" ? 200 : 98,
+        Math.Min(MeasuredSliderLabels.GetValueOrDefault(action), RowBox(action).Width - 216));
     internal static float SliderBarX(string action) => RowBox(action).X + 30 + SliderLabelWidth(action);
     internal static float SliderValueX(string action) => RowBox(action).X + RowBox(action).Width - 18 - SliderValueWidth;
     internal const float SliderValueWidth = 58;
@@ -440,6 +444,7 @@ internal static class MenuLayout
         "PlayerTabSkill" when !enabled => "스킬 쿨타임을 보여주지 않습니다.",
         "IndicatorFade" when !enabled => "줌 아웃해도 그대로 보여줍니다.",
         "DicePin" when !enabled => "게임 기본처럼 필드 위에 두어\n줌에 따라 크기가 바뀝니다.",
+        "IndicatorDetails" when !enabled => "필드를 길게 누를 때만\n공격력·방어력을 보여줍니다.",
         "CounterSound" when !enabled => "알림음을 내지 않습니다.",
         "CounterAnimation" when !enabled => "반격 아이콘을 멈춘 채 보여줍니다.",
         "PingFocus" when !enabled => "핑 선택 모드를 그대로 둡니다.",
@@ -509,6 +514,7 @@ internal static class MenuLayout
         "PrepSkillInfo" => ("준비 화면 스킬 설명", "준비 화면 초상화에 마우스를 올리면\n스킬·재사용 대기시간·잠재력이 나옵니다."),
         "IndicatorFade" => ("줌 아웃 시 불투명도", "줌 아웃할수록 플레이어·몬스터\n인디케이터의 불투명도를 낮춥니다."),
         "IndicatorDisplay" => ("인디케이터 표시 방식", "필드 플레이어·몬스터 인디케이터를\n보여주는 방식입니다."),
+        "IndicatorDetails" => ("인디케이터 상세 정보 항상 표시", "몬스터·플레이어 인디케이터에\n공격력·방어력을 항상 보여줍니다."),
         "DicePin" => ("주사위 화면 고정", "줌·자유 시점에서도 굴린 주사위를\n기본 시점과 같은 위치·크기로 보여줍니다."),
         "CounterSound" => ("소리", "반격 아이콘이 나타날 때\n알림음을 냅니다."),
         "CounterAnimation" => ("애니메이션", "인카운트·전투 반격 아이콘을\n움직여 보여줍니다."),

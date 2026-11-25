@@ -96,6 +96,14 @@ internal static class DragStateCheck
             && chatItem.NestedTypes.SelectMany(nested => nested.Methods).Any(method => method.HasBody && method.Body.Instructions.Any(instruction => instruction.Operand is MethodReference reference && reference.Name == "ShowAddressInfo")), "Chat ping show-location button");
         foreach (var message in new[] { "GameLogic.BattleLandMessage", "GameLogic.BattlePlayerMarkMessage" })
             Check(NativeMethod(native, message, "ShowAddressInfo").Body.Instructions.Any(instruction => instruction.Operand is MethodReference reference && reference.Name == "ControlFreeCamera"), "Ping show-location moves the camera: " + message);
+        // Inside a Fight PiP's hold the held view follows that move (FieldZoomUi.FollowInHold, 2026-11-23): ControlFreeCamera
+        // zeroes the character cameras, so GetCurPlayerCamera (the first with a priority) is null, and turns the free camera
+        // on at a positive priority.
+        var control = NativeMethod(native, "Core.Camera.CameraManager", "ControlFreeCamera").Body.Instructions.Select(instruction => instruction.Operand).OfType<MethodReference>().Select(reference => reference.Name).ToList();
+        Check(control.IndexOf("ResetCameraPriority") >= 0 && control.IndexOf("ResetCameraPriority") < control.IndexOf("ActiveCamera"), "Focus move zeroes character cameras before the free camera");
+        Check(NativeMethod(native, "Core.Camera.CameraManager", "GetCurPlayerCamera").Body.Instructions.Any(instruction => instruction.Operand is MethodReference reference && reference.Name == "get_Priority"), "Current player camera is the one with a priority");
+        var activate = native.MainModule.GetType("Core.FreeCameraObject").Methods.Single(method => method.Name == "ActiveCamera" && method.Parameters.Count == 1 && method.Parameters[0].ParameterType.FullName == "UnityEngine.Vector3");
+        Pattern(Body(activate), @"freeCamera\nIL_[0-9a-f]+: ldc\.i4\.[1-8]\nIL_[0-9a-f]+: stfld System\.Int32 Cinemachine\.CinemachineVirtualCameraBase::m_Priority[\s\S]*SetActiveEx", "Focus move turns the free camera on at a positive priority");
         Contains(ReadSource(context, "src/FieldFreeCamera.cs"), new[] { "{ PlayerInfo, \"UIButton_MonsterItem\", \"UIBattleInfo_Com_Minimap\", ShowSignal }", "PlayerInfo = \"UIBattleInfo_Button_PlayerInfo\", PlayerHead = \"btn_Head\", ShowSignal = \"btn_ShowSignal\"", "types.Add(name is PlayerHead or ShowSignal ? name : item.TypeName);" }, "Free view releases only for audited focus UI");
         var host = NativeMethod(native, "Core.FreeCameraObject", "SetHostCamera").Body.Instructions;
         Check(host.Any(instruction => instruction.OpCode.Name == "ldc.i4.2") && host.Any(instruction => instruction.Operand is MethodReference reference && reference.Name == "UpdateStatus"), "FIELD effects set System host status");

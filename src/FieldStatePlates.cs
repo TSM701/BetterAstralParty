@@ -92,6 +92,11 @@ internal static class FieldStatePlates
         if (group.Layer!.Get<float>("scaleX") != scale) group.Layer.Call("SetScale", scale, scale);
         var enabled = camera.enabled;
         float screenHeight = Screen.height;
+        // The layer's GlobalToLocal is affine: three calls a pass map every plate (2026-11-20; one call a plate before).
+        var layer = group.Layer!;
+        Vector2 Map(float x, float y) => layer.Result<Vector2, Vector2>("GlobalToLocal", UnityMath.V2(x, y));
+        var origin = Map(0, 0); var alongX = Map(1000, 0); var alongY = Map(0, 1000);
+        float xx = (alongX.x - origin.x) / 1000, xy = (alongX.y - origin.y) / 1000, yx = (alongY.x - origin.x) / 1000, yy = (alongY.y - origin.y) / 1000;
         foreach (var ui in group.Adopted)
         {
             if (ui.Get<bool>("isDisposed")) continue;
@@ -100,8 +105,8 @@ internal static class FieldStatePlates
             var shown = screen.z > 0;
             if (ui.Get<bool>("visible") != shown) ui.Set("visible", shown);
             if (!shown) continue;
-            var local = group.Layer!.Result<Vector2, Vector2>("GlobalToLocal", UnityMath.V2(screen.x, screenHeight - screen.y));
-            ui.Call("SetXY", local.x, local.y);
+            float sx = screen.x, sy = screenHeight - screen.y;
+            ui.Call("SetXY", origin.x + xx * sx + yx * sy, origin.y + xy * sx + yy * sy);
         }
     }
 

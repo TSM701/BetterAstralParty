@@ -53,7 +53,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 > [!WARNING]
 > 1.2.x 이하 사용자는 사용하던 패키지의 `Uninstall.cmd`로 먼저 제거한 뒤 새로 설치하세요. 제거에 실패하면 새 패키지의 `Force-Uninstall.cmd`를 시도하고, 그래도 해결되지 않으면 보관할 데이터를 백업한 뒤 게임을 클린 설치하고 다시 시도해주세요.
 
-1. [다운로드](https://github.com/TSM701/BetterAstralParty/releases)에서 `BetterAstralParty-<버전>-install.zip`을 받으세요. 소스 ZIP은 설치용이 아닙니다.
+1. [다운로드](https://github.com/TSM701/BetterAstralParty/releases)에서 `BetterAstralParty-<버전>-install.zip`을 받으세요. 초록색 Code 버튼의 Download ZIP으로 받는 `BetterAstralParty-main.zip`과 소스 ZIP은 설치용이 아닙니다.
 2. Steam에서 Astral Party INT(Global)를 한 번 실행해 업데이트와 데이터 다운로드를 마친 뒤 정상 종료하세요.
 3. 쓰기 가능한 별도 폴더에 ZIP 전체를 압축 해제하세요. 게임 폴더에 직접 덮어쓰거나 ZIP 안에서 실행하지 마세요.
 4. 압축을 푼 폴더의 `Install.cmd`를 실행하면 설치 창이 열립니다. 게임 폴더를 확인한 뒤 설치를 누르세요. 게임 폴더를 찾지 못하면 Steam의 설치된 파일 → 찾아보기로 연 `Astral Party` 폴더를 고르세요.
@@ -104,6 +104,7 @@ A quality-of-life mod for Astral Party INT(Global) PvE
 - 줌 아웃 시 불투명도: 기본 ON. 휠 줌을 사용할 때 게임 인디케이터에 적용합니다.
 - 줌 아웃 시 불투명도 슬라이더: 기본 30%, 0~100%. 인디케이터가 가장 흐려졌을 때의 불투명도입니다. 멀면 숨기기에서는 숨김 거리에서, 기본에서는 가장 멀리 줌 아웃했을 때 이 값이 됩니다. 100%는 원래대로, 0%는 보이지 않습니다.
 - 적용 거리: 기본 0%, 0~100%. 줌 아웃 시 불투명도가 낮아지기 시작하는 줌 아웃 거리이며, 여기서부터 슬라이더 값까지 고르게 낮아집니다. 0%는 줌 아웃하자마자 낮아집니다.
+- 인디케이터 상세 정보 항상 표시: 기본 ON. 몬스터와 플레이어 인디케이터에 공격력·방어력을 항상 표시합니다. OFF는 필드를 길게 누를 때만 표시합니다.
 - 이동 방향 강조: 기본 화살표만. 플레이어와 몬스터 발밑의 이동 방향 표시를 캐릭터·몬스터·나무에 가려지지 않게 위에 다시 그립니다. 화살표만은 각 원이 가리키는 자리에 화살표를 바닥에 눕혀 그립니다. 원과 화살표는 원까지 그리며 캐릭터 뒤쪽 절반은 점선으로 표시합니다. 끄기는 게임 기본 표시만 남깁니다.
 - 미니 슬라임 불투명도: 기본 100%, 20~100%. 루루의 잠재력으로 칸 위에 생기는 미니 슬라임의 불투명도입니다.
 
@@ -282,7 +283,7 @@ BetterAstralParty 자체 코드는 [MIT 라이선스](LICENSE)로 제공합니�
 > [!WARNING]
 > If you use 1.2.x or earlier, uninstall with your previous package's `Uninstall.cmd` first, then install fresh. If removal fails, try `Force-Uninstall.cmd` from the new package. If that still does not help, back up any data you want to keep, perform a clean installation of the game and try again.
 
-1. Download `BetterAstralParty-<version>-install.zip` from [Download](https://github.com/TSM701/BetterAstralParty/releases). Source ZIPs are not installation packages.
+1. Download `BetterAstralParty-<version>-install.zip` from [Download](https://github.com/TSM701/BetterAstralParty/releases). `BetterAstralParty-main.zip` from the green Code button's Download ZIP and the source ZIPs are not installation packages.
 2. Start Astral Party INT(Global) once from Steam, let game and data updates finish, then exit normally.
 3. Extract the entire ZIP to a separate writable folder. Do not overwrite the game folder directly or run inside the ZIP.
 4. Run `Install.cmd` from the extracted folder. An install window opens; check the game folder, then press Install. If it cannot find the game, choose the `Astral Party` folder Steam opens from Installed Files → Browse.
@@ -333,6 +334,7 @@ Field Display
 - Opacity When Zoomed Out: ON by default. Applies to the game's indicators while wheel zoom is in use.
 - Opacity When Zoomed Out slider: 30% by default, 0–100%. The indicators' opacity when most faded, reached at the Hide Distance under Hide When Far and at the farthest zoom-out under Native; 100% is unchanged and 0% hides them.
 - Start Distance: 0% by default, 0–100%. The zoom-out distance at which Opacity When Zoomed Out starts, lowering the opacity evenly from there to the slider's value; 0% starts as soon as you zoom out.
+- Always Show Indicator Details: ON by default. Monster and player indicators always show ATK and DEF; OFF shows them only while you hold down on the field.
 - Move Direction Highlight: Arrows Only by default. Redraws the walk-direction marks under players and monsters on top, so characters, monsters and trees no longer hide them. Arrows Only draws an arrow where each circle points, lying flat on the ground. Circles and Arrows also draws the circles, with the half behind the character dashed. Off leaves only the game's own marks.
 - Mini Slime Opacity: 100% by default, 20–100%. Opacity of the Mini Slimes Lulu's Potential puts on panels.
 

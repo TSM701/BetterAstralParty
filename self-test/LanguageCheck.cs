@@ -47,7 +47,7 @@ internal static class LanguageCheck
             && MenuLayout.HeadHeight("CounterIcons") == MenuLayout.ChildHeight + MenuLayout.LinesTop + MenuLayout.LineHeight + MenuLayout.LinesBottom
             && MenuLayout.HeadHeight("IndicatorFade") == MenuLayout.ChildHeight + MenuLayout.LinesTop + 2 * MenuLayout.LineHeight + MenuLayout.LinesBottom
             && MenuLayout.SettingY("IndicatorFadeDistance") == MenuLayout.SettingY("IndicatorFadeStrength") + MenuLayout.LineHeight
-            && MenuLayout.SettingY("WalkDirection") == MenuLayout.SettingY("IndicatorFade") + MenuLayout.HeadHeight("IndicatorFade") + MenuLayout.TrayPad + MenuLayout.RowGap,
+            && MenuLayout.SettingY("IndicatorDetails") == MenuLayout.SettingY("IndicatorFade") + MenuLayout.HeadHeight("IndicatorFade") + MenuLayout.TrayPad + MenuLayout.RowGap,
             "Counter animation and sound are two chips on one line inside Counter Icons' row; each tuning slider is a line of its own (Opacity When Zoomed Out has two since 2026-11-20)");
         Check(MenuLayout.Parent("PlayerTabHand") == "PlayerTab" && MenuLayout.Parent("PlayerTabRole") == "PlayerTab" && MenuLayout.Parent("PlayerTabSkill") == "PlayerTab" && MenuLayout.Parent("PlayerTab") == null,
             "Player list tab parts sit under their master switch");
@@ -150,7 +150,7 @@ internal static class LanguageCheck
         ModText.Select("한국어"); // Existing calculation/presentation regression tests retain their baseline.
         var booleanActions = new[] { "ActionAdvice", "AdviceDetails", "KoDiceTarget", "PingDetails", "BattleStatus", "ShushuShield", "ShushuDefendLock",
             "PlayerIndicators", "FieldZoom", "MatchFocus", "Diagnostics", "MuteUnfocused", "AutoThanks", "AutoThanksDelay", "SendAllLikes", "ReceivedLikes", "ShopBulkBuy", "CharacterRoles", "PrepSkillInfo",
-            "IndicatorFade", "DicePin", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "ShootingStarShow", "KoCardHover", "KoSpectator", "StatusHand", "StatusEffects", "CounterIcons", "ShushuMaster", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill", "OldReplays", "FightPip", "ReplaySaveLimit" };
+            "IndicatorFade", "DicePin", "CounterSound", "CounterAnimation", "PingFocus", "FinalDamage", "SuppressNotices", "UpdateNotifications", "EncounterAdvice", "DefenseAdvice", "CardAdvice", "ShootingStarShow", "KoCardHover", "KoSpectator", "StatusHand", "StatusEffects", "CounterIcons", "ShushuMaster", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill", "OldReplays", "FightPip", "ReplaySaveLimit", "IndicatorDetails" };
         var padding = new[] { "이 기능을 끕니다", "다른 설정", "별도", "independent", "other settings" };
         foreach (var action in booleanActions)
         {
@@ -173,6 +173,24 @@ internal static class LanguageCheck
         Check(sections.Any(section => section.General) && sections.Any(section => !section.General)
             && sections.Select(section => section.Title).Distinct().Count() == sections.Length, "Both settings tabs have distinct category titles");
         var categoryActions = sections.SelectMany(section => section.Actions).ToArray();
+        // Every settings row in English, not a hand-kept list: 숨김 거리 and its help stayed Korean (user-reported 2026-11-22).
+        var languageMode = ModText.Mode;
+        ModText.Select("English");
+        var untranslated = new List<string>();
+        foreach (var action in categoryActions)
+        {
+            var (helpTitle, helpBody) = MenuLayout.Help(action);
+            var texts = new List<string> { helpTitle, helpBody, MenuLayout.StateHelp(action, true, ""), MenuLayout.StateHelp(action, false, "") };
+            if (MenuLayout.IsSlider(action)) texts.Add(MenuLayout.SliderLabel(action));
+            if (action != "Language") // Language names show in their own language.
+                foreach (var option in MenuLayout.Options(action))
+                    texts.Add(MenuLayout.OptionLabel(action, option));
+            foreach (var option in MenuLayout.Options(action)) texts.Add(MenuLayout.OptionHelp(action, option));
+            foreach (var text in texts)
+                if (ModText.Text(text).Any(c => c is >= '가' and <= '힣')) untranslated.Add(action + " / " + text.Replace("\n", " "));
+        }
+        ModText.Select(languageMode);
+        Check(untranslated.Count == 0, "Untranslated settings text: " + string.Join(" | ", untranslated));
         Check(sections.Single(section => section.Title == "손패·카드").Actions.SequenceEqual(new[] { "GroupHand", "FoldedHandOpacity", "PingDetails" })
             && sections.Single(section => section.Title == "캐릭터").Actions.SequenceEqual(new[] { "NameStyle", "CharacterRoles", "PrepSkillInfo", "PlayerTab", "PlayerTabHand", "PlayerTabRole", "PlayerTabSkill" })
             && !categoryActions.Contains("CardTargetButtons"), "Cards and characters are separate; target button priority is always applied");

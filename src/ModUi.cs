@@ -169,7 +169,7 @@ internal static partial class ModUi
     private static readonly Action[] PvpCleanup = {
         UpdateNotificationUi.Clear,
         GameUi.Stop, PingDetailsUi.Reset, BattleStatusUi.Clear, EncounterCounterUi.Clear, ShushuShieldUi.Clear,
-        PrepSkillInfoUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, CardResultClicks.Clear, FieldZoomUi.Clear, () => PlayerIndicatorUi.Clear("pvp-safety"), WalkDirectionUi.Clear, PlayerTabUi.Clear,
+        PrepSkillInfoUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, CardResultClicks.Clear, FieldZoomUi.Clear, () => PlayerIndicatorUi.Clear("pvp-safety"), IndicatorDetails.Clear, WalkDirectionUi.Clear, PlayerTabUi.Clear,
         CharacterNameUi.RestoreAll, InputAttention.Stop, PingFocusGuard.Reset, AutoThanksUi.Clear, SendAllLikesUi.Clear, ReceivedLikesUi.Clear, ShopBulkUi.Clear, BattleMenuUi.Clear, FieldDiceUi.Clear, OldReplaysUi.Clear, FightPip.Clear, ReplayKeeper.Clear, MiniSlimeOpacity.Clear,
         () => Plugin.Diagnostics.EndCombat(),
         () => { ClosePanel(true); GameUi.Dispose(_modal); _modal = null; }
@@ -310,7 +310,8 @@ internal static partial class ModUi
             }
             Mark(6);
             UpdateNotificationUi.Tick(); Mark(7);
-            FightPip.Tick(); FieldZoomUi.Tick(); Mark(8);
+            // The fieldZoom segment holds the PiP tick too; its own lap tells the two apart (development builds).
+            var zoomLap = RuntimeObject.LapStart(); FightPip.Tick(); RuntimeObject.Lap("zoom.pip", ref zoomLap); FieldZoomUi.Tick(); Mark(8);
             FieldDiceUi.Tick(); Mark(9);
             if (measure) gameEnd = System.Diagnostics.Stopwatch.GetTimestamp();
             CardTargetButtonsUi.Tick(); CardResultClicks.Tick(); Mark(10);
@@ -328,7 +329,7 @@ internal static partial class ModUi
             BattleStatusUi.Tick(); Mark(14);
             EncounterCounterUi.Tick(); Mark(15);
             if (measure) fieldStart = System.Diagnostics.Stopwatch.GetTimestamp();
-            PlayerIndicatorUi.Tick(); Mark(16);
+            IndicatorDetails.Tick(); PlayerIndicatorUi.Tick(); Mark(16);
             WalkDirectionUi.Tick(); Mark(17);
             PlayerTabUi.Tick(); Mark(18);
             MonsterMoveProbe.Tick(); FightDataProbe.Tick(); NancyProbe.Tick(); NativePassProbe.Tick(); MatchWaitProbe.Tick(); Mark(19);
@@ -400,7 +401,7 @@ internal static partial class ModUi
         UpdateNotificationUi.Clear,
         GameUi.Stop, PingDetailsUi.Reset, BattleStatusUi.Clear, EncounterCounterUi.Clear, ShushuShieldUi.Clear,
         PrepSkillInfoUi.Clear, HandLayoutUi.Clear, CardTargetButtonsUi.Clear, CardResultClicks.Clear, FieldZoomUi.Clear,
-        () => PlayerIndicatorUi.Clear("compatibility"), WalkDirectionUi.Clear, PlayerTabUi.Clear, CharacterNameUi.RestoreAll, BattleMenuUi.Clear, SendAllLikesUi.Clear, ReceivedLikesUi.Clear, ShopBulkUi.Clear, FieldDiceUi.Clear, OldReplaysUi.Clear, ReplayKeeper.Clear, MiniSlimeOpacity.Clear,
+        () => PlayerIndicatorUi.Clear("compatibility"), IndicatorDetails.Clear, WalkDirectionUi.Clear, PlayerTabUi.Clear, CharacterNameUi.RestoreAll, BattleMenuUi.Clear, SendAllLikesUi.Clear, ReceivedLikesUi.Clear, ShopBulkUi.Clear, FieldDiceUi.Clear, OldReplaysUi.Clear, ReplayKeeper.Clear, MiniSlimeOpacity.Clear,
         // As in PvpCleanup: the input-attention tray icon and the latches of features the blocked frame no longer ticks.
         InputAttention.Stop, AutoThanksUi.Clear, PingFocusGuard.Reset,
         () => { ClosePanel(true); GameUi.Dispose(_modal); _modal = null; });
@@ -709,6 +710,7 @@ internal static partial class ModUi
         _helpViewport.Call("SetXY", 18f, 80f);
         _helpViewport.Set("touchable", false);
         _helpViewport.Call("SetupOverflow", 1); // Native Hidden: clip only the scrolling body.
+        SmoothShape.WatchTree(_helpViewport);
         Labels["HelpBody"] = NativeUi.Label(_helpViewport, "", 0, 0, 324, MenuLayout.HelpHeight - 96, 22);
         Labels["HelpBody"].Set("singleLine", false);
         Labels["HelpBody"].Set("UBBEnabled", false); // Verified native property; mod-owned GTextField, never rich text.
@@ -777,6 +779,7 @@ internal static partial class ModUi
         _trackHit.Call("SetXY", MenuLayout.SettingsX + MenuLayout.TrackX - MenuLayout.TrackPad, MenuLayout.SettingsY);
         TraceSettingsOpen(DiagnosticPhase.SettingsSteppers);
         Sliders.Clear(); SliderBlocked.Clear(); SliderBacks.Clear(); SliderAreas.Clear(); _dragSlider = IntPtr.Zero;
+        MenuLayout.MeasuredSliderLabels.Clear();
         foreach (var action in MenuLayout.Sliders)
         {
             var size = MenuLayout.TextSize(action);
@@ -786,6 +789,11 @@ internal static partial class ModUi
             GameUi.StyleText(Labels[action], size, align: 0);
             Plain(Labels[action]);
             Labels[action].Set("verticalAlign", 1);
+            // The unshrunk name sets its box; the bar, created after it, starts past it (MenuLayout.SliderLabelWidth).
+            Labels[action].Set("autoSize", 0);
+            MenuLayout.MeasuredSliderLabels[action] = Labels[action].Get<float>("textWidth") + 4;
+            Labels[action].Set("autoSize", 3);
+            Labels[action].Call("SetSize", MenuLayout.SliderLabelWidth(action), 35f);
             // One line, shrinking instead of wrapping the % sign; "150%" is the widest value.
             Labels[action + "Value"] = NativeUi.Label(_sheet!, "", MenuLayout.SettingsX + MenuLayout.SliderValueX(action), 0, MenuLayout.SliderValueWidth, 35, size);
             Labels[action + "Value"].Set("singleLine", true);
@@ -858,6 +866,7 @@ internal static partial class ModUi
         AddToggle("FightPipStart", 440, MenuLayout.ToggleY(41));
         AddToggle("ReplaySaveLimit", 440, MenuLayout.ToggleY(42));
         AddToggle("AutoThanksDelay", 440, MenuLayout.ToggleY(43));
+        AddToggle("IndicatorDetails", 440, MenuLayout.ToggleY(44));
         TraceSettingsOpen(DiagnosticPhase.SettingsReparent);
         foreach (var (button, action) in Controls.Values)
             if (!MenuLayout.FixedControl(action)) MoveIntoSettings(button, MenuLayout.SettingY(action) + MenuLayout.ChildOffsetY(action));
@@ -1518,6 +1527,7 @@ internal static partial class ModUi
         "PlayerTabRole" => Plugin.PlayerTabRole.Value,
         "PlayerTabSkill" => Plugin.PlayerTabSkill.Value,
         "IndicatorFade" => Plugin.IndicatorFade.Value,
+        "IndicatorDetails" => Plugin.IndicatorDetails.Value,
         "IndicatorDisplay" => MenuLayout.IndicatorDisplayMode(Plugin.IndicatorDisplay.Value) != "Native",
         "DicePin" => Plugin.DicePin.Value,
         "EncounterAdvice" => Plugin.EncounterAdvice.Value,
@@ -1893,6 +1903,7 @@ internal static partial class ModUi
             case "FightPip": Plugin.FightPip.Value = !Plugin.FightPip.Value; break;
             case "IndicatorFade": Plugin.IndicatorFade.Value = !Plugin.IndicatorFade.Value; Isolated("FieldZoom", FieldIndicatorOpacity.Clear); break;
             case "DicePin": Plugin.DicePin.Value = !Plugin.DicePin.Value; FieldDiceUi.Clear(); break;
+            case "IndicatorDetails": Plugin.IndicatorDetails.Value = !Plugin.IndicatorDetails.Value; break;
             case "EncounterAdvice": Plugin.EncounterAdvice.Value = !Plugin.EncounterAdvice.Value; break;
             case "DefenseAdvice": Plugin.DefenseAdvice.Value = !Plugin.DefenseAdvice.Value; break;
             case "CardAdvice": Plugin.CardAdvice.Value = !Plugin.CardAdvice.Value; CardUi.Clear(keepDice: true); break;

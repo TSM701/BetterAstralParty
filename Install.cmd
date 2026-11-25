@@ -56,9 +56,20 @@ if "%BAP_PREVIEW%"=="1" (
     echo Native installer missing. No maintenance executed.
     exit /b 1
 )
+if exist "\\?\%BAP_ENTRYROOT%src\Plugin.cs" goto source
 >>"%BAP_BOOTLOG%" echo BAP-PACKAGE-INCOMPLETE: artifacts\BetterAstralParty-Setup.exe missing.
 echo Native installer missing. Extract the complete official ZIP again.
 echo Bootstrap log: "%BAP_BOOTLOG%"
+pause
+exit /b 1
+:source
+rem GitHub's Code - Download ZIP gives this source tree (BetterAstralParty-main.zip), which holds no installer.
+>>"%BAP_BOOTLOG%" echo BAP-SOURCE-CHECKOUT: source code, not an installation package.
+echo 이 폴더는 소스 코드라서 설치할 수 없습니다. GitHub의 Code - Download ZIP으로 받은 파일은 소스 코드입니다.
+echo Releases 페이지에서 BetterAstralParty-^<버전^>-install.zip을 받아 새 폴더에 압축을 풀고 Install.cmd를 실행하세요.
+echo This folder is source code and cannot be installed. GitHub's Code - Download ZIP gives the source code.
+echo Download BetterAstralParty-^<version^>-install.zip from the Releases page, extract it to a new folder and run Install.cmd.
+echo https://github.com/TSM701/BetterAstralParty/releases
 pause
 exit /b 1
 :preview

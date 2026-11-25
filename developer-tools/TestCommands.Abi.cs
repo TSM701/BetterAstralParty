@@ -177,15 +177,43 @@ internal static partial class TestCommands
             && ntexture.Methods.Any(method => method.Name == "GetMaterialManager" && method.Parameters.Count == 1 && method.Parameters[0].ParameterType.FullName == "System.String")
             && native.MainModule.GetType("FairyGUI.ShaderConfig").Fields.Any(field => field.Name == "imageShader" && field.IsStatic && field.FieldType.FullName == "System.String"), "Native atlas material cache");
         var smooth = ReadSource(context, "src/SmoothShape.cs");
-        Contains(smooth, new[] { "if (pointer != IntPtr.Zero && new Material(pointer)) continue;", "refs.Call(\"RemoveAt\", i);", "Plugin.Diagnostics.State(\"smoothShape.materialLost\"",
+        Contains(smooth, new[] { "if (pointer != IntPtr.Zero && new Material(pointer) is var material && material)", "refs.Call(\"RemoveAt\", i);", "Plugin.Diagnostics.State(\"smoothShape.materialLost\"",
             "catch (Exception ex) { _tickFailed = true;" }, "Smooth shapes drop destroyed atlas materials");
         Check(ReadSource(context, "src/ModUi.cs").Contains("SmoothShape.Tick();", StringComparison.Ordinal), "Destroyed atlas materials are checked from the UI tick");
+        // Mod clip contexts (2026-11-24, the second report of the hand and player bars vanishing at Magic Academy's phase change):
+        // a destroyed material of a texture drawn inside a mod clip makes NGraphics.Update throw in ApplyClippingProperties, and
+        // UpdateContext.Begin clears the clip state each frame, so dropping it lets the next frame draw whole again.
+        var graphics = native.MainModule.GetType("FairyGUI.NGraphics");
+        Check(native.MainModule.GetType("FairyGUI.Container").Fields.Any(field => field.Name == "_children" && field.FieldType.FullName == "System.Collections.Generic.List`1<FairyGUI.DisplayObject>")
+            && native.MainModule.GetType("FairyGUI.DisplayObject").Methods.Any(method => method.Name == "get_graphics" && method.ReturnType.FullName == "FairyGUI.NGraphics")
+            && graphics.Fields.Any(field => field.Name == "_manager" && field.FieldType.FullName == "FairyGUI.MaterialManager"), "Native display tree and per-texture material caches");
+        var update = NativeMethod(native, "FairyGUI.NGraphics", "Update").Body.Instructions.Select(instruction => instruction.Operand).OfType<MemberReference>().Select(reference => reference.Name).ToList();
+        Check(update.IndexOf("GetMaterial") >= 0 && update.IndexOf("GetMaterial") < update.LastIndexOf("ApplyClippingProperties"), "Native clipped drawing applies clip values to the cached material it gets each frame");
+        var begin = NativeMethod(native, "FairyGUI.UpdateContext", "Begin").Body.Instructions.Select(instruction => instruction.Operand).OfType<MemberReference>().Select(reference => reference.Name).ToList();
+        Check(begin.Contains("clipped") && begin.Contains("_clipStack") && begin.Contains("stencilReferenceValue"), "Native frame start clears the clip state");
+        Contains(smooth, new[] { "internal static void WatchTree(RuntimeObject component) => Trees.Add(component);", "Trees.RemoveAll(tree => tree.Get<bool>(\"isDisposed\"));",
+            "display.Get(\"graphics\")?.Field(\"_manager\")", "RuntimeObject.Is(display.Pointer, _containerClass)", "display.Field(\"_children\")!", "foreach (var manager in Managers) count += Purge(manager, \"tree\", owned: false, destroy);" }, "Smooth shapes drop destroyed materials of every texture drawn in a mod clip context");
+        // Unload guard (2026-11-24, the Magic Academy phase-change race): the mod's own textures' materials stay out of
+        // Resources.UnloadUnusedAssets and are retired here (out of the cache first) once unused; the repro keys run in
+        // development builds only.
+        Check(native.MainModule.GetType("FairyGUI.MaterialManager").NestedTypes.Single(type => type.Name == "MaterialRef").Fields.Any(field => field.Name == "frame" && field.FieldType.FullName == "System.Int32")
+            && NativeMethod(native, "FairyGUI.MaterialManager", "GetMaterial").Body.Instructions.Any(instruction => instruction.Operand is MethodReference reference && reference.Name == "get_frameCount"), "Native material cache stamps each hand-out with Time.frameCount");
+        Contains(smooth, new[] { "if (frame - item.Field<int>(\"frame\") > StaleFrames)", "refs.Call(\"RemoveAt\", i);\n                            UnityEngine.Object.Destroy(material);",
+            "var wanted = _guard ? flags | HideFlags.DontUnloadUnusedAsset : flags & ~HideFlags.DontUnloadUnusedAsset;", "if (!owned) continue;", "if (DevelopmentBuild) DevKeys();",
+            "Plugin.Version.Contains(\"-dev.\", StringComparison.Ordinal)", "_unload = Resources.UnloadUnusedAssets();" }, "The mod's own materials stay out of the scene loads' asset unload and are retired race-free");
+        // Every mod clip context (an overflow clip or a stencil mask) registers with SmoothShape.WatchTree.
+        foreach (var file in Directory.GetFiles(Path.Combine(context.Root, "src"), "*.cs"))
+        {
+            var text = File.ReadAllText(file);
+            if (Regex.IsMatch(text, "\"SetupOverflow\"|Set\\(\"mask\""))
+                Check(text.Contains("SmoothShape.WatchTree(", StringComparison.Ordinal), "Mod clip contexts are watched for destroyed materials: " + Path.GetFileName(file));
+        }
         Contains(ReadSource(context, "src/HomePortrait.cs"), new[] { "SmoothShape.Watch(native);", "if (_native != null) { SmoothShape.Unwatch(_native); _native = null; }" }, "The home portrait's baked texture is checked too and unwatched before it is destroyed");
         Contains(smooth, new[] { "page.Root, new Rect(x + Padding, y + Padding, size, size), false);", "Set(\"textureScale\", new Vector2(ShapeRaster.Density, ShapeRaster.Density))",
             "Set(\"scale9Grid\", new NullableRect(new Rect(margin, margin, 2, 2)))", "(1f, 1f, 1f, line > 0 ? 0f : 1f), (1f, 1f, 1f, 1f));", "part.Call(\"AddRelation\", shape, size);",
             "state.FillImage!.Set(\"color\", state.Fill);", "catch (Exception ex) { _failed = true;", "hideFlags = HideFlags.HideAndDontSave" },
             "Smooth shapes: white atlas sprites, tint-only colours, fill and ring parts, persistence and fallback");
-        NoPattern(smooth, @"Destroy\(|refCount|Release\(", "Smooth shapes never destroy or release textures during the session");
+        NoPattern(smooth, @"Destroy\((?!material\))|refCount|Release\(", "Smooth shapes never destroy or release textures during the session");
         foreach (var file in new[] { "ModUi", "NativeUi", "GameUi", "HandLayoutUi", "UpdateNotificationUi" })
             NoPattern(ReadSource(context, "src/" + file + ".cs"), "\"DrawRoundRect\"", "Mod rounded shapes are smooth (stencil masks keep GGraph): " + file);
         Check(!Regex.IsMatch(source, "SetField\\(\"outline(Color)?\","), "Native text outline preserved");

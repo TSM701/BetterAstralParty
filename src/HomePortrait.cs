@@ -62,6 +62,7 @@ internal static unsafe class HomePortrait
         mask.Set("touchable", false);
         _portrait.Call("AddChild", mask);
         _portrait.Set("mask", mask.Get("displayObject")!);
+        SmoothShape.WatchTree(_portrait);
         // Shadow first, portrait second: share the native cached texture/alpha silhouette; tint only the private loader.
         foreach (var shadow in new[] { true, false })
         {

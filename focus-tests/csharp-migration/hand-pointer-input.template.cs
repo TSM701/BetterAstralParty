@@ -249,8 +249,16 @@ public static class Check {
         Assert(!Hand.Expanded,"real CardWindow confirm/cancel press retains ownership when window surface vanishes on release");
         Hand.Reset();Input.Frame(down:true);Hand.StepMode();Input.Frame(up:true);Hand.StepMode();
         Assert(Hand.Expanded,"pile recovers immediately after native window surface closure");
+        // A native container lock (seconds after every fight, a PiP fight) is view-only: the row stays open and the piles
+        // still open and close (user-reported 2026-11-18 and again 2026-11-21); only a pending card use folds it.
         Input.Frame();Hand.StepMode(inputLocked:true);
-        Assert(!Hand.Expanded,"native container input lock folds the open row");
+        Assert(Hand.Expanded,"native container lock keeps the open row");
+        Input.Frame(down:true);Hand.StepMode(inputLocked:true);Input.Frame(up:true);Hand.StepMode(inputLocked:true);
+        Assert(!Hand.Expanded,"pile click closes the row under a native container lock");
+        Input.Frame(down:true);Hand.StepMode(inputLocked:true);Input.Frame(up:true);Hand.StepMode(inputLocked:true);
+        Assert(Hand.Expanded,"pile click opens the row under a native container lock");
+        Input.Frame();Hand.StepMode(inputLocked:true,pending:1);
+        Assert(!Hand.Expanded,"pending card use folds the open row");
         Hand.Reset();Native.Layers.Clear();Native.Layers.Add(pile);Native.CardWindow=null;
         Application.isFocused=false;Input.Frame(down:true);Hand.Step();Input.Frame(up:true);Hand.Step();
         Assert(!Hand.Expanded,"unfocused click stays ignored");

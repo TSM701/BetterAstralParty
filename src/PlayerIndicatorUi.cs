@@ -290,6 +290,9 @@ internal static class PlayerIndicatorUi
             var shown = screen.z > 0 && target.x >= 0 && target.y >= 0 && target.x <= width / scale && target.y <= height / scale;
             if (ui.Get<bool>("visible") != shown) ui.Set("visible", shown);
             if (!shown) continue;
+            // ATK and DEF as the monster plates show them: always with Always Show Indicator Details, else while the field is held
+            // down (2026-11-20; the hero clones, outside the native long press's reach, kept them off before).
+            if (IndicatorDetails.ShowInfo(ui) == 1 != IndicatorDetails.Shown) ui.Call("SwitchInfo", IndicatorDetails.Shown);
             Before.Add(ui.Get<float>("y"));
             ui.Call("UpdateOffset", target);
             Placed.Add((plate, local)); Wanted.Add(target.y);
@@ -343,7 +346,7 @@ internal static class PlayerIndicatorUi
     // The plate's y from where it was before this pass toward its stacked place, as UpdateOffset eases.
     internal static void Ease(RuntimeObject ui, float from, float to, float step)
     {
-        var y = from + (to - from) * step;
+        var y = Math.Abs(to - from) < 0.01f ? to : from + (to - from) * step;
         if (ui.Get<float>("y") != y) ui.Set("y", y);
     }
 

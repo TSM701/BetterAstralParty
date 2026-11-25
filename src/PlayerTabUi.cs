@@ -333,6 +333,8 @@ internal static class PlayerTabUi
             try { tab.Clock = NativeUi.Icon(tab.Panel, "时间", 0, Rise + (Height - ClockSize) / 2, ClockSize); }
             catch (TypeLoadException) { tab.Clock = null; }
             tab.Clip.Set("mask", tab.Mask.Get("displayObject")!);
+            // Its clip contexts outlive a scene load in the middle of a match (Magic Academy's phase change).
+            SmoothShape.WatchTree(tab.Panel);
             return tab;
         }
         catch { GameUi.Dispose(tab.Panel); throw; }

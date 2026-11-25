@@ -69,7 +69,7 @@ public static class Input {
     public static float GetAxis(string name) => throw new Exception("Unity input axis read instead of the native rebindable axis: " + name);
 }
 public static class Application { public static bool isFocused=true; }
-public static class Time { public static float deltaTime=1f/60f,unscaledTime; }
+public static class Time { public static float deltaTime=1f/60f,unscaledTime; public static int frameCount; }
 }
 namespace Cinemachine {
 public struct LensSettings { public float FieldOfView,NearClipPlane,FarClipPlane,Dutch; }
@@ -211,6 +211,8 @@ internal static class FieldZoomUi {
     internal static void Clear() { Clears++; FieldFreeCamera.Clear(); }
     public static int HoldReturns;
     internal static bool ReturnInHold() { HoldReturns++; return true; }
+    public static int Follows; public static RuntimeObject? FollowedPlayer;
+    internal static string FollowInHold(RuntimeObject scene,RuntimeObject? player) { Follows++; FollowedPlayer=player; return "player"; }
 }
 internal static class FightPip { internal static bool HoldsField; }
 internal static class GameUi { public static readonly List<RuntimeObject> Path=new(); public static IReadOnlyList<RuntimeObject> PointerPath(bool refresh=false,bool hitTest=false)=>Path; }
@@ -479,10 +481,18 @@ public static class Check {
             GameUi.Path.Clear();GameUi.Path.Add(Obj("UIButton_MonsterItem",("name",null),("draggable",false)));Array.Clear(Input.Up);
             Input.Down[0]=true;Assert(s.Update());Input.Down[0]=false;
             Input.Up[0]=true;Assert(s.Update() && FieldFreeCamera.Holding && FieldZoomUi.Clears==0);Input.Up[0]=false;
+            // 2026-11-23 (second report of a focus click that did not move the camera, after issue #16): the held view
+            // follows the camera the native handler moved, on the next tick, since FairyGUI clicks run in LateUpdate.
+            FieldZoomUi.Follows=0;Assert(s.Update() && FieldZoomUi.Follows==0);
+            Time.frameCount++;Assert(s.Update() && FieldZoomUi.Follows==1 && FieldZoomUi.FollowedPlayer==s.PlayerRig
+                && Plugin.Diagnostics.Lines.Last()=="fieldFreeCamera followed native focus in hold; target=UIButton_MonsterItem; view=player");
+            Time.frameCount++;Assert(s.Update() && FieldZoomUi.Follows==1 && FieldZoomUi.Clears==0);
             var foreign=new CinemachineBrain.BrainFrame{id=900,blend=new(){CamB=s.NativeCamera.Cast<ICinemachineCamera>()}};
             s.Brain.mFrameStack.Add(foreign);Assert(!s.Update() && FieldFreeCamera.Holding && s.Brain.Releases.SequenceEqual(new[]{id}));
             s.Brain.mFrameStack.Remove(foreign);
         } finally { FightPip.HoldsField=false;GameUi.Path.Clear(); }
+        // The focus click called off the return pressed earlier in the hold: no switch to the turn player once it ends.
+        Assert(s.Update() && FieldFreeCamera.Holding && RuntimeObject.Calls.Count==0 && FieldZoomUi.Clears==0);
         Assert(!s.Update(blocked:true) && FieldFreeCamera.Holding && s.Brain.mFrameStack.Count==1);
         FieldFreeCamera.Clear();
     }

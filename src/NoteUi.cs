@@ -43,6 +43,7 @@ internal static class NoteUi
         float Inner(float radius) => Math.Max(0f, radius - maskInset);
         mask.Get("shape")!.Call("DrawRoundRect", 0f, Color.white, Color.white, Inner(topLeft), Inner(topRight), Inner(bottomLeft), Inner(bottomRight));
         clip.Set("mask", mask.Get("displayObject")!);
+        SmoothShape.WatchTree(clip);
         var size = (int)MathF.Round(height * ShapeRaster.Density);
         var count = Math.Max(1, (int)MathF.Round(height / StripeLength));
         for (var at = 0f; at < width; at += height)

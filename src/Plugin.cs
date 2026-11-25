@@ -11,7 +11,7 @@ public sealed class Plugin : BasePlugin
 {
     public const string Guid = "kr.betterastralparty.mod";
     public const string Name = "BetterAstralParty";
-    public const string Version = "2026.11.3-dev.22";
+    public const string Version = "2026.11.4-dev.9";
     public const int InstallBundleProtocol = 1;
     public const string UpdateProtocol = "5";
     public const string SettingsSchema = "1";
@@ -41,6 +41,7 @@ public sealed class Plugin : BasePlugin
     internal static ConfigEntry<bool> IndicatorFade { get; private set; } = null!;
     internal static ConfigEntry<bool> IndicatorHide { get; private set; } = null!;
     internal static ConfigEntry<string> IndicatorDisplay { get; private set; } = null!;
+    internal static ConfigEntry<bool> IndicatorDetails { get; private set; } = null!;
     internal static ConfigEntry<bool> DicePin { get; private set; } = null!;
     internal static ConfigEntry<bool> UnknownHelpSeen { get; private set; } = null!;
     internal static ConfigEntry<string> HomeMenuPosition { get; private set; } = null!;
@@ -239,6 +240,7 @@ public sealed class Plugin : BasePlugin
         IndicatorDisplay = Config.Bind("화면", "인디케이터 표시 방식", IndicatorHide.Value ? "HideFar" : "Native",
             "[설정 창: 인디케이터 표시 방식 / Settings: Indicator Display] 필드 인디케이터를 보여주는 방식입니다. Native: 기본, HideFar: 멀면 숨기기. / How field indicators show. Native (Default) or HideFar (Hide When Far).");
         IndicatorDisplay.Value = MenuLayout.IndicatorDisplayMode(IndicatorDisplay.Value);
+        IndicatorDetails = Config.Bind("화면", "인디케이터 상세 정보 항상 표시", true, "[설정 창: 인디케이터 상세 정보 항상 표시 / Settings: Always Show Indicator Details] 몬스터·플레이어 인디케이터에 공격력·방어력을 항상 표시합니다. OFF는 필드를 길게 누를 때만 표시합니다. / Monster and player indicators always show ATK and DEF; OFF shows them only while the field is held down.");
         DicePin = Config.Bind("화면", "주사위 화면 고정", true, "[설정 창: 주사위 화면 고정 / Settings: Pin Dice to Screen] 줌·자유 시점에서도 굴린 주사위를 기본 시점과 같은 화면 위치·크기로 보여줍니다. OFF는 게임 기본처럼 필드 위에 둡니다. / Keeps thrown dice at the default view's screen position and size while zoomed or in free view; OFF leaves them on the field as in the base game.");
         EncounterAdvice = Config.Bind("전투 추천", "인카운트 추천", true, "[설정 창: 인카운트 추천 / Settings: Encounter Advice] 조우 화면에서 공격·놓아주기를 추천합니다. / Recommends Attack or Let Go on the encounter screen.");
         DefenseAdvice = Config.Bind("전투 추천", "방어·회피 추천", true, "[설정 창: 방어·회피 추천 / Settings: Defend/Dodge Advice] 방어를 추천하고, 회피로 살 확률이 더 높을 때는 회피를 추천합니다. / Recommends Defend, or Dodge when Dodge survives more often.");
